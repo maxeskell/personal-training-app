@@ -8,7 +8,7 @@ import { config } from "../config.js";
  * chat history. Stored as JSONL so it's append-cheap and inspectable.
  */
 
-export type DecisionStatus = "proposed" | "accepted" | "declined" | "deferred" | "executed" | "note";
+export type DecisionStatus = "proposed" | "accepted" | "declined" | "deferred" | "executing" | "executed" | "note";
 
 /** How the athlete reacted to a surfaced insight (maps to accepted/declined/deferred). */
 export type InsightReaction = "agree" | "disagree" | "ignore";

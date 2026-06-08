@@ -8,7 +8,8 @@ import { loadSystemPrompt } from "./coach/persona.js";
 import { assessReadiness } from "./coach/readiness.js";
 import { runWeeklyReview } from "./coach/weekly.js";
 import { runRacePrep } from "./coach/racePrep.js";
-import { proposeAdjustments, parseArgs } from "./coach/planAdjust.js";
+import { proposeAdjustments, validateProposals } from "./coach/planAdjust.js";
+import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { buildInsights, type ArchiveInput } from "./insights/engine.js";
@@ -650,30 +651,32 @@ async function cmdPropose(): Promise<void> {
     console.error('\nUsage: npm run propose -- "move my long run off race week"\n');
     process.exit(1);
   }
+  const screen = screenNutritionPrompt(request);
+  if (screen.blocked) {
+    console.log(`\n${screen.redirect}\n`);
+    return;
+  }
   const { state } = await buildTodayState();
   const llm = new CoachLLM(await loadSystemPrompt());
   const { result, cacheRead } = await proposeAdjustments(llm, request, state);
+  const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? []);
 
-  if (!result.proposals.length) {
-    console.log(`\nNo change proposed. ${result.notes}\n(cache read ${cacheRead} tokens)`);
+  if (!valid.length) {
+    console.log(`\nNo applicable change proposed. ${result.notes}`);
+    if (rejected.length) console.log(rejected.map((r) => `  · ${r}`).join("\n"));
+    console.log(`(cache read ${cacheRead} tokens)`);
     return;
   }
 
-  // Record each proposal via the gate (logs to the decision log; fires NO write).
-  const log = new DecisionLog();
-  const gate = new WriteGate(new AieClient(), log); // not connected — propose() never calls the API
+  // Record each VALIDATED proposal via the gate (logs to the decision log; fires NO write).
+  const gate = new WriteGate(new AieClient(), new DecisionLog()); // not connected — propose() never calls the API
   console.log("\nProposed adjustments (nothing changed yet):\n");
-  for (const p of result.proposals) {
-    const proposal = await gate.propose({
-      tool: p.tool as never,
-      args: parseArgs(p.argsJson),
-      rationale: p.summary,
-      tradeoff: p.tradeoff,
-    });
-    console.log(`  [${proposal.id}] ${p.summary}`);
-    console.log(`      trade-off: ${p.tradeoff}`);
-    console.log(`      write: ${p.tool} ${p.argsJson}`);
+  for (const p of valid) {
+    const proposal = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human });
+    console.log(`  [${proposal.id}] ${p.human}`);
+    console.log(`      ${p.summary} — trade-off: ${p.tradeoff}`);
   }
+  if (rejected.length) console.log(`\nNot applied (couldn't be tied to a real session):\n${rejected.map((r) => `  · ${r}`).join("\n")}`);
   if (result.notes) console.log(`\nNotes: ${result.notes}`);
   console.log(`\nTo apply:  npm run confirm -- <id>     |  To dismiss:  npm run decline -- <id>`);
   console.log(`(cache read ${cacheRead} tokens)`);
@@ -715,18 +718,21 @@ async function cmdAct(): Promise<void> {
 
   const llm = new CoachLLM(await loadSystemPrompt());
   const { result, cacheRead } = await proposeAdjustments(llm, request, state, ctx);
-  if (!result.proposals.length) {
-    console.log(`\nNo plan change proposed. ${result.notes}\n(cache read ${cacheRead} tokens)`);
+  const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? []);
+  if (!valid.length) {
+    console.log(`\nNo applicable plan change proposed. ${result.notes}`);
+    if (rejected.length) console.log(rejected.map((r) => `  · ${r}`).join("\n"));
+    console.log(`(cache read ${cacheRead} tokens)`);
     return;
   }
   const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
   console.log("\nProposed (nothing changed — gated):\n");
-  for (const p of result.proposals) {
-    const proposal = await gate.propose({ tool: p.tool as never, args: parseArgs(p.argsJson), rationale: p.summary, tradeoff: p.tradeoff });
-    console.log(`  [${proposal.id}] ${p.summary}`);
-    console.log(`      trade-off: ${p.tradeoff}`);
-    console.log(`      write: ${p.tool} ${p.argsJson}`);
+  for (const p of valid) {
+    const proposal = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human });
+    console.log(`  [${proposal.id}] ${p.human}`);
+    console.log(`      ${p.summary} — trade-off: ${p.tradeoff}`);
   }
+  if (rejected.length) console.log(`\nNot applied (no matching session):\n${rejected.map((r) => `  · ${r}`).join("\n")}`);
   if (result.notes) console.log(`\nNotes: ${result.notes}`);
   console.log(`\nApply:  npm run confirm -- <id>   |  Dismiss:  npm run decline -- <id>`);
   console.log(`(cache read ${cacheRead} tokens)`);
