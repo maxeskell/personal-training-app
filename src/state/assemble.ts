@@ -173,7 +173,7 @@ export async function assembleState(
   let garminStale = false;
   if (garmin?.available) {
     const weekAgo = daysAgoIso(opts.date, 7);
-    const [sleep, battery, readiness, vo2, weight, ftp, lactate] = await Promise.all([
+    const [sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv] = await Promise.all([
       garmin.tryCall("get_sleep_summary", { date: opts.date }).then(garminInner),
       garmin.tryCall("get_body_battery", { start_date: weekAgo, end_date: opts.date }).then(garminInner),
       garmin.tryCall("get_training_readiness", { date: opts.date }).then(garminInner),
@@ -181,12 +181,16 @@ export async function assembleState(
       garmin.tryCall("get_daily_weigh_ins", { date: opts.date }).then(garminInner),
       garmin.tryCall("get_cycling_ftp", {}).then(garminInner),
       garmin.tryCall("get_lactate_threshold", {}).then(garminInner),
+      garmin.tryCall("get_training_status", { date: opts.date }).then(garminInner),
+      garmin.tryCall("get_hrv_data", { date: opts.date }).then(garminInner),
     ]);
-    raw.garmin = { sleep, battery, readiness, vo2, weight, ftp, lactate };
+    raw.garmin = { sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv };
 
     // Thresholds + zones from Garmin's own FTP/LT tools (verified shapes) — these win over the
     // AIE getUser-derived values mapped earlier, since they're the device's current numbers.
     mapGarminThresholds(state, ftp, lactate);
+    mapTrainingStatus(state, trainingStatus);
+    mapHrvStatus(state, hrv);
 
     // Sleep — interpretable signal (own slot).
     const sleepScore = asNumber(get(sleep, "sleep_score"));
@@ -403,6 +407,46 @@ function mapGarminThresholds(state: AthleteState, ftp: unknown, lactate: unknown
   if (Object.keys(t).length === 0) return;
   state.thresholds = { value: t, source: "garmin", note: "Garmin get_cycling_ftp + get_lactate_threshold" };
   state.zones = { value: deriveZones(t), source: "derived", note: "standard zone models from Garmin thresholds (Coggan power / %-LTHR / %-threshold pace)" };
+}
+
+/** get_training_status → acute:chronic load + status label (verified snake_case shape). */
+function mapTrainingStatus(state: AthleteState, payload: unknown): void {
+  const ratio = asNumber(get(payload, "load_ratio"));
+  const acute = asNumber(get(payload, "acute_load"));
+  const label = get(payload, "training_status_feedback");
+  if (ratio == null && acute == null && typeof label !== "string") return;
+  state.trainingStatus = {
+    value: {
+      label: typeof label === "string" ? label : undefined,
+      acuteLoad: acute,
+      chronicLoad: asNumber(get(payload, "chronic_load")),
+      loadRatio: ratio,
+      acwrStatus: typeof get(payload, "acwr_status") === "string" ? (get(payload, "acwr_status") as string) : undefined,
+      vo2max: asNumber(get(payload, "vo2_max")),
+      optimalChronicLoadMin: asNumber(get(payload, "optimal_chronic_load_min")),
+      optimalChronicLoadMax: asNumber(get(payload, "optimal_chronic_load_max")),
+    },
+    source: "garmin",
+    note: "Garmin get_training_status (acute:chronic load) — MODEL, directional",
+  };
+}
+
+/** get_hrv_data → HRV status vs Garmin's own personal baseline band (verified snake_case shape). */
+function mapHrvStatus(state: AthleteState, payload: unknown): void {
+  const status = get(payload, "status");
+  const last = asNumber(get(payload, "last_night_avg_hrv_ms"));
+  if (typeof status !== "string" && last == null) return;
+  state.hrvStatus = {
+    value: {
+      status: typeof status === "string" ? status : undefined,
+      lastNightMs: last,
+      weeklyMs: asNumber(get(payload, "weekly_avg_hrv_ms")),
+      baselineLowMs: asNumber(get(payload, "baseline_balanced_low_ms")),
+      baselineUpperMs: asNumber(get(payload, "baseline_balanced_upper_ms")),
+    },
+    source: "garmin",
+    note: "Garmin get_hrv_data (overnight HRV status vs personal baseline)",
+  };
 }
 
 /** `getPlanProgress` overall `done_sec`/`plan_sec` per zone → adherence hours. */

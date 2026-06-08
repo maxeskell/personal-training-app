@@ -40,10 +40,18 @@ Confirmed shapes already wired in:
   (338 W, FR970 running power), weight, and a run threshold speed (reported ~10× low — normalised).
   Both now feed the zones/threshold cards (Garmin wins over the AIE `getUser` guess).
 
-Confirmed-available, queued next (need the re-run's shapes or a dedicated mapper):
-- Health/injury slice: `get_training_load_trend`, `get_training_status`, `get_training_effect`,
-  `get_respiration_data/_trend`, `get_all_day_stress`/`get_weekly_stress`, `get_body_battery_events`,
-  `get_sleep_data` (stages), `get_endurance_score`, `get_hrv_data`, `get_rhr_day`.
+Health/injury slice — BUILT (slice 1a, from the fixed probe's real shapes):
+- ✅ **Acute:chronic load / training status** (`get_training_status`): ratio, ACWR status, status label
+  → overtraining/injury flag (brief Q2). Garmin computes the ratio natively. *(Live data currently shows
+  OVERREACHING, ratio 1.7, ACWR HIGH → fires a flag.)*
+- ✅ **HRV status vs personal baseline band** (`get_hrv_data`) → recovery finding (surfaced only when not
+  balanced). Both mapped into AthleteState, surfaced on the dashboard Today card + `ask`.
+
+Queued next (need a daily series → backfill extension):
+- `get_respiration_data` + sleep `avgSkinTempDeviationC` → illness early-warning; `get_all_day_stress`
+  /`get_weekly_stress` → stress trend; `get_body_battery_events` → recharge/drain rates; `get_sleep_data`
+  (deep/REM/awake stages) → sleep-architecture decline; `get_body_composition` (muscleMass) → activate the
+  dormant fuelling flag. These need the daily backfill extended to archive the fields historically.
 - Bonuses: `get_activity_fit_data` (pull .FIT programmatically — no manual upload), `get_power_duration_curve`
   (MMP), `get_body_composition` (muscle mass → fuelling), `get_activity_splits`/`_typed_splits`
   (transitions + per-leg pacing), `get_activity_weather` (per-activity temp), `get_race_predictions`.

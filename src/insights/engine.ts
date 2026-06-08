@@ -26,6 +26,7 @@ import { analyseTaper, taperFinding, type TaperAnalysis } from "./taper.js";
 import { analyseEfficiency, efficiencyFinding, type EfficiencyAnalysis } from "./efficiency.js";
 import { analyseFuelling, fuellingFinding, type FuellingAnalysis } from "./fuelling.js";
 import { loadSessionDecays, fitFindings, type SessionDecay } from "./fit.js";
+import { trainingStatusFinding, hrvStatusFinding } from "./garminHealth.js";
 import { finiteNums } from "./stats.js";
 
 /** Optional historical archive to widen the metrics beyond the live 40-activity / 60-day window. */
@@ -431,6 +432,12 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   const ff = fuellingFinding(fuelling);
   if (ff) findings.push(ff);
   findings.push(...fitFindings(sessionDecays));
+
+  // 5b. Garmin native health models: acute:chronic load / training status, HRV status.
+  const tsF = trainingStatusFinding(state.trainingStatus.value);
+  if (tsF) findings.push(tsF);
+  const hrvF = hrvStatusFinding(state.hrvStatus.value);
+  if (hrvF) findings.push(hrvF);
 
   // 6. Cross-day trends from the history window (VO2max engine; race-predictor trajectory).
   findings.push(...historyTrendFindings(opts?.history));
