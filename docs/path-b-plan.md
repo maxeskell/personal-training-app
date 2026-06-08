@@ -51,7 +51,13 @@ Solid = required (AIE). Dotted = optional (Garmin). Must be fully useful on AIE 
   (3) **Decision-log views** — `decisions` lists the audit trail and `decisions retro <id> "…"` records
   how a call held up. Verified: `decisions`, `dashboard`, and `ping` all run live (notification fired,
   report written). Sparklines populate once ≥2 days of state accumulate via the daily ping.
-- **M6 — Harden.** Garmin-breakage handling, AIE tool-change tolerance, secret hygiene, decision-log review.
+- **M6 — Harden. ✅ built & verified live.** **Garmin breakage**: auth-failure detection with an
+  actionable re-auth hint + token-age warning before the ~6-month expiry. **AIE tool-change
+  tolerance**: failed reads degrade a field to null and are surfaced (not silent); `doctor` flags
+  tool drift — *it already caught a real new tool (`createRideRunWorkoutAdvanced`) the live API added,
+  now gated as a write*. **Secret hygiene**: token-shape redaction on all logs/notifications, secrets
+  dir 0700, `*.log`/token dirs gitignored. **Decision-log review**: `decisions pending` + retro +
+  size warning. New **`doctor`** command is the single health entry point. Verified live (doctor green).
 
 ## Hard guardrails (enforced in code, non-negotiable)
 - **Write-gate:** no AIE write tool (`changeWorkoutDate`, `skipWorkout`, `create*Workout`, `setZones`…)
@@ -149,3 +155,11 @@ need #2), spawning the Python `garmin_mcp` over stdio for the optional 5 metrics
 - Official **`@modelcontextprotocol/sdk`** (npm) ships client transports (stdio + Streamable HTTP) and
   **OAuth helpers**; the MCP authorization spec (OAuth 2.1 + PKCE) landed 2025-03-25. A single client
   can connect to both servers. This is the standard, supported path — no need to hand-roll OAuth.
+
+---
+
+## Next layer (beyond M6): the Insight Engine
+With M1–M6 delivering the daily operating system, the next layer mines the data for the **trends,
+issues, and insights a professional coach would pull out** — efficiency factor, aerobic decoupling,
+run-load ACWR (injury window), CTL/ATL/TSB, intensity distribution, prediction-vs-goal, and n=1
+correlations. Full design: **[Insight_Engine_Spec.md](specs/Insight_Engine_Spec.md)** (milestones N1–N4).

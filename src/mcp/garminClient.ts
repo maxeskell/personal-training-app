@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { config } from "../config.js";
+import { redactSecrets } from "../health.js";
 
 /**
  * OPTIONAL, degradable Garmin gap-filler (Taxuspt/garmin_mcp over stdio).
@@ -87,7 +88,13 @@ export class GarminClient {
   }
 
   private warn(op: string, err: unknown): void {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[garmin] ${op} failed — degrading to AI Endurance only: ${msg}`);
+    const raw = err instanceof Error ? err.message : String(err);
+    const msg = redactSecrets(raw);
+    // The ~6-month token expiry / MFA re-auth is the predictable failure — make it actionable.
+    const looksLikeAuth = /401|403|unauthor|forbidden|login|token|expired|mfa|authenticate/i.test(raw);
+    const hint = looksLikeAuth
+      ? " — token likely expired; re-run: uvx --python 3.12 --from git+https://github.com/Taxuspt/garmin_mcp garmin-mcp-auth"
+      : "";
+    console.warn(`[garmin] ${op} failed — degrading to AI Endurance only: ${msg}${hint}`);
   }
 }

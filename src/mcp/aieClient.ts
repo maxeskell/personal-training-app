@@ -28,6 +28,7 @@ export const AIE_WRITE_TOOLS = [
   "skipWorkout",
   "changeWorkoutAdvice",
   "createRideRunWorkout",
+  "createRideRunWorkoutAdvanced", // added by AIE after the v1 README; gated as a write (verify args before use)
   "createSwimWorkout",
   "createStrengthOtherWorkout",
 ] as const;
