@@ -678,29 +678,42 @@ async function cmdPropose(): Promise<void> {
   console.log(`(cache read ${cacheRead} tokens)`);
 }
 
-/** `act` — turn flagged insight findings into GATED plan-adjustment proposals (no write here). */
+/** `act` — turn the GATED, feedback-aware top findings into gated plan-adjustment proposals (no write here). */
 async function cmdAct(): Promise<void> {
   if (!requireLLM()) process.exit(1);
-  const { state } = await buildTodayState();
-  const ins = buildInsights(state, await loadArchive());
-  const actionable = ins.findings.filter((f) => f.severity !== "info");
+  const { state, window } = await buildTodayState();
+  const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
+  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window });
+  // Act only on SURFACED findings (good-signal, not dismissed) that warrant a plan change.
+  const actionable = ins.topFindings.filter((f) => f.severity !== "info");
   if (!actionable.length) {
-    console.log("\nNo flagged signals to act on — the insight engine sees nothing needing a plan change.\n");
+    console.log("\nNo actionable signals — nothing above the confidence bar (and not dismissed) needs a plan change.\n");
     return;
   }
 
-  console.log("\nActing on flagged signals:");
-  for (const f of actionable) console.log(`  • [${f.severity}] ${f.title}`);
+  console.log("\nActing on surfaced signals (gated; agree/disagree respected):");
+  for (const f of actionable) console.log(`  • [${f.severity}, ${Math.round((f.confidence ?? 0.6) * 100)}%] ${f.title}`);
+
+  // Ground the proposer in the specific load/health/recovery numbers so it targets the right session.
+  const r = state.recovery.value;
+  const ts = state.trainingStatus.value;
+  const ctx = [
+    ins.load ? `- Load: CTL ${ins.load.ctl} / ATL ${ins.load.atl} / TSB ${ins.load.tsb}, ΔCTL/wk ${ins.load.rampPerWeek}` : "",
+    ts ? `- Garmin acute:chronic ${ts.loadRatio ?? "—"} (${ts.acwrStatus ?? "—"}), status ${ts.label ?? "—"}` : "",
+    state.hrvStatus.value ? `- HRV status ${state.hrvStatus.value.status ?? "—"}` : "",
+    r ? `- Recovery limiter ${r.limiterToday ?? "—"}; orthopedic run/bike ${r.orthopedic?.run ?? "—"}/${r.orthopedic?.bike ?? "—"}` : "",
+    `- Run-load ramp ${ins.runRamp.jumpPct ?? "—"}% vs baseline`,
+  ].filter(Boolean).join("\n");
 
   const request =
-    "Turn these flagged training signals into minimal, specific plan adjustments with trade-offs " +
+    "Turn these surfaced training signals into minimal, specific plan adjustments with trade-offs " +
     "(don't restructure the week; the smallest change that helps):\n" +
     actionable
       .map((f) => `- [${f.severity}] ${f.title}: ${f.detail}${f.recommendation ? ` (suggested: ${f.recommendation})` : ""}`)
       .join("\n");
 
   const llm = new CoachLLM(await loadSystemPrompt());
-  const { result, cacheRead } = await proposeAdjustments(llm, request, state);
+  const { result, cacheRead } = await proposeAdjustments(llm, request, state, ctx);
   if (!result.proposals.length) {
     console.log(`\nNo plan change proposed. ${result.notes}\n(cache read ${cacheRead} tokens)`);
     return;
@@ -811,7 +824,7 @@ if (!run) {
   console.log("  confirm <id> / decline <id>   apply or dismiss a proposal");
   console.log("  dashboard  generate + open the glanceable Today/Week/Trends/Race view");
   console.log("  deep-dive  insight-engine analysis (load/EF/durability/ramp/goal) → report");
-  console.log("  act        turn flagged insight findings into gated plan-adjustment proposals");
+  console.log("  act        turn surfaced (gated, feedback-aware) findings into gated plan-adjustment proposals");
   console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
   console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
   console.log("  probe      capture live Garmin tool surface + AIE detail samples → reports/ (Phase-2 mapping)");

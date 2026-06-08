@@ -30,6 +30,7 @@ npm run weekly                # weekly review (takeaway-led) → dated report in
 npm run race                  # race-specific prep for the next race → dated report
 npm run race -- "Loch Ness"   # …or a named race
 npm run propose -- "move my long run off race week"   # gated plan-adjustment proposals
+npm run act                   # surfaced (gated, feedback-aware) findings → grounded gated proposals
 npm run confirm -- <id>       # apply a proposal (the ONLY path that writes to AI Endurance)
 npm run decline -- <id>       # dismiss a proposal
 
