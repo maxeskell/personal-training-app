@@ -68,15 +68,17 @@ Open the `http://192.168.x.x:3000` address on your phone. Hit **↻ refresh** to
 The dashboard has an **"Ask your data"** chat box — type a question (e.g. *"am I overtraining?"*) and the
 coach answers from your assembled state + insights, with the same guardrails as every other flow.
 
-**Keep it always-on** (survives reboot) with pm2 — the right tool for a long-running server:
+**Start it automatically when you turn the Mac on** (recommended — launchd, no extra install):
 
 ```bash
-npm i -g pm2
-npm run serve:start           # pm2 start (binds 0.0.0.0:3000)
-pm2 startup && pm2 save        # run the printed command, then save — survives reboot
-npm run serve:logs            # tail logs
-npm run serve:stop            # stop
+cd /Users/maxeskell/personal-training-app && npm run serve:install     # starts at login + restarts if it stops
+cd /Users/maxeskell/personal-training-app && npm run serve:logs        # tail /Users/maxeskell/personal-training-app/reports/server.log
+cd /Users/maxeskell/personal-training-app && npm run serve:uninstall   # stop auto-starting
 ```
+
+Manual start (foreground, for dev): `cd /Users/maxeskell/personal-training-app && npm run serve`
+
+Alternative process manager (pm2): `npm i -g pm2 && npm run pm2:start && pm2 startup && pm2 save`.
 
 > Note: the LAN dashboard has no login — fine on a trusted home network. Don't expose port 3000 to the
 > public internet; for remote access use a private tunnel (Tailscale/cloudflared), not port-forwarding.
