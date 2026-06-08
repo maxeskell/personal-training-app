@@ -253,6 +253,10 @@ The list items are far richer than the v1 README implied. Each carries:
    Mitigation: backfill the *list* by paging month-by-month date windows; chase the id source separately
    (ask AI Endurance / check `summaryMode:false` variants). **Good news: the priority metrics don't need
    detail** (see below), so this no longer gates N1.
+   **Follow-up probe (N2):** passing `{date}` to `get*ActivityDetail` does **not** work — the tool errors
+   server-side (`int() argument … not 'NoneType'`), i.e. it requires an **integer activityId** the list
+   never exposes. So within-session decoupling / power-curve **remain blocked**; needs an id source from
+   AI Endurance (support question) before N3.
 4. **Garmin HRV history?** `get_hrv_trend` returned an empty/under-documented shape in the probe — needs an
    arg/format follow-up. **Low priority** — AI Endurance's `rMSSD` + recovery model already cover HRV.
 5. **Run power coverage?** **40/40 runs have power.** → Run **EF via power** (not just pace) is viable.

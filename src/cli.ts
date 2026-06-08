@@ -397,6 +397,46 @@ async function cmdPropose(): Promise<void> {
   console.log(`(cache read ${cacheRead} tokens)`);
 }
 
+/** `act` — turn flagged insight findings into GATED plan-adjustment proposals (no write here). */
+async function cmdAct(): Promise<void> {
+  if (!requireLLM()) process.exit(1);
+  const { state } = await buildTodayState();
+  const ins = buildInsights(state);
+  const actionable = ins.findings.filter((f) => f.severity !== "info");
+  if (!actionable.length) {
+    console.log("\nNo flagged signals to act on — the insight engine sees nothing needing a plan change.\n");
+    return;
+  }
+
+  console.log("\nActing on flagged signals:");
+  for (const f of actionable) console.log(`  • [${f.severity}] ${f.title}`);
+
+  const request =
+    "Turn these flagged training signals into minimal, specific plan adjustments with trade-offs " +
+    "(don't restructure the week; the smallest change that helps):\n" +
+    actionable
+      .map((f) => `- [${f.severity}] ${f.title}: ${f.detail}${f.recommendation ? ` (suggested: ${f.recommendation})` : ""}`)
+      .join("\n");
+
+  const llm = new CoachLLM(await loadSystemPrompt());
+  const { result, cacheRead } = await proposeAdjustments(llm, request, state);
+  if (!result.proposals.length) {
+    console.log(`\nNo plan change proposed. ${result.notes}\n(cache read ${cacheRead} tokens)`);
+    return;
+  }
+  const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
+  console.log("\nProposed (nothing changed — gated):\n");
+  for (const p of result.proposals) {
+    const proposal = await gate.propose({ tool: p.tool as never, args: parseArgs(p.argsJson), rationale: p.summary, tradeoff: p.tradeoff });
+    console.log(`  [${proposal.id}] ${p.summary}`);
+    console.log(`      trade-off: ${p.tradeoff}`);
+    console.log(`      write: ${p.tool} ${p.argsJson}`);
+  }
+  if (result.notes) console.log(`\nNotes: ${result.notes}`);
+  console.log(`\nApply:  npm run confirm -- <id>   |  Dismiss:  npm run decline -- <id>`);
+  console.log(`(cache read ${cacheRead} tokens)`);
+}
+
 /** `confirm <id>` — the ONLY path that fires a write, and only for a logged proposal. */
 async function cmdConfirm(): Promise<void> {
   const id = process.argv[3];
@@ -466,6 +506,7 @@ const commands: Record<string, () => Promise<void>> = {
   decline: cmdDecline,
   dashboard: cmdDashboard,
   "deep-dive": cmdDeepDive,
+  act: cmdAct,
   decisions: cmdDecisions,
 };
 
@@ -484,6 +525,7 @@ if (!run) {
   console.log("  confirm <id> / decline <id>   apply or dismiss a proposal");
   console.log("  dashboard  generate + open the glanceable Today/Week/Trends/Race view");
   console.log("  deep-dive  insight-engine analysis (load/EF/durability/ramp/goal) → report");
+  console.log("  act        turn flagged insight findings into gated plan-adjustment proposals");
   console.log('  decisions [pending | retro <id> "<note>"]   view log / pending / add retrospective');
   console.log("  (LLM flows need ANTHROPIC_API_KEY)");
   process.exit(1);
