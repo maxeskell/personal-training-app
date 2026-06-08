@@ -3,6 +3,7 @@ import type { AthleteState } from "../state/types.js";
 import { buildInsights, type InsightReport, type ArchiveInput } from "../insights/engine.js";
 import { richActivities } from "../insights/metrics.js";
 import { paceStr } from "../insights/zones.js";
+import { coachHeadline } from "../insights/headline.js";
 import { DecisionLog, suppressedInsightKeys } from "../state/decisionLog.js";
 import { screenNutritionPrompt } from "../guardrails/wellbeing.js";
 
@@ -48,7 +49,10 @@ export function buildAskContext(state: AthleteState, insights: InsightReport): s
   const tail = (k: string, n = 14) => (recSeries?.[k] ?? []).slice(-n).map((x) => (x == null ? "—" : Math.round(Number(x)))).join(",");
 
   const ins = insights;
+  const hl = coachHeadline(insights, state);
   return [
+    `COACH HEADLINE [${hl.severity.toUpperCase()}]: ${hl.line}${hl.action ? ` → ${hl.action}` : ""}`,
+    "",
     `TODAY (${state.date}) [provenance in brackets]:`,
     `- HRV ${fmt(state.hrvOvernight.value)}ms (7d base ${fmt(state.hrv7dBaseline.value)}), RHR ${fmt(state.restingHr.value)}bpm (base ${fmt(state.restingHr7dBaseline.value)}), sleep ${fmt(state.sleep.value?.hours, 1)}h/${fmt(state.sleep.value?.score)} [garmin]`,
     `- Recovery: cardio ${fmt(r?.cardioRecovery)}/100, orthopedic run/bike/swim ${fmt(r?.orthopedic?.run)}/${fmt(r?.orthopedic?.bike)}/${fmt(r?.orthopedic?.swim)}, limiter ${r?.limiterToday ?? "—"} [ai-endurance]`,
