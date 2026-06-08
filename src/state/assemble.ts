@@ -316,8 +316,9 @@ function mapNutrition(state: AthleteState, payload: unknown, date: string): void
   if (!data || typeof data !== "object") return;
 
   const dates = get(data, "date");
-  let idx = Array.isArray(dates) ? dates.findIndex((d) => String(d).startsWith(date)) : -1;
-  if (idx < 0 && Array.isArray(dates)) idx = Math.min(1, dates.length - 1); // fallback: today ≈ index 1
+  // Match today's date exactly; if it isn't present, leave targets ABSENT rather than guessing a
+  // position (a positional fallback applied yesterday's/tomorrow's ranges as today's, esp. across a TZ edge).
+  const idx = Array.isArray(dates) ? dates.findIndex((d) => String(d).startsWith(date)) : -1;
 
   const at = (arr: unknown): number | undefined =>
     Array.isArray(arr) && idx >= 0 ? asNumber(arr[idx]) : undefined;

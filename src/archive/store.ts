@@ -76,14 +76,25 @@ export class ArchiveStore {
     await mkdir(this.dir, { recursive: true });
   }
   private async readJsonl<T>(path: string): Promise<T[]> {
+    let text: string;
     try {
-      return (await readFile(path, "utf8"))
-        .split("\n")
-        .filter((l) => l.trim())
-        .map((l) => JSON.parse(l) as T);
+      text = await readFile(path, "utf8");
     } catch {
-      return [];
+      return []; // no file yet
     }
+    // Parse per line: a single corrupt/partial line (crash mid-append) must not discard the whole archive.
+    const out: T[] = [];
+    let skipped = 0;
+    for (const l of text.split("\n")) {
+      if (!l.trim()) continue;
+      try {
+        out.push(JSON.parse(l) as T);
+      } catch {
+        skipped++;
+      }
+    }
+    if (skipped) console.warn(`[archive] skipped ${skipped} unparseable line(s) in ${path}`);
+    return out;
   }
 
   async loadActivities(): Promise<ArchivedActivity[]> {
