@@ -24,11 +24,20 @@ export interface GarminDay {
   weightKg?: number;
   trainingReadiness?: number;
 }
+/** A Garmin activity (the full decade of workouts — Garmin keeps far more history than AI Endurance). */
+export interface GarminActivity {
+  id: string;
+  date: string; // YYYY-MM-DD
+  type?: string;
+  name?: string;
+  raw: Record<string, unknown>;
+}
 
 export class ArchiveStore {
   private readonly dir = join(config.dataDir, "archive");
   private readonly actPath = join(this.dir, "activities.jsonl");
   private readonly garPath = join(this.dir, "garmin-daily.jsonl");
+  private readonly garActPath = join(this.dir, "garmin-activities.jsonl");
 
   private async ensure() {
     await mkdir(this.dir, { recursive: true });
@@ -68,15 +77,30 @@ export class ArchiveStore {
     await appendFile(this.garPath, days.map((d) => JSON.stringify(d)).join("\n") + "\n");
   }
 
-  async summary(): Promise<{ activities: number; actRange: string; garminDays: number; garRange: string }> {
+  async loadGarminActivities(): Promise<GarminActivity[]> {
+    return this.readJsonl<GarminActivity>(this.garActPath);
+  }
+  async garminActivityIds(): Promise<Set<string>> {
+    return new Set((await this.loadGarminActivities()).map((a) => a.id));
+  }
+  async appendGarminActivities(items: GarminActivity[]): Promise<void> {
+    if (!items.length) return;
+    await this.ensure();
+    await appendFile(this.garActPath, items.map((i) => JSON.stringify(i)).join("\n") + "\n");
+  }
+
+  async summary(): Promise<{ activities: number; actRange: string; garminDays: number; garRange: string; garminActivities: number; garActRange: string }> {
     const acts = await this.loadActivities();
     const gar = await this.loadGarminDays();
+    const gAct = await this.loadGarminActivities();
     const range = (ds: string[]) => (ds.length ? `${ds[0]} → ${ds[ds.length - 1]}` : "—");
     return {
       activities: acts.length,
       actRange: range(acts.map((a) => a.date).sort()),
       garminDays: gar.length,
       garRange: range(gar.map((d) => d.date).sort()),
+      garminActivities: gAct.length,
+      garActRange: range(gAct.map((a) => a.date).sort()),
     };
   }
 }

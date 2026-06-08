@@ -14,7 +14,7 @@ import { renderDashboard } from "./coach/dashboard.js";
 import { buildInsights, type ArchiveInput } from "./insights/engine.js";
 import { mapRichActivity } from "./insights/metrics.js";
 import { ArchiveStore } from "./archive/store.js";
-import { backfillActivities, backfillGarmin } from "./archive/backfill.js";
+import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate } from "./archive/backfill.js";
 import { answerQuestion } from "./coach/ask.js";
 
 /** Load the local history archive (if any) as insight inputs. Undefined when empty. */
@@ -298,34 +298,68 @@ async function cmdAsk(): Promise<void> {
   console.log("\n" + answer + "\n");
 }
 
-/** `backfill [fromDate]` — archive full history: AIE activities (month-paged) + Garmin daily metrics. */
+/**
+ * `backfill [fromDate] [--chunk N]` — archive full history.
+ *  - AIE activities (month-paged, ~2024+) + AIE recovery already in the daily snapshot.
+ *  - Garmin ACTIVITIES: ALL of them (the full decade), paginated — one-shot, fast.
+ *  - Garmin DAILY metrics (sleep/HRV/RHR): from your earliest Garmin activity forward, throttled,
+ *    resumable, and CHUNKED (--chunk N caps days per run) so a decade grinds over days/weeks.
+ *  `fromDate` defaults to "auto" (earliest Garmin activity). Pass a date to override.
+ */
 async function cmdBackfill(): Promise<void> {
-  const from = process.argv[3] || "2024-01-01";
+  const args = process.argv.slice(3);
+  const chunkIdx = args.indexOf("--chunk");
+  const chunk = chunkIdx >= 0 ? Number(args[chunkIdx + 1]) : Infinity;
+  const dailyOnly = args.includes("--daily-only"); // scheduled grind uses this (skips AIE + activity re-paginate)
+  const fromArg = args.find((a) => /^\d{4}-\d{2}-\d{2}$/.test(a)) || "auto";
   const to = todayIso();
   const store = new ArchiveStore();
-  console.log(`\nBackfilling history ${from} → ${to} into ${config.dataDir}/archive/ …\n`);
+  console.log(`\nBackfilling into ${config.dataDir}/archive/ …\n`);
 
-  await withAie(async (aie) => {
-    const added = await backfillActivities(aie, store, from, to, (m) => console.log(m));
-    console.log(`AIE activities: +${added} new.\n`);
-  });
+  // AIE activities (only go back to ~2024) — skipped in daily-only grind mode.
+  if (!dailyOnly) {
+    await withAie(async (aie) => {
+      const added = await backfillActivities(aie, store, fromArg === "auto" ? "2024-01-01" : fromArg, to, (m) => console.log(m));
+      console.log(`AIE activities: +${added} new.\n`);
+    });
+  }
 
-  if (config.garmin.enabled) {
+  if (!config.garmin.enabled) {
+    console.log("Garmin disabled — skipped (set GARMIN_ENABLED=true to include it).\n");
+  } else {
     const g = new GarminClient();
     if (await g.connect()) {
-      console.log("Garmin daily metrics (throttled, resumable — re-run to continue if interrupted):");
-      const added = await backfillGarmin(g, store, from, to, (m) => console.log(m));
-      console.log(`Garmin: +${added} new days.\n`);
+      // All Garmin activities first (fast, gives us the earliest date) — skipped in grind mode.
+      if (!dailyOnly) {
+        console.log("Garmin activities (full history, paginated):");
+        const a = await backfillGarminActivities(g, store, (m) => console.log(m));
+        console.log(`Garmin activities: +${a} new.\n`);
+      }
+
+      const from = fromArg === "auto" ? (await earliestGarminActivityDate(store)) ?? "2014-01-01" : fromArg;
+      console.log(`Garmin daily metrics from ${from} (throttled, resumable${Number.isFinite(chunk) ? `, ${chunk}/run` : ""}):`);
+      const d = await backfillGarmin(g, store, from, to, (m) => console.log(m), 250, chunk);
+      console.log(`Garmin daily: +${d} new days.\n`);
       await g.close();
     } else {
       console.log("Garmin enabled but unavailable — skipped (re-run when connected).\n");
     }
-  } else {
-    console.log("Garmin disabled — skipped (set GARMIN_ENABLED=true to include it).\n");
   }
 
+  await printArchiveStatus(store);
+}
+
+async function printArchiveStatus(store: ArchiveStore): Promise<void> {
   const s = await store.summary();
-  console.log(`Archive now: ${s.activities} activities (${s.actRange}); ${s.garminDays} Garmin days (${s.garRange}).`);
+  console.log(`\nArchive (${config.dataDir}/archive/):`);
+  console.log(`  AIE activities:    ${s.activities} (${s.actRange})`);
+  console.log(`  Garmin activities: ${s.garminActivities} (${s.garActRange})`);
+  console.log(`  Garmin daily:      ${s.garminDays} days (${s.garRange})`);
+}
+
+/** `archive-status` — show what's archived (used by `npm run backfill:status`). */
+async function cmdArchiveStatus(): Promise<void> {
+  await printArchiveStatus(new ArchiveStore());
 }
 
 /** `dashboard` — generate the glanceable Today/Week/Trends/Race HTML and open it. */
@@ -571,6 +605,7 @@ const commands: Record<string, () => Promise<void>> = {
   act: cmdAct,
   ask: cmdAsk,
   backfill: cmdBackfill,
+  "archive-status": cmdArchiveStatus,
   decisions: cmdDecisions,
 };
 

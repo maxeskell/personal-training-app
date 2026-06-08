@@ -1,7 +1,7 @@
 import type { AieClient } from "../mcp/aieClient.js";
 import type { GarminClient } from "../mcp/garminClient.js";
 import { extractJson } from "../state/assemble.js";
-import { ArchiveStore, type ArchivedActivity, type GarminDay } from "./store.js";
+import { ArchiveStore, type ArchivedActivity, type GarminDay, type GarminActivity } from "./store.js";
 
 /**
  * Historical backfill. AIE: page month-by-month (the list caps at 40/call, so narrow windows reach
@@ -66,7 +66,67 @@ export async function backfillActivities(
   return added;
 }
 
-/** Pull Garmin daily metrics for each date in range, throttled + resumable. */
+function gInner(r: unknown): unknown {
+  const o = extractJson(r) as { result?: unknown } | unknown;
+  const v = (o as { result?: unknown })?.result ?? o;
+  if (typeof v === "string") {
+    try {
+      return JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  return v;
+}
+
+/**
+ * Pull ALL Garmin activities (the full decade — Garmin keeps far more than AI Endurance) via
+ * paginated get_activities. Each has an `id`, so unlike AIE these are detail-addressable later.
+ * Fast (~pageSize per call); dedup by id; resumable.
+ */
+export async function backfillGarminActivities(
+  garmin: GarminClient,
+  store: ArchiveStore,
+  log: (m: string) => void,
+  pageSize = 100,
+): Promise<number> {
+  const seen = await store.garminActivityIds();
+  let start = 0;
+  let added = 0;
+  for (;;) {
+    const r = gInner(await garmin.tryCall("get_activities", { start, limit: pageSize }));
+    const arr: Record<string, unknown>[] = Array.isArray(r) ? r : ((r as { activities?: unknown[] })?.activities as Record<string, unknown>[]) ?? [];
+    if (!arr.length) break;
+    const batch: GarminActivity[] = [];
+    for (const a of arr) {
+      const id = String(a.id ?? a.activityId ?? "");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      batch.push({
+        id,
+        date: String(a.start_time ?? a.startTimeLocal ?? a.startTimeGMT ?? "").slice(0, 10),
+        type: typeof a.type === "string" ? a.type : typeof a.activityType === "string" ? a.activityType : undefined,
+        name: typeof a.name === "string" ? a.name : undefined,
+        raw: a,
+      });
+    }
+    await store.appendGarminActivities(batch);
+    added += batch.length;
+    log(`  Garmin activities: page @${start} → +${batch.length} (total new ${added})`);
+    start += pageSize;
+    await sleep(150);
+  }
+  return added;
+}
+
+/** Earliest Garmin activity date in the archive (the floor for daily-metric backfill). */
+export async function earliestGarminActivityDate(store: ArchiveStore): Promise<string | null> {
+  const acts = await store.loadGarminActivities();
+  const dates = acts.map((a) => a.date).filter(Boolean).sort();
+  return dates.length ? dates[0] : null;
+}
+
+/** Pull Garmin daily metrics for each date in range, throttled + resumable, with a per-run cap. */
 export async function backfillGarmin(
   garmin: GarminClient,
   store: ArchiveStore,
@@ -74,6 +134,7 @@ export async function backfillGarmin(
   toIso: string,
   log: (m: string) => void,
   throttleMs = 250,
+  maxDays = Infinity,
 ): Promise<number> {
   const have = await store.garminDates();
   const inner = (r: unknown) => {
@@ -93,8 +154,9 @@ export async function backfillGarmin(
   for (let d = new Date(`${fromIso}T00:00:00Z`); d <= new Date(`${toIso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
     dates.push(d.toISOString().slice(0, 10));
   }
-  const todo = dates.filter((d) => !have.has(d));
-  log(`  Garmin: ${todo.length} new days to fetch (of ${dates.length} in range)`);
+  const allTodo = dates.filter((d) => !have.has(d));
+  const todo = Number.isFinite(maxDays) ? allTodo.slice(0, maxDays) : allTodo;
+  log(`  Garmin: fetching ${todo.length} of ${allTodo.length} remaining days (${dates.length} in range)`);
 
   let added = 0;
   let buffer: GarminDay[] = [];
