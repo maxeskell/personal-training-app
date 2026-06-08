@@ -441,15 +441,15 @@ async function actPlan(){
     box.innerHTML=j.proposals.map(function(p){return '<div class="proposal" data-id="'+esc(p.id)+'"><b>'+esc(p.summary)+'</b>'
       +'<div class="ev">trade-off: '+esc(p.tradeoff)+'</div>'
       +'<div class="ev">'+esc(p.tool)+' '+esc(p.argsJson)+'</div>'
-      +'<div class="acts"><button class="agree" onclick="confirmProposal(this,\''+esc(p.id)+'\')">✓ Apply to AI Endurance</button>'
-      +'<button class="ignore" onclick="declineProposal(this,\''+esc(p.id)+'\')">✕ Dismiss</button><span class="reacted"></span></div></div>';}).join('');
+      +'<div class="acts"><button class="agree" onclick="confirmProposal(this)">✓ Apply to AI Endurance</button>'
+      +'<button class="ignore" onclick="declineProposal(this)">✕ Dismiss</button><span class="reacted"></span></div></div>';}).join('');
   }catch(e){box.innerHTML='<div class="k">Error: '+esc(''+e)+'</div>';}
 }
-async function confirmProposal(btn,id){var box=btn.closest('.proposal');var s=box.querySelector('.reacted');s.textContent='Applying…';
+async function confirmProposal(btn){var box=btn.closest('.proposal');var id=box.getAttribute('data-id');var s=box.querySelector('.reacted');s.textContent='Applying…';
   try{var r=await fetch('/confirm-proposal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})});var j=await r.json();
     box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
     s.textContent=j.ok?'✓ applied to AI Endurance':'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
-async function declineProposal(btn,id){var box=btn.closest('.proposal');var s=box.querySelector('.reacted');
+async function declineProposal(btn){var box=btn.closest('.proposal');var id=box.getAttribute('data-id');var s=box.querySelector('.reacted');
   try{await fetch('/decline-proposal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})});
     box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='dismissed';box.style.opacity=0.5;}catch(e){s.textContent='error';}}
 </script>
