@@ -1,4 +1,4 @@
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage } from "node:http";
 import { networkInterfaces } from "node:os";
 import { AieClient } from "./mcp/aieClient.js";
 import { GarminClient } from "./mcp/garminClient.js";
@@ -7,6 +7,9 @@ import { assembleState } from "./state/assemble.js";
 import { DecisionLog } from "./state/decisionLog.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { buildInsights } from "./insights/engine.js";
+import { CoachLLM } from "./llm/client.js";
+import { loadSystemPrompt } from "./coach/persona.js";
+import { answerQuestion } from "./coach/ask.js";
 import { config } from "./config.js";
 
 /**
@@ -61,9 +64,43 @@ async function refresh(): Promise<void> {
   }
 }
 
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
+    let data = "";
+    req.on("data", (c) => (data += String(c)));
+    req.on("end", () => resolve(data));
+  });
+}
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+
+    // Free-form Q&A (dashboard chat box posts here).
+    if (url.pathname === "/ask" && req.method === "POST") {
+      if (!CoachLLM.hasApiKey()) {
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer: "ANTHROPIC_API_KEY isn't set on the server, so I can't answer questions yet." }));
+        return;
+      }
+      const body = await readBody(req);
+      const question = String((JSON.parse(body || "{}") as { question?: string }).question ?? "").trim();
+      if (!question) {
+        res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ answer: "Ask me something about your training." }));
+        return;
+      }
+      const store = new StateStore();
+      const today = new Date().toISOString().slice(0, 10);
+      const window = await store.recent(today, 1);
+      const state = window[window.length - 1];
+      if (!state) {
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer: "No data assembled yet — hit ↻ refresh first." }));
+        return;
+      }
+      const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt()), question, state);
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer }));
+      return;
+    }
+
     if (url.pathname === "/refresh") {
       await refresh();
       res.writeHead(302, { Location: "/" }).end();

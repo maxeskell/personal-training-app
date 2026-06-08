@@ -36,6 +36,7 @@ npm run decline -- <id>       # dismiss a proposal
 npm run ping                  # unattended morning readiness: verdict + report + desktop notification
 npm run dashboard             # one-off glanceable HTML, opened in your browser
 npm run deep-dive             # insight-engine analysis (load/EF/durability/ramp/goal) → report
+npm run ask -- "how were my long rides this month?"   # free-form Q&A over your data
 npm run decisions             # view the decision log (audit trail)
 npm run decisions -- retro <id> "how it held up"   # add a retrospective to a decision
 
@@ -64,6 +65,8 @@ npm run serve                 # start the server; prints http://localhost:3000 a
 ```
 
 Open the `http://192.168.x.x:3000` address on your phone. Hit **↻ refresh** to re-pull live data.
+The dashboard has an **"Ask your data"** chat box — type a question (e.g. *"am I overtraining?"*) and the
+coach answers from your assembled state + insights, with the same guardrails as every other flow.
 
 **Keep it always-on** (survives reboot) with pm2 — the right tool for a long-running server:
 

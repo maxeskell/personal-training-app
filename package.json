@@ -30,7 +30,8 @@
     "serve:stop": "pm2 stop endurance-dashboard",
     "serve:logs": "pm2 logs endurance-dashboard",
     "deep-dive": "tsx src/cli.ts deep-dive",
-    "act": "tsx src/cli.ts act"
+    "act": "tsx src/cli.ts act",
+    "ask": "tsx src/cli.ts ask"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",

@@ -12,6 +12,7 @@ import { proposeAdjustments, parseArgs } from "./coach/planAdjust.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { buildInsights } from "./insights/engine.js";
+import { answerQuestion } from "./coach/ask.js";
 import { notify } from "./notify.js";
 import { fileChecks } from "./health.js";
 import open from "open";
@@ -269,6 +270,19 @@ async function cmdDeepDive(): Promise<void> {
   console.log(`(report → ${path}; cache read ${cacheRead} tokens)`);
 }
 
+/** `ask "<question>"` — free-form Q&A over your data (same engine as the dashboard chat box). */
+async function cmdAsk(): Promise<void> {
+  if (!requireLLM()) process.exit(1);
+  const question = process.argv.slice(3).join(" ").trim();
+  if (!question) {
+    console.error('\nUsage: npm run ask -- "how were my long rides this month?"\n');
+    process.exit(1);
+  }
+  const { state } = await buildTodayState();
+  const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt()), question, state);
+  console.log("\n" + answer + "\n");
+}
+
 /** `dashboard` — generate the glanceable Today/Week/Trends/Race HTML and open it. */
 async function cmdDashboard(): Promise<void> {
   const { window, state } = await buildTodayState();
@@ -510,6 +524,7 @@ const commands: Record<string, () => Promise<void>> = {
   dashboard: cmdDashboard,
   "deep-dive": cmdDeepDive,
   act: cmdAct,
+  ask: cmdAsk,
   decisions: cmdDecisions,
 };
 
@@ -529,6 +544,7 @@ if (!run) {
   console.log("  dashboard  generate + open the glanceable Today/Week/Trends/Race view");
   console.log("  deep-dive  insight-engine analysis (load/EF/durability/ramp/goal) → report");
   console.log("  act        turn flagged insight findings into gated plan-adjustment proposals");
+  console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
   console.log('  decisions [pending | retro <id> "<note>"]   view log / pending / add retrospective');
   console.log("  (LLM flows need ANTHROPIC_API_KEY)");
   process.exit(1);
