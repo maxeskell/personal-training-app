@@ -8,7 +8,7 @@ import { loadSystemPrompt } from "./coach/persona.js";
 import { assessReadiness } from "./coach/readiness.js";
 import { runWeeklyReview } from "./coach/weekly.js";
 import { runRacePrep } from "./coach/racePrep.js";
-import { proposeAdjustments, validateProposals } from "./coach/planAdjust.js";
+import { proposeAdjustments, validateProposals, buildProposerContext } from "./coach/planAdjust.js";
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
@@ -656,9 +656,10 @@ async function cmdPropose(): Promise<void> {
     console.log(`\n${screen.redirect}\n`);
     return;
   }
-  const { state } = await buildTodayState();
+  const { state, window } = await buildTodayState();
+  const ins = buildInsights(state, await loadArchive(), { history: window });
   const llm = new CoachLLM(await loadSystemPrompt());
-  const { result, cacheRead } = await proposeAdjustments(llm, request, state);
+  const { result, cacheRead } = await proposeAdjustments(llm, request, state, buildProposerContext(state, ins));
   const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? []);
 
   if (!valid.length) {
@@ -675,6 +676,7 @@ async function cmdPropose(): Promise<void> {
     const proposal = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human });
     console.log(`  [${proposal.id}] ${p.human}`);
     console.log(`      ${p.summary} — trade-off: ${p.tradeoff}`);
+    if (p.basis.length) console.log(`      because: ${p.basis.join("; ")}`);
   }
   if (rejected.length) console.log(`\nNot applied (couldn't be tied to a real session):\n${rejected.map((r) => `  · ${r}`).join("\n")}`);
   if (result.notes) console.log(`\nNotes: ${result.notes}`);
@@ -698,16 +700,8 @@ async function cmdAct(): Promise<void> {
   console.log("\nActing on surfaced signals (gated; agree/disagree respected):");
   for (const f of actionable) console.log(`  • [${f.severity}, ${Math.round((f.confidence ?? 0.6) * 100)}%] ${f.title}`);
 
-  // Ground the proposer in the specific load/health/recovery numbers so it targets the right session.
-  const r = state.recovery.value;
-  const ts = state.trainingStatus.value;
-  const ctx = [
-    ins.load ? `- Load: CTL ${ins.load.ctl} / ATL ${ins.load.atl} / TSB ${ins.load.tsb}, ΔCTL/wk ${ins.load.rampPerWeek}` : "",
-    ts ? `- Garmin acute:chronic ${ts.loadRatio ?? "—"} (${ts.acwrStatus ?? "—"}), status ${ts.label ?? "—"}` : "",
-    state.hrvStatus.value ? `- HRV status ${state.hrvStatus.value.status ?? "—"}` : "",
-    r ? `- Recovery limiter ${r.limiterToday ?? "—"}; orthopedic run/bike ${r.orthopedic?.run ?? "—"}/${r.orthopedic?.bike ?? "—"}` : "",
-    `- Run-load ramp ${ins.runRamp.jumpPct ?? "—"}% vs baseline`,
-  ].filter(Boolean).join("\n");
+  // Ground the proposer in the FULL picture (load/form bands + health + races + predictions + taper).
+  const ctx = buildProposerContext(state, ins);
 
   const request =
     "Turn these surfaced training signals into minimal, specific plan adjustments with trade-offs " +
@@ -731,6 +725,7 @@ async function cmdAct(): Promise<void> {
     const proposal = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human });
     console.log(`  [${proposal.id}] ${p.human}`);
     console.log(`      ${p.summary} — trade-off: ${p.tradeoff}`);
+    if (p.basis.length) console.log(`      because: ${p.basis.join("; ")}`);
   }
   if (rejected.length) console.log(`\nNot applied (no matching session):\n${rejected.map((r) => `  · ${r}`).join("\n")}`);
   if (result.notes) console.log(`\nNotes: ${result.notes}`);

@@ -14,7 +14,7 @@ import { ArchiveStore } from "./archive/store.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
 import { answerQuestion } from "./coach/ask.js";
-import { proposeAdjustments, validateProposals } from "./coach/planAdjust.js";
+import { proposeAdjustments, validateProposals, buildProposerContext } from "./coach/planAdjust.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { alertFindings } from "./insights/metrics.js";
 import { config } from "./config.js";
@@ -205,13 +205,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       if (!li) return json({ proposals: [], notes: "No data assembled yet — hit Sync first." });
       const actionable = alertFindings(li.insights.topFindings);
       if (!actionable.length) return json({ proposals: [], notes: "Nothing above the alert bar needs a plan change." });
-      const r = li.state.recovery.value;
-      const ts = li.state.trainingStatus.value;
-      const ctx = [
-        li.insights.load ? `- Load: CTL ${li.insights.load.ctl} / ATL ${li.insights.load.atl} / TSB ${li.insights.load.tsb}, ΔCTL/wk ${li.insights.load.rampPerWeek}` : "",
-        ts ? `- Garmin acute:chronic ${ts.loadRatio ?? "—"} (${ts.acwrStatus ?? "—"}), status ${ts.label ?? "—"}` : "",
-        r?.limiterToday ? `- Recovery limiter: ${r.limiterToday}` : "",
-      ].filter(Boolean).join("\n");
+      const ctx = buildProposerContext(li.state, li.insights); // full picture: load/form + health + races + taper
       const request =
         "Turn these surfaced signals into minimal, specific plan adjustments with trade-offs (don't restructure the week; smallest change that helps):\n" +
         actionable.map((f) => `- [${f.severity}] ${f.title}: ${f.detail}${f.recommendation ? ` (suggested: ${f.recommendation})` : ""}`).join("\n");
@@ -221,7 +215,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       const proposals = [];
       for (const p of valid) {
         const pr = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human });
-        proposals.push({ id: pr.id, human: p.human, summary: p.summary, tradeoff: p.tradeoff });
+        proposals.push({ id: pr.id, human: p.human, summary: p.summary, tradeoff: p.tradeoff, basis: p.basis });
       }
       const notes = [result.notes, rejected.length ? `Not applied: ${rejected.join("; ")}` : ""].filter(Boolean).join(" ");
       return json({ proposals, notes });
