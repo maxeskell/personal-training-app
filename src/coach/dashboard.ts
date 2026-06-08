@@ -137,16 +137,16 @@ function renderInsightsBox(ins: InsightReport): string {
     .map((f) => {
       const key = findingKey(f);
       const conf = Math.round((f.confidence ?? 0.6) * 100);
-      return `<div class="insight sev-${f.severity}" data-key="${escapeHtml(key)}">
+      return `<div class="insight sev-${f.severity}" data-key="${escapeHtml(key)}" data-summary="${escapeHtml(f.title)}">
         <div><span class="badge" style="background:${sevColor(f.severity)}">${f.severity}</span>
           <b style="${f.severity === "flag" ? "font-size:15px" : ""}">${escapeHtml(f.title)}</b> <span class="muted">· ${conf}% conf · ${escapeHtml(f.family)}</span></div>
         <div class="fdetail">${escapeHtml(f.detail)}</div>
         ${f.recommendation ? `<div class="ev">→ ${escapeHtml(f.recommendation)}</div>` : ""}
         <div class="ev">${escapeHtml(f.evidence)}</div>
         <div class="acts">
-          <button class="agree" onclick="feedback(this,'agree','${escapeHtml(key)}','${escapeHtml(f.title)}')">👍 Agree</button>
-          <button class="disagree" onclick="feedback(this,'disagree','${escapeHtml(key)}','${escapeHtml(f.title)}')">👎 Disagree</button>
-          <button class="ignore" onclick="feedback(this,'ignore','${escapeHtml(key)}','${escapeHtml(f.title)}')">✕ Ignore</button>
+          <button class="agree" data-reaction="agree" onclick="feedback(this)">👍 Agree</button>
+          <button class="disagree" data-reaction="disagree" onclick="feedback(this)">👎 Disagree</button>
+          <button class="ignore" data-reaction="ignore" onclick="feedback(this)">✕ Ignore</button>
           <span class="reacted"></span>
         </div>
       </div>`;
@@ -341,7 +341,7 @@ export function renderDashboard({ window, decisions, insights, garminDays }: Das
     .sort((a, b) => a.dt - b.dt)
     .map(
       (g) =>
-        `<tr><td>${g.event_name ?? "—"}</td><td>${g.event_date}</td><td class="num">${g.dt >= 0 ? `T-${g.dt}d` : `${-g.dt}d ago`}</td><td>${String(g.priority ?? "")}</td></tr>`,
+        `<tr><td>${escapeHtml(g.event_name ?? "—")}</td><td>${escapeHtml(String(g.event_date ?? ""))}</td><td class="num">${g.dt >= 0 ? `T-${g.dt}d` : `${-g.dt}d ago`}</td><td>${escapeHtml(String(g.priority ?? ""))}</td></tr>`,
     )
     .join("");
 
@@ -424,8 +424,10 @@ async function ask(e){e.preventDefault();var q=document.getElementById('q').valu
   try{var r=await fetch('/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:q})});
     var j=await r.json();a.textContent=j.answer||'(no answer)';}catch(err){a.textContent='Error: '+err;}
   return false;}
-async function feedback(btn,reaction,key,summary){
-  var box=btn.closest('.insight');var span=box.querySelector('.reacted');span.textContent='…';
+async function feedback(btn){
+  var box=btn.closest('.insight');var reaction=btn.getAttribute('data-reaction');
+  var key=box.getAttribute('data-key');var summary=box.getAttribute('data-summary');
+  var span=box.querySelector('.reacted');span.textContent='…';
   try{await fetch('/insight-feedback',{method:'POST',headers:{'content-type':'application/json'},
     body:JSON.stringify({key:key,reaction:reaction,summary:summary})});
     box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
@@ -433,7 +435,7 @@ async function feedback(btn,reaction,key,summary){
     if(reaction!=='agree'){box.style.opacity=0.5;}
   }catch(err){span.textContent='error';}
 }
-function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 async function actPlan(){
   var box=document.getElementById('proposals'); box.innerHTML='<div class="k">Drafting a plan change…</div>';
   try{var r=await fetch('/act',{method:'POST'}); var j=await r.json();
@@ -487,5 +489,5 @@ function fmt(n: number | null | undefined, d = 0): string {
   return n == null ? "—" : n.toFixed(d);
 }
 function escapeHtml(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
