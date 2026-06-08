@@ -66,8 +66,13 @@ detectors need ≥21 days with the new fields before they fire.
   analyses them automatically — no manual uploads. Decoder handles base64 in any of the likely MCP
   shapes (verified). Also fixed the probe's activity-id extraction (`id`, not `activityId`) which had
   blocked sampling all per-activity tools.
-- Bonuses still queued: `get_power_duration_curve` (MMP), `get_activity_splits`/`_typed_splits`
-  (transitions + per-leg pacing), `get_activity_weather` (per-activity temp → heat confounder).
+- ✅ **Temperature confounder** (BUILT, `heat.ts`): estimates the athlete's heat sensitivity (% EF change
+  per °C) by regressing EF on per-activity `.FIT` temperature, and attributes how much of a recent EF dip
+  is heat vs lost fitness — the #1 validity fix. Verified on synthetic data (−0.6%/°C recovered).
+- Bonuses still queued: `get_power_duration_curve` (MMP) + `get_endurance_score`/`get_hill_score`
+  (shapes confirmed — next); `get_activity_splits`/`_typed_splits` (transitions + per-leg pacing) and
+  `get_activity_weather` still show NO DATA in the probe (blocked by the old activity-id bug, now fixed)
+  → need ONE more `npm run probe` re-run to capture their shapes.
 
 ## Data to capture — run `npm run probe`
 
