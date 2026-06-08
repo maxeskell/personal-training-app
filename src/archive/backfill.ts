@@ -158,17 +158,57 @@ export async function backfillGarmin(
   const todo = Number.isFinite(maxDays) ? allTodo.slice(0, maxDays) : allTodo;
   log(`  Garmin: fetching ${todo.length} of ${allTodo.length} remaining days (${dates.length} in range)`);
 
+  // Body composition is a range call — fetch once and index by calendar date (muscle mass for fuelling).
+  const bodyComp = new Map<string, { muscleMassKg?: number; bodyFatPct?: number; weightKg?: number }>();
+  if (todo.length) {
+    const bcFrom = todo[0];
+    const bcTo = todo[todo.length - 1];
+    const bc = inner(await garmin.tryCall("get_body_composition", { start_date: bcFrom, end_date: bcTo }));
+    for (const w of ((bc as { dateWeightList?: any[] })?.dateWeightList ?? [])) {
+      const cd = String((w as any)?.calendarDate ?? "").slice(0, 10);
+      if (!cd) continue;
+      const g = (x: unknown) => num(x);
+      bodyComp.set(cd, {
+        muscleMassKg: g((w as any)?.muscleMass) != null ? g((w as any)?.muscleMass)! / 1000 : undefined,
+        bodyFatPct: g((w as any)?.bodyFat),
+        weightKg: g((w as any)?.weight) != null ? g((w as any)?.weight)! / 1000 : undefined,
+      });
+    }
+    await sleep(throttleMs);
+  }
+
   let added = 0;
   let buffer: GarminDay[] = [];
   for (const date of todo) {
-    const sleep_ = inner(await garmin.tryCall("get_sleep_summary", { date }));
+    // get_sleep_data is the rich payload: stages, skin temp, overnight HRV, RHR, Body Battery change,
+    // sleep respiration + score (supersedes get_sleep_summary). Plus daytime stress + waking respiration.
+    const sd = inner(await garmin.tryCall("get_sleep_data", { date }));
     await sleep(throttleMs);
+    const stress_ = inner(await garmin.tryCall("get_all_day_stress", { date }));
+    await sleep(throttleMs);
+    const resp_ = inner(await garmin.tryCall("get_respiration_data", { date }));
+    await sleep(throttleMs);
+    const dto = (sd as any)?.dailySleepDTO ?? {};
+    const bc = bodyComp.get(date) ?? {};
     const day: GarminDay = {
       date,
-      sleepScore: num((sleep_ as any)?.sleep_score),
-      sleepHours: num((sleep_ as any)?.sleep_hours),
-      hrvMs: num((sleep_ as any)?.avg_overnight_hrv),
-      restingHr: num((sleep_ as any)?.resting_heart_rate) ?? num((sleep_ as any)?.restingHeartRate),
+      sleepScore: num(dto?.sleepScores?.overall?.value) ?? num((sd as any)?.sleep_score),
+      sleepHours: num(dto?.sleepTimeSeconds) != null ? +(num(dto.sleepTimeSeconds)! / 3600).toFixed(2) : undefined,
+      hrvMs: num((sd as any)?.avgOvernightHrv) ?? num((sd as any)?.avg_overnight_hrv),
+      restingHr: num((sd as any)?.restingHeartRate) ?? num((sd as any)?.resting_heart_rate),
+      deepSleepSec: num(dto?.deepSleepSeconds),
+      remSleepSec: num(dto?.remSleepSeconds),
+      lightSleepSec: num(dto?.lightSleepSeconds),
+      awakeSleepSec: num(dto?.awakeSleepSeconds),
+      skinTempDevC: num((sd as any)?.avgSkinTempDeviationC),
+      bodyBatteryChange: num((sd as any)?.bodyBatteryChange),
+      avgSleepRespiration: num(dto?.averageRespirationValue) ?? num((resp_ as any)?.avgSleepRespirationValue),
+      avgWakingRespiration: num((resp_ as any)?.avgWakingRespirationValue),
+      avgStressLevel: num((stress_ as any)?.avgStressLevel),
+      maxStressLevel: num((stress_ as any)?.maxStressLevel),
+      muscleMassKg: bc.muscleMassKg,
+      bodyFatPct: bc.bodyFatPct,
+      weightKg: bc.weightKg,
     };
     buffer.push(day);
     added++;
