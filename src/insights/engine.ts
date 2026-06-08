@@ -15,6 +15,7 @@ import {
   type MonotonyStrain,
   type TID,
 } from "./metrics.js";
+import { analyseRecoverySeries, type Correlation, type Anomaly } from "./correlations.js";
 
 export interface PredictionVsGoal {
   race: string;
@@ -34,6 +35,8 @@ export interface InsightReport {
   threshold: { run: Trend };
   monotony: MonotonyStrain;
   tid: TID;
+  correlations: Correlation[];
+  anomalies: Anomaly[];
   predictions: PredictionVsGoal[];
   findings: Finding[];
 }
@@ -81,6 +84,8 @@ export function buildInsights(state: AthleteState): InsightReport {
   const threshold = { run: thresholdTrend(acts, "Run") };
   const monotony = monotonyStrain(load?.series);
   const tid = intensityDistribution(state.adherenceByZone.value);
+  const recData = (raw.getRecoveryModel as { data?: Parameters<typeof analyseRecoverySeries>[0] } | undefined)?.data;
+  const { correlations, anomalies } = analyseRecoverySeries(recData);
   const predictions = predictionsVsGoals(state);
 
   const findings: Finding[] = [];
@@ -189,6 +194,29 @@ export function buildInsights(state: AthleteState): InsightReport {
     }
   }
 
+  // 3b. Anomalies (today is a statistical outlier vs the athlete's own 60-day baseline).
+  for (const a of anomalies) {
+    findings.push({
+      family: "Anomaly",
+      title: `${a.metric} outlier today`,
+      severity: "watch",
+      detail: a.detail + " One day isn't a trend, but worth noting alongside how you feel.",
+      evidence: `z=${a.z} vs 60-day baseline [ai-endurance]`,
+    });
+  }
+
+  // 3c. A strong n=1 pattern worth knowing (surfaced as info — it's insight, not an alarm).
+  const topCorr = correlations.find((c) => Math.abs(c.r) >= 0.5);
+  if (topCorr) {
+    findings.push({
+      family: "Your patterns (n=1)",
+      title: topCorr.label,
+      severity: "info",
+      detail: topCorr.interpretation,
+      evidence: `r=${topCorr.r}, n=${topCorr.n} days [ai-endurance]`,
+    });
+  }
+
   // 4. Prediction vs goal for the next race.
   const next = predictions[0];
   if (next && next.gapSec != null) {
@@ -206,5 +234,5 @@ export function buildInsights(state: AthleteState): InsightReport {
   const rank = { flag: 0, watch: 1, info: 2 } as const;
   findings.sort((a, b) => rank[a.severity] - rank[b.severity]);
 
-  return { date: state.date, load, runRamp, ef, durability, threshold, monotony, tid, predictions, findings };
+  return { date: state.date, load, runRamp, ef, durability, threshold, monotony, tid, correlations, anomalies, predictions, findings };
 }
