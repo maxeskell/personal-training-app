@@ -73,9 +73,17 @@ detectors need ≥21 days with the new fields before they fire.
   (FTP estimate + season bests → power-profile finding), `get_endurance_score` (current + classification
   + gap to next threshold → E5 marathon-adaptation finding), `get_hill_score` (state + dashboard).
   Mapped live, surfaced on a "Garmin scores" dashboard card + `ask`. Verified on the real probe values.
-- ⏳ **Transitions + per-leg splits** (`get_activity_splits`/`_typed_splits`) and **per-activity weather**
-  (`get_activity_weather`) still show NO DATA in the probe — blocked by the old activity-id bug (now
-  fixed). ONE more `npm run probe` re-run captures their shapes, then these get built.
+- ✅ **fit-sync corrected + heat confounder auto-fed** (BUILT): the probe revealed `get_activity_fit_data`
+  returns a parsed SUMMARY (session totals, `temperature_stats` incl. cool/hot-third HR, lap HRV, gear
+  shifts) — NOT per-second records or raw bytes. So `fit-sync` now archives per-activity summaries
+  (`data/archive/fit-summaries.jsonl`) with avg HR/power/temperature (+ `get_activity_weather`, F→C
+  corrected for its mislabelled °F), and the heat confounder consumes them automatically — no manual
+  `.FIT` needed for the temperature signal. (Per-second decoupling/biomechanics still require a manually
+  exported raw `.FIT`, since no Garmin tool exposes the per-second stream.)
+- ⏳ **Transitions + per-leg splits**: shapes now confirmed (`get_activity_typed_splits` → per-leg splits;
+  single-sport returns one leg). A transition (T1/T2) detector needs a past MULTISPORT activity (tri or
+  brick) to build/verify the leg/transition structure — none in the recent activity list yet, so deferred
+  until there's race/brick data. (Marathon per-leg pacing is already covered by `splits.ts`.)
 
 ## Data to capture — run `npm run probe`
 

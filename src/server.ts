@@ -30,10 +30,12 @@ async function loadArchive(): Promise<ArchiveInput | undefined> {
   const store = new ArchiveStore();
   const acts = await store.loadActivities();
   const gar = await store.loadGarminDays();
-  if (!acts.length && !gar.length) return undefined;
+  const fitSummaries = await store.loadFitSummaries();
+  if (!acts.length && !gar.length && !fitSummaries.length) return undefined;
   return {
     activities: acts.map((a) => mapRichActivity(a.raw, a.sport)),
     garminDays: gar, // GarminDay already carries every field ArchiveInput needs (incl. slice-1b series)
+    fitSummaries,
   };
 }
 
