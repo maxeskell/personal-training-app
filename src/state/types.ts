@@ -65,6 +65,30 @@ export interface TiebreakSignals {
   trainingReadinessLevel?: string; // e.g. "POOR" | "MODERATE" | "READY"
 }
 
+/**
+ * Garmin training-status / acute:chronic load (get_training_status). Garmin computes the acute:chronic
+ * workload ratio natively — the most evidence-backed overtraining/injury flag in the dataset (brief Q2).
+ */
+export interface TrainingStatusSignals {
+  label?: string; // e.g. "OVERREACHING_5", "PRODUCTIVE_2", "UNPRODUCTIVE_3"
+  acuteLoad?: number;
+  chronicLoad?: number;
+  loadRatio?: number; // acute:chronic
+  acwrStatus?: string; // "HIGH" | "OPTIMAL" | "LOW"
+  vo2max?: number;
+  optimalChronicLoadMin?: number;
+  optimalChronicLoadMax?: number;
+}
+
+/** Garmin HRV status with the device's own personal baseline band (get_hrv_data). */
+export interface HrvStatusSignals {
+  status?: string; // "BALANCED" | "UNBALANCED" | "LOW" | "POOR"
+  lastNightMs?: number;
+  weeklyMs?: number;
+  baselineLowMs?: number;
+  baselineUpperMs?: number;
+}
+
 /** Sleep — an INTERPRETABLE readiness signal (not a tiebreak). Garmin-sourced. */
 export interface SleepSignals {
   score?: number; // Garmin sleep score 0–100
@@ -145,6 +169,10 @@ export interface AthleteState {
   // Garmin tiebreak-only — clearly flagged as such.
   tiebreak: Provenanced<TiebreakSignals>;
 
+  // Garmin training-status (acute:chronic load) + HRV status — interpretable health signals.
+  trainingStatus: Provenanced<TrainingStatusSignals>;
+  hrvStatus: Provenanced<HrvStatusSignals>;
+
   // Weight: TREND only, secondary, never a daily target.
   weightKg: Provenanced<number>;
   weight7dTrend: Provenanced<number>;
@@ -190,6 +218,8 @@ export function emptyState(date: string, assembledAt: string): AthleteState {
     restingHr7dBaseline: absent<number>("derived"),
     sleep: absent<SleepSignals>("garmin"),
     tiebreak: absent<TiebreakSignals>("garmin"),
+    trainingStatus: absent<TrainingStatusSignals>("garmin"),
+    hrvStatus: absent<HrvStatusSignals>("garmin"),
     weightKg: absent<number>("garmin"),
     weight7dTrend: absent<number>("derived"),
     vo2max: absent<number>("garmin"),

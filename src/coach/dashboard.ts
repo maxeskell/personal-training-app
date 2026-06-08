@@ -334,7 +334,10 @@ ${insights ? renderInsightsBox(insights) : ""}
     <div><div class="k">Sleep (h)</div><div class="v">${fmt(today.sleep.value?.hours, 1)}</div></div>
     <div><div class="k">Cardio rec.</div><div class="v">${fmt(r?.cardioRecovery)}</div></div>
     <div><div class="k">Run ortho.</div><div class="v">${fmt(r?.orthopedic?.run)}</div></div>
+    <div><div class="k">Acute:chronic</div><div class="v">${today.trainingStatus.value?.loadRatio ?? "—"}${today.trainingStatus.value?.acwrStatus ? ` <span class="k">${today.trainingStatus.value.acwrStatus}</span>` : ""}</div></div>
+    <div><div class="k">HRV status</div><div class="v" style="font-size:14px">${escapeHtml(today.hrvStatus.value?.status ?? "—")}</div></div>
   </div>
+  ${today.trainingStatus.value?.label ? `<div class="k" style="margin-top:8px">Garmin training status: ${escapeHtml(today.trainingStatus.value.label)} · acute ${today.trainingStatus.value.acuteLoad ?? "—"} / chronic ${today.trainingStatus.value.chronicLoad ?? "—"} (MODEL, directional)</div>` : ""}
 </div>
 
 ${insights ? renderSignals(insights) : ""}
