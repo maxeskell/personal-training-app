@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "../config.js";
-import type { AthleteState } from "./types.js";
+import { emptyState, type AthleteState } from "./types.js";
 
 /**
  * Dead-simple local-first store: one JSON file per day under data/state/.
@@ -22,7 +22,11 @@ export class StateStore {
 
   async load(date: string): Promise<AthleteState | undefined> {
     try {
-      return JSON.parse(await readFile(this.fileFor(date), "utf8")) as AthleteState;
+      const parsed = JSON.parse(await readFile(this.fileFor(date), "utf8")) as Partial<AthleteState> & { date: string; assembledAt?: string };
+      // Normalise against the current schema: states persisted by an older build are missing slots
+      // added since (zones, trainingStatus, racePredictions, …). Merging over emptyState() fills those
+      // with `absent()` provenance so consumers can always read `state.<slot>.value` without crashing.
+      return { ...emptyState(parsed.date ?? date, parsed.assembledAt ?? new Date().toISOString()), ...parsed } as AthleteState;
     } catch {
       return undefined;
     }
