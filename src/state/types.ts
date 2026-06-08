@@ -89,6 +89,30 @@ export interface HrvStatusSignals {
   baselineUpperMs?: number;
 }
 
+/** Garmin power-duration curve / season bests (get_power_duration_curve) — the bike/run MMP. */
+export interface PowerCurveSignals {
+  ftpEstimateW?: number;
+  activitiesAnalyzed?: number;
+  bests: Array<{ duration: string; watts: number; date?: string }>;
+}
+
+/** Garmin endurance score (get_endurance_score) — sustained-effort capacity vs VO2max (catalogue E5). */
+export interface EnduranceScoreSignals {
+  current?: number;
+  classification?: string;
+  periodAvg?: number;
+  periodMax?: number;
+  nextThresholdLabel?: string;
+  nextThresholdGap?: number;
+}
+
+/** Garmin hill score (get_hill_score) — climbing strength + endurance (catalogue E6, low priority). */
+export interface HillScoreSignals {
+  overall?: number;
+  strength?: number;
+  endurance?: number;
+}
+
 /** Sleep — an INTERPRETABLE readiness signal (not a tiebreak). Garmin-sourced. */
 export interface SleepSignals {
   score?: number; // Garmin sleep score 0–100
@@ -173,6 +197,11 @@ export interface AthleteState {
   trainingStatus: Provenanced<TrainingStatusSignals>;
   hrvStatus: Provenanced<HrvStatusSignals>;
 
+  // Garmin model scores: power-duration curve (MMP), endurance score, hill score.
+  powerCurve: Provenanced<PowerCurveSignals>;
+  enduranceScore: Provenanced<EnduranceScoreSignals>;
+  hillScore: Provenanced<HillScoreSignals>;
+
   // Weight: TREND only, secondary, never a daily target.
   weightKg: Provenanced<number>;
   weight7dTrend: Provenanced<number>;
@@ -220,6 +249,9 @@ export function emptyState(date: string, assembledAt: string): AthleteState {
     tiebreak: absent<TiebreakSignals>("garmin"),
     trainingStatus: absent<TrainingStatusSignals>("garmin"),
     hrvStatus: absent<HrvStatusSignals>("garmin"),
+    powerCurve: absent<PowerCurveSignals>("garmin"),
+    enduranceScore: absent<EnduranceScoreSignals>("garmin"),
+    hillScore: absent<HillScoreSignals>("garmin"),
     weightKg: absent<number>("garmin"),
     weight7dTrend: absent<number>("derived"),
     vo2max: absent<number>("garmin"),

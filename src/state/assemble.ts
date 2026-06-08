@@ -9,6 +9,7 @@ import {
   type AthleteState,
   type DisciplineThresholds,
   type NutritionTargets,
+  type PowerCurveSignals,
   type RecoveryModel,
 } from "./types.js";
 import { deriveZones } from "../insights/zones.js";
@@ -173,7 +174,8 @@ export async function assembleState(
   let garminStale = false;
   if (garmin?.available) {
     const weekAgo = daysAgoIso(opts.date, 7);
-    const [sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv] = await Promise.all([
+    const monthAgo = daysAgoIso(opts.date, 30);
+    const [sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv, pdc, endurance, hill] = await Promise.all([
       garmin.tryCall("get_sleep_summary", { date: opts.date }).then(garminInner),
       garmin.tryCall("get_body_battery", { start_date: weekAgo, end_date: opts.date }).then(garminInner),
       garmin.tryCall("get_training_readiness", { date: opts.date }).then(garminInner),
@@ -183,14 +185,20 @@ export async function assembleState(
       garmin.tryCall("get_lactate_threshold", {}).then(garminInner),
       garmin.tryCall("get_training_status", { date: opts.date }).then(garminInner),
       garmin.tryCall("get_hrv_data", { date: opts.date }).then(garminInner),
+      garmin.tryCall("get_power_duration_curve", {}).then(garminInner),
+      garmin.tryCall("get_endurance_score", { start_date: monthAgo, end_date: opts.date }).then(garminInner),
+      garmin.tryCall("get_hill_score", { start_date: monthAgo, end_date: opts.date }).then(garminInner),
     ]);
-    raw.garmin = { sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv };
+    raw.garmin = { sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv, pdc, endurance, hill };
 
     // Thresholds + zones from Garmin's own FTP/LT tools (verified shapes) — these win over the
     // AIE getUser-derived values mapped earlier, since they're the device's current numbers.
     mapGarminThresholds(state, ftp, lactate);
     mapTrainingStatus(state, trainingStatus);
     mapHrvStatus(state, hrv);
+    mapPowerCurve(state, pdc);
+    mapEnduranceScore(state, endurance);
+    mapHillScore(state, hill);
 
     // Sleep — interpretable signal (own slot).
     const sleepScore = asNumber(get(sleep, "sleep_score"));
@@ -428,6 +436,69 @@ function mapTrainingStatus(state: AthleteState, payload: unknown): void {
     },
     source: "garmin",
     note: "Garmin get_training_status (acute:chronic load) — MODEL, directional",
+  };
+}
+
+/** get_power_duration_curve → MMP season bests + FTP estimate (verified shape). */
+function mapPowerCurve(state: AthleteState, payload: unknown): void {
+  const sb = get(payload, "season_bests");
+  if (!sb || typeof sb !== "object") return;
+  const bests: PowerCurveSignals["bests"] = [];
+  for (const [duration, v] of Object.entries(sb as Record<string, unknown>)) {
+    const watts = asNumber(get(v, "watts"));
+    if (watts != null) bests.push({ duration, watts, date: typeof get(v, "date") === "string" ? (get(v, "date") as string) : undefined });
+  }
+  if (!bests.length) return;
+  state.powerCurve = {
+    value: { ftpEstimateW: asNumber(get(payload, "ftp_estimate_w")), activitiesAnalyzed: asNumber(get(payload, "activities_analyzed")), bests },
+    source: "garmin",
+    note: "Garmin get_power_duration_curve (season bests / MMP)",
+  };
+}
+
+/** get_endurance_score → current score + classification + distance to the next threshold (E5). */
+function mapEnduranceScore(state: AthleteState, payload: unknown): void {
+  const current = asNumber(get(payload, "current_score"));
+  if (current == null) return;
+  const thresholds = get(payload, "thresholds");
+  let nextLabel: string | undefined;
+  let nextGap: number | undefined;
+  if (thresholds && typeof thresholds === "object") {
+    const sorted = Object.entries(thresholds as Record<string, number>)
+      .map(([k, v]) => [k, asNumber(v) ?? 0] as [string, number])
+      .sort((a, b) => a[1] - b[1]);
+    const next = sorted.find(([, v]) => v > current);
+    if (next) {
+      nextLabel = next[0];
+      nextGap = Math.round(next[1] - current);
+    }
+  }
+  state.enduranceScore = {
+    value: {
+      current: Math.round(current),
+      classification: typeof get(payload, "classification") === "string" ? (get(payload, "classification") as string) : undefined,
+      periodAvg: asNumber(get(payload, "period_avg_score")),
+      periodMax: asNumber(get(payload, "period_max_score")),
+      nextThresholdLabel: nextLabel,
+      nextThresholdGap: nextGap,
+    },
+    source: "garmin",
+    note: "Garmin get_endurance_score (sustained-effort capacity) — MODEL",
+  };
+}
+
+/** get_hill_score → latest climbing strength/endurance scores (low priority). */
+function mapHillScore(state: AthleteState, payload: unknown): void {
+  const overall = asNumber(get(payload, "latest_overall_score"));
+  if (overall == null) return;
+  state.hillScore = {
+    value: {
+      overall: Math.round(overall),
+      strength: asNumber(get(payload, "latest_strength_score")),
+      endurance: asNumber(get(payload, "latest_endurance_score")),
+    },
+    source: "garmin",
+    note: "Garmin get_hill_score — MODEL",
   };
 }
 
