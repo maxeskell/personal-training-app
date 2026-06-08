@@ -26,7 +26,7 @@ import { analyseTaper, taperFinding, type TaperAnalysis } from "./taper.js";
 import { analyseEfficiency, efficiencyFinding, type EfficiencyAnalysis } from "./efficiency.js";
 import { analyseFuelling, fuellingFinding, type FuellingAnalysis } from "./fuelling.js";
 import { loadSessionDecays, fitFindings, type SessionDecay } from "./fit.js";
-import { trainingStatusFinding, hrvStatusFinding } from "./garminHealth.js";
+import { trainingStatusFinding, hrvStatusFinding, enduranceScoreFinding, powerCurveFinding } from "./garminHealth.js";
 import { garminTrendFindings } from "./garminTrends.js";
 import { analyseHeat, heatFinding } from "./heat.js";
 import { finiteNums } from "./stats.js";
@@ -457,6 +457,10 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   if (tsF) findings.push(tsF);
   const hrvF = hrvStatusFinding(state.hrvStatus.value);
   if (hrvF) findings.push(hrvF);
+  const esF = enduranceScoreFinding(state.enduranceScore.value);
+  if (esF) findings.push(esF);
+  const pcF = powerCurveFinding(state.powerCurve.value);
+  if (pcF) findings.push(pcF);
 
   // 5c. Garmin daily-series trends (illness early-warning, stress, Body-Battery, sleep, fuelling).
   findings.push(...garminTrendFindings(archive?.garminDays));
