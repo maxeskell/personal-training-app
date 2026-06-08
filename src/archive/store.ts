@@ -46,11 +46,31 @@ export interface GarminActivity {
   raw: Record<string, unknown>;
 }
 
+/** Per-activity summary parsed from get_activity_fit_data (+ weather) — powers the heat confounder. */
+export interface FitSummary {
+  activityId: string;
+  date: string;
+  sport: string; // "Run" | "Ride" | "Swim"
+  avgHr?: number;
+  avgPowerW?: number;
+  distanceM?: number;
+  durationS?: number;
+  avgTempC?: number;
+  minTempC?: number;
+  maxTempC?: number;
+  hrCoolThirdBpm?: number; // avg HR in the coolest third of the session
+  hrHotThirdBpm?: number; // avg HR in the hottest third
+  trainingEffect?: number;
+  weatherTempC?: number; // ambient (from get_activity_weather, F→C corrected)
+  humidityPct?: number;
+}
+
 export class ArchiveStore {
   private readonly dir = join(config.dataDir, "archive");
   private readonly actPath = join(this.dir, "activities.jsonl");
   private readonly garPath = join(this.dir, "garmin-daily.jsonl");
   private readonly garActPath = join(this.dir, "garmin-activities.jsonl");
+  private readonly fitSumPath = join(this.dir, "fit-summaries.jsonl");
 
   private async ensure() {
     await mkdir(this.dir, { recursive: true });
@@ -100,6 +120,18 @@ export class ArchiveStore {
     if (!items.length) return;
     await this.ensure();
     await appendFile(this.garActPath, items.map((i) => JSON.stringify(i)).join("\n") + "\n");
+  }
+
+  async loadFitSummaries(): Promise<FitSummary[]> {
+    return this.readJsonl<FitSummary>(this.fitSumPath);
+  }
+  async fitSummaryIds(): Promise<Set<string>> {
+    return new Set((await this.loadFitSummaries()).map((s) => String(s.activityId)));
+  }
+  async appendFitSummaries(items: FitSummary[]): Promise<void> {
+    if (!items.length) return;
+    await this.ensure();
+    await appendFile(this.fitSumPath, items.map((i) => JSON.stringify(i)).join("\n") + "\n");
   }
 
   async summary(): Promise<{ activities: number; actRange: string; garminDays: number; garRange: string; garminActivities: number; garActRange: string }> {

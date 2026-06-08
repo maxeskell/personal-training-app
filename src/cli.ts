@@ -13,7 +13,7 @@ import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { buildInsights, type ArchiveInput } from "./insights/engine.js";
 import { mapRichActivity } from "./insights/metrics.js";
-import { ArchiveStore } from "./archive/store.js";
+import { ArchiveStore, type FitSummary } from "./archive/store.js";
 import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate } from "./archive/backfill.js";
 import { answerQuestion } from "./coach/ask.js";
 
@@ -22,10 +22,12 @@ async function loadArchive(): Promise<ArchiveInput | undefined> {
   const store = new ArchiveStore();
   const acts = await store.loadActivities();
   const gar = await store.loadGarminDays();
-  if (!acts.length && !gar.length) return undefined;
+  const fitSummaries = await store.loadFitSummaries();
+  if (!acts.length && !gar.length && !fitSummaries.length) return undefined;
   return {
     activities: acts.map((a) => mapRichActivity(a.raw, a.sport)),
     garminDays: gar, // GarminDay already carries every field ArchiveInput needs (incl. slice-1b series)
+    fitSummaries,
   };
 }
 import { notify } from "./notify.js";
@@ -452,25 +454,25 @@ async function cmdProbe(): Promise<void> {
 }
 
 /**
- * `fit-sync [n]` — pull the raw .FIT for the most recent n Garmin run/ride activities via
- * get_activity_fit_data, decode-check them, and write to the streams dir. The insight engine then
- * analyses them automatically (aerobic decoupling, per-activity temperature, run biomechanics) — no
- * manual uploads. Resumable: activities already downloaded are skipped.
+ * `fit-sync [n]` — pull per-activity summaries for the most recent n Garmin run/ride/swim activities via
+ * get_activity_fit_data (+ get_activity_weather) and archive them. Taxuspt parses the .FIT server-side and
+ * returns a SUMMARY (session totals, temperature_stats, lap HRV) — not per-second records — so this feeds
+ * the heat confounder (per-activity EF + temperature) automatically. Resumable: archived ids are skipped.
+ * (Per-second decoupling/biomechanics still come from raw .FIT files in the streams dir.)
  */
 async function cmdFitSync(): Promise<void> {
   if (!config.garmin.enabled) {
-    console.error("\nGarmin is disabled. Set GARMIN_ENABLED=true (and run garmin-mcp-auth) to sync .FIT files.\n");
+    console.error("\nGarmin is disabled. Set GARMIN_ENABLED=true (and run garmin-mcp-auth) to sync.\n");
     process.exit(1);
   }
   const limit = Number(process.argv[3]) || 25;
-  const { mkdir, writeFile } = await import("node:fs/promises");
-  const { existsSync } = await import("node:fs");
-  const { join } = await import("node:path");
-  const { decodeFitFromResult } = await import("./insights/fitParser.js");
-  const { fitStreamsDir } = await import("./insights/fit.js");
+  const store = new ArchiveStore();
+  const have = await store.fitSummaryIds();
 
-  const dir = fitStreamsDir();
-  await mkdir(dir, { recursive: true });
+  const num = (x: unknown): number | undefined => (typeof x === "number" && Number.isFinite(x) ? x : typeof x === "string" && x.trim() && Number.isFinite(Number(x)) ? Number(x) : undefined);
+  const sportOf = (s: string): string => (/cycl|bike|ride/i.test(s) ? "Ride" : /run/i.test(s) ? "Run" : /swim/i.test(s) ? "Swim" : s);
+  // get_activity_weather reports temperature in °F mislabelled as °C (e.g. 63 ≈ 17°C) — correct >45.
+  const toC = (t: number | undefined): number | undefined => (t == null ? undefined : t > 45 ? +(((t - 32) * 5) / 9).toFixed(1) : t);
 
   const g = new GarminClient();
   if (!(await g.connect())) {
@@ -480,21 +482,43 @@ async function cmdFitSync(): Promise<void> {
   try {
     const actsRaw = garminInner(await g.tryCall("get_activities", { limit }));
     const list = ((actsRaw as { activities?: Array<Record<string, unknown>> })?.activities ?? (Array.isArray(actsRaw) ? actsRaw : [])) as Array<Record<string, unknown>>;
-    console.log(`\nfit-sync: ${list.length} recent activities; streams dir ${dir}\n`);
+    console.log(`\nfit-sync: ${list.length} recent activities → fit-summaries archive\n`);
     let added = 0, skipped = 0, failed = 0;
+    const buffer: FitSummary[] = [];
     for (const a of list) {
-      const id = a.activityId ?? a.id ?? a.activity_id;
+      const id = String(a.activityId ?? a.id ?? a.activity_id ?? "");
       const type = String(a.type ?? (a.activityType as { typeKey?: string } | undefined)?.typeKey ?? "").toLowerCase();
-      if (id == null || !/run|cycl|bike|ride/.test(type)) continue; // only the streams we analyse
-      const path = join(dir, `${id}.fit`);
-      if (existsSync(path)) { skipped++; continue; }
-      const buf = decodeFitFromResult(await g.tryCall("get_activity_fit_data", { activity_id: id }));
-      if (buf) { await writeFile(path, buf); added++; console.log(`  + ${id} (${type}, ${buf.length} bytes)`); }
-      else { failed++; console.log(`  ? ${id} (${type}): could not decode .FIT from get_activity_fit_data`); }
+      if (!id || !/run|cycl|bike|ride|swim/.test(type)) continue;
+      if (have.has(id)) { skipped++; continue; }
+      const fd = garminInner(await g.tryCall("get_activity_fit_data", { activity_id: id }));
+      const sess = (fd as { session?: Record<string, unknown> })?.session;
+      if (!sess) { failed++; console.log(`  ? ${id} (${type}): no session in get_activity_fit_data`); continue; }
+      const ts = (sess.temperature_stats ?? {}) as Record<string, unknown>;
+      const weather = garminInner(await g.tryCall("get_activity_weather", { activity_id: id })) as Record<string, unknown> | null;
+      const sum: FitSummary = {
+        activityId: id,
+        date: String(sess.start_time ?? a.start_time ?? "").slice(0, 10),
+        sport: sportOf(String(sess.sport ?? type)),
+        avgHr: num(sess.avg_heart_rate_bpm),
+        avgPowerW: num(sess.avg_power) ?? num(sess.avg_power_w) ?? num(sess.normalized_power),
+        distanceM: num(sess.total_distance_m),
+        durationS: num(sess.total_timer_time_s) ?? num(sess.total_elapsed_time_s),
+        avgTempC: num(ts.avg_temp_c),
+        minTempC: num(ts.min_temp_c),
+        maxTempC: num(ts.max_temp_c),
+        hrCoolThirdBpm: num(ts.avg_hr_coolest_third_bpm),
+        hrHotThirdBpm: num(ts.avg_hr_hottest_third_bpm),
+        trainingEffect: num(sess.total_training_effect),
+        weatherTempC: toC(num(weather?.temperature_celsius)),
+        humidityPct: num(weather?.humidity_percent),
+      };
+      buffer.push(sum);
+      added++;
+      console.log(`  + ${id} (${sum.sport}, ${sum.date}, ${sum.avgTempC ?? "?"}°C${sum.avgPowerW != null ? `, ${sum.avgPowerW}W` : ""})`);
     }
-    console.log(`\nfit-sync: +${added} new, ${skipped} already local, ${failed} undecodable → ${dir}`);
-    if (failed && !added) console.log("(If all failed, share one get_activity_fit_data sample from `npm run probe` so I can lock the response shape.)");
-    else console.log("These are now analysed by the insight engine automatically (deep-dive / dashboard).");
+    await store.appendFitSummaries(buffer);
+    console.log(`\nfit-sync: +${added} new summaries, ${skipped} already archived, ${failed} failed → data/archive/fit-summaries.jsonl`);
+    console.log("These feed the heat confounder (per-activity EF vs temperature) automatically.");
   } finally {
     await g.close();
   }

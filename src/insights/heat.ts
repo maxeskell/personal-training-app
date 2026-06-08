@@ -9,9 +9,17 @@
  * Deterministic; needs enough sessions across a real temperature range, else stays silent.
  */
 
-import type { SessionDecay } from "./fit.js";
 import type { Finding } from "./metrics.js";
 import { mean } from "./stats.js";
+
+/** Any per-activity record with the fields the heat regression needs (SessionDecay or FitSummary). */
+export interface HeatInput {
+  date: string;
+  sport: string;
+  avgPowerW?: number | null;
+  avgHr?: number | null;
+  avgTempC?: number | null;
+}
 
 export interface HeatAnalysis {
   sport: string;
@@ -45,10 +53,12 @@ function slope(pts: Array<{ x: number; y: number }>): number | null {
   return sxx === 0 ? null : sxy / sxx;
 }
 
-export function analyseHeat(decays: SessionDecay[], sport: "Run" | "Ride"): HeatAnalysis {
-  const pts: Pt[] = decays
+export function analyseHeat(records: HeatInput[], sport: "Run" | "Ride"): HeatAnalysis {
+  const pts: Pt[] = records
     .filter((d) => d.sport === sport && d.avgPowerW != null && d.avgHr != null && d.avgHr > 0 && d.avgTempC != null)
     .map((d) => ({ date: d.date, ef: d.avgPowerW! / d.avgHr!, temp: d.avgTempC! }))
+    // de-dup by date (a raw .FIT and its summary can both be present) — keep the first.
+    .filter((p, i, arr) => arr.findIndex((q) => q.date === p.date) === i)
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const empty: HeatAnalysis = { sport, n: pts.length, pctPerC: null, recentEf: null, priorEf: null, efChangePct: null, recentTempC: null, priorTempC: null, heatAttributedPct: null };

@@ -53,6 +53,8 @@ export interface ArchiveInput {
     bodyFatPct?: number;
     weightKg?: number;
   }>;
+  /** Per-activity .FIT summaries (from fit-sync) — per-activity EF + temperature for the heat confounder. */
+  fitSummaries?: Array<{ date: string; sport: string; avgPowerW?: number; avgHr?: number; avgTempC?: number }>;
 }
 
 export interface PredictionVsGoal {
@@ -465,9 +467,10 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   // 5c. Garmin daily-series trends (illness early-warning, stress, Body-Battery, sleep, fuelling).
   findings.push(...garminTrendFindings(archive?.garminDays));
 
-  // 5d. Heat confounder — EF vs per-activity .FIT temperature (run + ride).
+  // 5d. Heat confounder — EF vs per-activity temperature (raw .FIT sessions + synced fit-summaries).
+  const heatRecords = [...sessionDecays, ...(archive?.fitSummaries ?? [])];
   for (const sport of ["Run", "Ride"] as const) {
-    const hf = heatFinding(analyseHeat(sessionDecays, sport));
+    const hf = heatFinding(analyseHeat(heatRecords, sport));
     if (hf) findings.push(hf);
   }
 
