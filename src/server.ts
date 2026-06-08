@@ -12,6 +12,9 @@ import { ArchiveStore } from "./archive/store.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
 import { answerQuestion } from "./coach/ask.js";
+import { proposeAdjustments, parseArgs } from "./coach/planAdjust.js";
+import { WriteGate } from "./guardrails/writeGate.js";
+import { alertFindings } from "./insights/metrics.js";
 import { config } from "./config.js";
 
 /**
@@ -82,6 +85,18 @@ async function refresh(): Promise<void> {
   }
 }
 
+/** Latest state + its insights (gated, feedback-aware) — shared by /act. */
+async function latestInsights() {
+  const store = new StateStore();
+  const today = new Date().toISOString().slice(0, 10);
+  const window = await store.recent(today, 14);
+  const state = window[window.length - 1];
+  if (!state?.raw) return null;
+  const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
+  const insights = buildInsights(state, await loadArchive(), { suppressed, history: window });
+  return { state, insights };
+}
+
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
     let data = "";
@@ -128,6 +143,58 @@ const server = createServer(async (req, res) => {
         return;
       }
       await new DecisionLog().recordInsightFeedback(body.key, reaction, body.summary ?? body.key);
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    // Action loop — generate GATED plan-adjustment proposals from the surfaced alerts (no write here).
+    if (url.pathname === "/act" && req.method === "POST") {
+      const json = (b: object) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(b));
+      if (!CoachLLM.hasApiKey()) return json({ proposals: [], notes: "ANTHROPIC_API_KEY isn't set on the server." });
+      const li = await latestInsights();
+      if (!li) return json({ proposals: [], notes: "No data assembled yet — hit Sync first." });
+      const actionable = alertFindings(li.insights.topFindings);
+      if (!actionable.length) return json({ proposals: [], notes: "Nothing above the alert bar needs a plan change." });
+      const r = li.state.recovery.value;
+      const ts = li.state.trainingStatus.value;
+      const ctx = [
+        li.insights.load ? `- Load: CTL ${li.insights.load.ctl} / ATL ${li.insights.load.atl} / TSB ${li.insights.load.tsb}, ΔCTL/wk ${li.insights.load.rampPerWeek}` : "",
+        ts ? `- Garmin acute:chronic ${ts.loadRatio ?? "—"} (${ts.acwrStatus ?? "—"}), status ${ts.label ?? "—"}` : "",
+        r?.limiterToday ? `- Recovery limiter: ${r.limiterToday}` : "",
+      ].filter(Boolean).join("\n");
+      const request =
+        "Turn these surfaced signals into minimal, specific plan adjustments with trade-offs (don't restructure the week; smallest change that helps):\n" +
+        actionable.map((f) => `- [${f.severity}] ${f.title}: ${f.detail}${f.recommendation ? ` (suggested: ${f.recommendation})` : ""}`).join("\n");
+      const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt()), request, li.state, ctx);
+      const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
+      const proposals = [];
+      for (const p of result.proposals) {
+        const pr = await gate.propose({ tool: p.tool as never, args: parseArgs(p.argsJson), rationale: p.summary, tradeoff: p.tradeoff });
+        proposals.push({ id: pr.id, summary: p.summary, tradeoff: p.tradeoff, tool: p.tool, argsJson: p.argsJson });
+      }
+      return json({ proposals, notes: result.notes });
+    }
+
+    // Confirm a proposal — the ONLY path that WRITES to AI Endurance (gated; two-step from /act).
+    if (url.pathname === "/confirm-proposal" && req.method === "POST") {
+      const id = String((JSON.parse((await readBody(req)) || "{}") as { id?: string }).id ?? "");
+      if (!id) return void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "need id" }));
+      const aie = new AieClient();
+      await aie.connect();
+      try {
+        const result = await new WriteGate(aie, new DecisionLog()).confirm(id);
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, result: typeof result === "string" ? result.slice(0, 200) : "applied" }));
+      } catch (err) {
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+      } finally {
+        await aie.close();
+      }
+      return;
+    }
+
+    if (url.pathname === "/decline-proposal" && req.method === "POST") {
+      const id = String((JSON.parse((await readBody(req)) || "{}") as { id?: string }).id ?? "");
+      if (id) await new WriteGate(new AieClient(), new DecisionLog()).decline(id);
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
       return;
     }

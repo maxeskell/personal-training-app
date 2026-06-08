@@ -293,7 +293,8 @@ function renderHeader(today: AthleteState, insights: InsightReport | undefined, 
     <div class="verdict"><span class="dot" style="background:${color}"></span>
       <span class="big" style="color:${color}">${escapeHtml(sev)}</span></div>
     ${hl ? `<p style="font-size:16px;color:#222;margin:10px 0 6px;font-weight:500">${escapeHtml(hl.line)}</p>` : ""}
-    ${hl?.action ? `<div style="background:${color};color:#fff;border-radius:8px;padding:10px 12px;font-size:14px;margin:6px 0 12px">➡️ ${escapeHtml(hl.action)}</div>` : ""}
+    ${hl?.action ? `<div style="background:${color};color:#fff;border-radius:8px;padding:10px 12px;font-size:14px;margin:6px 0 8px">➡️ ${escapeHtml(hl.action)}</div>
+      <button class="actbtn" onclick="actPlan()">⚙ Turn this into a plan change</button><div id="proposals"></div>` : ""}
     ${hl && hl.drivers.length ? `<div class="k" style="margin-bottom:10px">${hl.drivers.map(escapeHtml).join(" · ")}</div>` : ""}
     <div style="margin:6px 0 12px">${chips}</div>
     ${narrative ? `<details><summary style="cursor:pointer;font-size:13px;color:#888">Readiness detail</summary><p style="font-size:14px;color:#444;margin:8px 0">${escapeHtml(narrative)}</p></details>` : ""}
@@ -387,6 +388,8 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .acts button:disabled{opacity:.4;cursor:default}
 .acts .agree:hover{background:#e6f5ea;border-color:#1a8a3a}.acts .disagree:hover{background:#fdeaea;border-color:#c0392b}
 .acts .ignore:hover{background:#f3f3f3}.reacted{font-size:11px;color:#1a8a3a;margin-left:4px}
+.actbtn{font-size:13px;padding:7px 14px;border:1px solid #c8642d;border-radius:8px;background:#fff;color:#c8642d;cursor:pointer}.actbtn:hover{background:#c8642d;color:#fff}
+.proposal{border:1px solid #e7d9c6;border-radius:8px;padding:10px 12px;margin-top:10px}
 </style></head><body>
 <h1>Endurance Coach</h1>
 <div class="sub">as of ${today.assembledAt}</div>
@@ -430,6 +433,25 @@ async function feedback(btn,reaction,key,summary){
     if(reaction!=='agree'){box.style.opacity=0.5;}
   }catch(err){span.textContent='error';}
 }
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+async function actPlan(){
+  var box=document.getElementById('proposals'); box.innerHTML='<div class="k">Drafting a plan change…</div>';
+  try{var r=await fetch('/act',{method:'POST'}); var j=await r.json();
+    if(!j.proposals||!j.proposals.length){box.innerHTML='<div class="k">'+esc(j.notes||'No change proposed.')+'</div>';return;}
+    box.innerHTML=j.proposals.map(function(p){return '<div class="proposal" data-id="'+esc(p.id)+'"><b>'+esc(p.summary)+'</b>'
+      +'<div class="ev">trade-off: '+esc(p.tradeoff)+'</div>'
+      +'<div class="ev">'+esc(p.tool)+' '+esc(p.argsJson)+'</div>'
+      +'<div class="acts"><button class="agree" onclick="confirmProposal(this,\''+esc(p.id)+'\')">✓ Apply to AI Endurance</button>'
+      +'<button class="ignore" onclick="declineProposal(this,\''+esc(p.id)+'\')">✕ Dismiss</button><span class="reacted"></span></div></div>';}).join('');
+  }catch(e){box.innerHTML='<div class="k">Error: '+esc(''+e)+'</div>';}
+}
+async function confirmProposal(btn,id){var box=btn.closest('.proposal');var s=box.querySelector('.reacted');s.textContent='Applying…';
+  try{var r=await fetch('/confirm-proposal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})});var j=await r.json();
+    box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
+    s.textContent=j.ok?'✓ applied to AI Endurance':'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
+async function declineProposal(btn,id){var box=btn.closest('.proposal');var s=box.querySelector('.reacted');
+  try{await fetch('/decline-proposal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})});
+    box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='dismissed';box.style.opacity=0.5;}catch(e){s.textContent='error';}}
 </script>
 
 ${insights ? renderSignals(insights) : ""}
