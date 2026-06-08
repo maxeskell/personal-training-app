@@ -49,4 +49,23 @@ export class CoachLLM {
     }
     return { value, cacheRead: res.usage.cache_read_input_tokens ?? 0 };
   }
+
+  /** Plain-prose completion (for the weekly review and race-prep reports). Same cached system prompt. */
+  async text(userContent: string): Promise<{ text: string; cacheRead: number }> {
+    const res = await this.client.messages.create({
+      model: this.model,
+      max_tokens: 4000,
+      thinking: { type: "adaptive" },
+      output_config: { effort: "high" } as never,
+      system: [
+        { type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } },
+      ],
+      messages: [{ role: "user", content: userContent }],
+    });
+    const text = res.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("\n");
+    return { text, cacheRead: res.usage.cache_read_input_tokens ?? 0 };
+  }
 }

@@ -52,19 +52,37 @@ export class WriteGate {
   }
 
   /**
-   * Execute a previously-proposed write — ONLY with explicit confirmation. Throws if the id
-   * is unknown (never proposed, or already consumed). The confirmation is single-use.
+   * Execute a previously-proposed write — ONLY with explicit confirmation. Resolves the
+   * proposal from the in-memory set or, across CLI processes, from the persisted decision log
+   * (must be status "proposed" with a recorded write, and not already executed/declined).
+   * Throws otherwise. The confirmation is single-use.
    */
   async confirm(id: string): Promise<unknown> {
-    const proposal = this.pending.get(id);
-    if (!proposal) {
-      throw new Error(
-        `Refusing to write: no pending proposal ${id}. Writes require an explicit, un-consumed confirmation.`,
-      );
+    let tool: string | undefined;
+    let args: Record<string, unknown> | undefined;
+
+    const inMem = this.pending.get(id);
+    if (inMem) {
+      this.pending.delete(id); // single-use
+      tool = inMem.tool;
+      args = inMem.args;
+    } else {
+      // Cross-process: reconstruct from the append-only log; latest status wins.
+      const records = (await this.log.all()).filter((r) => r.id === id);
+      const latest = records[records.length - 1];
+      if (!latest || latest.status !== "proposed" || !latest.write) {
+        throw new Error(
+          `Refusing to write: proposal ${id} is not in a confirmable state ` +
+            `(${latest ? latest.status : "unknown"}). Writes require an explicit, un-consumed proposal.`,
+        );
+      }
+      tool = latest.write.tool;
+      args = latest.write.args;
     }
-    this.pending.delete(id); // single-use
+
+    if (!WRITE_SET.has(tool)) throw new Error(`${tool} is not a write tool.`);
     // callRaw is the only place a write tool is invoked, and only from here.
-    const result = await this.aie.callRaw(proposal.tool, proposal.args);
+    const result = await this.aie.callRaw(tool, args ?? {});
     await this.log.updateStatus(id, "executed");
     return result;
   }
