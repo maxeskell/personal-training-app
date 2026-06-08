@@ -146,5 +146,6 @@ export function monitoringFinding(rs: MonitoringRuleSet): Finding | null {
       `When it trips, cap intensity for ${b.lead === 1 ? "the next day" : `the next ${b.lead} days`} and re-check the morning signals.`,
     evidence: `backtested over ${rs.days} days, fired ${b.fires}×, Youden J ${b.youdenJ} [derived from AIE recovery series]`,
     recommendation: "Treat it as amber, not gospel — confirm against how you actually feel before pulling a session.",
+    confidence: Math.min(0.95, 0.5 + b.youdenJ),
   };
 }

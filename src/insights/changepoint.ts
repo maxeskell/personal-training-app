@@ -122,6 +122,7 @@ export function changePointFindings(series: SeriesChangePoints[], recentDays = 2
         `${last.before} → ${last.after}${last.deltaPct != null ? ` (${last.deltaPct >= 0 ? "+" : ""}${last.deltaPct}%)` : ""}. ` +
         `Cross-reference it to a training change, illness, or kit change rather than reading the daily wobble.`,
       evidence: `binary-segmentation change-point (L2 cost) on the daily series [derived]`,
+      confidence: 0.6,
     });
   }
   return out;

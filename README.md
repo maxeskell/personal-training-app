@@ -75,6 +75,29 @@ detector self-gates and stays silent until there's enough of your own history be
 - **Stream-level biomechanics (§1):** optional — set `FIT_STREAMS_DIR` to a folder of per-second streams
   to flag cadence/GCT decay late in long runs (catalogue A5/A7). See `.env.example`.
 
+Every finding now carries a **confidence score**; only good-signal findings are surfaced, and the most
+important also feed a multiple-comparisons guard: the exploratory correlation scan is **FDR-controlled**
+(Benjamini–Hochberg, q=0.1), so a relationship is "confirmed" only if its CI clears 0 *and* it survives
+FDR — otherwise it's labelled exploratory.
+
+## Top insights box — your call (agree / disagree / ignore)
+
+The dashboard leads with a **Top insights** card: the five strongest, non-dismissed findings ranked by
+signal strength, each with **👍 Agree / 👎 Disagree / ✕ Ignore**. Every reaction is logged to the decision
+log. **Disagree or Ignore hides that insight for ~2 weeks** and the coach (readiness/weekly/ask) reads your
+feedback so it stops re-raising calls you've rejected; **Agree** keeps it active. Feedback posts to the
+server's `/insight-feedback` endpoint — credentials never leave the Mac.
+
+## Zones, thresholds & race splits
+
+- **Zones & thresholds** card: HR / power / pace zones per discipline plus your headline numbers — **bike
+  FTP (W and W/kg), run threshold pace + LTHR, swim CSS**. Pulled from `getUser`; where only thresholds are
+  exposed, zones are derived with standard models (Coggan power, %-LTHR, %-threshold pace).
+- **Estimated race splits**: AI Endurance's predicted finish broken into a per-segment pacing plan, shaped
+  by your **durability trend** — improving durability earns a gentle negative split; weak/unknown durability
+  gets a conservative start that protects against the late fade. (Predicted time is a MODEL estimate — the
+  plan is a target, not a guarantee.)
+
 ## Online dashboard (view it on your phone over Wi-Fi)
 
 A small local web server serves the live dashboard — including the **Signals** panel (insight engine:

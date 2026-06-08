@@ -80,6 +80,31 @@ export interface NutritionTargets {
   carbG?: { lower: number; upper: number };
 }
 
+/** A set of training-zone boundaries for one metric (e.g. 5 HR zones = 6 bounds, or n labels). */
+export interface ZoneSet {
+  metric: "hr" | "power" | "pace" | "speed";
+  unit: string; // "bpm" | "W" | "sec/km" | "sec/100m"
+  bounds: number[]; // ascending zone edges; bounds[i]..bounds[i+1] is zone i+1
+  labels?: string[]; // optional zone names, length = bounds.length - 1
+  source: "ai-endurance" | "derived"; // derived = computed from a threshold via a standard model
+}
+
+/** Per-discipline zone sets (HR for all; power for bike; pace for run/swim). */
+export interface DisciplineZones {
+  run?: { hr?: ZoneSet; pace?: ZoneSet };
+  bike?: { hr?: ZoneSet; power?: ZoneSet };
+  swim?: { pace?: ZoneSet };
+}
+
+/** Current threshold/FTP markers per discipline (the headline training numbers). */
+export interface DisciplineThresholds {
+  bikeFtpW?: number;
+  bikeFtpWkg?: number;
+  runThresholdPaceSecPerKm?: number;
+  runThresholdHr?: number;
+  swimCssSecPer100?: number;
+}
+
 export interface SyncGap {
   kind: "missing-in-garmin" | "missing-in-aie" | "duration-mismatch" | "garmin-stale";
   date: string;
@@ -126,6 +151,10 @@ export interface AthleteState {
   vo2max: Provenanced<number>;
   nutritionTargets: Provenanced<NutritionTargets>;
 
+  // Training zones + threshold markers per discipline (from getUser, or derived from thresholds).
+  zones: Provenanced<DisciplineZones>;
+  thresholds: Provenanced<DisciplineThresholds>;
+
   syncGaps: SyncGap[];
   readinessVerdict: ReadinessVerdict;
   readinessWhy: string;
@@ -164,6 +193,8 @@ export function emptyState(date: string, assembledAt: string): AthleteState {
     weight7dTrend: absent<number>("derived"),
     vo2max: absent<number>("garmin"),
     nutritionTargets: absent<NutritionTargets>(),
+    zones: absent<DisciplineZones>(),
+    thresholds: absent<DisciplineThresholds>(),
     syncGaps: [],
     readinessVerdict: "unknown",
     readinessWhy: "Not yet assessed.",

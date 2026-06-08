@@ -78,5 +78,6 @@ export function brickFinding(b: BrickAnalysis): Finding | null {
       `${big ? "That gap points to bike pacing too aggressive or run-off-bike adaptation lacking — rehearse race-effort bricks and hold the bike ceiling." : "Encouraging durability into T2 — keep the brick rehearsals going."}`,
     evidence: `${b.brickDays} brick days vs ${b.freshRuns} fresh runs (same-day Ride+Run proxy) [derived]`,
     recommendation: big ? "Cap the bike leg's intensity and practise the first 2 km off the bike at goal effort." : undefined,
+    confidence: Math.min(0.75, 0.45 + b.brickDays * 0.04),
   };
 }

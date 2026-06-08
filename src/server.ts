@@ -4,7 +4,7 @@ import { AieClient } from "./mcp/aieClient.js";
 import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
 import { assembleState } from "./state/assemble.js";
-import { DecisionLog } from "./state/decisionLog.js";
+import { DecisionLog, suppressedInsightKeys, type InsightReaction } from "./state/decisionLog.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { buildInsights, type ArchiveInput } from "./insights/engine.js";
 import { mapRichActivity } from "./insights/metrics.js";
@@ -56,8 +56,10 @@ async function renderLatest(): Promise<string> {
       <h2>No data yet</h2><p>Run <code>npm run ping</code> (or hit <a href="/refresh">/refresh</a>) to assemble your first state.</p></body>`;
   }
   const latest = window[window.length - 1];
-  const decisions = await new DecisionLog().all();
-  const insights = latest.raw ? buildInsights(latest, await loadArchive()) : undefined;
+  const log = new DecisionLog();
+  const decisions = await log.all();
+  const suppressed = suppressedInsightKeys(await log.insightReactions());
+  const insights = latest.raw ? buildInsights(latest, await loadArchive(), { suppressed, history: window }) : undefined;
   return renderDashboard({ window, decisions, insights });
 }
 
@@ -111,6 +113,19 @@ const server = createServer(async (req, res) => {
       }
       const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt()), question, state, await loadArchive());
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer }));
+      return;
+    }
+
+    // Insight feedback (the insights box posts agree/disagree/ignore here).
+    if (url.pathname === "/insight-feedback" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)) || "{}") as { key?: string; reaction?: string; summary?: string };
+      const reaction = body.reaction as InsightReaction;
+      if (!body.key || !["agree", "disagree", "ignore"].includes(reaction)) {
+        res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "need key + reaction" }));
+        return;
+      }
+      await new DecisionLog().recordInsightFeedback(body.key, reaction, body.summary ?? body.key);
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
       return;
     }
 

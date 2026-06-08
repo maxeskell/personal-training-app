@@ -2,6 +2,8 @@ import type { CoachLLM } from "../llm/client.js";
 import type { AthleteState } from "../state/types.js";
 import { buildInsights, type InsightReport, type ArchiveInput } from "../insights/engine.js";
 import { richActivities } from "../insights/metrics.js";
+import { paceStr } from "../insights/zones.js";
+import { DecisionLog, suppressedInsightKeys } from "../state/decisionLog.js";
 import { screenNutritionPrompt } from "../guardrails/wellbeing.js";
 
 /**
@@ -13,6 +15,19 @@ import { screenNutritionPrompt } from "../guardrails/wellbeing.js";
 
 function fmt(n: number | null | undefined, d = 0): string {
   return n == null ? "—" : n.toFixed(d);
+}
+
+/** One-line threshold/FTP summary for the Q&A context (empty when nothing is configured). */
+function thresholdLine(state: AthleteState): string {
+  const t = state.thresholds.value;
+  if (!t) return "";
+  const parts = [
+    t.bikeFtpW != null ? `bike FTP ${t.bikeFtpW}W${t.bikeFtpWkg != null ? ` (${t.bikeFtpWkg} W/kg)` : ""}` : "",
+    t.runThresholdPaceSecPerKm != null ? `run threshold ${paceStr(t.runThresholdPaceSecPerKm)}/km` : "",
+    t.runThresholdHr != null ? `run LTHR ${t.runThresholdHr}bpm` : "",
+    t.swimCssSecPer100 != null ? `swim CSS ${paceStr(t.swimCssSecPer100)}/100m` : "",
+  ].filter(Boolean);
+  return parts.length ? `- Thresholds: ${parts.join(", ")} [${state.thresholds.source}]` : "";
 }
 
 /** Compact, readable data context for the model to answer from. */
@@ -47,7 +62,9 @@ export function buildAskContext(state: AthleteState, insights: InsightReport): s
     `- Regime shifts: ${ins.changePoints.flatMap((s) => s.points.slice(-1).map((p) => (p.date ? `${s.metric} ${p.before}→${p.after}@${p.date}` : null))).filter(Boolean).join("; ") || "none"}`,
     `- Brick decoupling: ${ins.brick.decouplingPct != null ? `${ins.brick.decouplingPct}% off-bike (${ins.brick.brickDays}d)` : "n/a"}; taper target TSB ${ins.taper.recommendedTsbLow ?? "?"}..${ins.taper.recommendedTsbHigh ?? "?"}`,
     `- Races: ${ins.predictions.map((p) => `${p.race} T-${p.daysTo}d`).join("; ") || "none"}`,
-    ins.findings.length ? `- Active findings: ${ins.findings.map((f) => `[${f.severity}] ${f.title}`).join("; ")}` : "",
+    thresholdLine(state),
+    ins.splits.length ? `- Race split plans: ${ins.splits.map((p) => `${p.race} ${p.strategy}`).join(" | ")}` : "",
+    ins.topFindings.length ? `- Top surfaced insights (good signal, not dismissed): ${ins.topFindings.slice(0, 5).map((f) => `[${f.severity}] ${f.title}`).join("; ")}` : "",
     "",
     `RECENT RECOVERY SERIES (last 14, oldest→newest) [ai-endurance]:`,
     `- HRV(rMSSD): ${tail("rMSSD")}`,
@@ -69,7 +86,8 @@ export async function answerQuestion(llm: CoachLLM, question: string, state: Ath
   const screen = screenNutritionPrompt(question);
   if (screen.blocked) return { answer: screen.redirect!, blocked: true };
 
-  const insights = state.raw ? buildInsights(state, archive) : undefined;
+  const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
+  const insights = state.raw ? buildInsights(state, archive, { suppressed }) : undefined;
   const context = insights ? buildAskContext(state, insights) : "(no assembled data available)";
 
   const prompt = [

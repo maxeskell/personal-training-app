@@ -98,5 +98,6 @@ export function taperFinding(t: TaperAnalysis): Finding | null {
       `instead of the generic "just go positive". Time the taper so TSB rises into this range on race day.`,
     evidence: `${t.basis}; ${t.past.map((p) => `${p.race} ${p.date} TSB ${p.tsbOnDay}`).join("; ")} [derived]`,
     recommendation: "Back-plan the last 10–14 days so load sheds you into this TSB band by race morning.",
+    confidence: Math.min(0.7, 0.4 + t.past.length * 0.1),
   };
 }
