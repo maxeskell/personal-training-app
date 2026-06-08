@@ -6,6 +6,9 @@ import { deriveZones, paceStr } from "../src/insights/zones.js";
 import { findingKey, findingScore, surfaceFindings, alertFindings, type Finding } from "../src/insights/metrics.js";
 import { trainingStatusFinding, hrvStatusFinding, enduranceScoreFinding, powerCurveFinding } from "../src/insights/garminHealth.js";
 import { garminTrendFindings, illnessEarlyWarning, fuellingFromGarmin, type GarminDaily } from "../src/insights/garminTrends.js";
+import { coachHeadline, tsbBand } from "../src/insights/headline.js";
+import { emptyState } from "../src/state/types.js";
+import type { InsightReport } from "../src/insights/engine.js";
 
 // ---------- heat confounder ----------
 test("heat: recovers EF~temp slope and attributes a warm-weather dip", () => {
@@ -82,6 +85,33 @@ test("training status: OVERREACHING / high ACWR → flag; balanced HRV silent", 
   assert.match(f!.title, /Overreach/i);
   assert.equal(hrvStatusFinding({ status: "BALANCED", lastNightMs: 35 }), null);
   assert.equal(hrvStatusFinding({ status: "LOW", lastNightMs: 24, baselineLowMs: 32, baselineUpperMs: 40 })?.severity, "watch");
+});
+
+test("tsbBand classifies form sensibly", () => {
+  assert.equal(tsbBand(8)!.tone, "good");
+  assert.equal(tsbBand(-5)!.tone, "good");
+  assert.equal(tsbBand(-15)!.tone, "warn");
+  assert.equal(tsbBand(-25)!.tone, "bad");
+  assert.equal(tsbBand(null), null);
+});
+
+test("coachHeadline leads with the flag + action; red when fatigued; green when clear", () => {
+  const st = emptyState("2026-06-08", new Date().toISOString());
+  st.recovery = { value: { limiterToday: "resting HR" }, source: "ai-endurance" } as typeof st.recovery;
+  st.trainingStatus = { value: { loadRatio: 1.7, acwrStatus: "HIGH", label: "OVERREACHING_5" }, source: "garmin" } as typeof st.trainingStatus;
+
+  const flagReport = {
+    load: { tsb: -22 },
+    topFindings: [{ family: "Load & injury risk", title: "Overreaching — acute load spike", severity: "flag", detail: "d", evidence: "e", recommendation: "Cut this week's hardest session." }],
+  } as unknown as InsightReport;
+  const h = coachHeadline(flagReport, st);
+  assert.equal(h.severity, "red"); // flag + deep-fatigue TSB
+  assert.match(h.line, /Overreaching/);
+  assert.equal(h.action, "Cut this week's hardest session.");
+  assert.ok(h.drivers.some((d) => /Acute:chronic 1\.7/.test(d)));
+
+  const calm = { load: { tsb: -3 }, topFindings: [{ family: "Aerobic efficiency", title: "EF slipping", severity: "info", detail: "d", evidence: "e" }] } as unknown as InsightReport;
+  assert.equal(coachHeadline(calm, emptyState("2026-06-08", "x")).severity, "green");
 });
 
 test("endurance score + power curve produce findings on real-shaped input", () => {
