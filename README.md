@@ -32,6 +32,15 @@ npm run race -- "Loch Ness"   # …or a named race
 npm run propose -- "move my long run off race week"   # gated plan-adjustment proposals
 npm run confirm -- <id>       # apply a proposal (the ONLY path that writes to AI Endurance)
 npm run decline -- <id>       # dismiss a proposal
+
+npm run ping                  # unattended morning readiness: verdict + report + desktop notification
+npm run dashboard             # glanceable Today/Week/Trends/Race HTML, opened in your browser
+npm run decisions             # view the decision log (audit trail)
+npm run decisions -- retro <id> "how it held up"   # add a retrospective to a decision
+
+# Schedule the 06:00 ping (macOS launchd; cron fallback on Linux):
+npm run schedule:install      # optional HH MM args, e.g. -- 6 30
+npm run schedule:uninstall
 ```
 
 The four flows (readiness / weekly / propose+confirm / race) are the product. Every write goes

@@ -43,8 +43,14 @@ Solid = required (AIE). Dotted = optional (Garmin). Must be fully useful on AIE 
   the Alderford capped-tempo call + Loch Ness run-load caution). Prose flows write dated markdown to
   `reports/`. **This is the product** — meets the §9 acceptance criteria (verified §9.5 explicitly;
   §9.4 confirmed: 0 executed writes after declining proposals).
-- **M5 — Scheduling + dashboard.** Both apply: a pushed 06:00 readiness ping, and a glanceable
-  Today/Week/Trends/Race view. Decision log (need #3) lands as part of M2/M4's store + M4 reports.
+- **M5 — Scheduling + dashboard + decision-log views. ✅ built & verified live.** All three §1 needs:
+  (1) **Unattended scheduling** — `ping` runs readiness unattended, writes a dated report, and fires a
+  macOS notification; `scripts/install-schedule.sh` installs a **launchd** agent at 06:00 (absolute
+  paths baked in; cron fallback on Linux). (2) **Glanceable dashboard** — `dashboard` generates a
+  self-contained Today/Week/Trends/Race HTML (inline SVG sparklines) and opens it; no server.
+  (3) **Decision-log views** — `decisions` lists the audit trail and `decisions retro <id> "…"` records
+  how a call held up. Verified: `decisions`, `dashboard`, and `ping` all run live (notification fired,
+  report written). Sparklines populate once ≥2 days of state accumulate via the daily ping.
 - **M6 — Harden.** Garmin-breakage handling, AIE tool-change tolerance, secret hygiene, decision-log review.
 
 ## Hard guardrails (enforced in code, non-negotiable)
