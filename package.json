@@ -29,7 +29,8 @@
     "serve:start": "pm2 start ecosystem.config.cjs",
     "serve:stop": "pm2 stop endurance-dashboard",
     "serve:logs": "pm2 logs endurance-dashboard",
-    "deep-dive": "tsx src/cli.ts deep-dive"
+    "deep-dive": "tsx src/cli.ts deep-dive",
+    "act": "tsx src/cli.ts act"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",

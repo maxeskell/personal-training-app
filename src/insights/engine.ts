@@ -6,10 +6,14 @@ import {
   efTrend,
   durabilityTrend,
   thresholdTrend,
+  monotonyStrain,
+  intensityDistribution,
   type Finding,
   type LoadModel,
   type RunRamp,
   type Trend,
+  type MonotonyStrain,
+  type TID,
 } from "./metrics.js";
 
 export interface PredictionVsGoal {
@@ -28,6 +32,8 @@ export interface InsightReport {
   ef: { run: Trend; ride: Trend };
   durability: { run: Trend; ride: Trend };
   threshold: { run: Trend };
+  monotony: MonotonyStrain;
+  tid: TID;
   predictions: PredictionVsGoal[];
   findings: Finding[];
 }
@@ -73,6 +79,8 @@ export function buildInsights(state: AthleteState): InsightReport {
   const ef = { run: efTrend(acts, "Run"), ride: efTrend(acts, "Ride") };
   const durability = { run: durabilityTrend(acts, "Run"), ride: durabilityTrend(acts, "Ride") };
   const threshold = { run: thresholdTrend(acts, "Run") };
+  const monotony = monotonyStrain(load?.series);
+  const tid = intensityDistribution(state.adherenceByZone.value);
   const predictions = predictionsVsGoals(state);
 
   const findings: Finding[] = [];
@@ -117,6 +125,31 @@ export function buildInsights(state: AthleteState): InsightReport {
         severity: "watch",
         detail: `Fitness (CTL) is rising ${load.rampPerWeek}/week — above the ~5–7 comfort zone; sustainable briefly, risky if held.`,
         evidence: `ΔCTL/wk ${load.rampPerWeek} [derived]`,
+      });
+    }
+  }
+
+  // 2b. Training monotony (Foster) — too-samey load raises illness/overtraining risk.
+  if (monotony.monotony != null && monotony.monotony > 2 && monotony.weeklyLoad > 0) {
+    findings.push({
+      family: "Load & form",
+      title: "High training monotony",
+      severity: "watch",
+      detail: `Last week's load is very uniform (monotony ${monotony.monotony}) — too little hard/easy variation raises illness/overtraining risk. Make easy days easier and hard days harder.`,
+      evidence: `monotony ${monotony.monotony}, strain ${monotony.strain} [derived from daily ESS]`,
+    });
+  }
+
+  // 2c. Intensity distribution — grey-zone creep (too little genuinely-easy volume).
+  if (tid.easyPct != null && tid.totalH > 2) {
+    if (tid.easyPct < 75) {
+      findings.push({
+        family: "Intensity distribution",
+        title: "Grey-zone creep",
+        severity: "watch",
+        detail: `Only ${tid.easyPct}% of training is easy (tempo ${tid.tempoPct}%, hard ${tid.hardPct}%). Successful endurance work is ~80% easy — protect easy-easy/hard-hard separation.`,
+        evidence: `zone split easy/tempo/hard = ${tid.easyPct}/${tid.tempoPct}/${tid.hardPct}% over ${tid.totalH}h [ai-endurance]`,
+        recommendation: "Slow the easy sessions down; keep intensity concentrated in fewer, genuinely-hard sessions.",
       });
     }
   }
@@ -173,5 +206,5 @@ export function buildInsights(state: AthleteState): InsightReport {
   const rank = { flag: 0, watch: 1, info: 2 } as const;
   findings.sort((a, b) => rank[a.severity] - rank[b.severity]);
 
-  return { date: state.date, load, runRamp, ef, durability, threshold, predictions, findings };
+  return { date: state.date, load, runRamp, ef, durability, threshold, monotony, tid, predictions, findings };
 }

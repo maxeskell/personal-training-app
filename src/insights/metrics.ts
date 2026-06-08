@@ -169,6 +169,50 @@ export function durabilityTrend(acts: RichActivity[], sport: RichActivity["sport
   return splitTrend(vals);
 }
 
+// ---------- Monotony & strain (Foster) — from the daily load series ----------
+
+export interface MonotonyStrain {
+  monotony: number | null; // weekly mean load ÷ SD; >~2 = too samey, elevated illness/overtraining risk
+  strain: number | null; // weekly load × monotony
+  weeklyLoad: number;
+}
+export function monotonyStrain(series: Array<{ load: number }> | undefined): MonotonyStrain {
+  if (!series || series.length < 7) return { monotony: null, strain: null, weeklyLoad: 0 };
+  const last7 = series.slice(-7).map((p) => p.load);
+  const m = mean(last7)!;
+  const sd = Math.sqrt(mean(last7.map((x) => (x - m) ** 2)) ?? 0);
+  const weeklyLoad = last7.reduce((a, b) => a + b, 0);
+  const monotony = sd > 0 ? +(m / sd).toFixed(2) : null;
+  const strain = monotony != null ? +(weeklyLoad * monotony).toFixed(0) : null;
+  return { monotony, strain, weeklyLoad: +weeklyLoad.toFixed(0) };
+}
+
+// ---------- Intensity distribution (TID) — from plan-progress zone adherence ----------
+
+export interface TID {
+  easyPct: number | null;
+  tempoPct: number | null;
+  hardPct: number | null;
+  totalH: number;
+}
+export function intensityDistribution(
+  adh: Record<string, { actualH: number; prescribedH: number }> | null | undefined,
+): TID {
+  if (!adh) return { easyPct: null, tempoPct: null, hardPct: null, totalH: 0 };
+  const z = (k: string) => adh[k]?.actualH ?? 0;
+  const easy = z("Endurance");
+  const tempo = z("Tempo");
+  const hard = z("Threshold") + z("VO2Max") + z("Anaerobic");
+  const total = easy + tempo + hard;
+  if (total <= 0) return { easyPct: null, tempoPct: null, hardPct: null, totalH: 0 };
+  return {
+    easyPct: Math.round((easy / total) * 100),
+    tempoPct: Math.round((tempo / total) * 100),
+    hardPct: Math.round((hard / total) * 100),
+    totalH: +total.toFixed(1),
+  };
+}
+
 /** Aerobic-threshold (HR) trend from DFA-α1, dropping noisy readings (high HRV artifact). */
 export function thresholdTrend(acts: RichActivity[], sport: RichActivity["sport"], maxArtifactPct = 5): Trend {
   const vals = acts
