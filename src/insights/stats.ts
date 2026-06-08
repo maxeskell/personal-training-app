@@ -119,16 +119,16 @@ export interface LagScan {
  * Respects the arrow of time — the brief's requirement for any lead-lag claim.
  */
 export function bestLaggedCorr(xs: Maybe[], ys: Maybe[], minLag = 0, maxLag = 4): LagScan | null {
-  let best: LagScan | null = null;
+  let fallback: LagScan | null = null; // first computable lag, used only if none are significant
+  let bestSig: LagScan | null = null; // strongest |r| among significant lags
   for (let k = minLag; k <= maxLag; k++) {
     const [lx, ly] = applyLag(xs, ys, k);
     const c = corrWithCi(lx, ly);
     if (!c) continue;
-    if (!best || (c.significant && Math.abs(c.r) > Math.abs(best.corr.r))) {
-      if (k === minLag || c.significant) best = { bestLag: k, corr: c };
-    }
+    if (!fallback) fallback = { bestLag: k, corr: c };
+    if (c.significant && (!bestSig || Math.abs(c.r) > Math.abs(bestSig.corr.r))) bestSig = { bestLag: k, corr: c };
   }
-  return best;
+  return bestSig ?? fallback; // a significant lag always beats a stronger-|r| non-significant one
 }
 
 /** Standard normal CDF (Abramowitz–Stegun 7.1.26 approximation). */

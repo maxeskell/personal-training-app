@@ -130,7 +130,8 @@ export function fuellingFromGarmin(days: GarminDaily[]): Finding | null {
   return fuellingFinding(analyseFuelling(weight, muscle));
 }
 
-/** All slice-1b trend findings from the backfilled daily series. */
+/** All slice-1b trend findings from the backfilled daily series.
+ *  (Fuelling is owned by the engine's analyseFuelling on the same body-comp series — not duplicated here.) */
 export function garminTrendFindings(days: GarminDaily[] | undefined): Finding[] {
   if (!days || days.length < 21) return [];
   const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
@@ -139,6 +140,5 @@ export function garminTrendFindings(days: GarminDaily[] | undefined): Finding[] 
     stressTrend(sorted),
     bodyBatteryRecharge(sorted),
     sleepArchitecture(sorted),
-    fuellingFromGarmin(sorted),
   ].filter((f): f is Finding => f != null);
 }

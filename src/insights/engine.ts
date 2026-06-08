@@ -282,7 +282,13 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   const brick = analyseBricks(acts);
   const taper = analyseTaper(load, raw.getRaceGoalEvent, state.date);
   const efficiency = analyseEfficiency(acts, load);
-  const fuelling = analyseFuelling([], [], state.weight7dTrend.value);
+  // Fuelling from the real backfilled body-composition series (single source — was a dead [],[] call).
+  const fuelDays = archive?.garminDays ?? [];
+  const fuelling = analyseFuelling(
+    fuelDays.filter((d) => d.weightKg != null).map((d) => ({ date: d.date, kg: d.weightKg! })),
+    fuelDays.filter((d) => d.muscleMassKg != null).map((d) => ({ date: d.date, kg: d.muscleMassKg! })),
+    state.weight7dTrend.value,
+  );
   const sessionDecays = loadSessionDecays();
 
   // Race splits, shaped by the run-durability trend (improving → negative split; else conservative).
