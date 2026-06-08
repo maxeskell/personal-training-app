@@ -174,9 +174,25 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .finding{padding:8px 0;border-bottom:1px solid #f0ede5}.finding:last-child{border:0}
 .badge{color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:10px;margin-right:8px}
 .fdetail{font-size:13px;color:#444;margin:3px 0}.ev{font-size:11px;color:#999}
-.refresh{float:right;font-size:12px;color:#888;text-decoration:none}
+.syncbtn{padding:8px 16px;border:0;border-radius:8px;background:#c8642d;color:#fff;font-size:14px;cursor:pointer}
+.syncbtn:disabled{opacity:.55;cursor:default}
+.syncstatus{margin-left:10px;font-size:13px;color:#888}
 </style></head><body>
-<h1>Endurance Coach <a class="refresh" href="/refresh">↻ refresh</a></h1><div class="sub">as of ${today.assembledAt}</div>
+<h1>Endurance Coach</h1>
+<div class="sub">as of ${today.assembledAt}</div>
+<div class="card" style="display:flex;align-items:center">
+  <button id="syncbtn" class="syncbtn" onclick="sync()">🔄 Sync latest data</button>
+  <span id="syncstatus" class="syncstatus"></span>
+</div>
+<script>
+async function sync(){
+  var b=document.getElementById('syncbtn'), s=document.getElementById('syncstatus');
+  b.disabled=true; b.textContent='Syncing…'; s.textContent='Pulling latest from AI Endurance + Garmin (~10s)…';
+  try{ var r=await fetch('/refresh',{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status);
+    s.textContent='Done — reloading.'; location.reload(); }
+  catch(e){ b.disabled=false; b.textContent='🔄 Sync latest data'; s.textContent='Sync failed: '+e+' (try again)'; }
+}
+</script>
 
 <div class="card"><h2>Ask your data</h2>
   <form id="askform" onsubmit="return ask(event)">
