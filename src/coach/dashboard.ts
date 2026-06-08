@@ -164,6 +164,7 @@ function renderZones(today: AthleteState): string {
   const markers = t
     ? [
         t.bikeFtpW != null ? `Bike FTP <b>${t.bikeFtpW} W</b>${t.bikeFtpWkg != null ? ` (${t.bikeFtpWkg} W/kg)` : ""}` : "",
+        t.runThresholdPowerW != null ? `Run FTP <b>${t.runThresholdPowerW} W</b>` : "",
         t.runThresholdPaceSecPerKm != null ? `Run threshold <b>${paceStr(t.runThresholdPaceSecPerKm)}/km</b>` : "",
         t.runThresholdHr != null ? `Run LTHR <b>${t.runThresholdHr} bpm</b>` : "",
         t.swimCssSecPer100 != null ? `Swim CSS <b>${paceStr(t.swimCssSecPer100)}/100m</b>` : "",
@@ -173,6 +174,7 @@ function renderZones(today: AthleteState): string {
     ${markers ? `<div style="font-size:14px;margin-bottom:12px">${markers}</div>` : ""}
     <div class="grid">
       ${zoneTable("Bike power", z?.bike?.power)}
+      ${zoneTable("Run power", z?.run?.power)}
       ${zoneTable("Run pace", z?.run?.pace)}
       ${zoneTable("Run HR", z?.run?.hr)}
       ${zoneTable("Swim pace", z?.swim?.pace)}

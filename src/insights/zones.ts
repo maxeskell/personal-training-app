@@ -46,6 +46,10 @@ export function deriveZones(t: DisciplineThresholds | null | undefined): Discipl
   if (t.bikeFtpW && t.bikeFtpW > 0) {
     z.bike = { power: fromThreshold("power", "W", t.bikeFtpW, POWER_EDGES, POWER_LABELS) };
   }
+  if (t.runThresholdPowerW && t.runThresholdPowerW > 0) {
+    // Running power zones use the same Coggan %-of-threshold model as the bike.
+    z.run = { ...(z.run ?? {}), power: fromThreshold("power", "W", t.runThresholdPowerW, POWER_EDGES, POWER_LABELS) };
+  }
   if (t.runThresholdHr && t.runThresholdHr > 0) {
     z.run = { ...(z.run ?? {}), hr: fromThreshold("hr", "bpm", t.runThresholdHr, HR_EDGES, HR_LABELS) };
   }
