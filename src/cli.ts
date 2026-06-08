@@ -441,7 +441,9 @@ async function cmdProbe(): Promise<void> {
   const { join } = await import("node:path");
   const dir = join(process.cwd(), "reports");
   await mkdir(dir, { recursive: true });
-  const path = join(dir, `probe-${today}.json`);
+  // Timestamp to the second so repeated runs in a day don't overwrite each other.
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19); // YYYY-MM-DDTHH-MM-SS
+  const path = join(dir, `probe-${stamp}.json`);
   await writeFile(path, JSON.stringify(out, null, 2));
   console.log(`\nProbe written → ${path}`);
   console.log("Review it (it's your own health data, gitignored), redact anything you want, then share it back so I can build the Phase-2 mappers against your real field shapes.");
