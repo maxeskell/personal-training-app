@@ -28,9 +28,14 @@ Solid = required (AIE). Dotted = optional (Garmin). Must be fully useful on AIE 
   (`src/state/types.ts`), JSON-per-day store, 7-day trailing baselines (HRV/RHR/weight-trend), and
   sync-gap detection (`src/state/syncGaps.ts`). Defensive mapping — tool-shape changes degrade a field
   to null, never crash. Pure logic smoke-tested.
-- **M3 — LLM core + knowledge + guardrails.** Science as *priors* in `knowledge/sports-science.md`
-  (§7), interpreted by the model. **Deterministic code only** for hard guardrails: write-gate +
-  fuelling/weight limits.
+- **M3 — LLM core + knowledge + guardrails. ✅ built.** Anthropic SDK core (`claude-opus-4-8`,
+  adaptive thinking, prompt-cached persona+priors system prompt, structured-output verdicts) in
+  `src/llm` + `src/coach`. **Deterministic guardrails** (`src/guardrails`): the **write-gate**
+  (propose→confirm, single-use, no autonomous writes — verified) and **wellbeing limits** (nutrition
+  restriction screen + non-clinical health-risk co-occurrence check — verified). Persistent
+  **decision log** (`src/state/decisionLog.ts`, need #3). Readiness leads on interpretable signals +
+  trend, Garmin scores tiebreak-only, cites its data. *Pending your action:* set `ANTHROPIC_API_KEY`
+  to run `npm run readiness` live.
 - **M4 — The four flows + dated markdown reports.** Daily readiness, weekly review, gated plan-adjust,
   race prep. **This is the product** — meets the §9 acceptance criteria.
 - **M5 — Scheduling + dashboard.** Both apply: a pushed 06:00 readiness ping, and a glanceable

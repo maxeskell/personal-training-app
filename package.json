@@ -12,9 +12,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "auth:aie": "tsx src/cli.ts auth",
     "verify:reads": "tsx src/cli.ts verify",
-    "state:today": "tsx src/cli.ts state"
+    "state:today": "tsx src/cli.ts state",
+    "readiness": "tsx src/cli.ts readiness"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.102.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "dotenv": "^16.4.5",
     "open": "^10.1.0",

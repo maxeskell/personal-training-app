@@ -23,6 +23,9 @@ cp .env.example .env          # defaults are fine for AI Endurance
 npm run auth:aie              # one-time OAuth (opens browser); caches tokens in ~/.endurance-coach
 npm run verify:reads          # exercises every read tool; confirms the write-gate
 npm run state:today           # assembles + persists + summarises today's AthleteState
+
+export ANTHROPIC_API_KEY=sk-ant-...   # for the LLM readiness core (M3)
+npm run readiness             # green/amber/red verdict with cited drivers + wellbeing check
 ```
 
 Garmin is **optional** — leave `GARMIN_ENABLED=false` and the coach runs on AI Endurance alone.
