@@ -176,21 +176,23 @@ export async function assembleState(
   if (garmin?.available) {
     const weekAgo = daysAgoIso(opts.date, 7);
     const monthAgo = daysAgoIso(opts.date, 30);
-    const [sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv, pdc, endurance, hill, racePred] = await Promise.all([
-      garmin.tryCall("get_sleep_summary", { date: opts.date }).then(garminInner),
-      garmin.tryCall("get_body_battery", { start_date: weekAgo, end_date: opts.date }).then(garminInner),
-      garmin.tryCall("get_training_readiness", { date: opts.date }).then(garminInner),
-      garmin.tryCall("get_vo2max_trend", { start_date: weekAgo, end_date: opts.date }).then(garminInner),
-      garmin.tryCall("get_daily_weigh_ins", { date: opts.date }).then(garminInner),
-      garmin.tryCall("get_cycling_ftp", {}).then(garminInner),
-      garmin.tryCall("get_lactate_threshold", {}).then(garminInner),
-      garmin.tryCall("get_training_status", { date: opts.date }).then(garminInner),
-      garmin.tryCall("get_hrv_data", { date: opts.date }).then(garminInner),
-      garmin.tryCall("get_power_duration_curve", {}).then(garminInner),
-      garmin.tryCall("get_endurance_score", { start_date: monthAgo, end_date: opts.date }).then(garminInner),
-      garmin.tryCall("get_hill_score", { start_date: monthAgo, end_date: opts.date }).then(garminInner),
-      garmin.tryCall("get_race_predictions", {}).then(garminInner),
-    ]);
+    // The Taxuspt MCP processes one CallToolRequest at a time, so firing these in parallel just races
+    // them against a single 15s timeout (the queued ones expire before they run). Call SEQUENTIALLY —
+    // no slower against a serial server, and each call's timeout starts when it's actually dispatched.
+    const callG = (tool: string, args: Record<string, unknown>) => garmin.tryCall(tool, args).then(garminInner);
+    const sleep = await callG("get_sleep_summary", { date: opts.date });
+    const battery = await callG("get_body_battery", { start_date: weekAgo, end_date: opts.date });
+    const readiness = await callG("get_training_readiness", { date: opts.date });
+    const vo2 = await callG("get_vo2max_trend", { start_date: weekAgo, end_date: opts.date });
+    const weight = await callG("get_daily_weigh_ins", { date: opts.date });
+    const ftp = await callG("get_cycling_ftp", {});
+    const lactate = await callG("get_lactate_threshold", {});
+    const trainingStatus = await callG("get_training_status", { date: opts.date });
+    const hrv = await callG("get_hrv_data", { date: opts.date });
+    const pdc = await callG("get_power_duration_curve", {});
+    const endurance = await callG("get_endurance_score", { start_date: monthAgo, end_date: opts.date });
+    const hill = await callG("get_hill_score", { start_date: monthAgo, end_date: opts.date });
+    const racePred = await callG("get_race_predictions", {});
     raw.garmin = { sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv, pdc, endurance, hill, racePred };
 
     // Thresholds + zones from Garmin's own FTP/LT tools (verified shapes) — these win over the

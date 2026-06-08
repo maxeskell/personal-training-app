@@ -31,8 +31,9 @@ export const config = {
       process.env.GARMIN_MCP_ARGS ??
       "--python 3.12 --from git+https://github.com/Taxuspt/garmin_mcp garmin-mcp"
     ).split(" "),
-    /** Hard timeout (ms) for any Garmin call — never let it block the coach. */
-    timeoutMs: Number(process.env.GARMIN_TIMEOUT_MS ?? 15000),
+    /** Hard timeout (ms) for any Garmin call — never let it block the coach. Some endpoints
+     *  (power-duration curve, race predictions) parse many activities server-side and are slow. */
+    timeoutMs: Number(process.env.GARMIN_TIMEOUT_MS ?? 25000),
   },
 
   /** Where persisted secrets/tokens live — gitignored, outside the repo by default. */
