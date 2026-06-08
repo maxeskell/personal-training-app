@@ -1,7 +1,7 @@
 import { AieClient, AIE_READ_TOOLS, AIE_WRITE_TOOLS } from "./mcp/aieClient.js";
 import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
-import { assembleState } from "./state/assemble.js";
+import { assembleState, extractJson } from "./state/assemble.js";
 import { config } from "./config.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
@@ -361,6 +361,79 @@ async function cmdBackfill(): Promise<void> {
   await printArchiveStatus(store);
 }
 
+/**
+ * `probe` — Phase-2 data introspection. Lists the live Garmin MCP tool surface and captures one sample
+ * payload per tool (trying common arg shapes), plus AIE activity summary-vs-detail so we can confirm the
+ * activityId join. Writes everything to a gitignored reports/ file to build the health/injury-risk
+ * mappers against REAL field shapes instead of guesses. Review before sharing — it's your own data.
+ */
+async function cmdProbe(): Promise<void> {
+  const today = todayIso();
+  const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+  const monthAgo = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+  const out: Record<string, unknown> = { capturedAt: new Date().toISOString(), today };
+
+  // --- Garmin: list the tool surface, then sample each tool with candidate arg shapes ---
+  if (!config.garmin.enabled) {
+    console.log("Garmin disabled (GARMIN_ENABLED=false) — skipping Garmin probe. Set it true + auth to capture health metrics.");
+  } else {
+    const g = new GarminClient();
+    if (await g.connect()) {
+      const tools = await g.listToolNames();
+      console.log(`\nGarmin tools available (${tools.length}):\n  ${tools.join("\n  ")}\n`);
+      const argCandidates: Array<Record<string, unknown>> = [
+        {},
+        { date: today },
+        { cdate: today },
+        { start_date: weekAgo, end_date: today },
+        { startdate: weekAgo, enddate: today },
+        { start: monthAgo, end: today },
+      ];
+      const samples: Record<string, unknown> = {};
+      for (const tool of tools) {
+        let captured: unknown = null;
+        let usedArgs: Record<string, unknown> | null = null;
+        for (const args of argCandidates) {
+          const r = await g.tryCall(tool, args);
+          if (r != null) {
+            captured = r;
+            usedArgs = args;
+            break;
+          }
+        }
+        samples[tool] = { args: usedArgs, sample: captured ?? "(no response for tried arg shapes)" };
+        console.log(`  · ${tool}: ${captured != null ? "captured" : "no sample"}`);
+      }
+      out.garminTools = tools;
+      out.garminSamples = samples;
+      await g.close();
+    } else {
+      console.log("Garmin enabled but unavailable — run garmin-mcp-auth and retry.");
+    }
+  }
+
+  // --- AIE: summary vs detail for one recent run, to inspect the activityId join keys ---
+  try {
+    await withAie(async (aie) => {
+      out.aieRunningActivity = extractJson(await aie.read("getRunningActivity", {}));
+      out.aieRunningActivityDetail = extractJson(await aie.read("getRunningActivityDetail", {}));
+      out.aieUser = extractJson(await aie.read("getUser", {}));
+    });
+    console.log("\nAIE: captured getRunningActivity + getRunningActivityDetail + getUser (for join-key + zone/FTP field inspection).");
+  } catch (err) {
+    console.log(`\nAIE probe skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const dir = join(process.cwd(), "reports");
+  await mkdir(dir, { recursive: true });
+  const path = join(dir, `probe-${today}.json`);
+  await writeFile(path, JSON.stringify(out, null, 2));
+  console.log(`\nProbe written → ${path}`);
+  console.log("Review it (it's your own health data, gitignored), redact anything you want, then share it back so I can build the Phase-2 mappers against your real field shapes.");
+}
+
 async function printArchiveStatus(store: ArchiveStore): Promise<void> {
   const s = await store.summary();
   console.log(`\nArchive (${config.dataDir}/archive/):`);
@@ -618,6 +691,7 @@ const commands: Record<string, () => Promise<void>> = {
   ask: cmdAsk,
   backfill: cmdBackfill,
   "archive-status": cmdArchiveStatus,
+  probe: cmdProbe,
   decisions: cmdDecisions,
 };
 
@@ -639,6 +713,7 @@ if (!run) {
   console.log("  act        turn flagged insight findings into gated plan-adjustment proposals");
   console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
   console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
+  console.log("  probe      capture live Garmin tool surface + AIE detail samples → reports/ (Phase-2 mapping)");
   console.log('  decisions [pending | retro <id> "<note>"]   view log / pending / add retrospective');
   console.log("  (LLM flows need ANTHROPIC_API_KEY)");
   process.exit(1);
