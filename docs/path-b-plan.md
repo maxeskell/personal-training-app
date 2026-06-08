@@ -20,13 +20,22 @@ Garmin MCP (optional, local)     ┄┄►    · readiness logic (LLM + priors) 
 Solid = required (AIE). Dotted = optional (Garmin). Must be fully useful on AIE alone.
 
 ## Milestones (Build Spec §10)
-- **M1 — Scaffold + MCP clients.** Repo structure, AIE client (required, OAuth), Garmin client
-  (optional, degradable). Verify reads. Secrets encrypted, out of prompts/logs/repo.
-- **M2 — AthleteState + store + baselines.** One record/day, **provenance per field**. Planned-vs-actual
-  join, HRV-vs-baseline / RHR / sleep / weight-trend, sync-gap detection. Don't recompute what AIE trends.
-- **M3 — LLM core + knowledge + guardrails.** Science as *priors* in `knowledge/sports-science.md`
-  (§7), interpreted by the model. **Deterministic code only** for hard guardrails: write-gate +
-  fuelling/weight limits.
+- **M1 — Scaffold + MCP clients. ✅ built (branch `build/m1-m2`).** TS/Node project; AIE client over
+  Streamable HTTP with file-backed OAuth/PKCE (`src/mcp/`); optional Garmin stdio client that degrades
+  cleanly. Read tools enumerated; write tools blocked from the read path. Secrets outside the repo.
+  *Pending your action:* run `npm run auth:aie` to do the one-time OAuth and verify live reads.
+- **M2 — AthleteState + store + baselines. ✅ built.** `AthleteState` with **provenance per field**
+  (`src/state/types.ts`), JSON-per-day store, 7-day trailing baselines (HRV/RHR/weight-trend), and
+  sync-gap detection (`src/state/syncGaps.ts`). Defensive mapping — tool-shape changes degrade a field
+  to null, never crash. Pure logic smoke-tested.
+- **M3 — LLM core + knowledge + guardrails. ✅ built.** Anthropic SDK core (`claude-opus-4-8`,
+  adaptive thinking, prompt-cached persona+priors system prompt, structured-output verdicts) in
+  `src/llm` + `src/coach`. **Deterministic guardrails** (`src/guardrails`): the **write-gate**
+  (propose→confirm, single-use, no autonomous writes — verified) and **wellbeing limits** (nutrition
+  restriction screen + non-clinical health-risk co-occurrence check — verified). Persistent
+  **decision log** (`src/state/decisionLog.ts`, need #3). Readiness leads on interpretable signals +
+  trend, Garmin scores tiebreak-only, cites its data. *Pending your action:* set `ANTHROPIC_API_KEY`
+  to run `npm run readiness` live.
 - **M4 — The four flows + dated markdown reports.** Daily readiness, weekly review, gated plan-adjust,
   race prep. **This is the product** — meets the §9 acceptance criteria.
 - **M5 — Scheduling + dashboard.** Both apply: a pushed 06:00 readiness ping, and a glanceable
@@ -98,6 +107,20 @@ need #2), spawning the Python `garmin_mcp` over stdio for the optional 5 metrics
 - ⚠️ **Scope nuance to verify at M1:** the README's OAuth flow narration says the user grants *"read"
   scope*, while the scopes list and config show `read` + `write`. Confirm `write` is actually granted
   during the consent flow before relying on write tools.
+
+### Garmin MCP — CONNECTED & verified live (2026-06-08)
+- Authed (MFA) via `garmin-mcp-auth`; tokens in `~/.garminconnect`. Server exposes **122 tools**.
+- The 5 gap metrics are wired against **verified tool names + shapes**:
+  | Metric | Tool | Notes |
+  |---|---|---|
+  | Sleep (interpretable) | `get_sleep_summary(date)` | `sleep_score`, `sleep_hours`, `avg_overnight_hrv` |
+  | Body Battery (tiebreak) | `get_body_battery(start,end)` | `body_battery_level` is **categorical** (LOW/MODERATE/HIGH), not 0–100 |
+  | Training Readiness (tiebreak) | `get_training_readiness(date)` | `score` 0–100 + `level` (POOR/…) |
+  | VO₂max | `get_vo2max_trend(start,end)` | `latest_vo2_max` |
+  | Weight trend | `get_daily_weigh_ins(date)` | grams→kg; falls back to AIE `getUser.weight_kg` if no weigh-in |
+- Garmin wraps payloads as `{result: "<json string>"}` — unwrapped in `garminInner()`.
+- Cross-validation: Garmin overnight HRV (32 ms) == AIE rMSSD (32 ms) on the same day. ✓
+- Sleep/HRV/RHR treated as **interpretable**; Body Battery + Training Readiness as **tiebreak only**.
 
 ### Garmin MCP — confirmed (`Taxuspt/garmin_mcp`, the one the spec names)
 - **MIT licensed.** 110+ tools (~90% of `python-garminconnect` v0.3.2) — far more than the 5 we need;
