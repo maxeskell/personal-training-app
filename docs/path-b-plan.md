@@ -103,6 +103,20 @@ need #2), spawning the Python `garmin_mcp` over stdio for the optional 5 metrics
   scope*, while the scopes list and config show `read` + `write`. Confirm `write` is actually granted
   during the consent flow before relying on write tools.
 
+### Garmin MCP — CONNECTED & verified live (2026-06-08)
+- Authed (MFA) via `garmin-mcp-auth`; tokens in `~/.garminconnect`. Server exposes **122 tools**.
+- The 5 gap metrics are wired against **verified tool names + shapes**:
+  | Metric | Tool | Notes |
+  |---|---|---|
+  | Sleep (interpretable) | `get_sleep_summary(date)` | `sleep_score`, `sleep_hours`, `avg_overnight_hrv` |
+  | Body Battery (tiebreak) | `get_body_battery(start,end)` | `body_battery_level` is **categorical** (LOW/MODERATE/HIGH), not 0–100 |
+  | Training Readiness (tiebreak) | `get_training_readiness(date)` | `score` 0–100 + `level` (POOR/…) |
+  | VO₂max | `get_vo2max_trend(start,end)` | `latest_vo2_max` |
+  | Weight trend | `get_daily_weigh_ins(date)` | grams→kg; falls back to AIE `getUser.weight_kg` if no weigh-in |
+- Garmin wraps payloads as `{result: "<json string>"}` — unwrapped in `garminInner()`.
+- Cross-validation: Garmin overnight HRV (32 ms) == AIE rMSSD (32 ms) on the same day. ✓
+- Sleep/HRV/RHR treated as **interpretable**; Body Battery + Training Readiness as **tiebreak only**.
+
 ### Garmin MCP — confirmed (`Taxuspt/garmin_mcp`, the one the spec names)
 - **MIT licensed.** 110+ tools (~90% of `python-garminconnect` v0.3.2) — far more than the 5 we need;
   we'll call only sleep / Body Battery / Training Readiness / VO₂max+Training Status / weight trend.

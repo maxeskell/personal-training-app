@@ -63,6 +63,39 @@ function lastVal(arr: unknown): unknown {
   return arr.length ? arr[arr.length - 1] : undefined;
 }
 
+/** Last element of an array, else the value itself (Garmin returns arrays or scalars). */
+function lastEl(v: unknown): unknown {
+  return Array.isArray(v) ? (v.length ? v[v.length - 1] : undefined) : v;
+}
+
+/** ISO date `n` days before `date` (YYYY-MM-DD), via UTC to avoid TZ drift. */
+function daysAgoIso(date: string, n: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Garmin (Taxuspt) wraps tool output as `{result: "<json string>"}` inside the
+ * MCP content. extractJson() unwraps the MCP envelope; this unwraps the inner
+ * `result` JSON string. Returns null on any miss so callers degrade cleanly.
+ */
+function garminInner(toolResult: unknown): unknown {
+  if (toolResult === null || toolResult === undefined) return null;
+  const obj = extractJson(toolResult);
+  const inner = obj && typeof obj === "object" && "result" in (obj as Record<string, unknown>)
+    ? (obj as Record<string, unknown>).result
+    : obj;
+  if (typeof inner === "string") {
+    try {
+      return JSON.parse(inner);
+    } catch {
+      return inner; // e.g. "No weight measurements found for …"
+    }
+  }
+  return inner;
+}
+
 const SPORT_FROM_ACT: Record<string, "Ride" | "Run" | "Swim" | "Strength" | "Other"> = {
   Ride: "Ride",
   Run: "Run",
@@ -132,32 +165,57 @@ export async function assembleState(
   const aieActivities = collectActivities(raw);
   state.actualActivities = { value: aieActivities, source: "ai-endurance" };
 
-  // --- Optional Garmin gap-fillers (tiebreak only; degradable) ---
+  // --- Optional Garmin gap-fillers (degradable). Tool names/shapes verified
+  //     against Taxuspt/garmin_mcp 2026-06-08. Garmin wraps payloads in {result:"<json>"}. ---
   let garminStale = false;
   if (garmin?.available) {
-    // Tool names vary across garmin_mcp versions — call best-effort, map what returns.
-    const sleep = extractJson(await garmin.tryCall("get_sleep_data"));
-    const battery = extractJson(await garmin.tryCall("get_body_battery"));
-    const readiness = extractJson(await garmin.tryCall("get_training_readiness"));
-    const weight = extractJson(await garmin.tryCall("get_body_composition"));
-    raw.garmin = { sleep, battery, readiness, weight };
+    const weekAgo = daysAgoIso(opts.date, 7);
+    const [sleep, battery, readiness, vo2, weight] = await Promise.all([
+      garmin.tryCall("get_sleep_summary", { date: opts.date }).then(garminInner),
+      garmin.tryCall("get_body_battery", { start_date: weekAgo, end_date: opts.date }).then(garminInner),
+      garmin.tryCall("get_training_readiness", { date: opts.date }).then(garminInner),
+      garmin.tryCall("get_vo2max_trend", { start_date: weekAgo, end_date: opts.date }).then(garminInner),
+      garmin.tryCall("get_daily_weigh_ins", { date: opts.date }).then(garminInner),
+    ]);
+    raw.garmin = { sleep, battery, readiness, vo2, weight };
 
+    // Sleep — interpretable signal (own slot).
+    const sleepScore = asNumber(get(sleep, "sleep_score"));
+    const sleepHours = asNumber(get(sleep, "sleep_hours"));
+    const overnightHrv = asNumber(get(sleep, "avg_overnight_hrv"));
+    if (sleepScore != null || sleepHours != null || overnightHrv != null) {
+      state.sleep = {
+        value: { score: sleepScore, hours: sleepHours, overnightHrvMs: overnightHrv },
+        source: "garmin",
+      };
+    }
+
+    // Tiebreak-only black boxes: latest Body Battery (categorical) + Training Readiness.
+    const latestBattery = lastEl(battery);
+    const latestReadiness = lastEl(readiness);
+    const bbLevel = get(latestBattery, "body_battery_level");
+    const trLevel = get(latestReadiness, "level");
     state.tiebreak = {
       value: {
-        sleepScore: asNumber(get(sleep, "score")),
-        sleepHours: asNumber(get(sleep, "hours")),
-        bodyBattery: asNumber(get(battery, "level")),
-        trainingReadiness: asNumber(get(readiness, "score")),
+        bodyBatteryLevel: typeof bbLevel === "string" ? bbLevel : undefined,
+        trainingReadiness: asNumber(get(latestReadiness, "score")),
+        trainingReadinessLevel: typeof trLevel === "string" ? trLevel : undefined,
       },
       source: "garmin",
       note: "tiebreak only — proprietary black box, directional not gospel",
     };
-    const w = asNumber(get(weight, "weight"));
-    if (w != null) state.weightKg = { value: w, source: "garmin", note: "trend only" };
-    const hrv = asNumber(get(sleep, "hrv")) ?? asNumber(get(readiness, "hrv"));
-    if (hrv != null) state.hrvOvernight = { value: hrv, source: "garmin" };
-    const rhr = asNumber(get(sleep, "restingHeartRate"));
-    if (rhr != null) state.restingHr = { value: rhr, source: "garmin" };
+
+    // VO2max (latest from trend).
+    const v = asNumber(get(vo2, "latest_vo2_max"));
+    if (v != null) state.vo2max = { value: v, source: "garmin", note: "Garmin device estimate" };
+
+    // Weight: Garmin trend reading wins over AIE profile fallback, when present.
+    // python-garminconnect reports weight in grams — normalise to kg.
+    const wRaw = asNumber(get(weight, "weight")) ?? asNumber(get(lastEl(weight), "weight"));
+    if (wRaw != null) {
+      const kg = wRaw > 1000 ? wRaw / 1000 : wRaw;
+      state.weightKg = { value: kg, source: "garmin", note: "Index trend (trend only, never a daily target)" };
+    }
   } else if (garmin && !garmin.available) {
     garminStale = true;
   }
@@ -169,10 +227,14 @@ export async function assembleState(
   applyBaselines(state, computeBaselines(withToday));
 
   // --- Sync-gap detection ---
+  // We do NOT fetch Garmin's activity list: AIE is the activity source of truth and
+  // already ingests Garmin (Integration Spec §3). Activity cross-check is reserved for
+  // resolving a specific discrepancy, so we pass `undefined` (no cross-check) here —
+  // never an empty list, which would false-flag every AIE activity as a gap.
   state.syncGaps = detectSyncGaps({
     date: opts.date,
     aieActivities,
-    garminActivities: garminStale || !garmin?.available ? undefined : [],
+    garminActivities: undefined,
     garminStale,
   });
 

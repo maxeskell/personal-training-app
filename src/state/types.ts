@@ -55,14 +55,21 @@ export interface RecoveryModel {
   limiterToday?: string; // `driving_recovery`, e.g. "hr_rest"
 }
 
-/** Garmin tiebreak-only signals. Present only if Garmin connected. */
+/**
+ * Garmin TIEBREAK-ONLY signals — proprietary black boxes, directional not gospel.
+ * Used only when the interpretable signals are ambiguous (Integration Spec §3).
+ */
 export interface TiebreakSignals {
-  sleepScore?: number;
-  sleepHours?: number;
-  bodyBattery?: number;
-  trainingReadiness?: number;
-  vo2max?: number;
-  trainingStatus?: string;
+  bodyBatteryLevel?: string; // categorical: "LOW" | "MODERATE" | "HIGH" (Garmin doesn't expose a 0–100 here)
+  trainingReadiness?: number; // 0–100
+  trainingReadinessLevel?: string; // e.g. "POOR" | "MODERATE" | "READY"
+}
+
+/** Sleep — an INTERPRETABLE readiness signal (not a tiebreak). Garmin-sourced. */
+export interface SleepSignals {
+  score?: number; // Garmin sleep score 0–100
+  hours?: number;
+  overnightHrvMs?: number; // Garmin avg overnight HRV (ms) — supplementary to AIE rMSSD
 }
 
 /** Adequate-fuelling ranges from getNutritionModel — never deficits. */
@@ -106,6 +113,9 @@ export interface AthleteState {
   restingHr: Provenanced<number>;
   restingHr7dBaseline: Provenanced<number>;
 
+  // Sleep — interpretable readiness signal (Garmin).
+  sleep: Provenanced<SleepSignals>;
+
   // Garmin tiebreak-only — clearly flagged as such.
   tiebreak: Provenanced<TiebreakSignals>;
 
@@ -148,6 +158,7 @@ export function emptyState(date: string, assembledAt: string): AthleteState {
     hrv7dBaseline: absent<number>("derived"),
     restingHr: absent<number>(),
     restingHr7dBaseline: absent<number>("derived"),
+    sleep: absent<SleepSignals>("garmin"),
     tiebreak: absent<TiebreakSignals>("garmin"),
     weightKg: absent<number>("garmin"),
     weight7dTrend: absent<number>("derived"),

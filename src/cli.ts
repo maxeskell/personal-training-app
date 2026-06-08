@@ -102,6 +102,8 @@ async function cmdState(): Promise<void> {
   line("resting hr", state.restingHr);
   line("weight (kg)", state.weightKg);
   line("weight 7d trend", state.weight7dTrend);
+  line("sleep (garmin)", state.sleep);
+  line("vo2max", state.vo2max);
   line("tiebreak (garmin)", state.tiebreak);
   line("nutrition targets", state.nutritionTargets);
 
