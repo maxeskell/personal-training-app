@@ -63,6 +63,7 @@ export async function proposeAdjustments(
   llm: CoachLLM,
   request: string,
   today: AthleteState,
+  context?: string,
 ): Promise<{ result: PlanAdjustResult; cacheRead: number }> {
   const planned = (today.plannedSessions.value ?? [])
     .map((p) => `  - id=${p.workoutId ?? "?"} ${p.date} ${p.sport ?? p.type ?? ""} ${p.durationMin ?? ""}m "${p.title ?? ""}"`)
@@ -73,8 +74,11 @@ export async function proposeAdjustments(
     "trade-offs. Do NOT restructure the week — only address the request. Prefer the smallest change",
     "that meets the need. If no change is warranted, return an empty proposals array and say so in notes.",
     "Respect the season shape and the Alderford capped-tempo / marathon run-load cautions.",
+    "Target a SPECIFIC planned session by id when reducing load (e.g. the hardest/longest one this week);",
+    "don't propose a change you can't tie to a concrete workoutId — use changeWorkoutAdvice or notes instead.",
     "",
     `ATHLETE REQUEST: ${request}`,
+    context ? `\nRELEVANT SIGNALS [insight engine — cite these in the trade-off]:\n${context}` : "",
     "",
     "CURRENT PLANNED SESSIONS [ai-endurance]:",
     planned || "  (none in the next 14 days)",
