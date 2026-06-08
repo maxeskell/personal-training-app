@@ -19,7 +19,7 @@ import {
 } from "./metrics.js";
 import { estimateRunSplits, type RaceSplitPlan, type DurabilityState } from "./splits.js";
 import { analyseRecoverySeries, sleepVsNextDayLoad, type Correlation, type Anomaly } from "./correlations.js";
-import { buildMonitoringRuleSet, monitoringFinding, type MonitoringRuleSet } from "./monitoring.js";
+import { buildMonitoringRuleSet, monitoringFinding, type MonitoringRuleSet, type MonitoringInput } from "./monitoring.js";
 import { changePointsOf, changePointFindings, type SeriesChangePoints } from "./changepoint.js";
 import { analyseBricks, brickFinding, type BrickAnalysis } from "./brick.js";
 import { analyseTaper, taperFinding, type TaperAnalysis } from "./taper.js";
@@ -31,7 +31,8 @@ import { finiteNums } from "./stats.js";
 /** Optional historical archive to widen the metrics beyond the live 40-activity / 60-day window. */
 export interface ArchiveInput {
   activities?: RichActivity[];
-  garminDays?: Array<{ date: string; sleepHours?: number }>;
+  /** Backfilled Garmin daily series (years). hrv/rhr/sleepScore power the validated monitoring rule. */
+  garminDays?: Array<{ date: string; sleepHours?: number; hrvMs?: number; restingHr?: number; sleepScore?: number }>;
 }
 
 export interface PredictionVsGoal {
@@ -110,6 +111,37 @@ function predictionsVsGoals(state: AthleteState): PredictionVsGoal[] {
       };
     })
     .sort((a, b) => (a.daysTo ?? 0) - (b.daysTo ?? 0));
+}
+
+type RecoverySeries = { date?: unknown[]; rMSSD?: unknown[]; resting_heart_rate?: unknown[]; recovery?: unknown[] } | undefined;
+
+/**
+ * Choose the series the monitoring rule runs on. Prefers the backfilled Garmin history because (a) it's
+ * years deep (enough for a real holdout) and (b) Garmin sleep score is an outcome INDEPENDENT of the
+ * HRV/RHR predictors. Falls back to the 60-day AIE recovery series (dependent → relabelled) otherwise.
+ */
+function monitoringInputFrom(recData: RecoverySeries, archive?: ArchiveInput): MonitoringInput {
+  const gar = (archive?.garminDays ?? []).slice().sort((a, b) => a.date.localeCompare(b.date));
+  const hrvCount = gar.filter((d) => d.hrvMs != null).length;
+  const sleepCount = gar.filter((d) => d.sleepScore != null).length;
+  if (gar.length >= 60 && hrvCount >= 40 && sleepCount >= 40) {
+    return {
+      dates: gar.map((d) => d.date),
+      hrv: gar.map((d) => d.hrvMs ?? null),
+      rhr: gar.map((d) => d.restingHr ?? null),
+      outcome: gar.map((d) => d.sleepScore ?? null),
+      outcomeName: "Garmin sleep score",
+      outcomeIndependent: true,
+    };
+  }
+  return {
+    dates: (recData?.date ?? []).map((d) => String(d).slice(0, 10)),
+    hrv: finiteNums(recData?.rMSSD),
+    rhr: finiteNums(recData?.resting_heart_rate),
+    outcome: finiteNums(recData?.recovery),
+    outcomeName: "AI Endurance cardio-recovery",
+    outcomeIndependent: false,
+  };
 }
 
 /** Infer a run race's distance (km) from its name. Returns null for non-run / unknown events. */
@@ -213,7 +245,7 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   const predictions = predictionsVsGoals(state);
 
   // New rigorous/n=1 layers (data-scientist brief Q1–Q7 + stream-level §1).
-  const monitoring = buildMonitoringRuleSet(recData);
+  const monitoring = buildMonitoringRuleSet(monitoringInputFrom(recData, archive));
 
   const recDates = (recData?.date ?? []).map((d) => String(d).slice(0, 10));
   const changePoints: SeriesChangePoints[] = [];

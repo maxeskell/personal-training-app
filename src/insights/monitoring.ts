@@ -1,69 +1,95 @@
 /**
- * Personalised monitoring rule set (data-scientist brief Deliverable #3, Q1).
+ * Personalised monitoring rule set (data-scientist brief Deliverable #3, Q1) — validated honestly.
  *
- * The brief asks for "the 5–8 personalised thresholds worth watching daily, each with its historical
- * hit/false-alarm rate" — e.g. "HRV >X below baseline for ≥N nights AND RHR up Y bpm → cap intensity".
- * We BACKTEST candidate rules against this athlete's own ~60-day recovery series and report each rule's
- * confusion-matrix performance, then surface the best one as a Finding.
+ * We backtest candidate HRV/RHR early-warning rules against this athlete's own history. Two hard
+ * lessons from the code review are baked in:
  *
- * Outcome (proxy, stated honestly): a "bad recovery day" = the AI Endurance cardio-recovery sub-score
- * dropping notably below the athlete's own rolling baseline (z ≤ −1). The brief's gold-standard outcome
- * is benchmark pace-at-HR, which the daily wellness series doesn't carry; recovery-score suppression is
- * the best available daily proxy and is labelled as such. Predictors lead the outcome (t−lead).
+ *  1. NO in-sample optimism. Selecting the best of (4 rules × 3 leads) on the same series you then
+ *     report on overstates skill on short, autocorrelated n=1 data. So we SELECT the rule+lead on the
+ *     earlier ~60% of days and REPORT hit/false-alarm only on the held-out later ~40% — and we run a
+ *     circular-shift PERMUTATION NULL on the holdout, surfacing a rule only if its real skill beats the
+ *     95th percentile of the null. If there isn't enough history for a holdout, we fall back to
+ *     in-sample selection and label the finding "in-sample / exploratory".
+ *
+ *  2. The outcome must be INDEPENDENT of the predictors. AI Endurance's recovery score is itself
+ *     modelled from HRV+RHR, so using it as the outcome makes HRV/RHR rules tautological. We prefer an
+ *     independent outcome — Garmin sleep score from the backfilled multi-year history — and only fall
+ *     back to the AIE recovery series (clearly relabelled as concordance, not prediction) when that
+ *     longer/independent series isn't available.
  */
 
-import { finiteNums, mean, sd, type Maybe } from "./stats.js";
+import { finiteNums, mean, sd, mulberry32, circularShift, type Maybe } from "./stats.js";
 import type { Finding } from "./metrics.js";
+
+/** What the rule set is run against — built by the engine from the best available series. */
+export interface MonitoringInput {
+  dates: string[];
+  hrv: Maybe[]; // overnight HRV (rMSSD or Garmin overnight HRV)
+  rhr: Maybe[];
+  outcome: Maybe[]; // the signal whose drop = a "bad day"
+  outcomeName: string;
+  outcomeIndependent: boolean; // false when the outcome is derived from the predictors (e.g. AIE recovery)
+}
 
 export interface RulePerf {
   name: string;
-  lead: number; // days the rule fires ahead of the outcome
-  hitRate: number; // sensitivity: P(rule fired | bad day coming)
-  falseAlarmRate: number; // P(rule fired | no bad day)
-  precision: number; // P(bad day | rule fired)
-  youdenJ: number; // hitRate − falseAlarmRate (skill above chance)
-  fires: number; // how often the rule fired across history
-  outcomes: number; // how many bad days were in the window
+  lead: number;
   description: string;
+  hitRate: number; // reported on the HOLDOUT when validated, else in-sample
+  falseAlarmRate: number;
+  precision: number;
+  youdenJ: number;
+  fires: number;
+  outcomes: number;
+  pValue?: number; // permutation-null p on the holdout (lower = more skill)
 }
 
 export interface MonitoringRuleSet {
   outcomeDefinition: string;
+  outcomeName: string;
+  outcomeIndependent: boolean;
   days: number;
+  method: "walk-forward + permutation" | "in-sample (exploratory)";
+  validated: boolean;
   rules: RulePerf[];
   best: RulePerf | null;
 }
 
-/** Rolling z-scores of a series vs a trailing window (each point scored against its own history). */
+/** Rolling z-scores vs a trailing window (each point scored against its own prior history). */
 function rollingZ(series: Maybe[], window = 28): Maybe[] {
-  const out: Maybe[] = series.map(() => null);
-  for (let i = 0; i < series.length; i++) {
-    const histVals: number[] = [];
+  return series.map((_, i) => {
+    const hist: number[] = [];
     for (let j = Math.max(0, i - window); j < i; j++) {
       const v = series[j];
-      if (v != null) histVals.push(v);
+      if (v != null) hist.push(v);
     }
     const cur = series[i];
-    if (cur == null || histVals.length < 10) continue;
-    const m = mean(histVals)!;
-    const s = sd(histVals);
-    if (s == null || s === 0) continue;
-    out[i] = +((cur - m) / s).toFixed(2);
-  }
-  return out;
+    if (cur == null || hist.length < 10) return null;
+    const m = mean(hist)!;
+    const s = sd(hist);
+    if (s == null || s === 0) return null;
+    return +((cur - m) / s).toFixed(2);
+  });
 }
 
-/** Evaluate a boolean predictor[t] against outcome[t+lead] across the series. */
-function score(predictor: boolean[], outcome: boolean[], lead: number): Omit<RulePerf, "name" | "description"> {
-  let tp = 0;
-  let fp = 0;
-  let fn = 0;
-  let tn = 0;
-  let fires = 0;
-  let outcomes = 0;
-  for (let t = 0; t + lead < outcome.length; t++) {
+interface Confusion {
+  hitRate: number;
+  falseAlarmRate: number;
+  precision: number;
+  youdenJ: number;
+  fires: number;
+  outcomes: number;
+  evaluable: number;
+}
+
+/** Score predictor[t] against outcome[t+lead] over index window [a, b). Nulls are skipped. */
+function score(predictor: boolean[], outcome: Array<boolean | null>, lead: number, a: number, b: number): Confusion {
+  let tp = 0, fp = 0, fn = 0, tn = 0, fires = 0, outcomes = 0, evaluable = 0;
+  for (let t = a; t + lead < b; t++) {
+    const bad = outcome[t + lead];
+    if (bad == null) continue; // no independent outcome that day
+    evaluable++;
     const fired = predictor[t] === true;
-    const bad = outcome[t + lead] === true;
     if (fired) fires++;
     if (bad) outcomes++;
     if (fired && bad) tp++;
@@ -75,77 +101,175 @@ function score(predictor: boolean[], outcome: boolean[], lead: number): Omit<Rul
   const falseAlarmRate = fp + tn > 0 ? fp / (fp + tn) : 0;
   const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
   return {
-    lead,
     hitRate: +hitRate.toFixed(2),
     falseAlarmRate: +falseAlarmRate.toFixed(2),
     precision: +precision.toFixed(2),
     youdenJ: +(hitRate - falseAlarmRate).toFixed(2),
     fires,
     outcomes,
+    evaluable,
   };
 }
 
-export function buildMonitoringRuleSet(
-  data: { rMSSD?: unknown[]; resting_heart_rate?: unknown[]; recovery?: unknown[] } | undefined,
-): MonitoringRuleSet {
-  const hrvZ = rollingZ(finiteNums(data?.rMSSD));
-  const rhrZ = rollingZ(finiteNums(data?.resting_heart_rate));
-  const recZ = rollingZ(finiteNums(data?.recovery));
-  const days = recZ.filter((x) => x != null).length;
+interface Candidate {
+  name: string;
+  pred: boolean[];
+  description: string;
+}
 
-  const outcome = recZ.map((z) => (z == null ? false : z <= -1));
-  const hasOutcome = outcome.some(Boolean);
-
-  // Candidate predictors (rolling-baseline, so they read as personal deviations, not absolutes).
+function candidates(hrvZ: Maybe[], rhrZ: Maybe[]): Candidate[] {
   const hrvLow = hrvZ.map((z) => z != null && z <= -1);
-  const hrvLow2 = hrvZ.map((z, i) => z != null && z <= -1 && (hrvZ[i - 1] ?? 0)! <= -1); // ≥2 nights
+  const hrvLow2 = hrvZ.map((z, i) => z != null && z <= -1 && (i > 0 && hrvZ[i - 1] != null && hrvZ[i - 1]! <= -1));
   const rhrHigh = rhrZ.map((z) => z != null && z >= 1);
   const combined = hrvLow.map((v, i) => v && rhrHigh[i]);
-
-  const candidates: Array<{ name: string; pred: boolean[]; description: string }> = [
-    { name: "HRV ≥1 SD below baseline", pred: hrvLow, description: "Overnight HRV (rMSSD) a full SD under your rolling baseline." },
-    { name: "HRV suppressed ≥2 nights", pred: hrvLow2, description: "HRV ≥1 SD below baseline two nights running — the sustained-drop pattern." },
+  return [
+    { name: "HRV ≥1 SD below baseline", pred: hrvLow, description: "Overnight HRV a full SD under your rolling baseline." },
+    { name: "HRV suppressed ≥2 nights", pred: hrvLow2, description: "HRV ≥1 SD below baseline two nights running." },
     { name: "Resting HR ≥1 SD above baseline", pred: rhrHigh, description: "Resting HR a full SD over your rolling baseline." },
-    { name: "HRV down AND RHR up", pred: combined, description: "HRV suppressed and RHR elevated on the same morning — the classic combined flag." },
+    { name: "HRV down AND RHR up", pred: combined, description: "HRV suppressed and RHR elevated the same morning." },
   ];
-
-  const rules: RulePerf[] = [];
-  if (hasOutcome && days >= 21) {
-    for (const c of candidates) {
-      // Pick the lead (1–3 days) that maximises skill for this rule.
-      let best: Omit<RulePerf, "name" | "description"> | null = null;
-      for (let lead = 1; lead <= 3; lead++) {
-        const s = score(c.pred, outcome, lead);
-        if (s.fires === 0) continue;
-        if (!best || s.youdenJ > best.youdenJ) best = s;
-      }
-      if (best) rules.push({ name: c.name, description: c.description, ...best });
-    }
-    rules.sort((a, b) => b.youdenJ - a.youdenJ);
-  }
-
-  return {
-    outcomeDefinition: "bad recovery day = AI Endurance cardio-recovery ≥1 SD below personal rolling baseline (proxy for a performance dip)",
-    days,
-    rules,
-    best: rules.find((r) => r.youdenJ > 0.1 && r.fires >= 3) ?? null,
-  };
 }
 
-/** Turn the best backtested rule into a Finding (only when it shows real skill on enough history). */
+export function buildMonitoringRuleSet(input: MonitoringInput): MonitoringRuleSet {
+  const hrvZ = rollingZ(finiteNums(input.hrv));
+  const rhrZ = rollingZ(finiteNums(input.rhr));
+  const outcomeZ = rollingZ(finiteNums(input.outcome));
+  const outcomeBad: Array<boolean | null> = outcomeZ.map((z) => (z == null ? null : z <= -1));
+  const n = outcomeBad.length;
+  const usableDays = outcomeBad.filter((b) => b != null).length;
+  const cands = candidates(hrvZ, rhrZ);
+
+  const base = {
+    outcomeName: input.outcomeName,
+    outcomeIndependent: input.outcomeIndependent,
+    days: usableDays,
+    outcomeDefinition: `bad day = ${input.outcomeName} ≥1 SD below personal rolling baseline${input.outcomeIndependent ? "" : " (NB: derived from HRV/RHR — concordance, not independent prediction)"}`,
+  };
+
+  // Enough history to hold out? Need a meaningful train and test span with events on both sides.
+  const canHoldout = usableDays >= 50;
+
+  if (!canHoldout) {
+    // In-sample selection only — explicitly exploratory, never reported as validated skill.
+    const rules = pickInSample(cands, outcomeBad, n);
+    return {
+      ...base,
+      method: "in-sample (exploratory)",
+      validated: false,
+      rules,
+      best: rules.find((r) => r.youdenJ > 0.2 && r.fires >= 4) ?? null,
+    };
+  }
+
+  // Walk-forward: select on the earlier 60%, evaluate on the held-out later 40%.
+  const trainEnd = Math.floor(n * 0.6);
+  let bestSel: { cand: Candidate; lead: number; trainJ: number } | null = null;
+  for (const c of cands) {
+    for (let lead = 1; lead <= 3; lead++) {
+      const tr = score(c.pred, outcomeBad, lead, 0, trainEnd);
+      if (tr.fires < 3 || tr.outcomes < 3) continue;
+      if (!bestSel || tr.youdenJ > bestSel.trainJ) bestSel = { cand: c, lead, trainJ: tr.youdenJ };
+    }
+  }
+
+  const rules: RulePerf[] = [];
+  let best: RulePerf | null = null;
+  if (bestSel) {
+    const te = score(bestSel.cand.pred, outcomeBad, bestSel.lead, trainEnd, n);
+    const pValue = permutationP(bestSel.cand.pred, outcomeBad, bestSel.lead, trainEnd, n, te.youdenJ);
+    const perf: RulePerf = {
+      name: bestSel.cand.name,
+      description: bestSel.cand.description,
+      lead: bestSel.lead,
+      hitRate: te.hitRate,
+      falseAlarmRate: te.falseAlarmRate,
+      precision: te.precision,
+      youdenJ: te.youdenJ,
+      fires: te.fires,
+      outcomes: te.outcomes,
+      pValue,
+    };
+    rules.push(perf);
+    // Validated only if the holdout has real events, positive skill, and beats the permutation null.
+    if (te.outcomes >= 5 && te.fires >= 3 && te.youdenJ > 0 && pValue < 0.05) best = perf;
+  }
+
+  return { ...base, method: "walk-forward + permutation", validated: best != null, rules, best };
+}
+
+/** In-sample scan (no holdout possible) — for short series; results are exploratory only. */
+function pickInSample(cands: Candidate[], outcomeBad: Array<boolean | null>, n: number): RulePerf[] {
+  const out: RulePerf[] = [];
+  for (const c of cands) {
+    let best: { lead: number; s: Confusion } | null = null;
+    for (let lead = 1; lead <= 3; lead++) {
+      const s = score(c.pred, outcomeBad, lead, 0, n);
+      if (s.fires === 0) continue;
+      if (!best || s.youdenJ > best.s.youdenJ) best = { lead, s };
+    }
+    if (best) {
+      out.push({
+        name: c.name,
+        description: c.description,
+        lead: best.lead,
+        hitRate: best.s.hitRate,
+        falseAlarmRate: best.s.falseAlarmRate,
+        precision: best.s.precision,
+        youdenJ: best.s.youdenJ,
+        fires: best.s.fires,
+        outcomes: best.s.outcomes,
+      });
+    }
+  }
+  return out.sort((a, b) => b.youdenJ - a.youdenJ);
+}
+
+/** Circular-shift permutation p-value for the selected rule on the holdout window. */
+function permutationP(pred: boolean[], outcomeBad: Array<boolean | null>, lead: number, a: number, b: number, realJ: number, K = 400): number {
+  const rnd = mulberry32(0x9e3779b1);
+  const span = b - a;
+  if (span < 5) return 1;
+  const seg = outcomeBad.slice(a, b);
+  let ge = 0;
+  for (let k = 0; k < K; k++) {
+    const offset = 1 + Math.floor(rnd() * (span - 1));
+    const shifted = circularShift(seg, offset);
+    // Re-embed the shifted holdout outcome and score the same predictor/lead.
+    const nullOutcome = outcomeBad.slice();
+    for (let i = 0; i < span; i++) nullOutcome[a + i] = shifted[i];
+    const j = score(pred, nullOutcome, lead, a, b).youdenJ;
+    if (j >= realJ) ge++;
+  }
+  return +((ge + 1) / (K + 1)).toFixed(3);
+}
+
+/** Turn the best rule into a Finding — wording and confidence track validation status honestly. */
 export function monitoringFinding(rs: MonitoringRuleSet): Finding | null {
   const b = rs.best;
   if (!b) return null;
+  const depNote = rs.outcomeIndependent ? "" : ` Note: the outcome (${rs.outcomeName}) is derived from HRV/RHR, so read this as concordance, not independent prediction.`;
+
+  if (rs.validated) {
+    return {
+      family: "Monitoring rule (n=1, out-of-sample)",
+      title: `Watch rule: ${b.name}`,
+      severity: "info",
+      detail:
+        `Selected on the earlier part of your history and tested on held-out later days, this fires ~${b.lead} day(s) before a ${rs.outcomeName} dip with a ${Math.round(b.hitRate * 100)}% hit-rate and ${Math.round(b.falseAlarmRate * 100)}% false-alarm rate (held-out; permutation p=${b.pValue}).${depNote} When it trips, cap intensity and re-check the morning signals.`,
+      evidence: `walk-forward holdout + circular-shift permutation over ${rs.days} usable days [${rs.outcomeIndependent ? "independent outcome" : "dependent outcome"}]`,
+      recommendation: "Treat it as amber, not gospel — confirm against how you actually feel before pulling a session.",
+      confidence: Math.min(0.85, 0.55 + b.youdenJ / 2),
+    };
+  }
+
+  // Not validated out-of-sample (short history or didn't beat the null) — surface as exploratory.
   return {
-    family: "Monitoring rule (n=1, backtested)",
-    title: `Watch rule: ${b.name}`,
+    family: "Monitoring rule (n=1, exploratory)",
+    title: `Possible watch rule: ${b.name}`,
     severity: "info",
     detail:
-      `On your own history this fires ~${b.lead} day(s) before a recovery dip with a ${Math.round(b.hitRate * 100)}% hit-rate ` +
-      `and ${Math.round(b.falseAlarmRate * 100)}% false-alarm rate (precision ${Math.round(b.precision * 100)}%). ` +
-      `When it trips, cap intensity for ${b.lead === 1 ? "the next day" : `the next ${b.lead} days`} and re-check the morning signals.`,
-    evidence: `backtested over ${rs.days} days, fired ${b.fires}×, Youden J ${b.youdenJ} [derived from AIE recovery series]`,
-    recommendation: "Treat it as amber, not gospel — confirm against how you actually feel before pulling a session.",
-    confidence: Math.min(0.95, 0.5 + b.youdenJ),
+      `In your history so far, ${b.name.toLowerCase()} has coincided with a later ${rs.outcomeName} dip (~${b.lead} day(s), in-sample hit ${Math.round(b.hitRate * 100)}% / false-alarm ${Math.round(b.falseAlarmRate * 100)}%). This is NOT yet validated out-of-sample — treat it as a hypothesis to watch as more history accrues.${depNote}`,
+    evidence: `${rs.method} over ${rs.days} days — exploratory, not held-out [${rs.outcomeIndependent ? "independent outcome" : "dependent outcome"}]`,
+    confidence: 0.4,
   };
 }
