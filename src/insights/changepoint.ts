@@ -118,11 +118,11 @@ export function changePointFindings(series: SeriesChangePoints[], recentDays = 2
       title: `${s.metric} stepped ${last.direction} ~${ageDays}d ago`,
       severity: last.direction === "down" && /HRV|fitness|CTL/i.test(s.metric) ? "watch" : "info",
       detail:
-        `Change-point detection dates a genuine shift in ${s.metric} around ${last.date}: ` +
+        `Change-point detection flags a possible level shift in ${s.metric} around ${last.date}: ` +
         `${last.before} → ${last.after}${last.deltaPct != null ? ` (${last.deltaPct >= 0 ? "+" : ""}${last.deltaPct}%)` : ""}. ` +
-        `Cross-reference it to a training change, illness, or kit change rather than reading the daily wobble.`,
-      evidence: `binary-segmentation change-point (L2 cost) on the daily series [derived]`,
-      confidence: 0.6,
+        `Not significance-tested — cross-reference it to a training change, illness, or kit change rather than reading the daily wobble.`,
+      evidence: `binary-segmentation change-point (L2 cost), not significance-tested [derived]`,
+      confidence: 0.45,
     });
   }
   return out;
