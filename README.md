@@ -77,8 +77,10 @@ detector self-gates and stays silent until there's enough of your own history be
 - **Taper target (Q6):** the race-day form (TSB) band that accompanied your best past races.
 - **Economy vs fitness (Q5):** run EF residualised on CTL — separates real economy gains from "just fitness".
 - **Fuelling red flag (Q7):** fires when weight *and* skeletal-muscle-mass trend down together.
-- **Stream-level biomechanics (§1):** optional — set `FIT_STREAMS_DIR` to a folder of per-second streams
-  to flag cadence/GCT decay late in long runs (catalogue A5/A7). See `.env.example`.
+- **Stream-level (.FIT) analysis (§1):** optional — point `FIT_STREAMS_DIR` at a folder of **raw Garmin
+  `.FIT` files** (decoded in-process by a dependency-free parser; no extraction step). Unlocks
+  within-session **aerobic decoupling** (power/speed:HR drift), **per-activity temperature** (the heat
+  confounder), and run **biomechanics** (cadence/GCT decay on HRM-strap runs). See `.env.example`.
 
 Every finding now carries a **confidence score**; only good-signal findings are surfaced, and the most
 important also feed a multiple-comparisons guard: the exploratory correlation scan is **FDR-controlled**
