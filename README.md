@@ -52,6 +52,16 @@ To enable it, run the one-time `garmin-mcp-auth` (see `.env.example`) then set `
 Layout: `src/mcp/` (AIE OAuth client + Garmin stdio client), `src/state/` (AthleteState, store,
 baselines, sync-gaps), `knowledge/sports-science.md` (priors for the M3 LLM layer).
 
+## Health & security
+
+```bash
+npm run doctor      # creds, Garmin token age (~6mo expiry), API key, AIE tool-drift
+```
+
+Secrets stay local and out of git: AI Endurance OAuth tokens live in `~/.endurance-coach` (0700),
+Garmin tokens in `~/.garminconnect`, your `ANTHROPIC_API_KEY` in `.env`. `data/`, `reports/`, `*.log`,
+and token dirs are gitignored; token-shaped strings are redacted from logs and notifications.
+
 ## Specs (source of truth)
 
 - [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) — decision gate + engineering plan (authoritative).

@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "auth:aie": "tsx src/cli.ts auth",
     "verify:reads": "tsx src/cli.ts verify",
+    "doctor": "tsx src/cli.ts doctor",
     "state:today": "tsx src/cli.ts state",
     "readiness": "tsx src/cli.ts readiness",
     "weekly": "tsx src/cli.ts weekly",

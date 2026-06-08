@@ -12,6 +12,7 @@ import { proposeAdjustments, parseArgs } from "./coach/planAdjust.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { notify } from "./notify.js";
+import { fileChecks } from "./health.js";
 import open from "open";
 import { assessHealthRisk } from "./guardrails/wellbeing.js";
 import { WriteGate } from "./guardrails/writeGate.js";
@@ -29,6 +30,16 @@ async function buildTodayState(): Promise<{ state: AthleteState; window: Athlete
   );
   await garmin?.close();
   await store.save(state);
+
+  // AIE tool-change tolerance: a read that errored degrades its field to null rather than
+  // crashing — but surface it so silent API drift doesn't pass unnoticed (Integration Spec §2.1).
+  const failed = Object.entries(state.raw ?? {})
+    .filter(([, v]) => v && typeof v === "object" && "error" in (v as Record<string, unknown>))
+    .map(([tool]) => tool);
+  if (failed.length) {
+    console.warn(`⚠ AI Endurance reads returned errors (continuing on partial data): ${failed.join(", ")}`);
+  }
+
   const window = await store.recent(today, 7);
   return { state, window };
 }
@@ -257,6 +268,25 @@ async function cmdDecisions(): Promise<void> {
     console.log("\nNo decisions logged yet.");
     return;
   }
+
+  // `decisions pending` — un-acted plan-adjust proposals (latest status per id == "proposed").
+  if (sub === "pending") {
+    const latest = new Map<string, (typeof all)[number]>();
+    for (const r of all) latest.set(r.id, r);
+    const pending = [...latest.values()].filter((r) => r.kind === "plan-adjust" && r.status === "proposed");
+    if (!pending.length) {
+      console.log("\nNo pending proposals — nothing awaiting confirm/decline.");
+      return;
+    }
+    console.log(`\nPending proposals (${pending.length}):\n`);
+    for (const r of pending) {
+      console.log(`  [${r.id}] ${r.summary}`);
+      if (r.tradeoff) console.log(`      trade-off: ${r.tradeoff}`);
+      console.log(`      → npm run confirm -- ${r.id}   |   npm run decline -- ${r.id}`);
+    }
+    return;
+  }
+
   console.log(`\nDecision log (${all.length} entries, most recent last):\n`);
   for (const r of all.slice(-20)) {
     console.log(`  ${r.timestamp.slice(0, 16)}  [${r.id}] ${r.kind}/${r.status}`);
@@ -264,6 +294,7 @@ async function cmdDecisions(): Promise<void> {
     if (r.tradeoff) console.log(`      trade-off: ${r.tradeoff}`);
     if (r.retro) console.log(`      retro: ${r.retro}`);
   }
+  if (all.length > 500) console.log(`\n(log is large — consider archiving data/decisions/log.jsonl)`);
 }
 
 /** `weekly` — planned vs actual, load by sport, adherence, trends, next-week focus. */
@@ -353,10 +384,38 @@ async function cmdDecline(): Promise<void> {
   console.log(`\nDismissed ${id}.`);
 }
 
+/** `doctor` — hardening health check: creds, Garmin token age, Anthropic key, AIE tool drift. */
+async function cmdDoctor(): Promise<void> {
+  const checks = await fileChecks();
+
+  // Live AIE tool-drift check (best-effort — don't fail the whole doctor if AIE is unreachable).
+  try {
+    await withAie(async (aie) => {
+      const tools = await aie.listToolNames();
+      const expected = new Set<string>([...AIE_READ_TOOLS, ...AIE_WRITE_TOOLS]);
+      const missing = [...expected].filter((t) => !tools.includes(t));
+      const extra = tools.filter((t) => !expected.has(t));
+      if (missing.length) checks.push({ name: "AIE tool set", status: "warn", detail: `expected-but-absent: ${missing.join(", ")}` });
+      else if (extra.length) checks.push({ name: "AIE tool set", status: "info", detail: `new/unknown tools: ${extra.join(", ")}` });
+      else checks.push({ name: "AIE tool set", status: "ok", detail: `all ${tools.length} expected tools present` });
+    });
+  } catch (e) {
+    checks.push({ name: "AIE connection", status: "warn", detail: `could not reach AI Endurance: ${e instanceof Error ? e.message : String(e)}` });
+  }
+
+  const icon = (s: string) => (s === "ok" ? "✓" : s === "warn" ? "⚠" : s === "fail" ? "✗" : "·");
+  console.log("\nEndurance Coach — health check:\n");
+  for (const c of checks) console.log(`  ${icon(c.status)} ${c.name.padEnd(20)} ${c.detail}`);
+  const fails = checks.filter((c) => c.status === "fail").length;
+  const warns = checks.filter((c) => c.status === "warn").length;
+  console.log(`\n${fails} fail, ${warns} warn. ${fails ? "Resolve fails before the daily ping can run." : "Core is healthy."}`);
+}
+
 const [, , cmd] = process.argv;
 const commands: Record<string, () => Promise<void>> = {
   auth: cmdAuth,
   verify: cmdVerify,
+  doctor: cmdDoctor,
   state: cmdState,
   readiness: cmdReadiness,
   ping: cmdPing,
@@ -374,6 +433,7 @@ if (!run) {
   console.log("Usage: tsx src/cli.ts <command>");
   console.log("  auth       run OAuth + confirm the AI Endurance connection");
   console.log("  verify     exercise every read tool, confirm the write-gate");
+  console.log("  doctor     health check: creds, Garmin token age, key, AIE tool drift");
   console.log("  state      assemble + persist + summarise today's AthleteState");
   console.log("  readiness  green/amber/red verdict with cited drivers");
   console.log("  ping       unattended morning readiness: verdict + report + desktop notification");
@@ -382,7 +442,7 @@ if (!run) {
   console.log('  propose "<request>"  gated plan-adjustment proposals');
   console.log("  confirm <id> / decline <id>   apply or dismiss a proposal");
   console.log("  dashboard  generate + open the glanceable Today/Week/Trends/Race view");
-  console.log('  decisions [retro <id> "<note>"]   view the decision log / add a retrospective');
+  console.log('  decisions [pending | retro <id> "<note>"]   view log / pending / add retrospective');
   console.log("  (LLM flows need ANTHROPIC_API_KEY)");
   process.exit(1);
 }

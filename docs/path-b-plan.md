@@ -51,7 +51,13 @@ Solid = required (AIE). Dotted = optional (Garmin). Must be fully useful on AIE 
   (3) **Decision-log views** — `decisions` lists the audit trail and `decisions retro <id> "…"` records
   how a call held up. Verified: `decisions`, `dashboard`, and `ping` all run live (notification fired,
   report written). Sparklines populate once ≥2 days of state accumulate via the daily ping.
-- **M6 — Harden.** Garmin-breakage handling, AIE tool-change tolerance, secret hygiene, decision-log review.
+- **M6 — Harden. ✅ built & verified live.** **Garmin breakage**: auth-failure detection with an
+  actionable re-auth hint + token-age warning before the ~6-month expiry. **AIE tool-change
+  tolerance**: failed reads degrade a field to null and are surfaced (not silent); `doctor` flags
+  tool drift — *it already caught a real new tool (`createRideRunWorkoutAdvanced`) the live API added,
+  now gated as a write*. **Secret hygiene**: token-shape redaction on all logs/notifications, secrets
+  dir 0700, `*.log`/token dirs gitignored. **Decision-log review**: `decisions pending` + retro +
+  size warning. New **`doctor`** command is the single health entry point. Verified live (doctor green).
 
 ## Hard guardrails (enforced in code, non-negotiable)
 - **Write-gate:** no AIE write tool (`changeWorkoutDate`, `skipWorkout`, `create*Workout`, `setZones`…)

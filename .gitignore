@@ -34,4 +34,7 @@ coverage/
 data/
 .secrets/
 *.tokens.json
+*.log
+.garminconnect/
+.endurance-coach/
 
