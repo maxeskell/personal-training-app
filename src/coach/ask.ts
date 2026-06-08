@@ -1,6 +1,6 @@
 import type { CoachLLM } from "../llm/client.js";
 import type { AthleteState } from "../state/types.js";
-import { buildInsights, type InsightReport } from "../insights/engine.js";
+import { buildInsights, type InsightReport, type ArchiveInput } from "../insights/engine.js";
 import { richActivities } from "../insights/metrics.js";
 import { screenNutritionPrompt } from "../guardrails/wellbeing.js";
 
@@ -61,12 +61,12 @@ export interface AskResult {
   blocked?: boolean;
 }
 
-export async function answerQuestion(llm: CoachLLM, question: string, state: AthleteState): Promise<AskResult> {
+export async function answerQuestion(llm: CoachLLM, question: string, state: AthleteState, archive?: ArchiveInput): Promise<AskResult> {
   // Wellbeing guardrail runs first — restriction/deficit questions get redirected, not answered.
   const screen = screenNutritionPrompt(question);
   if (screen.blocked) return { answer: screen.redirect!, blocked: true };
 
-  const insights = state.raw ? buildInsights(state) : undefined;
+  const insights = state.raw ? buildInsights(state, archive) : undefined;
   const context = insights ? buildAskContext(state, insights) : "(no assembled data available)";
 
   const prompt = [

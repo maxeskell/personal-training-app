@@ -64,6 +64,34 @@ export interface CorrelationResult {
   anomalies: Anomaly[];
 }
 
+/**
+ * Archive-powered n=1 signal: last night's sleep vs the NEXT day's training load — the headline
+ * "do I train worse on poor sleep?" pattern, now computable once the Garmin sleep history is backfilled.
+ */
+export function sleepVsNextDayLoad(
+  garminDays: Array<{ date: string; sleepHours?: number }>,
+  essByDate: Map<string, number>,
+): Correlation | null {
+  const days = [...garminDays].sort((a, b) => a.date.localeCompare(b.date));
+  const xs: Array<number | null> = [];
+  const ys: Array<number | null> = [];
+  for (const d of days) {
+    const next = new Date(`${d.date}T00:00:00Z`);
+    next.setUTCDate(next.getUTCDate() + 1);
+    const nextEss = essByDate.get(next.toISOString().slice(0, 10));
+    xs.push(d.sleepHours ?? null);
+    ys.push(nextEss ?? null);
+  }
+  const { r, n } = pearson(xs, ys);
+  if (r == null || n < 20 || Math.abs(r) < 0.3) return null;
+  return {
+    label: "Last night's sleep → next-day training load",
+    r,
+    n,
+    interpretation: `${strength(r)} (r=${r}, n=${n}): ${r > 0 ? "you train more after good sleep — readiness shows up the next day." : "your training load doesn't follow sleep — but watch session quality on short-sleep days."}`,
+  };
+}
+
 export function analyseRecoverySeries(
   data: { date?: unknown[]; rMSSD?: unknown[]; resting_heart_rate?: unknown[]; recovery?: unknown[]; external_stress_score?: unknown[] } | undefined,
 ): CorrelationResult {

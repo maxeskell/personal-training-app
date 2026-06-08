@@ -33,7 +33,8 @@
     "pm2:stop": "pm2 stop endurance-dashboard",
     "deep-dive": "tsx src/cli.ts deep-dive",
     "act": "tsx src/cli.ts act",
-    "ask": "tsx src/cli.ts ask"
+    "ask": "tsx src/cli.ts ask",
+    "backfill": "tsx src/cli.ts backfill"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",

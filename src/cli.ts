@@ -11,8 +11,23 @@ import { runRacePrep } from "./coach/racePrep.js";
 import { proposeAdjustments, parseArgs } from "./coach/planAdjust.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
-import { buildInsights } from "./insights/engine.js";
+import { buildInsights, type ArchiveInput } from "./insights/engine.js";
+import { mapRichActivity } from "./insights/metrics.js";
+import { ArchiveStore } from "./archive/store.js";
+import { backfillActivities, backfillGarmin } from "./archive/backfill.js";
 import { answerQuestion } from "./coach/ask.js";
+
+/** Load the local history archive (if any) as insight inputs. Undefined when empty. */
+async function loadArchive(): Promise<ArchiveInput | undefined> {
+  const store = new ArchiveStore();
+  const acts = await store.loadActivities();
+  const gar = await store.loadGarminDays();
+  if (!acts.length && !gar.length) return undefined;
+  return {
+    activities: acts.map((a) => mapRichActivity(a.raw, a.sport)),
+    garminDays: gar.map((d) => ({ date: d.date, sleepHours: d.sleepHours })),
+  };
+}
 import { notify } from "./notify.js";
 import { fileChecks } from "./health.js";
 import open from "open";
@@ -233,7 +248,7 @@ async function cmdPing(): Promise<void> {
 async function cmdDeepDive(): Promise<void> {
   if (!requireLLM()) process.exit(1);
   const { state } = await buildTodayState();
-  const ins = buildInsights(state);
+  const ins = buildInsights(state, await loadArchive());
 
   const ev = (t: { recent: number | null; prior: number | null; deltaPct: number | null; n: number }) =>
     `recent ${t.recent ?? "—"} vs prior ${t.prior ?? "—"} (Δ ${t.deltaPct ?? "—"}%, n=${t.n})`;
@@ -279,15 +294,45 @@ async function cmdAsk(): Promise<void> {
     process.exit(1);
   }
   const { state } = await buildTodayState();
-  const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt()), question, state);
+  const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt()), question, state, await loadArchive());
   console.log("\n" + answer + "\n");
+}
+
+/** `backfill [fromDate]` — archive full history: AIE activities (month-paged) + Garmin daily metrics. */
+async function cmdBackfill(): Promise<void> {
+  const from = process.argv[3] || "2024-01-01";
+  const to = todayIso();
+  const store = new ArchiveStore();
+  console.log(`\nBackfilling history ${from} → ${to} into ${config.dataDir}/archive/ …\n`);
+
+  await withAie(async (aie) => {
+    const added = await backfillActivities(aie, store, from, to, (m) => console.log(m));
+    console.log(`AIE activities: +${added} new.\n`);
+  });
+
+  if (config.garmin.enabled) {
+    const g = new GarminClient();
+    if (await g.connect()) {
+      console.log("Garmin daily metrics (throttled, resumable — re-run to continue if interrupted):");
+      const added = await backfillGarmin(g, store, from, to, (m) => console.log(m));
+      console.log(`Garmin: +${added} new days.\n`);
+      await g.close();
+    } else {
+      console.log("Garmin enabled but unavailable — skipped (re-run when connected).\n");
+    }
+  } else {
+    console.log("Garmin disabled — skipped (set GARMIN_ENABLED=true to include it).\n");
+  }
+
+  const s = await store.summary();
+  console.log(`Archive now: ${s.activities} activities (${s.actRange}); ${s.garminDays} Garmin days (${s.garRange}).`);
 }
 
 /** `dashboard` — generate the glanceable Today/Week/Trends/Race HTML and open it. */
 async function cmdDashboard(): Promise<void> {
   const { window, state } = await buildTodayState();
   const decisions = await new DecisionLog().all();
-  const insights = state.raw ? buildInsights(state) : undefined;
+  const insights = state.raw ? buildInsights(state, await loadArchive()) : undefined;
   const html = renderDashboard({ window, decisions, insights });
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
@@ -418,7 +463,7 @@ async function cmdPropose(): Promise<void> {
 async function cmdAct(): Promise<void> {
   if (!requireLLM()) process.exit(1);
   const { state } = await buildTodayState();
-  const ins = buildInsights(state);
+  const ins = buildInsights(state, await loadArchive());
   const actionable = ins.findings.filter((f) => f.severity !== "info");
   if (!actionable.length) {
     console.log("\nNo flagged signals to act on — the insight engine sees nothing needing a plan change.\n");
@@ -525,6 +570,7 @@ const commands: Record<string, () => Promise<void>> = {
   "deep-dive": cmdDeepDive,
   act: cmdAct,
   ask: cmdAsk,
+  backfill: cmdBackfill,
   decisions: cmdDecisions,
 };
 
@@ -545,6 +591,7 @@ if (!run) {
   console.log("  deep-dive  insight-engine analysis (load/EF/durability/ramp/goal) → report");
   console.log("  act        turn flagged insight findings into gated plan-adjustment proposals");
   console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
+  console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
   console.log('  decisions [pending | retro <id> "<note>"]   view log / pending / add retrospective');
   console.log("  (LLM flows need ANTHROPIC_API_KEY)");
   process.exit(1);

@@ -47,27 +47,30 @@ export interface RichActivity {
   hrvArtifactPct?: number;
 }
 
-/** Pull the rich activity fields out of a raw getXxxActivity payload. */
+/** Map one raw AIE activity object (+ sport) into a RichActivity. Shared by live + archived paths. */
+export function mapRichActivity(a: Record<string, unknown>, sport: RichActivity["sport"]): RichActivity {
+  return {
+    date: String(a.activity_date_local ?? a.activity_date ?? "").slice(0, 10),
+    sport,
+    ess: num(a.external_stress_score),
+    avwatts: num(a.activity_avwatts),
+    avhr: num(a.activity_avhr),
+    movingSec: num(a.activity_movingtime),
+    durabilityPct:
+      num(a.aerobic_durability_according_to_dfa_alpha1_running_power_in_percent) ??
+      num(a.aerobic_durability_according_to_dfa_alpha1_in_percent),
+    aerThrHr: num(a.aerobic_threshold_dfa_alpha1_heart_rate_cluster) ?? num(a.aerobic_threshold_dfa_alpha1_heart_rate_ramp),
+    aerThrW: num(a.aerobic_threshold_dfa_alpha1_watts_cluster) ?? num(a.aerobic_threshold_dfa_alpha1_watts_ramp),
+    hrvArtifactPct: num(a.hrv_artifact_percentage),
+  };
+}
+
+/** Pull the rich activity fields out of a raw getXxxActivity payload (the live, 40-deep window). */
 export function richActivities(raw: Record<string, unknown> | undefined): RichActivity[] {
   const out: RichActivity[] = [];
   const grab = (key: string, sport: RichActivity["sport"]) => {
     const arr = (raw?.[key] as { activities?: unknown[] } | undefined)?.activities ?? [];
-    for (const a of arr as Record<string, unknown>[]) {
-      out.push({
-        date: String(a.activity_date_local ?? a.activity_date ?? "").slice(0, 10),
-        sport,
-        ess: num(a.external_stress_score),
-        avwatts: num(a.activity_avwatts),
-        avhr: num(a.activity_avhr),
-        movingSec: num(a.activity_movingtime),
-        durabilityPct:
-          num(a.aerobic_durability_according_to_dfa_alpha1_running_power_in_percent) ??
-          num(a.aerobic_durability_according_to_dfa_alpha1_in_percent),
-        aerThrHr: num(a.aerobic_threshold_dfa_alpha1_heart_rate_cluster) ?? num(a.aerobic_threshold_dfa_alpha1_heart_rate_ramp),
-        aerThrW: num(a.aerobic_threshold_dfa_alpha1_watts_cluster) ?? num(a.aerobic_threshold_dfa_alpha1_watts_ramp),
-        hrvArtifactPct: num(a.hrv_artifact_percentage),
-      });
-    }
+    for (const a of arr as Record<string, unknown>[]) out.push(mapRichActivity(a, sport));
   };
   grab("getRunningActivity", "Run");
   grab("getCyclingActivity", "Ride");
