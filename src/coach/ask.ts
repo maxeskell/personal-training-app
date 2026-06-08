@@ -55,6 +55,7 @@ export function buildAskContext(state: AthleteState, insights: InsightReport): s
     state.trainingStatus.value ? `- Garmin training status: ${state.trainingStatus.value.label ?? "—"}, acute:chronic ${state.trainingStatus.value.loadRatio ?? "—"} (${state.trainingStatus.value.acwrStatus ?? "—"}), acute ${state.trainingStatus.value.acuteLoad ?? "—"}/chronic ${state.trainingStatus.value.chronicLoad ?? "—"} [garmin MODEL]` : "",
     state.hrvStatus.value ? `- Garmin HRV status: ${state.hrvStatus.value.status ?? "—"} (last night ${state.hrvStatus.value.lastNightMs ?? "—"}ms, baseline ${state.hrvStatus.value.baselineLowMs ?? "—"}-${state.hrvStatus.value.baselineUpperMs ?? "—"}ms) [garmin]` : "",
     state.enduranceScore.value ? `- Endurance score ${state.enduranceScore.value.current ?? "—"} (${state.enduranceScore.value.classification ?? "—"}); hill ${state.hillScore.value?.overall ?? "—"}; FTP est ${state.powerCurve.value?.ftpEstimateW ?? "—"}W [garmin MODEL]` : "",
+    state.racePredictions.value ? `- Garmin race-time predictions: ${state.racePredictions.value.predictions.map((p) => `${p.label} ${Math.floor(p.timeSeconds / 60)}:${String(Math.round(p.timeSeconds % 60)).padStart(2, "0")}`).join(", ")} [garmin MODEL]` : "",
     `- Weight ${fmt(state.weightKg.value, 1)}kg (trend only), VO2max ${fmt(state.vo2max.value)} [${state.weightKg.source}/${state.vo2max.source}]`,
     "",
     `INSIGHTS:`,

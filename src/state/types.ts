@@ -113,6 +113,12 @@ export interface HillScoreSignals {
   endurance?: number;
 }
 
+/** Garmin race-time predictions (get_race_predictions) — estimated finish per standard distance. */
+export interface RacePredictionSignals {
+  date?: string;
+  predictions: Array<{ label: string; timeSeconds: number }>;
+}
+
 /** Sleep — an INTERPRETABLE readiness signal (not a tiebreak). Garmin-sourced. */
 export interface SleepSignals {
   score?: number; // Garmin sleep score 0–100
@@ -201,6 +207,7 @@ export interface AthleteState {
   powerCurve: Provenanced<PowerCurveSignals>;
   enduranceScore: Provenanced<EnduranceScoreSignals>;
   hillScore: Provenanced<HillScoreSignals>;
+  racePredictions: Provenanced<RacePredictionSignals>;
 
   // Weight: TREND only, secondary, never a daily target.
   weightKg: Provenanced<number>;
@@ -252,6 +259,7 @@ export function emptyState(date: string, assembledAt: string): AthleteState {
     powerCurve: absent<PowerCurveSignals>("garmin"),
     enduranceScore: absent<EnduranceScoreSignals>("garmin"),
     hillScore: absent<HillScoreSignals>("garmin"),
+    racePredictions: absent<RacePredictionSignals>("garmin"),
     weightKg: absent<number>("garmin"),
     weight7dTrend: absent<number>("derived"),
     vo2max: absent<number>("garmin"),
