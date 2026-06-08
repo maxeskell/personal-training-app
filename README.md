@@ -34,7 +34,8 @@ npm run confirm -- <id>       # apply a proposal (the ONLY path that writes to A
 npm run decline -- <id>       # dismiss a proposal
 
 npm run ping                  # unattended morning readiness: verdict + report + desktop notification
-npm run dashboard             # glanceable Today/Week/Trends/Race HTML, opened in your browser
+npm run dashboard             # one-off glanceable HTML, opened in your browser
+npm run deep-dive             # insight-engine analysis (load/EF/durability/ramp/goal) → report
 npm run decisions             # view the decision log (audit trail)
 npm run decisions -- retro <id> "how it held up"   # add a retrospective to a decision
 
@@ -51,6 +52,31 @@ To enable it, run the one-time `garmin-mcp-auth` (see `.env.example`) then set `
 
 Layout: `src/mcp/` (AIE OAuth client + Garmin stdio client), `src/state/` (AthleteState, store,
 baselines, sync-gaps), `knowledge/sports-science.md` (priors for the M3 LLM layer).
+
+## Online dashboard (view it on your phone over Wi-Fi)
+
+A small local web server serves the live dashboard — including the **Signals** panel (insight engine:
+load/CTL-ATL-TSB, efficiency, durability, run-load ramp guard, goal tracking). It binds to your LAN so a
+phone on the **same Wi-Fi** can open it. Credentials never leave the Mac — the phone only talks to this server.
+
+```bash
+npm run serve                 # start the server; prints http://localhost:3000 and http://<mac-ip>:3000
+```
+
+Open the `http://192.168.x.x:3000` address on your phone. Hit **↻ refresh** to re-pull live data.
+
+**Keep it always-on** (survives reboot) with pm2 — the right tool for a long-running server:
+
+```bash
+npm i -g pm2
+npm run serve:start           # pm2 start (binds 0.0.0.0:3000)
+pm2 startup && pm2 save        # run the printed command, then save — survives reboot
+npm run serve:logs            # tail logs
+npm run serve:stop            # stop
+```
+
+> Note: the LAN dashboard has no login — fine on a trusted home network. Don't expose port 3000 to the
+> public internet; for remote access use a private tunnel (Tailscale/cloudflared), not port-forwarding.
 
 ## Health & security
 
