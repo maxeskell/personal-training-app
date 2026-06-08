@@ -1,4 +1,9 @@
-# Insight Engine — Spec for the next layer (v1)
+# Insight Engine — Spec for the next layer (v1.1)
+
+> **v1.1 (2026-06-08):** updated after a live API spike + literature review — see §9. Headline changes:
+> AI Endurance already computes durability + DFA-α1 thresholds (consume, don't recompute); load model is
+> computable from ESS; ACWR demoted on validity grounds; detail-pull metrics deferred (no `activity_id`
+> in the list). The N1 shortlist is now all cheap list-level metrics.
 
 > **What this is.** Path B (M1–M6) delivers the *daily operating system*: readiness, weekly review,
 > gated plan-adjust, race prep, scheduling, dashboard, decision log. It answers **"what do I do today,
@@ -53,9 +58,14 @@ Organised by family; the ⭐ shortlist is the highest-value subset to build firs
 - ⭐ **CTL / ATL / TSB** (fitness / fatigue / form) from a daily load series. **Defer to AI Endurance if
   it exposes these; otherwise compute from per-activity External Stress Score (ESS) as a TSS proxy**
   (CTL = ~42-day EWMA, ATL = ~7-day, TSB = CTL−ATL). Track form trajectory into each race.
-- ⭐ **Run-specific Acute:Chronic Workload Ratio (ACWR)** = 7-day run load ÷ 28-day run load. >1.3–1.5 =
-  spike = injury risk. **This is the single most valuable detector for the marathon-off-tri injury
-  window** the whole project flagged. Plus a hard weekly run-volume-jump cap.
+- ⭐ **Run-load ramp guard for the marathon-off-tri injury window.** Primary signal = **absolute
+  weekly run-volume / run-load increase vs a rolling baseline** (cap week-on-week jumps), *not* ACWR.
+  **Revised after lit review (2026-06-08):** the Acute:Chronic Workload Ratio is now substantially
+  **criticised** — mathematical coupling (acute load is inside chronic load), no evidence for the
+  0.8–1.3 "sweet spot," and inconsistent injury prediction ([Impellizzeri et al.](https://pmc.ncbi.nlm.nih.gov/articles/PMC8138569/),
+  [systematic reviews](https://pmc.ncbi.nlm.nih.gov/articles/PMC12487117/)). So ACWR is **demoted to a
+  caveated secondary descriptor**, never a gospel threshold. Pair the absolute-ramp guard with
+  **monotony/strain** (Foster) for the injury-window flag.
 - **Ramp rate** (ΔCTL/week) — >5–7/wk flags overreaching.
 - **Training monotony & strain** (Foster) — daily-load mean ÷ SD across a week; high monotony precedes
   illness/overtraining.
@@ -201,7 +211,7 @@ goes and the practical rate/token cost of bulk detail pulls.
 
 ---
 
-## 8. Open questions to resolve before N1 (be honest about these)
+## 8. Open questions to resolve before N1  →  ✅ RESOLVED 2026-06-08 (see §9)
 
 1. **Does AI Endurance expose a load/fitness/form time series** (CTL/ATL/TSB or equivalent) via any tool,
    or only per-activity ESS? Determines whether we *consume* or *compute* load.
@@ -213,3 +223,62 @@ goes and the practical rate/token cost of bulk detail pulls.
    back to pace:HR?
 
 A short spike against the live API answers all five and turns this spec into an N1 build plan.
+
+---
+
+## 9. Spike findings — resolved 2026-06-08 (live API + lit review)
+
+A live probe against AI Endurance + Garmin and a literature pass changed the plan materially. **Net: most
+priority insights are computable straight from the activity *list* — no expensive detail pulls — and AI
+Endurance already computes more than we assumed, so we *consume* rather than recompute.**
+
+### What the activity list already contains (per run/ride, no detail pull)
+The list items are far richer than the v1 README implied. Each carries:
+`activity_avwatts`, `activity_avhr`, `activity_avpace`, **`external_stress_score`** (+ `internal_stress_score`,
+`kcal`), `hrv_artifact_percentage`, and a **full DFA-α1 suite** computed by AI Endurance:
+- `aerobic_threshold_dfa_alpha1_*` / `anaerobic_threshold_dfa_alpha1_*` (in **watts and HR**, ramp + cluster),
+- **`aerobic_durability_according_to_dfa_alpha1_in_percent`** and the **running-power** variant,
+- `mean_of_dfa_alpha1_times_power_or_pace` (+ 2-week-normalised %), `average_of_dfa_alpha1`.
+
+### Answers to the five open questions
+1. **Load/fitness/form series?** No explicit CTL/ATL/TSB tool, **but `external_stress_score` exists both
+   per-activity and as a daily series in `getRecoveryModel.data`.** → We **compute CTL/ATL/TSB ourselves**
+   from the daily ESS series (EWMA), and ESS is AI Endurance's TSS-analog (treat as load units, not raw kJ).
+2. **ESS semantics?** It's a unitless stress score (≈TSS-equivalent); per-activity values look sane (a 50-min
+   endurance run = ~52). Good enough for CTL/ATL/TSB and the absolute-ramp guard. Daily series has occasional
+   `null` (rest days) — handle as 0 load.
+3. **Detail history depth & cost?** ⚠️ **The activity list caps at 40 results even with a wide date range,
+   and — critically — list items expose NO `activity_id`,** so we currently *cannot* obtain an id to call
+   `get*ActivityDetail`. → **Open blocker for detail-only metrics** (within-session decoupling, MMP curve).
+   Mitigation: backfill the *list* by paging month-by-month date windows; chase the id source separately
+   (ask AI Endurance / check `summaryMode:false` variants). **Good news: the priority metrics don't need
+   detail** (see below), so this no longer gates N1.
+4. **Garmin HRV history?** `get_hrv_trend` returned an empty/under-documented shape in the probe — needs an
+   arg/format follow-up. **Low priority** — AI Endurance's `rMSSD` + recovery model already cover HRV.
+5. **Run power coverage?** **40/40 runs have power.** → Run **EF via power** (not just pace) is viable.
+
+### Consequent revisions to the build
+- **Consume, don't recompute (defer-to-platform):** AI Endurance already computes **durability** and
+  **DFA-α1 aerobic/anaerobic thresholds** per activity. We **trend those directly** rather than re-deriving
+  them — and gain a **threshold-trend** insight (FTP/aerobic-threshold drift) almost for free.
+- **EF is list-level & cheap:** `activity_avwatts / activity_avhr` per session → EF trend, no detail pull.
+  Compute only on steady aerobic sessions (EF/decoupling are valid for steady efforts ≥~20 min only —
+  [TrainingPeaks](https://www.trainingpeaks.com/blog/efficiency-factor-and-decoupling/)).
+- **DFA-α1 is directional, not gospel:** practical for intensity-distribution/threshold tracking, but 2024
+  work questions its validity as a *true* threshold ([Sport Sci 2024](https://www.tandfonline.com/doi/full/10.1080/02640414.2024.2421691)).
+  **Filter by `hrv_artifact_percentage`** (drop noisy readings) and trend it, with caveats.
+- **ACWR demoted** (see §2.B) — absolute weekly ramp + monotony lead the injury-window guard instead.
+- **Durability is worth prioritising:** 2025 research confirms durability is associated with marathon
+  performance ([Hunter et al. 2025, EJSS](https://onlinelibrary.wiley.com/doi/10.1002/ejsc.70073)) — and
+  it's the metric most relevant to *both* the Olympic-tri and the marathon-off-tri plan.
+
+### Revised N1 shortlist (all list-level — cheap, no detail pulls, no id blocker)
+1. **Load model** — daily ESS → CTL/ATL/TSB + **absolute run-load ramp guard** (injury window).
+2. **Efficiency Factor** trend per discipline (avwatts/avhr, steady sessions, run power available).
+3. **Durability** trend — consume AI Endurance's `aerobic_durability_according_to_dfa_alpha1_*`.
+4. **Threshold trend** — consume the DFA-α1 aerobic/anaerobic threshold (watts/HR), artifact-filtered.
+5. **Prediction-vs-goal** — `getPrediction` vs `getRaceGoalEvent`, weeks-to-race.
+6. **TID / grey-zone** — `getPlanProgress` zone adherence + per-activity intensity.
+
+Detail-dependent metrics (within-session decoupling, MMP curve) move to **N3+**, gated on resolving the
+`activity_id` source.
