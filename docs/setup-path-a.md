@@ -36,15 +36,18 @@ decision-log gaps bite (they do, per your answer), proceed to Path B (`docs/path
 
 ---
 
-## Open inputs to resolve (Build Spec §11)
-- **Birmingham distance:** sprint / standard / middle? _(TBD)_
-- **Alderford format:** triathlon or open-water swim? _(TBD — drives the 3-weeks-before-marathon call)_
-- **Athlete baselines:** mostly from `getUser` / `getAvailability` once AIE is connected; ask for the rest
-  (bike FTP W/kg, swim CSS, run threshold pace, recent race times, injury/niggle history, max hrs/week).
+## Open inputs (Build Spec §11)
+- **Birmingham distance:** ✅ **Olympic / standard** (1.5 km swim · 40 km bike · 10 km run).
+- **Alderford format:** ✅ **Olympic-distance triathlon** (not an open-water swim).
+- **Athlete baselines:** _still needed_ — mostly from `getUser` / `getAvailability` once AIE is connected;
+  ask for the rest (bike FTP W/kg, swim CSS, run threshold pace, recent race times, injury/niggle
+  history, max hrs/week).
 
-## Race calendar (from the specs)
-- **A — Birmingham Triathlon — 11 Jul 2026** (priority; peak here).
-- **B — Alderford — 6 Sep 2026** (format TBD; 3 weeks before the marathon → deliberate call).
+## Race calendar
+- **A — Birmingham Triathlon (Olympic) — 11 Jul 2026** (priority; peak here).
+- **B — Alderford Triathlon (Olympic) — 6 Sep 2026** → **DECISION (resolved):** it's a triathlon
+  3 weeks before the goal marathon, so racing it hard compromises marathon taper/prep. Default:
+  **hard-capped tempo effort / drop the intensity — don't race it.** (Build Spec §6.)
 - **B — Loch Ness Marathon (road) — 27 Sep 2026** (run-focused block off the tri base).
 
 **Shape:** one tri build to July → deliberate run block to the marathon. Maintain (don't build) swim/bike Aug–Sep. One peak, not two.
