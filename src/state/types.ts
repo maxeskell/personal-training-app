@@ -38,14 +38,21 @@ export interface LoadModel {
   tsb?: number;
 }
 
-/** Recovery model — AI Endurance owns this; orthopedic is per-sport (key for run-load watch). */
+/**
+ * Recovery model — AI Endurance owns this; orthopedic is per-sport (key for run-load watch).
+ * NOTE (verified 2026-06-08): the `*Recovery` fields are 0–100 recovery sub-scores
+ * (higher = more recovered), NOT raw physiological values. Raw rMSSD/RHR are separate.
+ * Raw DFA α1 is not currently exposed by the API (returns null).
+ */
 export interface RecoveryModel {
-  cardioRecovery?: number;
-  dfaAlpha1?: number;
-  rmssd?: number;
-  restingHrTrend?: number;
-  orthopedic?: { run?: number; bike?: number; swim?: number };
-  limiterToday?: string;
+  cardioRecovery?: number; // overall cardio recovery, 0–100
+  alpha1Recovery?: number; // recovery score derived from DFA α1, 0–100
+  rmssdRecovery?: number; // recovery score derived from rMSSD, 0–100
+  rhrRecovery?: number; // recovery score derived from resting HR, 0–100
+  rmssdMs?: number; // raw rMSSD (ms) — the interpretable HRV signal
+  restingHrBpm?: number; // raw resting heart rate (bpm)
+  orthopedic?: { run?: number; bike?: number; swim?: number }; // per-sport recovery, 0–100
+  limiterToday?: string; // `driving_recovery`, e.g. "hr_rest"
 }
 
 /** Garmin tiebreak-only signals. Present only if Garmin connected. */

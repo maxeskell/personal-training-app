@@ -42,8 +42,34 @@ export function extractJson(result: unknown): unknown {
 }
 
 function asNumber(x: unknown): number | undefined {
-  return typeof x === "number" && Number.isFinite(x) ? x : undefined;
+  if (typeof x === "number" && Number.isFinite(x)) return x;
+  if (typeof x === "string" && x.trim() !== "" && Number.isFinite(Number(x))) return Number(x);
+  return undefined;
 }
+
+/** Last finite element of a numeric time-series array (AIE returns 60-day series). */
+function lastNum(arr: unknown): number | undefined {
+  if (!Array.isArray(arr)) return undefined;
+  for (let i = arr.length - 1; i >= 0; i--) {
+    const n = asNumber(arr[i]);
+    if (n !== undefined) return n;
+  }
+  return undefined;
+}
+
+/** Last non-empty element of an array (e.g. the "driving_recovery" string series). */
+function lastVal(arr: unknown): unknown {
+  if (!Array.isArray(arr)) return undefined;
+  return arr.length ? arr[arr.length - 1] : undefined;
+}
+
+const SPORT_FROM_ACT: Record<string, "Ride" | "Run" | "Swim" | "Strength" | "Other"> = {
+  Ride: "Ride",
+  Run: "Run",
+  Swim: "Swim",
+  Bike: "Ride",
+  Strength: "Strength",
+};
 
 function get(obj: unknown, ...keys: string[]): unknown {
   let cur: unknown = obj;
@@ -97,15 +123,11 @@ export async function assembleState(
 
   // --- Best-effort mapping into typed slots (null where unrecognised) ---
   mapRecovery(state, raw.getRecoveryModel);
-  mapNutrition(state, raw.getNutritionModel);
+  mapNutrition(state, raw.getNutritionModel, opts.date);
+  mapUser(state, raw.getUser);
+  mapAdherence(state, raw.getPlanProgress);
   state.prediction = { value: raw.getPrediction ?? null, source: "ai-endurance" };
-  state.adherenceByZone = { value: (raw.getPlanProgress as any) ?? null, source: "ai-endurance" };
-  state.plannedSessions = {
-    value: Array.isArray(get(raw.getPlannedWorkouts, "workouts"))
-      ? (get(raw.getPlannedWorkouts, "workouts") as any)
-      : null,
-    source: "ai-endurance",
-  };
+  state.plannedSessions = { value: mapPlanned(raw.getPlannedWorkouts), source: "ai-endurance" };
 
   const aieActivities = collectActivities(raw);
   state.actualActivities = { value: aieActivities, source: "ai-endurance" };
@@ -158,42 +180,70 @@ export async function assembleState(
   return state;
 }
 
+/**
+ * AIE `getRecoveryModel` returns 60-day time-series under `data` (and per-sport
+ * `data_joint_muscle_{ride,run,swim}`). We take the LATEST element of each series.
+ * Shapes verified against live data 2026-06-08. `recovery_alpha1` may be all-null
+ * (DFA α1 not populated) — that degrades to undefined, which is correct.
+ */
 function mapRecovery(state: AthleteState, payload: unknown): void {
-  if (!payload || typeof payload !== "object") return;
+  const data = get(payload, "data");
+  if (!data || typeof data !== "object") return;
+
+  const rmssdMs = lastNum(get(data, "rMSSD")); // raw HRV (ms)
+  const rhrBpm = lastNum(get(data, "resting_heart_rate")); // raw RHR (bpm)
+  const limiter = lastVal(get(data, "driving_recovery"));
+
   const rec: RecoveryModel = {
-    cardioRecovery: asNumber(get(payload, "cardioRecovery")),
-    dfaAlpha1: asNumber(get(payload, "dfaAlpha1")),
-    rmssd: asNumber(get(payload, "rmssd")),
-    restingHrTrend: asNumber(get(payload, "restingHrTrend")),
+    cardioRecovery: lastNum(get(data, "recovery")),
+    alpha1Recovery: lastNum(get(data, "recovery_alpha1")),
+    rmssdRecovery: lastNum(get(data, "recovery_rmssd")),
+    rhrRecovery: lastNum(get(data, "recovery_resting_heart_rate")),
+    rmssdMs,
+    restingHrBpm: rhrBpm,
     orthopedic: {
-      run: asNumber(get(payload, "orthopedic", "run")),
-      bike: asNumber(get(payload, "orthopedic", "bike")),
-      swim: asNumber(get(payload, "orthopedic", "swim")),
+      run: lastNum(get(payload, "data_joint_muscle_run", "recovery")),
+      bike: lastNum(get(payload, "data_joint_muscle_ride", "recovery")),
+      swim: lastNum(get(payload, "data_joint_muscle_swim", "recovery")),
     },
-    limiterToday: typeof get(payload, "limiterToday") === "string"
-      ? (get(payload, "limiterToday") as string)
-      : undefined,
+    limiterToday: typeof limiter === "string" ? limiter : undefined,
   };
   state.recovery = { value: rec, source: "ai-endurance" };
 
-  // If AIE exposes rMSSD/RHR we can use them as interpretable signals too.
-  if (rec.rmssd != null && state.hrvOvernight.value == null) {
-    state.hrvOvernight = { value: rec.rmssd, source: "ai-endurance", note: "rMSSD from recovery model" };
+  // Interpretable readiness signals from the AIE model (used when Garmin absent).
+  if (rmssdMs != null && state.hrvOvernight.value == null) {
+    state.hrvOvernight = { value: rmssdMs, source: "ai-endurance", note: "raw rMSSD (ms, latest) from recovery model" };
+  }
+  if (rhrBpm != null && state.restingHr.value == null) {
+    state.restingHr = { value: rhrBpm, source: "ai-endurance", note: "raw resting HR (bpm, latest) from recovery model" };
   }
 }
 
-function mapNutrition(state: AthleteState, payload: unknown): void {
-  if (!payload || typeof payload !== "object") return;
-  const range = (k: string) => {
-    const lower = asNumber(get(payload, k, "lower"));
-    const upper = asNumber(get(payload, k, "upper"));
+/**
+ * AIE `getNutritionModel.data` holds 6-day arrays (1 past + today + 5 future) with
+ * `daily_*_lower_bound` / `_upper_bound`. We select today's index via the `date` array.
+ */
+function mapNutrition(state: AthleteState, payload: unknown, date: string): void {
+  const data = get(payload, "data");
+  if (!data || typeof data !== "object") return;
+
+  const dates = get(data, "date");
+  let idx = Array.isArray(dates) ? dates.findIndex((d) => String(d).startsWith(date)) : -1;
+  if (idx < 0 && Array.isArray(dates)) idx = Math.min(1, dates.length - 1); // fallback: today ≈ index 1
+
+  const at = (arr: unknown): number | undefined =>
+    Array.isArray(arr) && idx >= 0 ? asNumber(arr[idx]) : undefined;
+  const range = (lo: string, hi: string) => {
+    const lower = at(get(data, lo));
+    const upper = at(get(data, hi));
     return lower != null && upper != null ? { lower, upper } : undefined;
   };
+
   const targets: NutritionTargets = {
-    calories: range("calories"),
-    proteinG: range("protein"),
-    fatG: range("fat"),
-    carbG: range("carb"),
+    calories: range("daily_calories_lower_bound", "daily_calories_upper_bound"),
+    proteinG: range("daily_protein_grams_lower_bound", "daily_protein_grams_upper_bound"),
+    fatG: range("daily_fat_grams_lower_bound", "daily_fat_grams_upper_bound"),
+    carbG: range("daily_carbohydrates_grams_lower_bound", "daily_carbohydrates_grams_upper_bound"),
   };
   state.nutritionTargets = {
     value: targets,
@@ -202,21 +252,65 @@ function mapNutrition(state: AthleteState, payload: unknown): void {
   };
 }
 
+/** `getUser` exposes a profile `weight_kg` — use it as an AIE-sourced fallback when Garmin is absent. */
+function mapUser(state: AthleteState, payload: unknown): void {
+  if (state.weightKg.value != null) return; // Garmin already provided a trend reading.
+  const w = asNumber(get(payload, "weight_kg"));
+  if (w != null) {
+    state.weightKg = { value: w, source: "ai-endurance", note: "profile weight (trend only, not a daily target)" };
+  }
+}
+
+/** `getPlanProgress` overall `done_sec`/`plan_sec` per zone → adherence hours. */
+function mapAdherence(state: AthleteState, payload: unknown): void {
+  if (!payload || typeof payload !== "object") {
+    state.adherenceByZone = { value: null, source: "ai-endurance" };
+    return;
+  }
+  const done = get(payload, "done_sec");
+  const plan = get(payload, "plan_sec");
+  const zones = ["Endurance", "Tempo", "Threshold", "VO2Max", "Anaerobic"];
+  const out: Record<string, { actualH: number; prescribedH: number }> = {};
+  for (const z of zones) {
+    const a = asNumber(get(done, z));
+    const p = asNumber(get(plan, z));
+    if (a != null || p != null) out[z] = { actualH: (a ?? 0) / 3600, prescribedH: (p ?? 0) / 3600 };
+  }
+  state.adherenceByZone = {
+    value: Object.keys(out).length ? out : null,
+    source: "ai-endurance",
+    note: "from getPlanProgress done_sec/plan_sec",
+  };
+}
+
+/** `getPlannedWorkouts.workouts[]` → typed planned sessions. */
+function mapPlanned(payload: unknown): AthleteState["plannedSessions"]["value"] {
+  const arr = get(payload, "workouts");
+  if (!Array.isArray(arr)) return null;
+  return arr.map((w) => ({
+    workoutId: String(get(w, "workout_id") ?? ""),
+    date: String(get(w, "date") ?? ""),
+    title: typeof get(w, "title") === "string" ? (get(w, "title") as string) : undefined,
+    type: typeof get(w, "act_type") === "string" ? (get(w, "act_type") as string) : undefined,
+    sport: SPORT_FROM_ACT[String(get(w, "act_type"))] ?? "Other",
+    durationMin: asNumber(get(w, "duration_seconds")) != null
+      ? Math.round(asNumber(get(w, "duration_seconds"))! / 60)
+      : undefined,
+  }));
+}
+
 function collectActivities(raw: Record<string, unknown>): ActualActivity[] {
   const out: ActualActivity[] = [];
   const push = (payload: unknown, sport: ActualActivity["sport"]) => {
-    const arr = Array.isArray(payload)
-      ? payload
-      : Array.isArray(get(payload, "activities"))
-        ? (get(payload, "activities") as unknown[])
-        : [];
+    const arr = Array.isArray(get(payload, "activities")) ? (get(payload, "activities") as unknown[]) : [];
     for (const a of arr) {
+      const movingSec = asNumber(get(a, "activity_movingtime"));
       out.push({
-        activityId: String(get(a, "id") ?? get(a, "activityId") ?? ""),
-        date: String(get(a, "date") ?? ""),
+        activityId: String(get(a, "activity_id") ?? get(a, "id") ?? ""),
+        date: String(get(a, "activity_date_local") ?? get(a, "activity_date") ?? "").slice(0, 10),
         sport,
-        durationMin: asNumber(get(a, "durationMin")) ?? asNumber(get(a, "duration")),
-        distanceKm: asNumber(get(a, "distanceKm")) ?? asNumber(get(a, "distance")),
+        durationMin: movingSec != null ? Math.round(movingSec / 60) : undefined,
+        distanceKm: asNumber(get(a, "distance_in_km")),
       });
     }
   };
