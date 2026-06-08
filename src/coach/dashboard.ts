@@ -440,9 +440,9 @@ async function actPlan(){
   var box=document.getElementById('proposals'); box.innerHTML='<div class="k">Drafting a plan change…</div>';
   try{var r=await fetch('/act',{method:'POST'}); var j=await r.json();
     if(!j.proposals||!j.proposals.length){box.innerHTML='<div class="k">'+esc(j.notes||'No change proposed.')+'</div>';return;}
-    box.innerHTML=j.proposals.map(function(p){return '<div class="proposal" data-id="'+esc(p.id)+'"><b>'+esc(p.summary)+'</b>'
+    box.innerHTML=j.proposals.map(function(p){return '<div class="proposal" data-id="'+esc(p.id)+'"><b>'+esc(p.human||p.summary)+'</b>'
+      +'<div class="fdetail">'+esc(p.summary)+'</div>'
       +'<div class="ev">trade-off: '+esc(p.tradeoff)+'</div>'
-      +'<div class="ev">'+esc(p.tool)+' '+esc(p.argsJson)+'</div>'
       +'<div class="acts"><button class="agree" onclick="confirmProposal(this)">✓ Apply to AI Endurance</button>'
       +'<button class="ignore" onclick="declineProposal(this)">✕ Dismiss</button><span class="reacted"></span></div></div>';}).join('');
   }catch(e){box.innerHTML='<div class="k">Error: '+esc(''+e)+'</div>';}

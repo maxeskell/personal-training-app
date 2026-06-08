@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import type { AieClient, AieWriteTool } from "../mcp/aieClient.js";
 import { AIE_WRITE_TOOLS } from "../mcp/aieClient.js";
-import { DecisionLog, decisionId, nowIso, type DecisionRecord } from "../state/decisionLog.js";
+import { DecisionLog, nowIso, type DecisionRecord } from "../state/decisionLog.js";
 
 /**
  * The write gate (Build Spec §8 Safety, acceptance §9.4).
@@ -17,6 +18,7 @@ export interface Proposal {
   args: Record<string, unknown>;
   rationale: string;
   tradeoff: string;
+  human?: string; // validated, human-readable description of the exact change being confirmed
 }
 
 const WRITE_SET = new Set<string>(AIE_WRITE_TOOLS);
@@ -34,7 +36,7 @@ export class WriteGate {
     if (!WRITE_SET.has(p.tool)) {
       throw new Error(`${p.tool} is not an AI Endurance write tool.`);
     }
-    const id = decisionId(`${p.tool}:${JSON.stringify(p.args)}:${nowIso()}`);
+    const id = randomUUID(); // collision-free (was a 32-bit/second-granularity hash)
     const proposal: Proposal = { id, ...p };
     this.pending.set(id, proposal);
 
@@ -42,7 +44,7 @@ export class WriteGate {
       id,
       timestamp: nowIso(),
       kind: "plan-adjust",
-      summary: p.rationale,
+      summary: p.human ? `${p.human} — ${p.rationale}` : p.rationale,
       tradeoff: p.tradeoff,
       write: { tool: p.tool, args: p.args },
       status: "proposed",
@@ -81,6 +83,15 @@ export class WriteGate {
     }
 
     if (!WRITE_SET.has(tool)) throw new Error(`${tool} is not a write tool.`);
+
+    // Concurrency claim: append an "executing" marker and re-read; if we didn't win (another confirm
+    // raced us), abort before any write fires. Prevents a double-write across two processes/clicks.
+    await this.log.updateStatus(id, "executing");
+    const claim = (await this.log.all()).filter((r) => r.id === id);
+    if (claim[claim.length - 1]?.status !== "executing") {
+      throw new Error(`Refusing to write: proposal ${id} is being executed by another action.`);
+    }
+
     // callRaw is the only place a write tool is invoked, and only from here.
     const result = await this.aie.callRaw(tool, args ?? {});
     await this.log.updateStatus(id, "executed");

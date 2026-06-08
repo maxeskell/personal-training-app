@@ -40,12 +40,21 @@ export class CoachLLM {
       messages: [{ role: "user", content: userContent }],
     });
 
+    // A truncated response can yield structurally-valid-but-incomplete JSON (e.g. a cut-off proposals
+    // array) that downstream code — including the write gate — would treat as authoritative. Refuse it.
+    if (res.stop_reason === "max_tokens") {
+      throw new Error("LLM response was truncated (max_tokens) — not using a partial structured result.");
+    }
     const text = res.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text ?? "";
     let value: T;
     try {
       value = JSON.parse(text) as T;
     } catch {
       throw new Error(`Model did not return valid JSON. Raw: ${text.slice(0, 300)}`);
+    }
+    if (value == null || typeof value !== "object") throw new Error("LLM structured output was not an object.");
+    for (const k of (schema.required as string[] | undefined) ?? []) {
+      if (!(k in (value as Record<string, unknown>))) throw new Error(`LLM structured output missing required field: ${k}`);
     }
     return { value, cacheRead: res.usage.cache_read_input_tokens ?? 0 };
   }

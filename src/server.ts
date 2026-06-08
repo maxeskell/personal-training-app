@@ -14,7 +14,7 @@ import { ArchiveStore } from "./archive/store.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
 import { answerQuestion } from "./coach/ask.js";
-import { proposeAdjustments, parseArgs } from "./coach/planAdjust.js";
+import { proposeAdjustments, validateProposals } from "./coach/planAdjust.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { alertFindings } from "./insights/metrics.js";
 import { config } from "./config.js";
@@ -216,13 +216,15 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         "Turn these surfaced signals into minimal, specific plan adjustments with trade-offs (don't restructure the week; smallest change that helps):\n" +
         actionable.map((f) => `- [${f.severity}] ${f.title}: ${f.detail}${f.recommendation ? ` (suggested: ${f.recommendation})` : ""}`).join("\n");
       const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt()), request, li.state, ctx);
+      const { valid, rejected } = validateProposals(result.proposals, li.state.plannedSessions.value ?? []);
       const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
       const proposals = [];
-      for (const p of result.proposals) {
-        const pr = await gate.propose({ tool: p.tool as never, args: parseArgs(p.argsJson), rationale: p.summary, tradeoff: p.tradeoff });
-        proposals.push({ id: pr.id, summary: p.summary, tradeoff: p.tradeoff, tool: p.tool, argsJson: p.argsJson });
+      for (const p of valid) {
+        const pr = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human });
+        proposals.push({ id: pr.id, human: p.human, summary: p.summary, tradeoff: p.tradeoff });
       }
-      return json({ proposals, notes: result.notes });
+      const notes = [result.notes, rejected.length ? `Not applied: ${rejected.join("; ")}` : ""].filter(Boolean).join(" ");
+      return json({ proposals, notes });
     }
 
     // Confirm a proposal — the ONLY path that WRITES to AI Endurance (gated; two-step from /act).
