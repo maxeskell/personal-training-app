@@ -41,6 +41,7 @@ npm run probe                 # Phase-2: dump live Garmin tool surface + AIE det
 npm run fit-sync              # archive recent Garmin activity summaries (temp/EF) → feeds the heat confounder
 npm run decisions             # view the decision log (audit trail)
 npm run decisions -- retro <id> "how it held up"   # add a retrospective to a decision
+npm test                      # unit tests for the insight/stat modules (node:test, no extra deps)
 
 # Schedule the 06:00 ping (macOS launchd; cron fallback on Linux):
 npm run schedule:install      # optional HH MM args, e.g. -- 6 30

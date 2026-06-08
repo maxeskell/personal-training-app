@@ -34,6 +34,7 @@
     "deep-dive": "tsx src/cli.ts deep-dive",
     "act": "tsx src/cli.ts act",
     "ask": "tsx src/cli.ts ask",
+    "test": "tsx --test test/*.test.ts",
     "probe": "tsx src/cli.ts probe",
     "fit-sync": "tsx src/cli.ts fit-sync",
     "backfill": "tsx src/cli.ts backfill",
