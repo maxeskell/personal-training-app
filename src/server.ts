@@ -1,5 +1,7 @@
-import { createServer, type IncomingMessage } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { networkInterfaces } from "node:os";
+import { pathToFileURL } from "node:url";
+import { loadDashboardToken, isAuthorized, hostAllowed, COOKIE, timingSafeEqualStr } from "./serverAuth.js";
 import { AieClient } from "./mcp/aieClient.js";
 import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
@@ -27,7 +29,20 @@ import { config } from "./config.js";
  *   GET /refresh  re-assemble today's state (hits AIE + Garmin), then redirect to /
  */
 const PORT = Number(process.env.COACH_PORT ?? 3000);
-const HOST = process.env.COACH_HOST ?? "0.0.0.0"; // all interfaces → reachable on the LAN
+const LAN = process.env.COACH_LAN === "1"; // opt-in to bind the LAN (phone access); off → localhost only
+const HOST = process.env.COACH_HOST ?? (LAN ? "0.0.0.0" : "127.0.0.1");
+const TOKEN = loadDashboardToken();
+const MAX_BODY = 64 * 1024;
+
+/** The machine's own LAN IPv4s — allowed Host values when LAN mode is on (anti DNS-rebind). */
+function lanIps(): string[] {
+  const out: string[] = [];
+  for (const ifs of Object.values(networkInterfaces())) {
+    for (const i of ifs ?? []) if (i.family === "IPv4" && !i.internal) out.push(i.address);
+  }
+  return out;
+}
+const ALLOWED_HOSTS = LAN ? lanIps() : [];
 
 async function loadArchive(): Promise<ArchiveInput | undefined> {
   const store = new ArchiveStore();
@@ -98,16 +113,51 @@ async function latestInsights() {
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let data = "";
-    req.on("data", (c) => (data += String(c)));
-    req.on("end", () => resolve(data));
+    let size = 0;
+    let over = false;
+    req.on("data", (c) => {
+      if (over) return; // keep draining the socket but stop buffering
+      size += (c as Buffer).length;
+      if (size > MAX_BODY) {
+        over = true;
+        reject(new Error("body too large"));
+        return;
+      }
+      data += String(c);
+    });
+    req.on("end", () => { if (!over) resolve(data); });
+    req.on("error", reject);
+    req.on("aborted", () => { if (!over) reject(new Error("request aborted")); });
   });
 }
 
-const server = createServer(async (req, res) => {
+async function handle(req: IncomingMessage, res: ServerResponse) {
   try {
+    // Anti DNS-rebinding: the Host must be localhost (or our own LAN IP in LAN mode).
+    if (!hostAllowed(req.headers.host, ALLOWED_HOSTS)) {
+      res.writeHead(403, { "content-type": "text/plain" }).end("Forbidden host");
+      return;
+    }
     const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+
+    // Pairing: GET /pair?token=… sets the auth cookie, then redirect to the dashboard.
+    if (url.pathname === "/pair") {
+      const t = url.searchParams.get("token") ?? "";
+      if (timingSafeEqualStr(t, TOKEN)) {
+        res.writeHead(302, { Location: "/", "set-cookie": COOKIE(TOKEN) }).end();
+      } else {
+        res.writeHead(401, { "content-type": "text/plain" }).end("Bad pairing token");
+      }
+      return;
+    }
+
+    // Everything else requires the token (cookie from /pair, or X-Coach-Token header).
+    if (!isAuthorized(req.headers, TOKEN)) {
+      res.writeHead(401, { "content-type": "text/plain" }).end("Unauthorized — open the /pair?token=… link printed at startup.");
+      return;
+    }
 
     // Free-form Q&A (dashboard chat box posts here).
     if (url.pathname === "/ask" && req.method === "POST") {
@@ -211,12 +261,26 @@ const server = createServer(async (req, res) => {
     }
     res.writeHead(404).end("Not found");
   } catch (err) {
-    res.writeHead(500, { "content-type": "text/plain" }).end(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    const msg = err instanceof Error ? err.message : String(err);
+    res.writeHead(msg === "body too large" ? 413 : 500, { "content-type": "text/plain" }).end(`Error: ${msg}`);
   }
-});
+}
 
-server.listen(PORT, HOST, () => {
-  console.log(`Endurance Coach dashboard on:`);
-  for (const u of lanUrls()) console.log(`  ${u}`);
-  console.log(`(open the 192.168.x.x / 10.x address on your phone — same Wi-Fi)`);
-});
+/** Build the server without listening (so tests can bind an ephemeral port). */
+export function createCoachServer(): Server {
+  const s = createServer((req, res) => void handle(req, res));
+  s.on("clientError", (_e, socket) => socket.destroy());
+  return s;
+}
+
+// Only listen when run directly (not when imported by tests).
+const isMain = !!process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
+  const server = createCoachServer();
+  server.on("error", (e) => console.error(`Server error: ${e instanceof Error ? e.message : e}`));
+  server.listen(PORT, HOST, () => {
+    console.log(`Endurance Coach dashboard on:`);
+    for (const u of lanUrls()) console.log(`  ${u}/pair?token=${TOKEN}`);
+    console.log(LAN ? "(open the /pair link on your phone — same Wi-Fi; token gates all access)" : "(localhost only; set COACH_LAN=1 to allow your phone on the LAN)");
+  });
+}

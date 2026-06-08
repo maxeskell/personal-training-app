@@ -1,0 +1,78 @@
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { config } from "./config.js";
+
+/**
+ * Auth + origin defenses for the local dashboard server (Spec 1). The server can reach AI Endurance
+ * WRITES and spend LLM budget, so every route is gated by a per-install token (cookie or header), the
+ * Host header is allow-listed to defeat DNS-rebinding, and request bodies are capped. Pure, unit-tested
+ * helpers live here; server.ts wires them.
+ */
+
+/** Token for this install: COACH_TOKEN env, else a random token persisted under the secrets dir. */
+export function loadDashboardToken(): string {
+  if (process.env.COACH_TOKEN) return process.env.COACH_TOKEN;
+  const path = join(config.secretsDir, "dashboard.token");
+  try {
+    const t = readFileSync(path, "utf8").trim();
+    if (t) return t;
+  } catch {
+    /* create below */
+  }
+  const tok = randomBytes(24).toString("hex");
+  try {
+    mkdirSync(config.secretsDir, { recursive: true });
+    writeFileSync(path, tok, { mode: 0o600 });
+  } catch {
+    /* fall back to in-memory token for this process */
+  }
+  return tok;
+}
+
+export function parseCookies(header: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const part of (header ?? "").split(";")) {
+    const i = part.indexOf("=");
+    if (i < 0) continue;
+    const k = part.slice(0, i).trim();
+    if (k) out[k] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
+/** Token presented via the X-Coach-Token header or the coach_auth cookie. */
+export function presentedToken(headers: { cookie?: string; "x-coach-token"?: string | string[] }): string | undefined {
+  const h = headers["x-coach-token"];
+  if (typeof h === "string" && h) return h;
+  return parseCookies(headers.cookie) ["coach_auth"] || undefined;
+}
+
+export function timingSafeEqualStr(a: string, b: string): boolean {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length || a.length === 0) return false;
+  try {
+    return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  } catch {
+    return false;
+  }
+}
+
+export function isAuthorized(headers: { cookie?: string; "x-coach-token"?: string | string[] }, token: string): boolean {
+  const p = presentedToken(headers);
+  return p != null && timingSafeEqualStr(p, token);
+}
+
+/**
+ * The Host header host-part must be localhost or an explicitly-allowed host (the machine's own LAN IPs
+ * when LAN mode is on). A rebound DNS name (attacker.com → 127.0.0.1) carries Host: attacker.com and is
+ * rejected, so a malicious web page can't drive the local server.
+ */
+export function hostAllowed(hostHeader: string | undefined, allowed: string[] = []): boolean {
+  if (!hostHeader) return false;
+  // strip port; handle bracketed IPv6
+  const host = hostHeader.startsWith("[") ? hostHeader.slice(0, hostHeader.indexOf("]") + 1) : hostHeader.split(":")[0];
+  const set = new Set(["localhost", "127.0.0.1", "[::1]", "::1", ...allowed.map((h) => h.toLowerCase())]);
+  return set.has(host.toLowerCase());
+}
+
+export const COOKIE = (token: string): string => `coach_auth=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`;

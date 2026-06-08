@@ -115,16 +115,20 @@ server's `/insight-feedback` endpoint — credentials never leave the Mac.
 
 ## Online dashboard (view it on your phone over Wi-Fi)
 
-A small local web server serves the live dashboard — including the **Signals** panel (insight engine:
-load/CTL-ATL-TSB, efficiency, durability, run-load ramp guard, goal tracking, plus the n=1 analytics
-above). It binds to your LAN so a phone on the **same Wi-Fi** can open it. Credentials never leave the
-Mac — the phone only talks to this server.
+A small local web server serves the live dashboard. **It is bound to `localhost` by default** and every
+route (incl. the AI Endurance write path) requires a per-install **pairing token** — the server exposes
+writes + LLM spend, so it is not left open. To reach it from your **phone on the same Wi-Fi**, set
+`COACH_LAN=1`. Credentials never leave the Mac.
 
 ```bash
-npm run serve                 # start the server; prints http://localhost:3000 and http://<mac-ip>:3000
+npm run serve                 # localhost only; prints a /pair?token=… link at startup
+COACH_LAN=1 npm run serve     # also bind the LAN for phone access
 ```
 
-Open the `http://192.168.x.x:3000` address on your phone. Hit **↻ refresh** to re-pull live data.
+**Pairing (one-time per device):** open the printed `http://<host>:3000/pair?token=<token>` link — it sets
+an auth cookie, then the dashboard works normally. The token lives in `~/.endurance-coach/dashboard.token`
+(override with `COACH_TOKEN`). The Host header is allow-listed (defeats DNS-rebinding) and request bodies
+are capped. Hit **🔄 Sync latest data** to re-pull.
 The dashboard has an **"Ask your data"** chat box — type a question (e.g. *"am I overtraining?"*) and the
 coach answers from your assembled state + insights, with the same guardrails as every other flow.
 

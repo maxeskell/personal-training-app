@@ -42,7 +42,7 @@ cat > "$PLIST" <<PLIST_EOF
   <dict>
     <key>PATH</key><string>$AGENT_PATH</string>
     <key>HOME</key><string>$HOME</string>
-    <key>COACH_HOST</key><string>0.0.0.0</string>
+    <key>COACH_LAN</key><string>1</string>
     <key>COACH_PORT</key><string>$PORT</string>
   </dict>
   <key>RunAtLoad</key><true/>
@@ -74,9 +74,13 @@ elif [[ -e "$HOOK" ]]; then
 fi
 
 printf '\nInstalled %s — the dashboard now starts at login and restarts if it stops.\n' "$LABEL"
-echo "On this Mac:  http://localhost:$PORT"
+# The server requires a one-time pairing token (gates all access, incl. AI Endurance writes).
+TOKEN="$(cat "$HOME/.endurance-coach/dashboard.token" 2>/dev/null || true)"
+echo "Pair this device + your phone ONCE (sets an auth cookie):"
+echo "  On this Mac:  http://localhost:$PORT/pair?token=${TOKEN:-<see reports/server.log>}"
 for ip in $(ipconfig getifaddr en0 2>/dev/null) $(ipconfig getifaddr en1 2>/dev/null); do
-  echo "On your phone (same Wi-Fi):  http://$ip:$PORT"
+  echo "  On your phone (same Wi-Fi):  http://$ip:$PORT/pair?token=${TOKEN:-<see reports/server.log>}"
 done
+echo "(token lives in ~/.endurance-coach/dashboard.token; it's also printed in reports/server.log at startup.)"
 echo "Logs:      $PROJECT/reports/server.log"
 echo "Uninstall: bash $PROJECT/scripts/uninstall-server.sh"
