@@ -5,8 +5,8 @@
  * read RAW .FIT exports directly (no Python/extraction step). Field numbers and scales below were
  * verified against the athlete's own FR970/Edge files: power=7, cadence=4, temperature=13, HR=3,
  * enhanced_speed=73 (×1000 m/s), distance=5 (×100 m), enhanced_altitude=78 (×5 −500 m), and the
- * running-dynamics fields (vertical_oscillation=39, stance_time=41, vertical_ratio=58, step_length=85)
- * that populate on HRM-strap runs.
+ * running-dynamics fields (vertical_oscillation=39, stance_time=41, vertical_ratio=83, step_length=85,
+ * stance_time_balance=84) that populate on running-power/HRM runs — verified against a real FR970 run.
  *
  * It handles the FIT essentials: 12/14-byte header, definition/data/compressed-timestamp records,
  * per-message architecture (endianness), developer fields (skipped), arrays (first element), and the
@@ -79,7 +79,8 @@ export interface FitSample {
   gct?: number; // ground contact / stance time, ms
   verticalRatio?: number; // %
   stepLength?: number; // mm
-  lrBalance?: number; // raw left/right balance field
+  gctBalance?: number; // stance-time L/R balance, %
+  lrBalance?: number; // raw bike left/right power balance field
 }
 
 export interface FitActivity {
@@ -111,11 +112,12 @@ function toSample(f: Record<number, number | null>): FitSample {
     distance: g(5) != null ? g(5)! / 100 : undefined,
     altitude: g(78) != null ? g(78)! / 5 - 500 : g(2) != null ? g(2)! / 5 - 500 : undefined,
     temperature: g(13),
-    vo: g(39) != null ? g(39)! / 10 : undefined,
-    gct: g(41) != null ? g(41)! / 10 : undefined,
-    verticalRatio: g(58) != null ? g(58)! / 100 : undefined,
-    stepLength: g(85) != null ? g(85)! / 10 : undefined,
-    lrBalance: g(30),
+    vo: g(39) != null ? g(39)! / 10 : undefined, // vertical_oscillation, mm
+    gct: g(41) != null ? g(41)! / 10 : undefined, // stance_time, ms
+    verticalRatio: g(83) != null ? g(83)! / 100 : undefined, // field 83 (verified on a real run), %
+    stepLength: g(85) != null ? g(85)! / 10 : undefined, // mm
+    gctBalance: g(84) != null ? g(84)! / 100 : undefined, // stance_time_balance, %
+    lrBalance: g(30), // bike left/right power balance (raw)
   };
   return s;
 }
