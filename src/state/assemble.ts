@@ -82,7 +82,7 @@ function daysAgoIso(date: string, n: number): string {
  * MCP content. extractJson() unwraps the MCP envelope; this unwraps the inner
  * `result` JSON string. Returns null on any miss so callers degrade cleanly.
  */
-function garminInner(toolResult: unknown): unknown {
+export function garminInner(toolResult: unknown): unknown {
   if (toolResult === null || toolResult === undefined) return null;
   const obj = extractJson(toolResult);
   const inner = obj && typeof obj === "object" && "result" in (obj as Record<string, unknown>)
@@ -173,14 +173,20 @@ export async function assembleState(
   let garminStale = false;
   if (garmin?.available) {
     const weekAgo = daysAgoIso(opts.date, 7);
-    const [sleep, battery, readiness, vo2, weight] = await Promise.all([
+    const [sleep, battery, readiness, vo2, weight, ftp, lactate] = await Promise.all([
       garmin.tryCall("get_sleep_summary", { date: opts.date }).then(garminInner),
       garmin.tryCall("get_body_battery", { start_date: weekAgo, end_date: opts.date }).then(garminInner),
       garmin.tryCall("get_training_readiness", { date: opts.date }).then(garminInner),
       garmin.tryCall("get_vo2max_trend", { start_date: weekAgo, end_date: opts.date }).then(garminInner),
       garmin.tryCall("get_daily_weigh_ins", { date: opts.date }).then(garminInner),
+      garmin.tryCall("get_cycling_ftp", {}).then(garminInner),
+      garmin.tryCall("get_lactate_threshold", {}).then(garminInner),
     ]);
-    raw.garmin = { sleep, battery, readiness, vo2, weight };
+    raw.garmin = { sleep, battery, readiness, vo2, weight, ftp, lactate };
+
+    // Thresholds + zones from Garmin's own FTP/LT tools (verified shapes) — these win over the
+    // AIE getUser-derived values mapped earlier, since they're the device's current numbers.
+    mapGarminThresholds(state, ftp, lactate);
 
     // Sleep — interpretable signal (own slot).
     const sleepScore = asNumber(get(sleep, "sleep_score"));
@@ -365,6 +371,38 @@ function mapZonesThresholds(state: AthleteState, payload: unknown): void {
   if (Object.keys(thresholds).length === 0) return; // nothing exposed → leave absent
   state.thresholds = { value: thresholds, source: "ai-endurance" };
   state.zones = { value: deriveZones(thresholds), source: "derived", note: "standard zone models from thresholds (Coggan power / %-LTHR / %-threshold pace)" };
+}
+
+/**
+ * Garmin FTP/lactate-threshold → thresholds + zones (verified shapes from `get_cycling_ftp` /
+ * `get_lactate_threshold`). Wins over any AIE-derived thresholds. Note: Garmin's
+ * `lactate_threshold_speed_mps` has been observed reported ~10× too small, so we normalise a value in
+ * the 0.2–0.8 range up by 10 before deriving pace, and only accept a plausible running speed.
+ */
+function mapGarminThresholds(state: AthleteState, ftp: unknown, lactate: unknown): void {
+  const t: DisciplineThresholds = { ...(state.thresholds.value ?? {}) };
+  const weightKg = asNumber(get(lactate, "weight_kg")) ?? state.weightKg.value ?? undefined;
+
+  const bikeFtp = asNumber(get(ftp, "functional_threshold_power_watts"));
+  if (bikeFtp != null && bikeFtp > 0 && String(get(ftp, "sport") ?? "CYCLING").toUpperCase().includes("CYCL")) {
+    t.bikeFtpW = Math.round(bikeFtp);
+    if (weightKg && weightKg > 0) t.bikeFtpWkg = +(bikeFtp / weightKg).toFixed(2);
+  }
+
+  const ltHr = asNumber(get(lactate, "lactate_threshold_heart_rate_bpm"));
+  if (ltHr != null && ltHr > 0) t.runThresholdHr = Math.round(ltHr);
+  // get_lactate_threshold reports the RUNNING functional threshold power (FR970 native running power).
+  const runPow = asNumber(get(lactate, "functional_threshold_power_watts"));
+  if (runPow != null && runPow > 0 && String(get(lactate, "sport") ?? "").toUpperCase().includes("RUN")) {
+    t.runThresholdPowerW = Math.round(runPow);
+  }
+  let v = asNumber(get(lactate, "lactate_threshold_speed_mps"));
+  if (v != null && v >= 0.2 && v < 0.8) v *= 10; // known ~10× under-report
+  if (v != null && v >= 2 && v <= 7) t.runThresholdPaceSecPerKm = Math.round(1000 / v);
+
+  if (Object.keys(t).length === 0) return;
+  state.thresholds = { value: t, source: "garmin", note: "Garmin get_cycling_ftp + get_lactate_threshold" };
+  state.zones = { value: deriveZones(t), source: "derived", note: "standard zone models from Garmin thresholds (Coggan power / %-LTHR / %-threshold pace)" };
 }
 
 /** `getPlanProgress` overall `done_sec`/`plan_sec` per zone → adherence hours. */

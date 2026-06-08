@@ -27,6 +27,27 @@ Each ships as a deterministic, synthetic-testable module (like Phase 1) + a thin
 
 All gate on minimum coverage and self-label confidence, consistent with the existing engine.
 
+## Probe results (2026-06-08) — 122 Garmin tools
+
+The first probe mapped the full surface but had two bugs (now fixed): it recorded validation-errors as
+"captured" for tools needing args, and it called mutating tools. Fixed: the probe now skips non-`get_`
+tools, treats error responses as "keep trying", and fetches a real `activity_id` for per-activity tools.
+**Re-run `npm run probe` and re-share** to capture the health-tool shapes (they all need `{date}` /
+`{start_date,end_date}`).
+
+Confirmed shapes already wired in:
+- `get_cycling_ftp` → bike FTP (223 W). `get_lactate_threshold` → run LTHR (165), run threshold power
+  (338 W, FR970 running power), weight, and a run threshold speed (reported ~10× low — normalised).
+  Both now feed the zones/threshold cards (Garmin wins over the AIE `getUser` guess).
+
+Confirmed-available, queued next (need the re-run's shapes or a dedicated mapper):
+- Health/injury slice: `get_training_load_trend`, `get_training_status`, `get_training_effect`,
+  `get_respiration_data/_trend`, `get_all_day_stress`/`get_weekly_stress`, `get_body_battery_events`,
+  `get_sleep_data` (stages), `get_endurance_score`, `get_hrv_data`, `get_rhr_day`.
+- Bonuses: `get_activity_fit_data` (pull .FIT programmatically — no manual upload), `get_power_duration_curve`
+  (MMP), `get_body_composition` (muscle mass → fuelling), `get_activity_splits`/`_typed_splits`
+  (transitions + per-leg pacing), `get_activity_weather` (per-activity temp), `get_race_predictions`.
+
 ## Data to capture — run `npm run probe`
 
 `npm run probe` (added here) connects to your live Garmin MCP, lists the **tool surface**, captures **one
