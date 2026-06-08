@@ -1,54 +1,29 @@
 /**
- * N4 — n=1 responder analysis + anomaly detection. Computed from the AI Endurance recovery model's
- * 60-day daily series (HRV/rMSSD, RHR, recovery score, ESS). This is THIS athlete's own response —
- * priors only set the hypothesis; the data decides. Correlations off ~60 days are suggestive, not
- * proof: we report n and only surface notably-strong relationships, with caveats.
+ * N4 — n=1 responder analysis + anomaly detection, computed from the AI Endurance recovery model's
+ * ~60-day daily series (HRV/rMSSD, RHR, recovery score, ESS). This is THIS athlete's own response —
+ * priors only set the hypothesis; the data decides.
  *
- * (The headline "sleep <6.5h → next-day quality drop" needs accumulated Garmin sleep history, which
- *  the daily ping is now building; until then we mine the AIE series, which is already deep.)
+ * UPGRADED (data-scientist brief §2/§5): the brief's #1 named failure mode is a naive Pearson r on
+ * two trending, autocorrelated series read as causal. We now:
+ *   - down-weight the sample size for serial dependence (effective N) and attach a 95% CI to every r,
+ *   - only surface relationships whose CI EXCLUDES 0 ("significant" here means that, n=1, not p-values),
+ *   - scan LAGS (predictor at t−k vs outcome at t) and report the lag with the strongest stable link,
+ *     so the arrow of time is respected and we never claim a same-day correlation is predictive.
+ * Everything here remains hypothesis-generating for an n≈60 single athlete — labelled as such.
  */
 
-function nums(arr: unknown): Array<number | null> {
-  return (Array.isArray(arr) ? arr : []).map((x) => {
-    const n = typeof x === "number" ? x : typeof x === "string" ? Number(x) : NaN;
-    return Number.isFinite(n) ? n : null;
-  });
-}
-
-/** Pearson r over paired finite values. Returns {r, n}. */
-function pearson(xs: Array<number | null>, ys: Array<number | null>): { r: number | null; n: number } {
-  const pairs: Array<[number, number]> = [];
-  for (let i = 0; i < Math.min(xs.length, ys.length); i++) {
-    const x = xs[i];
-    const y = ys[i];
-    if (x != null && y != null) pairs.push([x, y]);
-  }
-  const n = pairs.length;
-  if (n < 8) return { r: null, n };
-  const mx = pairs.reduce((a, [x]) => a + x, 0) / n;
-  const my = pairs.reduce((a, [, y]) => a + y, 0) / n;
-  let sxy = 0,
-    sxx = 0,
-    syy = 0;
-  for (const [x, y] of pairs) {
-    sxy += (x - mx) * (y - my);
-    sxx += (x - mx) ** 2;
-    syy += (y - my) ** 2;
-  }
-  if (sxx === 0 || syy === 0) return { r: null, n };
-  return { r: +(sxy / Math.sqrt(sxx * syy)).toFixed(2), n };
-}
-
-/** Shift y back by `lag` days so x[t] pairs with y[t+lag] (e.g. yesterday's HRV vs today's load). */
-function lag(xs: Array<number | null>, ys: Array<number | null>, days: number): [Array<number | null>, Array<number | null>] {
-  if (days <= 0) return [xs, ys];
-  return [xs.slice(0, -days), ys.slice(days)];
-}
+import { corrWithCi, bestLaggedCorr, finiteNums, type Maybe } from "./stats.js";
 
 export interface Correlation {
   label: string;
   r: number;
   n: number;
+  /** Lag in days at which the predictor leads the outcome (0 = same day). */
+  lagDays: number;
+  ciLow: number;
+  ciHigh: number;
+  effN: number;
+  significant: boolean;
   interpretation: string;
 }
 export interface Anomaly {
@@ -82,55 +57,83 @@ export function sleepVsNextDayLoad(
     xs.push(d.sleepHours ?? null);
     ys.push(nextEss ?? null);
   }
-  const { r, n } = pearson(xs, ys);
-  if (r == null || n < 20 || Math.abs(r) < 0.3) return null;
+  // Sleep[t] already leads load[t+1] via the next-day pairing above, so this is a 0-lag corr on lagged data.
+  const c = corrWithCi(xs, ys);
+  if (!c || c.n < 20 || Math.abs(c.r) < 0.3) return null;
   return {
     label: "Last night's sleep → next-day training load",
-    r,
-    n,
-    interpretation: `${strength(r)} (r=${r}, n=${n}): ${r > 0 ? "you train more after good sleep — readiness shows up the next day." : "your training load doesn't follow sleep — but watch session quality on short-sleep days."}`,
+    r: c.r,
+    n: c.n,
+    lagDays: 1,
+    ciLow: c.ciLow,
+    ciHigh: c.ciHigh,
+    effN: c.effN,
+    significant: c.significant,
+    interpretation: `${strength(c.r)} (r=${c.r}, 95% CI [${c.ciLow},${c.ciHigh}], n=${c.n}${c.significant ? "" : ", CI spans 0 — tentative"}): ${c.r > 0 ? "you train more after good sleep — readiness shows up the next day." : "your training load doesn't follow sleep — but watch session quality on short-sleep days."}`,
   };
 }
 
 export function analyseRecoverySeries(
   data: { date?: unknown[]; rMSSD?: unknown[]; resting_heart_rate?: unknown[]; recovery?: unknown[]; external_stress_score?: unknown[] } | undefined,
 ): CorrelationResult {
-  const hrv = nums(data?.rMSSD);
-  const rhr = nums(data?.resting_heart_rate);
-  const rec = nums(data?.recovery);
-  const ess = nums(data?.external_stress_score);
+  const hrv = finiteNums(data?.rMSSD);
+  const rhr = finiteNums(data?.resting_heart_rate);
+  const rec = finiteNums(data?.recovery);
+  const ess = finiteNums(data?.external_stress_score);
 
   const correlations: Correlation[] = [];
-  const add = (label: string, x: Array<number | null>, y: Array<number | null>, mk: (r: number) => string) => {
-    const { r, n } = pearson(x, y);
-    if (r != null && n >= 15 && Math.abs(r) >= 0.3) correlations.push({ label, r, n, interpretation: mk(r) });
+  const add = (
+    label: string,
+    x: Maybe[],
+    y: Maybe[],
+    opts: { minLag: number; maxLag: number },
+    mk: (r: number, lag: number, sig: boolean) => string,
+  ) => {
+    const scan = bestLaggedCorr(x, y, opts.minLag, opts.maxLag);
+    if (!scan) return;
+    const c = scan.corr;
+    // Surface a relationship only if it's at least moderate; flag whether its CI clears 0.
+    if (Math.abs(c.r) >= 0.3) {
+      correlations.push({
+        label,
+        r: c.r,
+        n: c.n,
+        lagDays: scan.bestLag,
+        ciLow: c.ciLow,
+        ciHigh: c.ciHigh,
+        effN: c.effN,
+        significant: c.significant,
+        interpretation: mk(c.r, scan.bestLag, c.significant),
+      });
+    }
   };
 
-  // Yesterday's load → today's recovery (training response).
-  const [essY, recT] = lag(ess, rec, 1);
-  add("Yesterday's load → today's recovery", essY, recT, (r) =>
-    `${strength(r)} ${r < 0 ? "negative" : "positive"} (r=${r}): ${r < 0 ? "harder days clearly cost you recovery the next day — respect the easy day after a big session." : "your recovery holds up well after load — a durable autonomic system."}`,
+  // Load leading recovery: scan lags 1–3 (yesterday/2-3 days ago's load → today's recovery).
+  add("Training load → later recovery", ess, rec, { minLag: 1, maxLag: 3 }, (r, lag, sig) =>
+    `${strength(r)} ${r < 0 ? "negative" : "positive"} at a ${lag}-day lag (r=${r}${sig ? "" : ", CI spans 0 — tentative"}): ` +
+    `${r < 0 ? `harder days cost you recovery ${lag} day(s) later — respect the easy day after a big session.` : "your recovery holds up after load — a durable autonomic system."}`,
   );
-  // Yesterday's HRV → today's load (do you train to readiness?).
-  const [hrvY, essT] = lag(hrv, ess, 1);
-  add("Yesterday's HRV → today's training load", hrvY, essT, (r) =>
-    `${strength(r)} (r=${r}): ${r > 0 ? "you tend to train harder after higher-HRV days — you're already training to readiness." : "your load doesn't follow HRV — worth gating harder sessions on a good HRV morning."}`,
+  // HRV leading training choice (do you train to readiness?).
+  add("Morning HRV → that day's training load", hrv, ess, { minLag: 0, maxLag: 1 }, (r, _lag, sig) =>
+    `${strength(r)} (r=${r}${sig ? "" : ", CI spans 0 — tentative"}): ` +
+    `${r > 0 ? "you train harder after higher-HRV mornings — already training to readiness." : "your load doesn't follow HRV — consider gating hard sessions on a good-HRV morning."}`,
   );
-  // Same-day RHR vs recovery (sanity / responder).
-  add("Resting HR vs recovery (same day)", rhr, rec, (r) =>
-    `${strength(r)} ${r < 0 ? "negative" : "positive"} (r=${r}): RHR ${r < 0 ? "rises as recovery drops for you — a reliable personal fatigue signal." : "tracks unusually — read with care."}`,
+  // RHR vs recovery (same-day sanity / responder check).
+  add("Resting HR → recovery", rhr, rec, { minLag: 0, maxLag: 0 }, (r, _lag, sig) =>
+    `${strength(r)} ${r < 0 ? "negative" : "positive"} (r=${r}${sig ? "" : ", CI spans 0 — tentative"}): ` +
+    `RHR ${r < 0 ? "rises as recovery drops for you — a reliable personal fatigue signal." : "tracks unusually — read with care."}`,
   );
 
-  // Anomalies: most-recent value vs series mean/SD (z-score).
+  // Anomalies: most-recent value vs the series mean/SD (z-score).
   const anomalies: Anomaly[] = [];
-  const z = (arr: Array<number | null>, name: string, dir: "high" | "low", word: string) => {
+  const z = (arr: Maybe[], name: string, dir: "high" | "low", word: string) => {
     const v = arr.filter((x): x is number => x != null);
     if (v.length < 14) return;
     const m = v.reduce((a, b) => a + b, 0) / v.length;
-    const sd = Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / v.length);
+    const s = Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / v.length);
     const last = v[v.length - 1];
-    if (sd === 0) return;
-    const zsc = +((last - m) / sd).toFixed(1);
+    if (s === 0) return;
+    const zsc = +((last - m) / s).toFixed(1);
     if ((dir === "high" && zsc > 2) || (dir === "low" && zsc < -2)) {
       anomalies.push({ metric: name, z: zsc, detail: `${name} is ${word} today (${last.toFixed(0)} vs ${m.toFixed(0)} avg, z=${zsc}).` });
     }

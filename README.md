@@ -54,11 +54,33 @@ To enable it, run the one-time `garmin-mcp-auth` (see `.env.example`) then set `
 Layout: `src/mcp/` (AIE OAuth client + Garmin stdio client), `src/state/` (AthleteState, store,
 baselines, sync-gaps), `knowledge/sports-science.md` (priors for the M3 LLM layer).
 
+## n=1 analytics layer (data-scientist brief Q1–Q7)
+
+The insight engine answers the pre-registered questions from `data-scientist-brief.md` with HONEST
+uncertainty — autocorrelation-aware, effect-sizes-with-CIs, and every MODEL caveat attached. Each
+detector self-gates and stays silent until there's enough of your own history behind it. Surfaced in
+`deep-dive`, `ask`, and the dashboard Signals panel:
+
+- **Rigorous correlations (Q1):** lagged cross-correlation (predictor at *t−k* → outcome at *t*) with a
+  Fisher-z 95% CI computed on the *effective* sample size (discounted for serial dependence). Nothing is
+  called real unless its CI clears 0 — the brief's #1 guardrail against naive-Pearson nonsense.
+- **Backtested monitoring rule set (Q1, Deliverable #3):** candidate HRV/RHR threshold rules scored
+  against your own history with hit-rate / false-alarm-rate / lead-time — a personalised amber rule.
+- **Change-point detection (§5):** dates genuine regime shifts in CTL, HRV and RHR (binary segmentation,
+  L2 cost) so inflections can be tied to a training/illness/kit change, not smoothed away.
+- **Brick decoupling (Q4):** run efficiency off the bike vs fresh — the triathlon-specific signal.
+- **Taper target (Q6):** the race-day form (TSB) band that accompanied your best past races.
+- **Economy vs fitness (Q5):** run EF residualised on CTL — separates real economy gains from "just fitness".
+- **Fuelling red flag (Q7):** fires when weight *and* skeletal-muscle-mass trend down together.
+- **Stream-level biomechanics (§1):** optional — set `FIT_STREAMS_DIR` to a folder of per-second streams
+  to flag cadence/GCT decay late in long runs (catalogue A5/A7). See `.env.example`.
+
 ## Online dashboard (view it on your phone over Wi-Fi)
 
 A small local web server serves the live dashboard — including the **Signals** panel (insight engine:
-load/CTL-ATL-TSB, efficiency, durability, run-load ramp guard, goal tracking). It binds to your LAN so a
-phone on the **same Wi-Fi** can open it. Credentials never leave the Mac — the phone only talks to this server.
+load/CTL-ATL-TSB, efficiency, durability, run-load ramp guard, goal tracking, plus the n=1 analytics
+above). It binds to your LAN so a phone on the **same Wi-Fi** can open it. Credentials never leave the
+Mac — the phone only talks to this server.
 
 ```bash
 npm run serve                 # start the server; prints http://localhost:3000 and http://<mac-ip>:3000
