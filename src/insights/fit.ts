@@ -54,6 +54,8 @@ export interface SessionDecay {
   /** Within-session aerobic decoupling: (EF first half − EF second half)/first half, %. >5% = fade. */
   decouplingPct: number | null;
   avgTempC: number | null; // session mean temperature (°C) — for the heat confounder
+  avgPowerW: number | null; // for per-session EF (power÷HR) in the heat analysis
+  avgHr: number | null;
 }
 
 function quartileMeans(vals: Maybe[]): { first: number | null; last: number | null } {
@@ -102,7 +104,14 @@ export function analyseSession(f: StreamFile): SessionDecay | null {
     hrDriftPct: deltaPct(hr.first, hr.last),
     decouplingPct: halfDecoupling(s),
     avgTempC: temps.length ? +mean(temps)!.toFixed(1) : null,
+    avgPowerW: avgOf(s.map((x) => x.power)),
+    avgHr: avgOf(s.map((x) => x.hr)),
   };
+}
+
+function avgOf(xs: Array<number | undefined>): number | null {
+  const v = xs.filter((x): x is number => typeof x === "number" && x > 0);
+  return v.length ? +mean(v)!.toFixed(1) : null;
 }
 
 /** Convert a decoded .FIT activity into the StreamFile shape analyseSession consumes. */
