@@ -156,6 +156,22 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 </style></head><body>
 <h1>Endurance Coach <a class="refresh" href="/refresh">↻ refresh</a></h1><div class="sub">as of ${today.assembledAt}</div>
 
+<div class="card"><h2>Ask your data</h2>
+  <form id="askform" onsubmit="return ask(event)">
+    <input id="q" placeholder="e.g. how were my long rides this month? am I overtraining?" autocomplete="off"
+      style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box"/>
+    <button style="margin-top:8px;padding:8px 16px;border:0;border-radius:8px;background:#c8642d;color:#fff;font-size:14px">Ask</button>
+  </form>
+  <div id="answer" style="margin-top:12px;font-size:14px;color:#333;white-space:pre-wrap"></div>
+</div>
+<script>
+async function ask(e){e.preventDefault();var q=document.getElementById('q').value.trim();if(!q)return false;
+  var a=document.getElementById('answer');a.textContent='Thinking…';
+  try{var r=await fetch('/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:q})});
+    var j=await r.json();a.textContent=j.answer||'(no answer)';}catch(err){a.textContent='Error: '+err;}
+  return false;}
+</script>
+
 <div class="card"><h2>Today</h2>
   <div class="verdict"><span class="dot" style="background:${verdictColor}"></span>
     <span class="big" style="color:${verdictColor}">${verdictWord}</span></div>
