@@ -37,6 +37,7 @@ npm run ping                  # unattended morning readiness: verdict + report +
 npm run dashboard             # one-off glanceable HTML, opened in your browser
 npm run deep-dive             # insight-engine analysis (load/EF/durability/ramp/goal) → report
 npm run ask -- "how were my long rides this month?"   # free-form Q&A over your data
+npm run probe                 # Phase-2: dump live Garmin tool surface + AIE detail samples → reports/ (for mapping)
 npm run decisions             # view the decision log (audit trail)
 npm run decisions -- retro <id> "how it held up"   # add a retrospective to a decision
 
