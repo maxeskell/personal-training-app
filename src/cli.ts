@@ -1,7 +1,7 @@
 import { AieClient, AIE_READ_TOOLS, AIE_WRITE_TOOLS } from "./mcp/aieClient.js";
 import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
-import { assembleState, extractJson } from "./state/assemble.js";
+import { assembleState, extractJson, garminInner } from "./state/assemble.js";
 import { config } from "./config.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
@@ -381,29 +381,42 @@ async function cmdProbe(): Promise<void> {
     if (await g.connect()) {
       const tools = await g.listToolNames();
       console.log(`\nGarmin tools available (${tools.length}):\n  ${tools.join("\n  ")}\n`);
+
+      // SAFETY: only sample read-only tools. Never call mutating ones (set_/add_/delete_/upload_/…).
+      const readOnly = (name: string) => /^(get_|count_)/.test(name) && name !== "request_reload";
+
+      // Many tools need a real activity_id — pull a recent one from get_activities first.
+      let activityId: number | string | undefined;
+      try {
+        const actsRaw = garminInner(await g.tryCall("get_activities", { limit: 5 }));
+        const list = (actsRaw as { activities?: Array<{ activityId?: number }> })?.activities ?? (Array.isArray(actsRaw) ? actsRaw : []);
+        activityId = (list as Array<{ activityId?: number }>)[0]?.activityId;
+        console.log(`  (using activity_id=${activityId} for per-activity tools)`);
+      } catch { /* best effort */ }
+
       const argCandidates: Array<Record<string, unknown>> = [
         {},
         { date: today },
-        { cdate: today },
         { start_date: weekAgo, end_date: today },
-        { startdate: weekAgo, enddate: today },
-        { start: monthAgo, end: today },
+        { end_date: today },
+        { start_date: monthAgo },
+        ...(activityId != null ? [{ activity_id: activityId }, { activity_id: activityId, start_date: weekAgo, end_date: today }] : []),
       ];
       const samples: Record<string, unknown> = {};
+      let captured = 0, skipped = 0;
       for (const tool of tools) {
-        let captured: unknown = null;
+        if (!readOnly(tool)) { samples[tool] = { skipped: "non-read-only (not sampled)" }; skipped++; continue; }
+        let sample: unknown = null;
         let usedArgs: Record<string, unknown> | null = null;
         for (const args of argCandidates) {
           const r = await g.tryCall(tool, args);
-          if (r != null) {
-            captured = r;
-            usedArgs = args;
-            break;
-          }
+          if (r != null && !isErrorResult(r)) { sample = r; usedArgs = args; break; }
         }
-        samples[tool] = { args: usedArgs, sample: captured ?? "(no response for tried arg shapes)" };
-        console.log(`  · ${tool}: ${captured != null ? "captured" : "no sample"}`);
+        samples[tool] = { args: usedArgs, sample: sample ?? "(no non-error response for tried arg shapes)" };
+        if (sample != null) captured++;
+        console.log(`  · ${tool}: ${sample != null ? "captured" : "no data"}`);
       }
+      console.log(`\nGarmin: ${captured} captured, ${skipped} mutating tools skipped, ${tools.length - captured - skipped} read-only with no data.`);
       out.garminTools = tools;
       out.garminSamples = samples;
       await g.close();
@@ -432,6 +445,16 @@ async function cmdProbe(): Promise<void> {
   await writeFile(path, JSON.stringify(out, null, 2));
   console.log(`\nProbe written → ${path}`);
   console.log("Review it (it's your own health data, gitignored), redact anything you want, then share it back so I can build the Phase-2 mappers against your real field shapes.");
+}
+
+/** A Garmin MCP result is an "error" if flagged isError or its text is a tool/validation error. */
+function isErrorResult(r: unknown): boolean {
+  if (r && typeof r === "object") {
+    if ((r as { isError?: boolean }).isError) return true;
+    const text = (r as { content?: Array<{ text?: string }> }).content?.[0]?.text;
+    if (typeof text === "string" && /Error executing tool|validation error|Field required/.test(text)) return true;
+  }
+  return false;
 }
 
 async function printArchiveStatus(store: ArchiveStore): Promise<void> {

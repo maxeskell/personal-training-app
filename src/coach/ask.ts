@@ -23,6 +23,7 @@ function thresholdLine(state: AthleteState): string {
   if (!t) return "";
   const parts = [
     t.bikeFtpW != null ? `bike FTP ${t.bikeFtpW}W${t.bikeFtpWkg != null ? ` (${t.bikeFtpWkg} W/kg)` : ""}` : "",
+    t.runThresholdPowerW != null ? `run FTP ${t.runThresholdPowerW}W` : "",
     t.runThresholdPaceSecPerKm != null ? `run threshold ${paceStr(t.runThresholdPaceSecPerKm)}/km` : "",
     t.runThresholdHr != null ? `run LTHR ${t.runThresholdHr}bpm` : "",
     t.swimCssSecPer100 != null ? `swim CSS ${paceStr(t.swimCssSecPer100)}/100m` : "",

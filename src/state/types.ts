@@ -91,7 +91,7 @@ export interface ZoneSet {
 
 /** Per-discipline zone sets (HR for all; power for bike; pace for run/swim). */
 export interface DisciplineZones {
-  run?: { hr?: ZoneSet; pace?: ZoneSet };
+  run?: { hr?: ZoneSet; pace?: ZoneSet; power?: ZoneSet };
   bike?: { hr?: ZoneSet; power?: ZoneSet };
   swim?: { pace?: ZoneSet };
 }
@@ -102,6 +102,7 @@ export interface DisciplineThresholds {
   bikeFtpWkg?: number;
   runThresholdPaceSecPerKm?: number;
   runThresholdHr?: number;
+  runThresholdPowerW?: number; // running power threshold (FR970 native running power)
   swimCssSecPer100?: number;
 }
 
