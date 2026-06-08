@@ -1,6 +1,8 @@
-import type { AthleteState, ActualActivity } from "../state/types.js";
+import type { AthleteState, ActualActivity, ZoneSet } from "../state/types.js";
 import type { DecisionRecord } from "../state/decisionLog.js";
 import type { InsightReport } from "../insights/engine.js";
+import { findingKey } from "../insights/metrics.js";
+import { paceStr } from "../insights/zones.js";
 
 /**
  * Glanceable local dashboard (Path-B need #2): a single self-contained HTML file with
@@ -114,6 +116,97 @@ function renderAnalytics(ins: InsightReport): string {
   </table>`;
 }
 
+/** Top-5 insights box with agree / disagree / ignore actions (posts to /insight-feedback). */
+function renderInsightsBox(ins: InsightReport): string {
+  const sevColor = (s: string) => (s === "flag" ? "#c0392b" : s === "watch" ? "#c98a00" : "#1a8a3a");
+  const top = ins.topFindings.slice(0, 5);
+  if (!top.length) return `<div class="card"><h2>Top insights</h2><div class="muted">No strong signals right now — nothing worth your attention today.</div></div>`;
+  const rows = top
+    .map((f) => {
+      const key = findingKey(f);
+      const conf = Math.round((f.confidence ?? 0.6) * 100);
+      return `<div class="insight" data-key="${escapeHtml(key)}">
+        <div><span class="badge" style="background:${sevColor(f.severity)}">${f.severity}</span>
+          <b>${escapeHtml(f.title)}</b> <span class="muted">· ${conf}% conf · ${escapeHtml(f.family)}</span></div>
+        <div class="fdetail">${escapeHtml(f.detail)}</div>
+        ${f.recommendation ? `<div class="ev">→ ${escapeHtml(f.recommendation)}</div>` : ""}
+        <div class="ev">${escapeHtml(f.evidence)}</div>
+        <div class="acts">
+          <button class="agree" onclick="feedback(this,'agree','${escapeHtml(key)}','${escapeHtml(f.title)}')">👍 Agree</button>
+          <button class="disagree" onclick="feedback(this,'disagree','${escapeHtml(key)}','${escapeHtml(f.title)}')">👎 Disagree</button>
+          <button class="ignore" onclick="feedback(this,'ignore','${escapeHtml(key)}','${escapeHtml(f.title)}')">✕ Ignore</button>
+          <span class="reacted"></span>
+        </div>
+      </div>`;
+    })
+    .join("");
+  return `<div class="card insights"><h2>Top insights — your call</h2>
+    <div class="k" style="margin-bottom:8px">Ranked by signal strength. Disagree/ignore hides that insight for ~2 weeks and tells the coach to stop raising it.</div>
+    ${rows}
+  </div>`;
+}
+
+function zoneTable(title: string, z: ZoneSet | undefined): string {
+  if (!z || z.bounds.length < 2) return "";
+  const fmtVal = (v: number) => (z.metric === "pace" ? paceStr(v) : `${v}`);
+  const rows = (z.labels ?? z.bounds.slice(1).map((_, i) => `Z${i + 1}`))
+    .map((lab, i) => `<tr><td>${escapeHtml(lab)}</td><td class="num">${fmtVal(z.bounds[i])}–${fmtVal(z.bounds[i + 1])} ${z.unit}</td></tr>`)
+    .join("");
+  return `<div style="flex:1;min-width:200px"><div class="k">${title} <span class="muted">(${z.source})</span></div><table>${rows}</table></div>`;
+}
+
+/** Zones + FTP/threshold markers per discipline. */
+function renderZones(today: AthleteState): string {
+  const z = today.zones.value;
+  const t = today.thresholds.value;
+  if (!z && !t) return "";
+  const markers = t
+    ? [
+        t.bikeFtpW != null ? `Bike FTP <b>${t.bikeFtpW} W</b>${t.bikeFtpWkg != null ? ` (${t.bikeFtpWkg} W/kg)` : ""}` : "",
+        t.runThresholdPaceSecPerKm != null ? `Run threshold <b>${paceStr(t.runThresholdPaceSecPerKm)}/km</b>` : "",
+        t.runThresholdHr != null ? `Run LTHR <b>${t.runThresholdHr} bpm</b>` : "",
+        t.swimCssSecPer100 != null ? `Swim CSS <b>${paceStr(t.swimCssSecPer100)}/100m</b>` : "",
+      ].filter(Boolean).join(" · ")
+    : "";
+  return `<div class="card"><h2>Zones & thresholds</h2>
+    ${markers ? `<div style="font-size:14px;margin-bottom:12px">${markers}</div>` : ""}
+    <div class="grid">
+      ${zoneTable("Bike power", z?.bike?.power)}
+      ${zoneTable("Run pace", z?.run?.pace)}
+      ${zoneTable("Run HR", z?.run?.hr)}
+      ${zoneTable("Swim pace", z?.swim?.pace)}
+    </div>
+    <div class="k" style="margin-top:8px">Derived zones use standard models (Coggan power / %-LTHR / %-threshold pace). Threshold-pace MODEL estimates are trend-relative.</div>
+  </div>`;
+}
+
+/** Estimated race splits dependent on training (durability-shaped pacing plan). */
+function renderSplits(ins: InsightReport): string {
+  if (!ins.splits.length) return "";
+  const blocks = ins.splits
+    .map((p) => {
+      const rows = p.segments
+        .map((s) => `<tr><td>${escapeHtml(s.label)}</td><td class="num">${paceStr(s.targetPaceSecPerKm)}/km</td><td class="num">${hms(s.cumulativeSec)}</td></tr>`)
+        .join("");
+      return `<div style="margin-bottom:14px">
+        <div style="font-size:14px"><b>${escapeHtml(p.race)}</b> — target ${hms(p.predictedSec)} over ${p.distanceKm} km</div>
+        <div class="ev" style="margin:4px 0">${escapeHtml(p.strategy)}</div>
+        <table><tr class="k"><td>Segment</td><td>Target pace</td><td>Cumulative</td></tr>${rows}</table>
+      </div>`;
+    })
+    .join("");
+  return `<div class="card"><h2>Estimated race splits</h2>${blocks}
+    <div class="k">Built from AI Endurance's predicted finish (MODEL — trend over absolute), shaped by your durability trend.</div>
+  </div>`;
+}
+
+function hms(sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.round(sec % 60);
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export function renderDashboard({ window, decisions, insights }: DashboardInput): string {
   const today = window[window.length - 1];
 
@@ -177,6 +270,13 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .syncbtn{padding:8px 16px;border:0;border-radius:8px;background:#c8642d;color:#fff;font-size:14px;cursor:pointer}
 .syncbtn:disabled{opacity:.55;cursor:default}
 .syncstatus{margin-left:10px;font-size:13px;color:#888}
+.insights{border:1px solid #e7d9c6}
+.insight{padding:10px 0;border-bottom:1px solid #f0ede5}.insight:last-child{border:0}
+.acts{margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.acts button{font-size:12px;padding:4px 10px;border:1px solid #ddd;border-radius:14px;background:#fff;cursor:pointer}
+.acts button:disabled{opacity:.4;cursor:default}
+.acts .agree:hover{background:#e6f5ea;border-color:#1a8a3a}.acts .disagree:hover{background:#fdeaea;border-color:#c0392b}
+.acts .ignore:hover{background:#f3f3f3}.reacted{font-size:11px;color:#1a8a3a;margin-left:4px}
 </style></head><body>
 <h1>Endurance Coach</h1>
 <div class="sub">as of ${today.assembledAt}</div>
@@ -208,7 +308,18 @@ async function ask(e){e.preventDefault();var q=document.getElementById('q').valu
   try{var r=await fetch('/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:q})});
     var j=await r.json();a.textContent=j.answer||'(no answer)';}catch(err){a.textContent='Error: '+err;}
   return false;}
+async function feedback(btn,reaction,key,summary){
+  var box=btn.closest('.insight');var span=box.querySelector('.reacted');span.textContent='…';
+  try{await fetch('/insight-feedback',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({key:key,reaction:reaction,summary:summary})});
+    box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
+    span.textContent=reaction==='agree'?'✓ agreed':reaction==='disagree'?'✓ disagreed — hidden ~2wk':'✓ ignored — hidden ~2wk';
+    if(reaction!=='agree'){box.style.opacity=0.5;}
+  }catch(err){span.textContent='error';}
+}
 </script>
+
+${insights ? renderInsightsBox(insights) : ""}
 
 <div class="card"><h2>Today</h2>
   <div class="verdict"><span class="dot" style="background:${verdictColor}"></span>
@@ -241,9 +352,13 @@ ${insights ? renderSignals(insights) : ""}
   <div class="k" style="margin-top:8px">Weight is a trend, never a daily target.</div>
 </div>
 
+${renderZones(today)}
+
 <div class="card"><h2>Race</h2>
   <table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>
 </div>
+
+${insights ? renderSplits(insights) : ""}
 
 <div class="card"><h2>Recent decisions</h2>
   <table><tr class="k"><td>Kind</td><td>Status</td><td>Summary</td></tr>${recentDecisions || '<tr><td colspan="3" class="muted">none yet</td></tr>'}</table>

@@ -12,7 +12,7 @@
  * Everything here remains hypothesis-generating for an n≈60 single athlete — labelled as such.
  */
 
-import { corrWithCi, bestLaggedCorr, finiteNums, type Maybe } from "./stats.js";
+import { corrWithCi, bestLaggedCorr, finiteNums, corrPValue, benjaminiHochberg, type Maybe } from "./stats.js";
 
 export interface Correlation {
   label: string;
@@ -23,7 +23,9 @@ export interface Correlation {
   ciLow: number;
   ciHigh: number;
   effN: number;
-  significant: boolean;
+  significant: boolean; // CI excludes 0
+  /** Survives Benjamini–Hochberg FDR control across the scanned set (q=0.1). */
+  fdrPass?: boolean;
   interpretation: string;
 }
 export interface Anomaly {
@@ -69,6 +71,7 @@ export function sleepVsNextDayLoad(
     ciHigh: c.ciHigh,
     effN: c.effN,
     significant: c.significant,
+    fdrPass: c.significant,
     interpretation: `${strength(c.r)} (r=${c.r}, 95% CI [${c.ciLow},${c.ciHigh}], n=${c.n}${c.significant ? "" : ", CI spans 0 — tentative"}): ${c.r > 0 ? "you train more after good sleep — readiness shows up the next day." : "your training load doesn't follow sleep — but watch session quality on short-sleep days."}`,
   };
 }
@@ -140,6 +143,16 @@ export function analyseRecoverySeries(
   };
   z(rhr, "Resting HR", "high", "unusually elevated");
   z(hrv, "HRV", "low", "unusually suppressed");
+
+  // FDR control across the scanned set (brief §2/§4): a relationship is "confirmed" only if its CI
+  // clears 0 AND it survives Benjamini–Hochberg at q=0.1. Otherwise it's hypothesis-generating.
+  if (correlations.length) {
+    const pass = benjaminiHochberg(correlations.map((c) => corrPValue(c.r, c.effN)), 0.1);
+    correlations.forEach((c, i) => {
+      c.fdrPass = pass[i] && c.significant;
+      if (!c.fdrPass && !/tentative/.test(c.interpretation)) c.interpretation += " [exploratory — not FDR-confirmed]";
+    });
+  }
 
   return { correlations, anomalies };
 }

@@ -112,6 +112,7 @@ export function fitFindings(decays: SessionDecay[]): Finding[] {
         ` — neuromuscular fatigue setting in late, the form-decay pattern that raises overstriding/injury risk into the marathon.`,
       evidence: `per-second .FIT streams, ${longRuns.length} long runs analysed [garmin FR970]`,
       recommendation: "Add late-run cadence cues and finish-fast strides; check it shrinks as durability builds.",
+      confidence: 0.6,
     });
   }
   return out;

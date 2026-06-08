@@ -10,18 +10,29 @@ import { config } from "../config.js";
 
 export type DecisionStatus = "proposed" | "accepted" | "declined" | "deferred" | "executed" | "note";
 
+/** How the athlete reacted to a surfaced insight (maps to accepted/declined/deferred). */
+export type InsightReaction = "agree" | "disagree" | "ignore";
+
 export interface DecisionRecord {
   id: string;
   timestamp: string;
-  kind: "readiness" | "plan-adjust" | "note";
+  kind: "readiness" | "plan-adjust" | "note" | "insight-feedback";
   summary: string;
   tradeoff?: string;
   /** For plan-adjust proposals: the gated write that would fire on acceptance. */
   write?: { tool: string; args: Record<string, unknown> };
   status: DecisionStatus;
+  /** For insight-feedback: the stable key of the finding being reacted to. */
+  insightKey?: string;
   /** Optional retrospective note on how the call held up. */
   retro?: string;
 }
+
+const REACTION_STATUS: Record<InsightReaction, DecisionStatus> = {
+  agree: "accepted",
+  disagree: "declined",
+  ignore: "deferred",
+};
 
 export class DecisionLog {
   private readonly file = join(config.dataDir, "decisions", "log.jsonl");
@@ -49,6 +60,47 @@ export class DecisionLog {
     if (!original) throw new Error(`No decision with id ${id}`);
     await this.append({ ...original, status, retro, timestamp: nowIso() });
   }
+
+  /** Record an agree/disagree/ignore reaction to a surfaced insight. */
+  async recordInsightFeedback(insightKey: string, reaction: InsightReaction, summary: string): Promise<void> {
+    await this.append({
+      id: decisionId(`${insightKey}:${reaction}:${nowIso()}`),
+      timestamp: nowIso(),
+      kind: "insight-feedback",
+      summary,
+      insightKey,
+      status: REACTION_STATUS[reaction],
+    });
+  }
+
+  /** Latest reaction per insight key (most recent wins). */
+  async insightReactions(): Promise<Map<string, { reaction: InsightReaction; timestamp: string }>> {
+    const out = new Map<string, { reaction: InsightReaction; timestamp: string }>();
+    for (const r of await this.all()) {
+      if (r.kind !== "insight-feedback" || !r.insightKey) continue;
+      const reaction: InsightReaction = r.status === "accepted" ? "agree" : r.status === "declined" ? "disagree" : "ignore";
+      out.set(r.insightKey, { reaction, timestamp: r.timestamp });
+    }
+    return out;
+  }
+}
+
+/**
+ * Keys the athlete has dismissed (disagree/ignore) within `withinDays` — suppressed from surfacing.
+ * Agreeing re-activates a key (it's a real signal they want to keep seeing).
+ */
+export function suppressedInsightKeys(
+  reactions: Map<string, { reaction: InsightReaction; timestamp: string }>,
+  withinDays = 14,
+  now: Date = new Date(),
+): Set<string> {
+  const out = new Set<string>();
+  for (const [key, { reaction, timestamp }] of reactions) {
+    if (reaction === "agree") continue;
+    const ageDays = (now.getTime() - new Date(timestamp).getTime()) / 86_400_000;
+    if (ageDays <= withinDays) out.add(key);
+  }
+  return out;
 }
 
 export function nowIso(): string {

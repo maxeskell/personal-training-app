@@ -15,6 +15,38 @@ export interface Finding {
   detail: string;
   evidence: string;
   recommendation?: string;
+  /** 0–1 strength of signal behind this finding. Low-confidence findings are gated out of surfacing. */
+  confidence?: number;
+  /** Stable id for feedback/suppression (derived from family+title if not set). */
+  key?: string;
+}
+
+/** Stable, digit/date-insensitive key so feedback survives a finding whose numbers change day to day. */
+export function findingKey(f: Pick<Finding, "family" | "title" | "key">): string {
+  if (f.key) return f.key;
+  const norm = `${f.family} ${f.title}`
+    .toLowerCase()
+    .replace(/[0-9]+(\.[0-9]+)?%?/g, "") // drop numbers/percentages
+    .replace(/[^a-z]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return norm || "finding";
+}
+
+const SEVERITY_WEIGHT: Record<Severity, number> = { flag: 1, watch: 0.7, info: 0.45 };
+
+/** Rank score = severity weight × confidence (defaulting confidence to a mid value when unset). */
+export function findingScore(f: Finding): number {
+  return SEVERITY_WEIGHT[f.severity] * (f.confidence ?? 0.6);
+}
+
+/**
+ * Gate + rank findings for surfacing: drop suppressed keys and anything below the confidence bar,
+ * then sort by score. `minConfidence` is the "only show me a good signal" threshold.
+ */
+export function surfaceFindings(findings: Finding[], suppressed: Set<string> = new Set(), minConfidence = 0.5): Finding[] {
+  return findings
+    .filter((f) => (f.confidence ?? 0.6) >= minConfidence && !suppressed.has(findingKey(f)))
+    .sort((a, b) => findingScore(b) - findingScore(a));
 }
 
 function num(x: unknown): number | undefined {

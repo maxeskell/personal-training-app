@@ -131,6 +131,37 @@ export function bestLaggedCorr(xs: Maybe[], ys: Maybe[], minLag = 0, maxLag = 4)
   return best;
 }
 
+/** Standard normal CDF (Abramowitz–Stegun 7.1.26 approximation). */
+function normCdf(x: number): number {
+  const t = 1 / (1 + 0.2316419 * Math.abs(x));
+  const d = 0.3989422804014327 * Math.exp(-(x * x) / 2);
+  const p = d * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  return x >= 0 ? 1 - p : p;
+}
+
+/** Two-sided p-value for a correlation via the Fisher-z normal approximation on the effective N. */
+export function corrPValue(r: number, effN: number): number {
+  if (effN <= 4) return 1;
+  const z = Math.atanh(Math.max(-0.999, Math.min(0.999, r))) * Math.sqrt(effN - 3);
+  return Math.max(0, Math.min(1, 2 * (1 - normCdf(Math.abs(z)))));
+}
+
+/**
+ * Benjamini–Hochberg FDR control. Returns a boolean per input p-value: true = discovery survives at
+ * false-discovery-rate `q`. The brief's guard against fishing across many metrics (multiple comparisons).
+ */
+export function benjaminiHochberg(pvals: number[], q = 0.1): boolean[] {
+  const m = pvals.length;
+  const order = pvals.map((p, i) => ({ p, i })).sort((a, b) => a.p - b.p);
+  let maxK = -1;
+  for (let k = 0; k < m; k++) {
+    if (order[k].p <= ((k + 1) / m) * q) maxK = k;
+  }
+  const pass = new Array(m).fill(false);
+  for (let k = 0; k <= maxK; k++) pass[order[k].i] = true;
+  return pass;
+}
+
 /** Rolling personal baseline: z-score of the last point vs the trailing window (excludes itself). */
 export function trailingZ(series: Maybe[], window = 42): { z: number; mean: number; sd: number } | null {
   const v = series.filter((x): x is number => x != null);

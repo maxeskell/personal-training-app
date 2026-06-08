@@ -33,7 +33,7 @@ import { fileChecks } from "./health.js";
 import open from "open";
 import { assessHealthRisk } from "./guardrails/wellbeing.js";
 import { WriteGate } from "./guardrails/writeGate.js";
-import { DecisionLog, decisionId, nowIso } from "./state/decisionLog.js";
+import { DecisionLog, decisionId, nowIso, suppressedInsightKeys } from "./state/decisionLog.js";
 import type { AthleteState } from "./state/types.js";
 
 /** Assemble (and persist) today's state + trailing window. Handles Garmin lifecycle. */
@@ -170,6 +170,8 @@ async function cmdState(): Promise<void> {
   line("weight 7d trend", state.weight7dTrend);
   line("sleep (garmin)", state.sleep);
   line("vo2max", state.vo2max);
+  line("thresholds (ftp/pace)", state.thresholds);
+  line("zones", state.zones);
   line("tiebreak (garmin)", state.tiebreak);
   line("nutrition targets", state.nutritionTargets);
 
@@ -247,8 +249,9 @@ async function cmdPing(): Promise<void> {
 /** `deep-dive` — compute insight metrics, synthesise a coach-style analysis, write a report. */
 async function cmdDeepDive(): Promise<void> {
   if (!requireLLM()) process.exit(1);
-  const { state } = await buildTodayState();
-  const ins = buildInsights(state, await loadArchive());
+  const { state, window } = await buildTodayState();
+  const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
+  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window });
 
   const ev = (t: { recent: number | null; prior: number | null; deltaPct: number | null; n: number }) =>
     `recent ${t.recent ?? "—"} vs prior ${t.prior ?? "—"} (Δ ${t.deltaPct ?? "—"}%, n=${t.n})`;
@@ -268,8 +271,12 @@ async function cmdDeepDive(): Promise<void> {
     `- Brick decoupling (Q4): ${ins.brick.decouplingPct != null ? `run EF off-bike ${ins.brick.decouplingPct}% vs fresh (${ins.brick.brickDays} brick days)` : "insufficient power-equipped runs"}`,
     `- Taper target (Q6): ${ins.taper.recommendedTsbLow != null ? `race-day TSB ~${ins.taper.recommendedTsbLow}..${ins.taper.recommendedTsbHigh} (${ins.taper.basis})` : "no past race-day TSB yet"}`,
     `- Economy vs fitness (Q5): ${ins.efficiency.residualSlopePer30d != null ? `fitness-removed EF residual ${ins.efficiency.residualSlopePer30d}/30d (${ins.efficiency.fitnessExplains ? "gains are fitness, not economy" : "independent economy gain"})` : "insufficient steady runs"}`,
+    `- Race split plans: ${ins.splits.map((p) => `${p.race} ${Math.round(p.predictedSec / 60)}min over ${p.distanceKm}km — ${p.strategy}`).join(" | ") || "no run races with predictions"}`,
     "",
-    `DETECTOR FINDINGS (already triaged by severity):`,
+    `TOP SURFACED INSIGHTS (good-signal, ranked; suppressed/dismissed removed):`,
+    ...ins.topFindings.slice(0, 5).map((f) => `- [${f.severity}, ${Math.round((f.confidence ?? 0.6) * 100)}%] ${f.title}: ${f.detail} (${f.evidence})`),
+    "",
+    `ALL DETECTOR FINDINGS (triaged by severity):`,
     ...ins.findings.map((f) => `- [${f.severity}] ${f.title}: ${f.detail} (${f.evidence})`),
   ].join("\n");
 

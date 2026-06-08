@@ -9,6 +9,7 @@ import {
   thresholdTrend,
   monotonyStrain,
   intensityDistribution,
+  surfaceFindings,
   type Finding,
   type LoadModel,
   type RunRamp,
@@ -16,6 +17,7 @@ import {
   type MonotonyStrain,
   type TID,
 } from "./metrics.js";
+import { estimateRunSplits, type RaceSplitPlan, type DurabilityState } from "./splits.js";
 import { analyseRecoverySeries, sleepVsNextDayLoad, type Correlation, type Anomaly } from "./correlations.js";
 import { buildMonitoringRuleSet, monitoringFinding, type MonitoringRuleSet } from "./monitoring.js";
 import { changePointsOf, changePointFindings, type SeriesChangePoints } from "./changepoint.js";
@@ -60,8 +62,23 @@ export interface InsightReport {
   efficiency: EfficiencyAnalysis;
   fuelling: FuellingAnalysis;
   sessionDecays: SessionDecay[];
+  splits: RaceSplitPlan[];
   findings: Finding[];
+  /** Gated + ranked findings for surfacing (good-signal only, suppressed keys removed). */
+  topFindings: Finding[];
 }
+
+/** Default per-family confidence when a detector didn't set one explicitly. */
+const FAMILY_CONFIDENCE: Record<string, number> = {
+  "Injury risk": 0.8,
+  "Load & form": 0.7,
+  "Intensity distribution": 0.65,
+  "Aerobic efficiency": 0.6,
+  Durability: 0.6,
+  Anomaly: 0.55,
+  "Goal tracking": 0.7,
+  "Regime shift": 0.6,
+};
 
 function daysTo(fromIso: string, toIso: string): number {
   return Math.round((new Date(`${String(toIso).slice(0, 10)}T00:00:00Z`).getTime() - new Date(`${fromIso}T00:00:00Z`).getTime()) / 86_400_000);
@@ -95,8 +112,84 @@ function predictionsVsGoals(state: AthleteState): PredictionVsGoal[] {
     .sort((a, b) => (a.daysTo ?? 0) - (b.daysTo ?? 0));
 }
 
+/** Infer a run race's distance (km) from its name. Returns null for non-run / unknown events. */
+function runDistanceKm(name: string): number | null {
+  const s = name.toLowerCase();
+  if (/half[\s-]*marathon|half\b/.test(s)) return 21.0975;
+  if (/marathon/.test(s)) return 42.195;
+  if (/10\s*k\b|10\s*km/.test(s)) return 10;
+  if (/5\s*k\b|5\s*km/.test(s)) return 5;
+  return null;
+}
+
+/** Least-squares slope (per day) of dated values, or null if too few points. */
+function slopePerDay(points: Array<{ date: string; v: number }>): number | null {
+  if (points.length < 4) return null;
+  const epoch = new Date(`${points[0].date}T00:00:00Z`).getTime();
+  const xs = points.map((p) => (new Date(`${p.date}T00:00:00Z`).getTime() - epoch) / 86_400_000);
+  const ys = points.map((p) => p.v);
+  const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+  let sxy = 0;
+  let sxx = 0;
+  for (let i = 0; i < xs.length; i++) {
+    sxy += (xs[i] - mx) * (ys[i] - my);
+    sxx += (xs[i] - mx) ** 2;
+  }
+  return sxx === 0 ? null : sxy / sxx;
+}
+
+/** Cross-day trend findings (VO2max engine growth; race-predictor trajectory) from the history window. */
+function historyTrendFindings(history: AthleteState[] | undefined): Finding[] {
+  const out: Finding[] = [];
+  if (!history || history.length < 6) return out;
+
+  // VO2max trend (run engine). Slow upward drift = engine growing; flag a sustained drop.
+  const vo2 = history
+    .map((s) => ({ date: s.date, v: s.vo2max.value }))
+    .filter((p): p is { date: string; v: number } => p.v != null);
+  const vo2Slope = slopePerDay(vo2);
+  if (vo2Slope != null && Math.abs(vo2Slope * 30) >= 0.5) {
+    const per30 = +(vo2Slope * 30).toFixed(1);
+    out.push({
+      family: "Engine trend",
+      title: per30 >= 0 ? "VO2max trending up" : "VO2max trending down",
+      severity: per30 < 0 ? "watch" : "info",
+      detail: `VO2max is ${per30 >= 0 ? "rising" : "falling"} ~${Math.abs(per30)}/30d across ${vo2.length} readings — ${per30 >= 0 ? "the aerobic engine is growing." : "watch it (summer heat suppresses VO2max — a benign explanation; confirm against pace-at-HR)."}`,
+      evidence: `VO2max slope over ${vo2.length} days [garmin, MODEL — trend only]`,
+      confidence: 0.6,
+    });
+  }
+
+  // Race-predictor trajectory for the nearest race (predicted time falling = getting faster).
+  const predPoints = history
+    .map((s) => ({ date: s.date, p: predictionsVsGoals(s)[0] }))
+    .filter((x): x is { date: string; p: PredictionVsGoal } => x.p != null && x.p.predictedSec != null)
+    .map((x) => ({ date: x.date, v: x.p.predictedSec! }));
+  const predSlope = slopePerDay(predPoints);
+  if (predSlope != null && Math.abs(predSlope * 7) >= 5) {
+    const perWk = Math.round(predSlope * 7);
+    out.push({
+      family: "Goal tracking",
+      title: perWk <= 0 ? "Race prediction improving" : "Race prediction slipping",
+      severity: perWk > 0 ? "watch" : "info",
+      detail: `The predicted finish for your next race is ${perWk <= 0 ? "dropping" : "rising"} ~${Math.abs(perWk)}s/week across the block — ${perWk <= 0 ? "prep is translating into projected speed." : "the trajectory is going the wrong way; check load/recovery and session quality."}`,
+      evidence: `getPrediction trajectory over ${predPoints.length} days [ai-endurance, MODEL — watch the slope, not the absolute]`,
+      confidence: 0.6,
+    });
+  }
+  return out;
+}
+
+export interface BuildOptions {
+  /** Finding keys the athlete dismissed (disagree/ignore) — removed from topFindings. */
+  suppressed?: Set<string>;
+  /** Trailing daily states (oldest→newest, incl. today) for cross-day trends (VO2max, prediction). */
+  history?: AthleteState[];
+}
+
 /** Build the full insight report + detector findings from today's state (+ optional history archive). */
-export function buildInsights(state: AthleteState, archive?: ArchiveInput): InsightReport {
+export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?: BuildOptions): InsightReport {
   const raw = state.raw ?? {};
   const live = richActivities(raw);
   // Prefer the archived history when it's deeper than the live 40-deep window.
@@ -137,6 +230,17 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput): Insi
   const efficiency = analyseEfficiency(acts, load);
   const fuelling = analyseFuelling([], [], state.weight7dTrend.value);
   const sessionDecays = loadSessionDecays();
+
+  // Race splits, shaped by the run-durability trend (improving → negative split; else conservative).
+  const durChange = durability.run.recent != null && durability.run.prior != null ? durability.run.recent - durability.run.prior : null;
+  const durState: DurabilityState = durChange == null ? "unknown" : durChange >= 2 ? "improving" : durChange <= -2 ? "slipping" : "unknown";
+  const splits = predictions
+    .filter((p) => (p.daysTo ?? -1) >= 0 && p.predictedSec != null)
+    .map((p) => {
+      const km = runDistanceKm(p.race);
+      return km ? estimateRunSplits(p.race, km, p.predictedSec!, durState, p.date) : null;
+    })
+    .filter((s): s is RaceSplitPlan => s != null);
 
   const findings: Finding[] = [];
 
@@ -256,6 +360,7 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput): Insi
   }
 
   // 3c. A strong n=1 pattern worth knowing (surfaced as info — it's insight, not an alarm).
+  // Confidence keys off FDR survival: a confirmed pattern is trustworthy; an exploratory one is gated low.
   const topCorr = correlations.find((c) => Math.abs(c.r) >= 0.5);
   if (topCorr) {
     findings.push({
@@ -263,7 +368,8 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput): Insi
       title: topCorr.label,
       severity: "info",
       detail: topCorr.interpretation,
-      evidence: `r=${topCorr.r}, n=${topCorr.n} days [ai-endurance]`,
+      evidence: `r=${topCorr.r}, n=${topCorr.n} days, FDR ${topCorr.fdrPass ? "confirmed" : "not confirmed"} [ai-endurance]`,
+      confidence: topCorr.fdrPass ? 0.8 : 0.35,
     });
   }
 
@@ -294,9 +400,18 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput): Insi
   if (ff) findings.push(ff);
   findings.push(...fitFindings(sessionDecays));
 
+  // 6. Cross-day trends from the history window (VO2max engine; race-predictor trajectory).
+  findings.push(...historyTrendFindings(opts?.history));
+
+  // Fill any unset confidence from the per-family defaults (mid value if still unknown).
+  for (const f of findings) if (f.confidence == null) f.confidence = FAMILY_CONFIDENCE[f.family] ?? 0.6;
+
   // Order: flags first, then watch, then info.
   const rank = { flag: 0, watch: 1, info: 2 } as const;
   findings.sort((a, b) => rank[a.severity] - rank[b.severity]);
+
+  // Gated + ranked set for surfacing: good-signal only, athlete-dismissed keys removed.
+  const topFindings = surfaceFindings(findings, opts?.suppressed ?? new Set());
 
   return {
     date: state.date,
@@ -317,6 +432,8 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput): Insi
     efficiency,
     fuelling,
     sessionDecays,
+    splits,
     findings,
+    topFindings,
   };
 }

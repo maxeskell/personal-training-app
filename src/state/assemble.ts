@@ -7,9 +7,11 @@ import {
   emptyState,
   type ActualActivity,
   type AthleteState,
+  type DisciplineThresholds,
   type NutritionTargets,
   type RecoveryModel,
 } from "./types.js";
+import { deriveZones } from "../insights/zones.js";
 
 /**
  * Assemble today's AthleteState from AI Endurance (spine) + optional Garmin.
@@ -158,6 +160,7 @@ export async function assembleState(
   mapRecovery(state, raw.getRecoveryModel);
   mapNutrition(state, raw.getNutritionModel, opts.date);
   mapUser(state, raw.getUser);
+  mapZonesThresholds(state, raw.getUser);
   mapAdherence(state, raw.getPlanProgress);
   state.prediction = { value: raw.getPrediction ?? null, source: "ai-endurance" };
   state.plannedSessions = { value: mapPlanned(raw.getPlannedWorkouts), source: "ai-endurance" };
@@ -321,6 +324,47 @@ function mapUser(state: AthleteState, payload: unknown): void {
   if (w != null) {
     state.weightKg = { value: w, source: "ai-endurance", note: "profile weight (trend only, not a daily target)" };
   }
+}
+
+/** First defined numeric value across a list of candidate keys on an object. */
+function firstNum(obj: unknown, keys: string[]): number | undefined {
+  for (const k of keys) {
+    const v = asNumber(get(obj, k));
+    if (v != null) return v;
+  }
+  return undefined;
+}
+
+/**
+ * Threshold/FTP markers + zones from getUser (user ask). Field shapes vary across AIE profile
+ * versions, so we probe several plausible keys and gate to null when absent — then derive standard
+ * zone bands from the thresholds (see insights/zones). Degrades cleanly if getUser exposes none.
+ */
+function mapZonesThresholds(state: AthleteState, payload: unknown): void {
+  const thresholds: DisciplineThresholds = {};
+  const ftp = firstNum(payload, ["ftp", "ftp_watts", "cycling_ftp", "bike_ftp", "functional_threshold_power"]);
+  if (ftp != null && ftp > 0) {
+    thresholds.bikeFtpW = Math.round(ftp);
+    const kg = state.weightKg.value;
+    if (kg && kg > 0) thresholds.bikeFtpWkg = +(ftp / kg).toFixed(2);
+  }
+  const runHr = firstNum(payload, ["run_threshold_hr", "lactate_threshold_hr", "threshold_heart_rate", "lthr", "threshold_hr"]);
+  if (runHr != null && runHr > 0) thresholds.runThresholdHr = Math.round(runHr);
+  // Pace fields may be sec/km already, or m/s (convert). Accept a sane sec/km range.
+  const paceRaw = firstNum(payload, ["run_threshold_pace_sec_per_km", "threshold_pace", "run_threshold_pace", "running_threshold_pace"]);
+  if (paceRaw != null && paceRaw > 0) {
+    const secPerKm = paceRaw < 12 ? Math.round(1000 / paceRaw) : Math.round(paceRaw); // m/s → sec/km if tiny
+    if (secPerKm >= 150 && secPerKm <= 600) thresholds.runThresholdPaceSecPerKm = secPerKm;
+  }
+  const cssRaw = firstNum(payload, ["css_sec_per_100m", "swim_css", "css", "critical_swim_speed"]);
+  if (cssRaw != null && cssRaw > 0) {
+    const secPer100 = cssRaw < 5 ? Math.round(100 / cssRaw) : Math.round(cssRaw); // m/s → sec/100m if tiny
+    if (secPer100 >= 60 && secPer100 <= 240) thresholds.swimCssSecPer100 = secPer100;
+  }
+
+  if (Object.keys(thresholds).length === 0) return; // nothing exposed → leave absent
+  state.thresholds = { value: thresholds, source: "ai-endurance" };
+  state.zones = { value: deriveZones(thresholds), source: "derived", note: "standard zone models from thresholds (Coggan power / %-LTHR / %-threshold pace)" };
 }
 
 /** `getPlanProgress` overall `done_sec`/`plan_sec` per zone → adherence hours. */

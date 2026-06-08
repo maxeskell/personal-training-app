@@ -94,5 +94,6 @@ export function efficiencyFinding(e: EfficiencyAnalysis): Finding | null {
           ? `Run EF is rising, but it tracks fitness (CTL) — the fitness-removed residual is flat (${e.residualSlopePer30d}/30d). Gains are engine, not economy; technique/economy work still has headroom.`
           : `Fitness-adjusted run economy is roughly flat (${e.residualSlopePer30d}/30d over ${e.n} runs).`,
     evidence: `EF residualised on CTL, residual trend over ${e.n} steady runs [derived]`,
+    confidence: economyUp ? 0.6 : 0.5,
   };
 }

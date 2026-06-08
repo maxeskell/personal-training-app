@@ -59,5 +59,6 @@ export function fuellingFinding(f: FuellingAnalysis): Finding | null {
       `that's under-fuelling cannibalising the engine, not a W/kg gain. Eat more, especially protein and around sessions; this is a stop signal.`,
     evidence: `weight ${f.weightTrendKgPerWk} kg/wk, skeletal muscle ${f.muscleTrendKgPerWk} kg/wk (BIA trends) [garmin Index S2]`,
     recommendation: "Raise daily intake toward the adequate-fuelling range and re-check muscle mass in 2–3 weeks.",
+    confidence: 0.85,
   };
 }
