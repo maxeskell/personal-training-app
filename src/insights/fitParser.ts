@@ -126,6 +126,52 @@ function mean(xs: number[]): number | undefined {
   return xs.length ? +(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(2) : undefined;
 }
 
+/**
+ * Extract raw .FIT bytes from a Garmin MCP `get_activity_fit_data` result. The payload is base64 in the
+ * MCP text content (or nested under result/data/fileData) — we try the common shapes and accept the one
+ * that decodes to a valid .FIT (the ".FIT" signature at byte 8). Returns null if none decode.
+ */
+export function decodeFitFromResult(result: unknown): Buffer | null {
+  const candidates: string[] = [];
+  const pushStr = (v: unknown) => {
+    if (typeof v === "string" && v.length > 50) candidates.push(v);
+  };
+  if (result && typeof result === "object") {
+    const r = result as Record<string, unknown>;
+    if (Array.isArray(r.content)) for (const c of r.content as Array<{ text?: unknown }>) pushStr(c?.text);
+    for (const k of ["result", "data", "fileData", "fit", "fitData", "value"]) pushStr(r[k]);
+  }
+  pushStr(result);
+
+  const tryB64 = (s: string): Buffer | null => {
+    try {
+      const b = Buffer.from(s, "base64");
+      if (b.length > 14 && b.toString("ascii", 8, 12) === ".FIT") return b;
+    } catch {
+      /* not base64 */
+    }
+    return null;
+  };
+  for (const s of candidates) {
+    const direct = tryB64(s.trim());
+    if (direct) return direct;
+    // The string may itself be JSON wrapping the base64.
+    try {
+      const o = JSON.parse(s) as Record<string, unknown>;
+      for (const k of ["result", "data", "fileData", "fit", "fitData", "value"]) {
+        const v = o[k];
+        if (typeof v === "string") {
+          const b = tryB64(v.trim());
+          if (b) return b;
+        }
+      }
+    } catch {
+      /* not JSON */
+    }
+  }
+  return null;
+}
+
 export function parseFit(buf: Buffer): FitActivity | null {
   if (buf.length < 14) return null;
   const headerSize = buf.readUInt8(0);
