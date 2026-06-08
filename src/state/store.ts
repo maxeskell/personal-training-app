@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile, readdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "../config.js";
 import { emptyState, type AthleteState } from "./types.js";
@@ -17,7 +17,12 @@ export class StateStore {
 
   async save(state: AthleteState): Promise<void> {
     await mkdir(this.dir, { recursive: true });
-    await writeFile(this.fileFor(state.date), JSON.stringify(state, null, 2));
+    // Atomic write: a concurrent reader (the dashboard server) must never see a half-written file.
+    // Write a temp file then rename (atomic on POSIX), so load() always parses a complete state.
+    const final = this.fileFor(state.date);
+    const tmp = `${final}.${process.pid}.tmp`;
+    await writeFile(tmp, JSON.stringify(state, null, 2));
+    await rename(tmp, final);
   }
 
   async load(date: string): Promise<AthleteState | undefined> {

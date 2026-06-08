@@ -4,6 +4,20 @@ import { config as loadEnv } from "dotenv";
 
 loadEnv();
 
+/** Parse GARMIN_MCP_ARGS as a JSON array (handles args with spaces) or fall back to whitespace split. */
+function parseArgsList(s: string): string[] {
+  const t = s.trim();
+  if (t.startsWith("[")) {
+    try {
+      const a = JSON.parse(t);
+      if (Array.isArray(a)) return a.map(String);
+    } catch {
+      /* fall through to split */
+    }
+  }
+  return t.split(/\s+/).filter(Boolean);
+}
+
 /**
  * Central config. Secrets live OUTSIDE the repo by default (~/.endurance-coach),
  * per the privacy NFR (creds out of prompts/logs/repo). Override via env if needed.
@@ -27,10 +41,9 @@ export const config = {
     enabled: process.env.GARMIN_ENABLED === "true",
     /** Spawn command for the Taxuspt/garmin_mcp stdio server. */
     command: process.env.GARMIN_MCP_COMMAND ?? "uvx",
-    args: (
-      process.env.GARMIN_MCP_ARGS ??
-      "--python 3.12 --from git+https://github.com/Taxuspt/garmin_mcp garmin-mcp"
-    ).split(" "),
+    args: parseArgsList(
+      process.env.GARMIN_MCP_ARGS ?? "--python 3.12 --from git+https://github.com/Taxuspt/garmin_mcp garmin-mcp",
+    ),
     /** Hard timeout (ms) for any Garmin call — never let it block the coach. Some endpoints
      *  (power-duration curve, race predictions) parse many activities server-side and are slow. */
     timeoutMs: Number(process.env.GARMIN_TIMEOUT_MS ?? 25000),
