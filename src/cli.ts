@@ -389,8 +389,10 @@ async function cmdProbe(): Promise<void> {
       let activityId: number | string | undefined;
       try {
         const actsRaw = garminInner(await g.tryCall("get_activities", { limit: 5 }));
-        const list = (actsRaw as { activities?: Array<{ activityId?: number }> })?.activities ?? (Array.isArray(actsRaw) ? actsRaw : []);
-        activityId = (list as Array<{ activityId?: number }>)[0]?.activityId;
+        const list = (actsRaw as { activities?: Array<Record<string, unknown>> })?.activities ?? (Array.isArray(actsRaw) ? (actsRaw as Array<Record<string, unknown>>) : []);
+        const a0 = list[0] ?? {};
+        // get_activities reports the id as `id` (not `activityId`) — accept either.
+        activityId = (a0.activityId ?? a0.id ?? a0.activity_id) as number | string | undefined;
         console.log(`  (using activity_id=${activityId} for per-activity tools)`);
       } catch { /* best effort */ }
 
@@ -447,6 +449,55 @@ async function cmdProbe(): Promise<void> {
   await writeFile(path, JSON.stringify(out, null, 2));
   console.log(`\nProbe written → ${path}`);
   console.log("Review it (it's your own health data, gitignored), redact anything you want, then share it back so I can build the Phase-2 mappers against your real field shapes.");
+}
+
+/**
+ * `fit-sync [n]` — pull the raw .FIT for the most recent n Garmin run/ride activities via
+ * get_activity_fit_data, decode-check them, and write to the streams dir. The insight engine then
+ * analyses them automatically (aerobic decoupling, per-activity temperature, run biomechanics) — no
+ * manual uploads. Resumable: activities already downloaded are skipped.
+ */
+async function cmdFitSync(): Promise<void> {
+  if (!config.garmin.enabled) {
+    console.error("\nGarmin is disabled. Set GARMIN_ENABLED=true (and run garmin-mcp-auth) to sync .FIT files.\n");
+    process.exit(1);
+  }
+  const limit = Number(process.argv[3]) || 25;
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const { existsSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const { decodeFitFromResult } = await import("./insights/fitParser.js");
+  const { fitStreamsDir } = await import("./insights/fit.js");
+
+  const dir = fitStreamsDir();
+  await mkdir(dir, { recursive: true });
+
+  const g = new GarminClient();
+  if (!(await g.connect())) {
+    console.error("\nGarmin unavailable — run garmin-mcp-auth and retry.\n");
+    process.exit(1);
+  }
+  try {
+    const actsRaw = garminInner(await g.tryCall("get_activities", { limit }));
+    const list = ((actsRaw as { activities?: Array<Record<string, unknown>> })?.activities ?? (Array.isArray(actsRaw) ? actsRaw : [])) as Array<Record<string, unknown>>;
+    console.log(`\nfit-sync: ${list.length} recent activities; streams dir ${dir}\n`);
+    let added = 0, skipped = 0, failed = 0;
+    for (const a of list) {
+      const id = a.activityId ?? a.id ?? a.activity_id;
+      const type = String(a.type ?? (a.activityType as { typeKey?: string } | undefined)?.typeKey ?? "").toLowerCase();
+      if (id == null || !/run|cycl|bike|ride/.test(type)) continue; // only the streams we analyse
+      const path = join(dir, `${id}.fit`);
+      if (existsSync(path)) { skipped++; continue; }
+      const buf = decodeFitFromResult(await g.tryCall("get_activity_fit_data", { activity_id: id }));
+      if (buf) { await writeFile(path, buf); added++; console.log(`  + ${id} (${type}, ${buf.length} bytes)`); }
+      else { failed++; console.log(`  ? ${id} (${type}): could not decode .FIT from get_activity_fit_data`); }
+    }
+    console.log(`\nfit-sync: +${added} new, ${skipped} already local, ${failed} undecodable → ${dir}`);
+    if (failed && !added) console.log("(If all failed, share one get_activity_fit_data sample from `npm run probe` so I can lock the response shape.)");
+    else console.log("These are now analysed by the insight engine automatically (deep-dive / dashboard).");
+  } finally {
+    await g.close();
+  }
 }
 
 /** A Garmin MCP result is an "error" if flagged isError or its text is a tool/validation error. */
@@ -717,6 +768,7 @@ const commands: Record<string, () => Promise<void>> = {
   backfill: cmdBackfill,
   "archive-status": cmdArchiveStatus,
   probe: cmdProbe,
+  "fit-sync": cmdFitSync,
   decisions: cmdDecisions,
 };
 
@@ -739,6 +791,7 @@ if (!run) {
   console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
   console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
   console.log("  probe      capture live Garmin tool surface + AIE detail samples → reports/ (Phase-2 mapping)");
+  console.log("  fit-sync [n]  download recent Garmin run/ride .FIT files (get_activity_fit_data) → streams dir");
   console.log('  decisions [pending | retro <id> "<note>"]   view log / pending / add retrospective');
   console.log("  (LLM flows need ANTHROPIC_API_KEY)");
   process.exit(1);
