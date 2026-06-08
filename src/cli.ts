@@ -25,7 +25,7 @@ async function loadArchive(): Promise<ArchiveInput | undefined> {
   if (!acts.length && !gar.length) return undefined;
   return {
     activities: acts.map((a) => mapRichActivity(a.raw, a.sport)),
-    garminDays: gar.map((d) => ({ date: d.date, sleepHours: d.sleepHours })),
+    garminDays: gar.map((d) => ({ date: d.date, sleepHours: d.sleepHours, hrvMs: d.hrvMs, restingHr: d.restingHr, sleepScore: d.sleepScore })),
   };
 }
 import { notify } from "./notify.js";
@@ -266,7 +266,7 @@ async function cmdDeepDive(): Promise<void> {
     `- Monotony ${ins.monotony.monotony ?? "—"} (strain ${ins.monotony.strain ?? "—"}); intensity split easy/tempo/hard ${ins.tid.easyPct ?? "—"}/${ins.tid.tempoPct ?? "—"}/${ins.tid.hardPct ?? "—"}%`,
     `- n=1 patterns (lagged, autocorr-aware CIs): ${ins.correlations.map((c) => `${c.label} r=${c.r} [${c.ciLow},${c.ciHigh}] lag ${c.lagDays}d, effN ${c.effN}${c.significant ? "" : " (CI spans 0)"}`).join("; ") || "none strong enough yet"}`,
     `- Anomalies today: ${ins.anomalies.map((a) => a.detail).join("; ") || "none"}`,
-    `- Monitoring rule (backtested, n=1): ${ins.monitoring.best ? `${ins.monitoring.best.name} → lead ${ins.monitoring.best.lead}d, hit ${Math.round(ins.monitoring.best.hitRate * 100)}% / false-alarm ${Math.round(ins.monitoring.best.falseAlarmRate * 100)}% over ${ins.monitoring.days}d` : `none with skill yet (${ins.monitoring.days}d history)`}`,
+    `- Monitoring rule (n=1, ${ins.monitoring.validated ? "validated out-of-sample" : "exploratory"}; outcome ${ins.monitoring.outcomeName}${ins.monitoring.outcomeIndependent ? "" : ", dependent"}): ${ins.monitoring.best ? `${ins.monitoring.best.name} → lead ${ins.monitoring.best.lead}d, hit ${Math.round(ins.monitoring.best.hitRate * 100)}% / false-alarm ${Math.round(ins.monitoring.best.falseAlarmRate * 100)}%${ins.monitoring.best.pValue != null ? `, perm p=${ins.monitoring.best.pValue}` : ""} (${ins.monitoring.method}, ${ins.monitoring.days}d)` : `none validated yet (${ins.monitoring.days}d history)`}`,
     `- Regime shifts (change-points): ${ins.changePoints.flatMap((s) => s.points.slice(-1).map((p) => p.date ? `${s.metric} ${p.before}→${p.after} @ ${p.date}` : null)).filter(Boolean).join("; ") || "none dated"}`,
     `- Brick decoupling (Q4): ${ins.brick.decouplingPct != null ? `run EF off-bike ${ins.brick.decouplingPct}% vs fresh (${ins.brick.brickDays} brick days)` : "insufficient power-equipped runs"}`,
     `- Taper target (Q6): ${ins.taper.recommendedTsbLow != null ? `race-day TSB ~${ins.taper.recommendedTsbLow}..${ins.taper.recommendedTsbHigh} (${ins.taper.basis})` : "no past race-day TSB yet"}`,

@@ -17,7 +17,7 @@ export interface RaceTaperPoint {
   date: string;
   tsbOnDay: number | null;
   ctlOnDay: number | null;
-  outcomeGapSec: number | null; // predicted − target; negative = beat target
+  outcomeGapSec: number | null; // model PREDICTION − target (not an actual result); shown for context only
 }
 
 export interface TaperAnalysis {
@@ -63,19 +63,11 @@ export function analyseTaper(load: LoadModel | null, goalsRaw: unknown, todayIso
   past.sort((a, b) => a.date.localeCompare(b.date));
   if (past.length === 0) return empty;
 
-  // Prefer the TSB of races that went well (smallest gap); fall back to all race-day TSBs.
-  const withOutcome = past.filter((p) => p.outcomeGapSec != null && p.tsbOnDay != null);
-  let band: number[] = [];
-  let basis = "";
-  if (withOutcome.length >= 2) {
-    const sorted = [...withOutcome].sort((a, b) => a.outcomeGapSec! - b.outcomeGapSec!);
-    const bestHalf = sorted.slice(0, Math.max(1, Math.ceil(sorted.length / 2)));
-    band = bestHalf.map((p) => p.tsbOnDay!);
-    basis = `TSB on your better-performing races (${bestHalf.length} of ${withOutcome.length})`;
-  } else {
-    band = past.filter((p) => p.tsbOnDay != null).map((p) => p.tsbOnDay!);
-    basis = `TSB across ${past.length} past race day(s) (no outcome split available yet)`;
-  }
+  // DESCRIPTIVE only: we don't have ACTUAL finish times in the feed (only the model's prediction vs
+  // the goal), and prediction−target is not a performance measure — so we report the race-day TSB band
+  // the athlete has historically raced at, rather than pretending to rank races by outcome.
+  const band = past.filter((p) => p.tsbOnDay != null).map((p) => p.tsbOnDay!);
+  const basis = `race-day TSB across ${band.length} past race day(s) — descriptive (no actual finish times available to rank by)`;
   const m = mean(band);
   if (m == null) return { ...empty, past };
   const spread = band.length > 1 ? Math.max(3, (Math.max(...band) - Math.min(...band)) / 2) : 5;
@@ -91,11 +83,12 @@ export function taperFinding(t: TaperAnalysis): Finding | null {
   if (t.recommendedTsbLow == null || t.recommendedTsbHigh == null) return null;
   return {
     family: "Taper target (n=1)",
-    title: `Aim for race-day form (TSB) ~${t.recommendedTsbLow} to ${t.recommendedTsbHigh}`,
+    title: `You've historically raced at form (TSB) ~${t.recommendedTsbLow} to ${t.recommendedTsbHigh}`,
     severity: "info",
     detail:
-      `Your best past races landed in this form band — a personalised taper target for the July tri and September marathon, ` +
-      `instead of the generic "just go positive". Time the taper so TSB rises into this range on race day.`,
+      `Your past races clustered in this form band — a descriptive starting point for the July tri and September marathon taper, ` +
+      `more personal than the generic "just go positive". (Descriptive only: we don't have actual finish times to confirm which TSB raced best.) ` +
+      `Time the taper so TSB rises into this range on race day, then refine once real results are in.`,
     evidence: `${t.basis}; ${t.past.map((p) => `${p.race} ${p.date} TSB ${p.tsbOnDay}`).join("; ")} [derived]`,
     recommendation: "Back-plan the last 10–14 days so load sheds you into this TSB band by race morning.",
     confidence: Math.min(0.7, 0.4 + t.past.length * 0.1),

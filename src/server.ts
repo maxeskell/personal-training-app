@@ -33,7 +33,7 @@ async function loadArchive(): Promise<ArchiveInput | undefined> {
   if (!acts.length && !gar.length) return undefined;
   return {
     activities: acts.map((a) => mapRichActivity(a.raw, a.sport)),
-    garminDays: gar.map((d) => ({ date: d.date, sleepHours: d.sleepHours })),
+    garminDays: gar.map((d) => ({ date: d.date, sleepHours: d.sleepHours, hrvMs: d.hrvMs, restingHr: d.restingHr, sleepScore: d.sleepScore })),
   };
 }
 

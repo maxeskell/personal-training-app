@@ -98,9 +98,10 @@ function renderSignals(ins: InsightReport): string {
 /** New n=1 analytics layers (Q1–Q7): backtested monitoring rule, regime shifts, tri execution, taper. */
 function renderAnalytics(ins: InsightReport): string {
   const m = ins.monitoring.best;
+  const tag = ins.monitoring.validated ? "held-out" : "exploratory";
   const rule = m
-    ? `<b>${escapeHtml(m.name)}</b> → lead ${m.lead}d · hit ${Math.round(m.hitRate * 100)}% · false-alarm ${Math.round(m.falseAlarmRate * 100)}% <span class="muted">(over ${ins.monitoring.days}d)</span>`
-    : `<span class="muted">no backtested rule with skill yet (${ins.monitoring.days}d history)</span>`;
+    ? `<b>${escapeHtml(m.name)}</b> → lead ${m.lead}d · hit ${Math.round(m.hitRate * 100)}% · false-alarm ${Math.round(m.falseAlarmRate * 100)}% <span class="muted">(${tag}${m.pValue != null ? `, p=${m.pValue}` : ""}; ${ins.monitoring.days}d, vs ${escapeHtml(ins.monitoring.outcomeName)})</span>`
+    : `<span class="muted">no rule validated yet (${ins.monitoring.days}d history)</span>`;
   const cps = ins.changePoints
     .flatMap((s) => (s.points.length ? [{ metric: s.metric, p: s.points[s.points.length - 1] }] : []))
     .filter((x) => x.p.date)
