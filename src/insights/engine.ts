@@ -17,6 +17,14 @@ import {
   type TID,
 } from "./metrics.js";
 import { analyseRecoverySeries, sleepVsNextDayLoad, type Correlation, type Anomaly } from "./correlations.js";
+import { buildMonitoringRuleSet, monitoringFinding, type MonitoringRuleSet } from "./monitoring.js";
+import { changePointsOf, changePointFindings, type SeriesChangePoints } from "./changepoint.js";
+import { analyseBricks, brickFinding, type BrickAnalysis } from "./brick.js";
+import { analyseTaper, taperFinding, type TaperAnalysis } from "./taper.js";
+import { analyseEfficiency, efficiencyFinding, type EfficiencyAnalysis } from "./efficiency.js";
+import { analyseFuelling, fuellingFinding, type FuellingAnalysis } from "./fuelling.js";
+import { loadSessionDecays, fitFindings, type SessionDecay } from "./fit.js";
+import { finiteNums } from "./stats.js";
 
 /** Optional historical archive to widen the metrics beyond the live 40-activity / 60-day window. */
 export interface ArchiveInput {
@@ -45,6 +53,13 @@ export interface InsightReport {
   correlations: Correlation[];
   anomalies: Anomaly[];
   predictions: PredictionVsGoal[];
+  monitoring: MonitoringRuleSet;
+  changePoints: SeriesChangePoints[];
+  brick: BrickAnalysis;
+  taper: TaperAnalysis;
+  efficiency: EfficiencyAnalysis;
+  fuelling: FuellingAnalysis;
+  sessionDecays: SessionDecay[];
   findings: Finding[];
 }
 
@@ -103,6 +118,25 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput): Insi
     if (sleepCorr) correlations.unshift(sleepCorr);
   }
   const predictions = predictionsVsGoals(state);
+
+  // New rigorous/n=1 layers (data-scientist brief Q1–Q7 + stream-level §1).
+  const monitoring = buildMonitoringRuleSet(recData);
+
+  const recDates = (recData?.date ?? []).map((d) => String(d).slice(0, 10));
+  const changePoints: SeriesChangePoints[] = [];
+  if (load && load.series.length >= 21) {
+    changePoints.push({ metric: "Fitness (CTL)", points: changePointsOf(load.series.map((p) => p.ctl), load.series.map((p) => p.date)) });
+  }
+  if (recDates.length >= 21) {
+    changePoints.push({ metric: "Overnight HRV", points: changePointsOf(finiteNums(recData?.rMSSD), recDates) });
+    changePoints.push({ metric: "Resting HR", points: changePointsOf(finiteNums(recData?.resting_heart_rate), recDates) });
+  }
+
+  const brick = analyseBricks(acts);
+  const taper = analyseTaper(load, raw.getRaceGoalEvent, state.date);
+  const efficiency = analyseEfficiency(acts, load);
+  const fuelling = analyseFuelling([], [], state.weight7dTrend.value);
+  const sessionDecays = loadSessionDecays();
 
   const findings: Finding[] = [];
 
@@ -246,9 +280,43 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput): Insi
     });
   }
 
+  // 5. New detectors (Q1–Q7 + stream-level). Each self-gates and stays silent without enough data.
+  const mf = monitoringFinding(monitoring);
+  if (mf) findings.push(mf);
+  findings.push(...changePointFindings(changePoints));
+  const bf = brickFinding(brick);
+  if (bf) findings.push(bf);
+  const tf = taperFinding(taper);
+  if (tf) findings.push(tf);
+  const ef2 = efficiencyFinding(efficiency);
+  if (ef2) findings.push(ef2);
+  const ff = fuellingFinding(fuelling);
+  if (ff) findings.push(ff);
+  findings.push(...fitFindings(sessionDecays));
+
   // Order: flags first, then watch, then info.
   const rank = { flag: 0, watch: 1, info: 2 } as const;
   findings.sort((a, b) => rank[a.severity] - rank[b.severity]);
 
-  return { date: state.date, load, runRamp, ef, durability, threshold, monotony, tid, correlations, anomalies, predictions, findings };
+  return {
+    date: state.date,
+    load,
+    runRamp,
+    ef,
+    durability,
+    threshold,
+    monotony,
+    tid,
+    correlations,
+    anomalies,
+    predictions,
+    monitoring,
+    changePoints,
+    brick,
+    taper,
+    efficiency,
+    fuelling,
+    sessionDecays,
+    findings,
+  };
 }

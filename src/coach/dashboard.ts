@@ -89,7 +89,29 @@ function renderSignals(ins: InsightReport): string {
       ${trend("Run aerobic threshold (HR)", ins.threshold.run)}
     </table>
     <div class="k" style="margin-top:8px">CTL/ATL/TSB derived from daily ESS. EF on steady runs ≥40min. Durability/threshold from AI Endurance's DFA-α1. ACWR intentionally not used (validity).</div>
+    ${renderAnalytics(ins)}
   </div>`;
+}
+
+/** New n=1 analytics layers (Q1–Q7): backtested monitoring rule, regime shifts, tri execution, taper. */
+function renderAnalytics(ins: InsightReport): string {
+  const m = ins.monitoring.best;
+  const rule = m
+    ? `<b>${escapeHtml(m.name)}</b> → lead ${m.lead}d · hit ${Math.round(m.hitRate * 100)}% · false-alarm ${Math.round(m.falseAlarmRate * 100)}% <span class="muted">(over ${ins.monitoring.days}d)</span>`
+    : `<span class="muted">no backtested rule with skill yet (${ins.monitoring.days}d history)</span>`;
+  const cps = ins.changePoints
+    .flatMap((s) => (s.points.length ? [{ metric: s.metric, p: s.points[s.points.length - 1] }] : []))
+    .filter((x) => x.p.date)
+    .map((x) => `${escapeHtml(x.metric)} ${x.p.before}→${x.p.after} <span class="muted">@ ${x.p.date}</span>`)
+    .join(" · ");
+  const brick = ins.brick.decouplingPct != null ? `${ins.brick.decouplingPct}% off-bike EF drop <span class="muted">(${ins.brick.brickDays} brick days)</span>` : `<span class="muted">need power-equipped runs</span>`;
+  const taper = ins.taper.recommendedTsbLow != null ? `race-day TSB ~${ins.taper.recommendedTsbLow} to ${ins.taper.recommendedTsbHigh}` : `<span class="muted">no past race-day TSB yet</span>`;
+  return `<table style="margin-top:12px"><tr class="k"><td>n=1 analytics</td><td></td></tr>
+    <tr><td>Monitoring rule (backtested)</td><td>${rule}</td></tr>
+    <tr><td>Regime shifts</td><td>${cps || '<span class="muted">none dated</span>'}</td></tr>
+    <tr><td>Brick decoupling (Q4)</td><td>${brick}</td></tr>
+    <tr><td>Taper target (Q6)</td><td>${taper}</td></tr>
+  </table>`;
 }
 
 export function renderDashboard({ window, decisions, insights }: DashboardInput): string {
