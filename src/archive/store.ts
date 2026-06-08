@@ -23,6 +23,19 @@ export interface GarminDay {
   restingHr?: number;
   weightKg?: number;
   trainingReadiness?: number;
+  // Slice-1b health series (from get_sleep_data / get_all_day_stress / get_respiration_data / get_body_composition).
+  deepSleepSec?: number;
+  remSleepSec?: number;
+  lightSleepSec?: number;
+  awakeSleepSec?: number;
+  skinTempDevC?: number; // overnight skin-temperature deviation from baseline (°C)
+  bodyBatteryChange?: number; // overnight Body Battery recharge
+  avgSleepRespiration?: number;
+  avgWakingRespiration?: number;
+  avgStressLevel?: number; // all-day average stress (0–100)
+  maxStressLevel?: number;
+  muscleMassKg?: number;
+  bodyFatPct?: number;
 }
 /** A Garmin activity (the full decade of workouts — Garmin keeps far more history than AI Endurance). */
 export interface GarminActivity {

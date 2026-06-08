@@ -27,13 +27,31 @@ import { analyseEfficiency, efficiencyFinding, type EfficiencyAnalysis } from ".
 import { analyseFuelling, fuellingFinding, type FuellingAnalysis } from "./fuelling.js";
 import { loadSessionDecays, fitFindings, type SessionDecay } from "./fit.js";
 import { trainingStatusFinding, hrvStatusFinding } from "./garminHealth.js";
+import { garminTrendFindings } from "./garminTrends.js";
 import { finiteNums } from "./stats.js";
 
 /** Optional historical archive to widen the metrics beyond the live 40-activity / 60-day window. */
 export interface ArchiveInput {
   activities?: RichActivity[];
-  /** Backfilled Garmin daily series (years). hrv/rhr/sleepScore power the validated monitoring rule. */
-  garminDays?: Array<{ date: string; sleepHours?: number; hrvMs?: number; restingHr?: number; sleepScore?: number }>;
+  /** Backfilled Garmin daily series (years). hrv/rhr/sleepScore power the validated monitoring rule;
+   *  the slice-1b fields drive the illness/stress/sleep/fuelling trend detectors. */
+  garminDays?: Array<{
+    date: string;
+    sleepHours?: number;
+    hrvMs?: number;
+    restingHr?: number;
+    sleepScore?: number;
+    deepSleepSec?: number;
+    remSleepSec?: number;
+    skinTempDevC?: number;
+    bodyBatteryChange?: number;
+    avgSleepRespiration?: number;
+    avgWakingRespiration?: number;
+    avgStressLevel?: number;
+    muscleMassKg?: number;
+    bodyFatPct?: number;
+    weightKg?: number;
+  }>;
 }
 
 export interface PredictionVsGoal {
@@ -438,6 +456,9 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   if (tsF) findings.push(tsF);
   const hrvF = hrvStatusFinding(state.hrvStatus.value);
   if (hrvF) findings.push(hrvF);
+
+  // 5c. Garmin daily-series trends (illness early-warning, stress, Body-Battery, sleep, fuelling).
+  findings.push(...garminTrendFindings(archive?.garminDays));
 
   // 6. Cross-day trends from the history window (VO2max engine; race-predictor trajectory).
   findings.push(...historyTrendFindings(opts?.history));

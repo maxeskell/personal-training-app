@@ -47,11 +47,20 @@ Health/injury slice — BUILT (slice 1a, from the fixed probe's real shapes):
 - ✅ **HRV status vs personal baseline band** (`get_hrv_data`) → recovery finding (surfaced only when not
   balanced). Both mapped into AthleteState, surfaced on the dashboard Today card + `ask`.
 
-Queued next (need a daily series → backfill extension):
-- `get_respiration_data` + sleep `avgSkinTempDeviationC` → illness early-warning; `get_all_day_stress`
-  /`get_weekly_stress` → stress trend; `get_body_battery_events` → recharge/drain rates; `get_sleep_data`
-  (deep/REM/awake stages) → sleep-architecture decline; `get_body_composition` (muscleMass) → activate the
-  dormant fuelling flag. These need the daily backfill extended to archive the fields historically.
+Health/injury slice — BUILT (slice 1b):
+- ✅ Daily backfill + `GarminDay` extended to archive the health series: `get_sleep_data` (deep/REM/light/
+  awake stages, skin-temp deviation, overnight HRV, RHR, Body-Battery change, sleep respiration, score),
+  `get_all_day_stress`, `get_respiration_data`, and a bulk `get_body_composition` (muscle mass / body fat).
+- ✅ Trend detectors (`garminTrends.ts`), all rolling-baseline / personal-norm:
+  **illness early-warning** (respiration + skin-temp [+ RHR] stacking), **all-day stress trend**,
+  **Body-Battery recharge** decline, **deep-sleep decline**, and **fuelling** (weight + muscle both down,
+  now fed real `get_body_composition` muscle mass).
+
+⚠️ **Populating history:** the daily backfill is resumable and *skips dates already archived*, so the
+existing ~1,289 days (fetched with the old sleep-summary path) don't yet carry the new fields. New days
+accrue them automatically; to backfill history now, re-grind:
+`rm data/archive/garmin-daily.jsonl && npm run backfill -- --daily-only` (throttled/resumable). The trend
+detectors need ≥21 days with the new fields before they fire.
 - Bonuses: `get_activity_fit_data` (pull .FIT programmatically — no manual upload), `get_power_duration_curve`
   (MMP), `get_body_composition` (muscle mass → fuelling), `get_activity_splits`/`_typed_splits`
   (transitions + per-leg pacing), `get_activity_weather` (per-activity temp), `get_race_predictions`.
