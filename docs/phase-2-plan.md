@@ -61,9 +61,13 @@ existing ~1,289 days (fetched with the old sleep-summary path) don't yet carry t
 accrue them automatically; to backfill history now, re-grind:
 `rm data/archive/garmin-daily.jsonl && npm run backfill -- --daily-only` (throttled/resumable). The trend
 detectors need ≥21 days with the new fields before they fire.
-- Bonuses: `get_activity_fit_data` (pull .FIT programmatically — no manual upload), `get_power_duration_curve`
-  (MMP), `get_body_composition` (muscle mass → fuelling), `get_activity_splits`/`_typed_splits`
-  (transitions + per-leg pacing), `get_activity_weather` (per-activity temp), `get_race_predictions`.
+- ✅ **`get_activity_fit_data` → `npm run fit-sync`** (BUILT): pulls recent Garmin run/ride .FIT files
+  programmatically and writes them to the streams dir (default `data/fit-streams`), where the engine
+  analyses them automatically — no manual uploads. Decoder handles base64 in any of the likely MCP
+  shapes (verified). Also fixed the probe's activity-id extraction (`id`, not `activityId`) which had
+  blocked sampling all per-activity tools.
+- Bonuses still queued: `get_power_duration_curve` (MMP), `get_activity_splits`/`_typed_splits`
+  (transitions + per-leg pacing), `get_activity_weather` (per-activity temp → heat confounder).
 
 ## Data to capture — run `npm run probe`
 

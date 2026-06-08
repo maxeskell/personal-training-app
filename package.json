@@ -35,6 +35,7 @@
     "act": "tsx src/cli.ts act",
     "ask": "tsx src/cli.ts ask",
     "probe": "tsx src/cli.ts probe",
+    "fit-sync": "tsx src/cli.ts fit-sync",
     "backfill": "tsx src/cli.ts backfill",
     "backfill:status": "tsx src/cli.ts archive-status",
     "backfill:install": "bash scripts/install-backfill.sh",

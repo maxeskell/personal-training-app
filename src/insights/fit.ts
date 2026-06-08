@@ -18,6 +18,12 @@ import { join } from "node:path";
 import { mean, sd, type Maybe } from "./stats.js";
 import type { Finding } from "./metrics.js";
 import { parseFit, type FitActivity } from "./fitParser.js";
+import { config } from "../config.js";
+
+/** Where synced/raw .FIT streams live: $FIT_STREAMS_DIR, else <dataDir>/fit-streams. */
+export function fitStreamsDir(): string {
+  return process.env.FIT_STREAMS_DIR ?? join(config.dataDir, "fit-streams");
+}
 
 interface Sample {
   t?: number;
@@ -121,7 +127,7 @@ function fitToStreamFile(act: FitActivity, name: string): StreamFile {
 }
 
 /** Load and analyse every stream file in `FIT_STREAMS_DIR` (or the passed dir). Empty if none. */
-export function loadSessionDecays(dir = process.env.FIT_STREAMS_DIR): SessionDecay[] {
+export function loadSessionDecays(dir = fitStreamsDir()): SessionDecay[] {
   if (!dir || !existsSync(dir)) return [];
   const out: SessionDecay[] = [];
   for (const name of readdirSync(dir)) {
