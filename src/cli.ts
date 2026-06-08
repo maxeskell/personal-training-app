@@ -10,6 +10,9 @@ import { runWeeklyReview } from "./coach/weekly.js";
 import { runRacePrep } from "./coach/racePrep.js";
 import { proposeAdjustments, parseArgs } from "./coach/planAdjust.js";
 import { writeReport } from "./coach/reports.js";
+import { renderDashboard } from "./coach/dashboard.js";
+import { notify } from "./notify.js";
+import open from "open";
 import { assessHealthRisk } from "./guardrails/wellbeing.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { DecisionLog, decisionId, nowIso } from "./state/decisionLog.js";
@@ -147,28 +150,17 @@ async function cmdState(): Promise<void> {
   console.log(`\nSaved to ${config.dataDir}/state/${state.date}.json`);
 }
 
-/** `readiness` — assemble today's state, run wellbeing checks, produce the green/amber/red call. */
-async function cmdReadiness(): Promise<void> {
-  if (!requireLLM()) process.exit(1);
+/** Shared readiness core: assemble → wellbeing → verdict → log. Used by `readiness` and `ping`. */
+async function gatherReadiness(): Promise<{
+  state: AthleteState;
+  verdict: Awaited<ReturnType<typeof assessReadiness>>["verdict"];
+  risk: ReturnType<typeof assessHealthRisk>;
+  cacheRead: number;
+}> {
   const { state, window } = await buildTodayState();
-
-  // Deterministic wellbeing guardrail runs BEFORE the model — it can't be reasoned away.
-  const risk = assessHealthRisk(window);
-  if (risk.level !== "none") console.log(`\n⚠ Wellbeing (${risk.level}): ${risk.message}\n`);
-
+  const risk = assessHealthRisk(window); // deterministic guardrail, runs before the model
   const llm = new CoachLLM(await loadSystemPrompt());
   const { verdict, cacheRead } = await assessReadiness(llm, window);
-
-  const dot = verdict.verdict === "green" ? "🟢" : verdict.verdict === "amber" ? "🟡" : "🔴";
-  console.log(`\n${dot} Readiness: ${verdict.verdict.toUpperCase()}`);
-  console.log(`\n${verdict.why}\n`);
-  console.log("Drivers:");
-  for (const d of verdict.drivers) console.log(`  • ${d.signal}: ${d.reading}  [${d.source}]`);
-  if (verdict.cautions.length) {
-    console.log("\nCautions:");
-    for (const c of verdict.cautions) console.log(`  • ${c}`);
-  }
-
   await new DecisionLog().append({
     id: decisionId(`readiness:${state.date}`),
     timestamp: nowIso(),
@@ -176,7 +168,102 @@ async function cmdReadiness(): Promise<void> {
     summary: `${verdict.verdict}: ${verdict.why}`,
     status: "note",
   });
+  return { state, verdict, risk, cacheRead };
+}
+
+function printReadiness(v: { verdict: string; why: string; drivers: Array<{ signal: string; reading: string; source: string }>; cautions: string[] }, risk: ReturnType<typeof assessHealthRisk>): void {
+  if (risk.level !== "none") console.log(`\n⚠ Wellbeing (${risk.level}): ${risk.message}\n`);
+  const dot = v.verdict === "green" ? "🟢" : v.verdict === "amber" ? "🟡" : "🔴";
+  console.log(`\n${dot} Readiness: ${v.verdict.toUpperCase()}`);
+  console.log(`\n${v.why}\n`);
+  console.log("Drivers:");
+  for (const d of v.drivers) console.log(`  • ${d.signal}: ${d.reading}  [${d.source}]`);
+  if (v.cautions.length) {
+    console.log("\nCautions:");
+    for (const c of v.cautions) console.log(`  • ${c}`);
+  }
+}
+
+/** `readiness` — interactive green/amber/red call with cited drivers. */
+async function cmdReadiness(): Promise<void> {
+  if (!requireLLM()) process.exit(1);
+  const { verdict, risk, cacheRead } = await gatherReadiness();
+  printReadiness(verdict, risk);
   console.log(`\n(logged to decision log; cache read ${cacheRead} tokens)`);
+}
+
+/** `ping` — unattended morning readiness: verdict + report + desktop notification. */
+async function cmdPing(): Promise<void> {
+  if (!requireLLM()) process.exit(1);
+  const { state, verdict, risk } = await gatherReadiness();
+
+  const lines = [
+    `# Morning readiness — ${state.date}`,
+    "",
+    `**${verdict.verdict.toUpperCase()}** — ${verdict.why}`,
+    "",
+    risk.level !== "none" ? `> ⚠ Wellbeing (${risk.level}): ${risk.message}\n` : "",
+    "## Drivers",
+    ...verdict.drivers.map((d) => `- **${d.signal}**: ${d.reading} _[${d.source}]_`),
+    verdict.cautions.length ? "\n## Cautions\n" + verdict.cautions.map((c) => `- ${c}`).join("\n") : "",
+  ];
+  const md = lines.filter((l) => l !== "").join("\n");
+  await writeReport("morning-readiness", state.date, md);
+
+  printReadiness(verdict, risk);
+  const note = verdict.why.length > 180 ? verdict.why.slice(0, 177) + "…" : verdict.why;
+  await notify(`Readiness: ${verdict.verdict.toUpperCase()}`, note);
+  console.log(`\n(report written; desktop notification sent if on macOS)`);
+}
+
+/** `dashboard` — generate the glanceable Today/Week/Trends/Race HTML and open it. */
+async function cmdDashboard(): Promise<void> {
+  const { window } = await buildTodayState();
+  const decisions = await new DecisionLog().all();
+  const html = renderDashboard({ window, decisions });
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const dir = join(process.cwd(), "reports");
+  await mkdir(dir, { recursive: true });
+  const htmlPath = join(dir, "dashboard.html");
+  await writeFile(htmlPath, html);
+  console.log(`\nDashboard → ${htmlPath}`);
+  await open(htmlPath).catch(() => console.log("(open it manually in a browser)"));
+}
+
+/** `decisions [retro <id> "<note>"]` — view the decision log, or add a retrospective. */
+async function cmdDecisions(): Promise<void> {
+  const log = new DecisionLog();
+  const sub = process.argv[3];
+  if (sub === "retro") {
+    const id = process.argv[4];
+    const note = process.argv.slice(5).join(" ").trim();
+    if (!id || !note) {
+      console.error('\nUsage: npm run decisions -- retro <id> "how the call held up"\n');
+      process.exit(1);
+    }
+    const original = (await log.all()).find((r) => r.id === id);
+    if (!original) {
+      console.error(`\nNo decision with id ${id}\n`);
+      process.exit(1);
+    }
+    await log.updateStatus(id, original.status, note);
+    console.log(`\nAdded retrospective to ${id}.`);
+    return;
+  }
+
+  const all = await log.all();
+  if (!all.length) {
+    console.log("\nNo decisions logged yet.");
+    return;
+  }
+  console.log(`\nDecision log (${all.length} entries, most recent last):\n`);
+  for (const r of all.slice(-20)) {
+    console.log(`  ${r.timestamp.slice(0, 16)}  [${r.id}] ${r.kind}/${r.status}`);
+    console.log(`      ${r.summary}`);
+    if (r.tradeoff) console.log(`      trade-off: ${r.tradeoff}`);
+    if (r.retro) console.log(`      retro: ${r.retro}`);
+  }
 }
 
 /** `weekly` — planned vs actual, load by sport, adherence, trends, next-week focus. */
@@ -272,11 +359,14 @@ const commands: Record<string, () => Promise<void>> = {
   verify: cmdVerify,
   state: cmdState,
   readiness: cmdReadiness,
+  ping: cmdPing,
   weekly: cmdWeekly,
   race: cmdRace,
   propose: cmdPropose,
   confirm: cmdConfirm,
   decline: cmdDecline,
+  dashboard: cmdDashboard,
+  decisions: cmdDecisions,
 };
 
 const run = commands[cmd ?? ""];
@@ -286,10 +376,13 @@ if (!run) {
   console.log("  verify     exercise every read tool, confirm the write-gate");
   console.log("  state      assemble + persist + summarise today's AthleteState");
   console.log("  readiness  green/amber/red verdict with cited drivers");
+  console.log("  ping       unattended morning readiness: verdict + report + desktop notification");
   console.log("  weekly     weekly review → dated markdown report");
   console.log('  race [name] race-specific prep (auto-picks next race) → report');
   console.log('  propose "<request>"  gated plan-adjustment proposals');
   console.log("  confirm <id> / decline <id>   apply or dismiss a proposal");
+  console.log("  dashboard  generate + open the glanceable Today/Week/Trends/Race view");
+  console.log('  decisions [retro <id> "<note>"]   view the decision log / add a retrospective');
   console.log("  (LLM flows need ANTHROPIC_API_KEY)");
   process.exit(1);
 }

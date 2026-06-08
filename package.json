@@ -18,7 +18,12 @@
     "race": "tsx src/cli.ts race",
     "propose": "tsx src/cli.ts propose",
     "confirm": "tsx src/cli.ts confirm",
-    "decline": "tsx src/cli.ts decline"
+    "decline": "tsx src/cli.ts decline",
+    "ping": "tsx src/cli.ts ping",
+    "dashboard": "tsx src/cli.ts dashboard",
+    "decisions": "tsx src/cli.ts decisions",
+    "schedule:install": "bash scripts/install-schedule.sh",
+    "schedule:uninstall": "bash scripts/uninstall-schedule.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",
