@@ -443,6 +443,7 @@ async function actPlan(){
     box.innerHTML=j.proposals.map(function(p){return '<div class="proposal" data-id="'+esc(p.id)+'"><b>'+esc(p.human||p.summary)+'</b>'
       +'<div class="fdetail">'+esc(p.summary)+'</div>'
       +'<div class="ev">trade-off: '+esc(p.tradeoff)+'</div>'
+      +((p.basis&&p.basis.length)?'<div class="ev">because: '+esc(p.basis.join('; '))+'</div>':'')
       +'<div class="acts"><button class="agree" onclick="confirmProposal(this)">✓ Apply to AI Endurance</button>'
       +'<button class="ignore" onclick="declineProposal(this)">✕ Dismiss</button><span class="reacted"></span></div></div>';}).join('');
   }catch(e){box.innerHTML='<div class="k">Error: '+esc(''+e)+'</div>';}
