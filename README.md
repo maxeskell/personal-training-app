@@ -14,6 +14,23 @@ Per the [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) �
 - **Path B (queued):** a small local-first orchestrator, justified because all three §1 needs apply
   (scheduling, dashboard, decision log). See **[docs/path-b-plan.md](docs/path-b-plan.md)**.
 
+## Running the code (M1 + M2)
+
+```bash
+npm install
+cp .env.example .env          # defaults are fine for AI Endurance
+
+npm run auth:aie              # one-time OAuth (opens browser); caches tokens in ~/.endurance-coach
+npm run verify:reads          # exercises every read tool; confirms the write-gate
+npm run state:today           # assembles + persists + summarises today's AthleteState
+```
+
+Garmin is **optional** — leave `GARMIN_ENABLED=false` and the coach runs on AI Endurance alone.
+To enable it, run the one-time `garmin-mcp-auth` (see `.env.example`) then set `GARMIN_ENABLED=true`.
+
+Layout: `src/mcp/` (AIE OAuth client + Garmin stdio client), `src/state/` (AthleteState, store,
+baselines, sync-gaps), `knowledge/sports-science.md` (priors for the M3 LLM layer).
+
 ## Specs (source of truth)
 
 - [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) — decision gate + engineering plan (authoritative).

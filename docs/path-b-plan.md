@@ -20,10 +20,14 @@ Garmin MCP (optional, local)     ┄┄►    · readiness logic (LLM + priors) 
 Solid = required (AIE). Dotted = optional (Garmin). Must be fully useful on AIE alone.
 
 ## Milestones (Build Spec §10)
-- **M1 — Scaffold + MCP clients.** Repo structure, AIE client (required, OAuth), Garmin client
-  (optional, degradable). Verify reads. Secrets encrypted, out of prompts/logs/repo.
-- **M2 — AthleteState + store + baselines.** One record/day, **provenance per field**. Planned-vs-actual
-  join, HRV-vs-baseline / RHR / sleep / weight-trend, sync-gap detection. Don't recompute what AIE trends.
+- **M1 — Scaffold + MCP clients. ✅ built (branch `build/m1-m2`).** TS/Node project; AIE client over
+  Streamable HTTP with file-backed OAuth/PKCE (`src/mcp/`); optional Garmin stdio client that degrades
+  cleanly. Read tools enumerated; write tools blocked from the read path. Secrets outside the repo.
+  *Pending your action:* run `npm run auth:aie` to do the one-time OAuth and verify live reads.
+- **M2 — AthleteState + store + baselines. ✅ built.** `AthleteState` with **provenance per field**
+  (`src/state/types.ts`), JSON-per-day store, 7-day trailing baselines (HRV/RHR/weight-trend), and
+  sync-gap detection (`src/state/syncGaps.ts`). Defensive mapping — tool-shape changes degrade a field
+  to null, never crash. Pure logic smoke-tested.
 - **M3 — LLM core + knowledge + guardrails.** Science as *priors* in `knowledge/sports-science.md`
   (§7), interpreted by the model. **Deterministic code only** for hard guardrails: write-gate +
   fuelling/weight limits.
