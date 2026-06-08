@@ -49,6 +49,17 @@ export function surfaceFindings(findings: Finding[], suppressed: Set<string> = n
     .sort((a, b) => findingScore(b) - findingScore(a));
 }
 
+/** Health/safety families worth a proactive tap even at "watch" severity (early-warnings). */
+const ALERT_WATCH_FAMILIES = new Set(["Illness early-warning", "Recovery (HRV status)", "Load & injury risk", "Fuelling & body comp"]);
+
+/**
+ * Findings that justify a PROACTIVE alert (the fire-only `check`): any flag, plus watch-level findings in
+ * the health/safety families. Pass already-surfaced (gated, suppression-aware) findings.
+ */
+export function alertFindings(surfaced: Finding[]): Finding[] {
+  return surfaced.filter((f) => f.severity === "flag" || (f.severity === "watch" && ALERT_WATCH_FAMILIES.has(f.family)));
+}
+
 function num(x: unknown): number | undefined {
   if (typeof x === "number" && Number.isFinite(x)) return x;
   if (typeof x === "string" && x.trim() !== "" && Number.isFinite(Number(x))) return Number(x);
