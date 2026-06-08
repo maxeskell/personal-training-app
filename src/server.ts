@@ -61,8 +61,9 @@ async function renderLatest(): Promise<string> {
   const log = new DecisionLog();
   const decisions = await log.all();
   const suppressed = suppressedInsightKeys(await log.insightReactions());
-  const insights = latest.raw ? buildInsights(latest, await loadArchive(), { suppressed, history: window }) : undefined;
-  return renderDashboard({ window, decisions, insights });
+  const archive = await loadArchive();
+  const insights = latest.raw ? buildInsights(latest, archive, { suppressed, history: window }) : undefined;
+  return renderDashboard({ window, decisions, insights, garminDays: archive?.garminDays });
 }
 
 async function refresh(): Promise<void> {
