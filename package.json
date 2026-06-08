@@ -1,0 +1,54 @@
+{
+  "name": "endurance-coach",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal AI endurance coach — local-first orchestrator (Path B, M1+M2)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "auth:aie": "tsx src/cli.ts auth",
+    "verify:reads": "tsx src/cli.ts verify",
+    "doctor": "tsx src/cli.ts doctor",
+    "state:today": "tsx src/cli.ts state",
+    "readiness": "tsx src/cli.ts readiness",
+    "weekly": "tsx src/cli.ts weekly",
+    "race": "tsx src/cli.ts race",
+    "propose": "tsx src/cli.ts propose",
+    "confirm": "tsx src/cli.ts confirm",
+    "decline": "tsx src/cli.ts decline",
+    "ping": "tsx src/cli.ts ping",
+    "dashboard": "tsx src/cli.ts dashboard",
+    "decisions": "tsx src/cli.ts decisions",
+    "schedule:install": "bash scripts/install-schedule.sh",
+    "schedule:uninstall": "bash scripts/uninstall-schedule.sh",
+    "serve": "tsx src/server.ts",
+    "serve:install": "bash scripts/install-server.sh",
+    "serve:uninstall": "bash scripts/uninstall-server.sh",
+    "serve:logs": "tail -n 40 -f reports/server.log",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop endurance-dashboard",
+    "deep-dive": "tsx src/cli.ts deep-dive",
+    "act": "tsx src/cli.ts act",
+    "ask": "tsx src/cli.ts ask",
+    "backfill": "tsx src/cli.ts backfill",
+    "backfill:status": "tsx src/cli.ts archive-status",
+    "backfill:install": "bash scripts/install-backfill.sh",
+    "backfill:uninstall": "bash scripts/uninstall-backfill.sh"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.102.0",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "dotenv": "^16.4.5",
+    "open": "^10.1.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
