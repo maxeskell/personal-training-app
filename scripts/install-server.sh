@@ -50,6 +50,22 @@ PLIST_EOF
 launchctl unload "$PLIST" 2>/dev/null || true
 launchctl load "$PLIST"
 
+# Auto-reload on `git pull`: a post-merge hook restarts the agent so new code takes effect with no
+# manual kickstart. (launchd serves source via tsx, so a restart = picking up the latest code.)
+HOOK="$PROJECT/.git/hooks/post-merge"
+if [[ -d "$PROJECT/.git/hooks" && ! -e "$HOOK" ]]; then
+  cat > "$HOOK" <<HOOK_EOF
+#!/bin/sh
+# Restart the Endurance dashboard after a pull so it serves the latest code (installed by install-server.sh).
+launchctl kickstart -k "gui/\$(id -u)/$LABEL" 2>/dev/null || pm2 restart endurance-dashboard 2>/dev/null || true
+HOOK_EOF
+  chmod +x "$HOOK"
+  echo "Installed git post-merge hook — \`git pull\` now auto-restarts the dashboard."
+elif [[ -e "$HOOK" ]]; then
+  echo "Note: a git post-merge hook already exists; add this line to auto-reload on pull:"
+  echo "  launchctl kickstart -k \"gui/\$(id -u)/$LABEL\" 2>/dev/null || true"
+fi
+
 printf '\nInstalled %s — the dashboard now starts at login and restarts if it stops.\n' "$LABEL"
 echo "On this Mac:  http://localhost:$PORT"
 for ip in $(ipconfig getifaddr en0 2>/dev/null) $(ipconfig getifaddr en1 2>/dev/null); do
