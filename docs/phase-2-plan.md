@@ -43,8 +43,20 @@ What I need from the output to build slice 1:
 
 Review/redact the probe file as you like, then share it back and I'll write the mappers + detectors.
 
+## `.FIT` decoder — built & verified
+
+A dependency-free `.FIT` decoder (`src/insights/fitParser.ts`) is in, verified against the athlete's own
+FR970/Edge files (power=7, cadence=4, temperature=13, HR=3, enhanced_speed=73, distance=5, altitude=78;
+dual-sided pedal dynamics 30/43–46 present). `FIT_STREAMS_DIR` now reads raw `.FIT` directly. First live
+signals from it: **aerobic decoupling** (power/speed:HR first-half vs second), **per-activity temperature**
+(heat confounder input), plus the run-biomechanics decay (activates on a run `.FIT`).
+
+Still needed to extend this: a **run `.FIT`** (ideally HRM-600) to confirm running-dynamics field numbers
+(vertical_oscillation=39, stance_time=41, vertical_ratio=58, step_length=85) against real data.
+
 ## Deferred to later Phase 2 slices
 
-Stream biomechanics (cadence/GCT/vertical/stride decay, step-speed-loss) + temperature confounder via
-`.FIT`; performance numbers (FTP power-curve / MMP, pace-at-HR in comparable conditions, run-vs-bike VO2
-divergence). Sequenced after slice 1 once the `.FIT` schema is locked from the probe.
+Performance numbers (FTP power-curve / MMP, pace-at-HR in comparable conditions, run-vs-bike VO2
+divergence), the full temperature-confounder wiring (join per-activity `.FIT` temp to the EF/threshold
+comparisons), and the Garmin daily health metrics (await the probe). Sequenced after the run-`.FIT` schema
+is confirmed.
