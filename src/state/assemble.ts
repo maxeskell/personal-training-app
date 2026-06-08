@@ -10,6 +10,7 @@ import {
   type DisciplineThresholds,
   type NutritionTargets,
   type PowerCurveSignals,
+  type RacePredictionSignals,
   type RecoveryModel,
 } from "./types.js";
 import { deriveZones } from "../insights/zones.js";
@@ -175,7 +176,7 @@ export async function assembleState(
   if (garmin?.available) {
     const weekAgo = daysAgoIso(opts.date, 7);
     const monthAgo = daysAgoIso(opts.date, 30);
-    const [sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv, pdc, endurance, hill] = await Promise.all([
+    const [sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv, pdc, endurance, hill, racePred] = await Promise.all([
       garmin.tryCall("get_sleep_summary", { date: opts.date }).then(garminInner),
       garmin.tryCall("get_body_battery", { start_date: weekAgo, end_date: opts.date }).then(garminInner),
       garmin.tryCall("get_training_readiness", { date: opts.date }).then(garminInner),
@@ -188,8 +189,9 @@ export async function assembleState(
       garmin.tryCall("get_power_duration_curve", {}).then(garminInner),
       garmin.tryCall("get_endurance_score", { start_date: monthAgo, end_date: opts.date }).then(garminInner),
       garmin.tryCall("get_hill_score", { start_date: monthAgo, end_date: opts.date }).then(garminInner),
+      garmin.tryCall("get_race_predictions", {}).then(garminInner),
     ]);
-    raw.garmin = { sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv, pdc, endurance, hill };
+    raw.garmin = { sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv, pdc, endurance, hill, racePred };
 
     // Thresholds + zones from Garmin's own FTP/LT tools (verified shapes) — these win over the
     // AIE getUser-derived values mapped earlier, since they're the device's current numbers.
@@ -199,6 +201,7 @@ export async function assembleState(
     mapPowerCurve(state, pdc);
     mapEnduranceScore(state, endurance);
     mapHillScore(state, hill);
+    mapRacePredictions(state, racePred);
 
     // Sleep — interpretable signal (own slot).
     const sleepScore = asNumber(get(sleep, "sleep_score"));
@@ -499,6 +502,24 @@ function mapHillScore(state: AthleteState, payload: unknown): void {
     },
     source: "garmin",
     note: "Garmin get_hill_score — MODEL",
+  };
+}
+
+/** get_race_predictions → estimated finish per standard distance (verified shape: {predictions:{5K:{time_seconds}}}). */
+function mapRacePredictions(state: AthleteState, payload: unknown): void {
+  const preds = get(payload, "predictions");
+  if (!preds || typeof preds !== "object") return;
+  const LABELS: Record<string, string> = { "5K": "5K", "10K": "10K", half_marathon: "Half", marathon: "Marathon" };
+  const out: RacePredictionSignals["predictions"] = [];
+  for (const [key, v] of Object.entries(preds as Record<string, unknown>)) {
+    const secs = asNumber(get(v, "time_seconds"));
+    if (secs != null && secs > 0) out.push({ label: LABELS[key] ?? key, timeSeconds: secs });
+  }
+  if (!out.length) return;
+  state.racePredictions = {
+    value: { date: typeof get(payload, "prediction_date") === "string" ? (get(payload, "prediction_date") as string) : undefined, predictions: out },
+    source: "garmin",
+    note: "Garmin get_race_predictions — MODEL estimate (trend over absolute)",
   };
 }
 
