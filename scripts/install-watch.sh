@@ -10,6 +10,10 @@ MM="${2:-30}"
 PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NPM_BIN="$(command -v npm)"
 NODE_DIR="$(dirname "$(command -v node)")"
+# fit-sync/check spawn the Garmin MCP via `uvx` — include uv's bin dir on PATH (not in default launchd PATH).
+UVX_BIN="$(command -v uvx 2>/dev/null || true)"
+UV_DIR="$([ -n "$UVX_BIN" ] && dirname "$UVX_BIN" || echo "$HOME/.local/bin")"
+AGENT_PATH="$NODE_DIR:$UV_DIR:$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 LABEL="com.endurance-coach.watch"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
@@ -34,7 +38,7 @@ cat > "$PLIST" <<PLIST_EOF
   </array>
   <key>WorkingDirectory</key><string>$PROJECT</string>
   <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>$NODE_DIR:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <dict><key>PATH</key><string>$AGENT_PATH</string><key>HOME</key><string>$HOME</string></dict>
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>$HH</integer><key>Minute</key><integer>$MM</integer></dict>
   <key>RunAtLoad</key><false/>

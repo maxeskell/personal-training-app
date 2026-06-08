@@ -8,6 +8,12 @@ PORT="${1:-3000}"
 PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NPM_BIN="$(command -v npm)"
 NODE_DIR="$(dirname "$(command -v node)")"
+# The dashboard spawns the Garmin MCP via `uvx`, so the agent's PATH must include uv's bin dir
+# (uv lives in ~/.local/bin, not the default launchd PATH) — else Garmin reads silently return null.
+UVX_BIN="$(command -v uvx 2>/dev/null || true)"
+UV_DIR="$([ -n "$UVX_BIN" ] && dirname "$UVX_BIN" || echo "$HOME/.local/bin")"
+AGENT_PATH="$NODE_DIR:$UV_DIR:$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+[ -z "$UVX_BIN" ] && echo "⚠ uvx not found on PATH — Garmin reads need it; install uv or set GARMIN_MCP_COMMAND to its absolute path."
 LABEL="com.endurance-coach.dashboard"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 
@@ -34,7 +40,8 @@ cat > "$PLIST" <<PLIST_EOF
   <key>WorkingDirectory</key><string>$PROJECT</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string>$NODE_DIR:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PATH</key><string>$AGENT_PATH</string>
+    <key>HOME</key><string>$HOME</string>
     <key>COACH_HOST</key><string>0.0.0.0</string>
     <key>COACH_PORT</key><string>$PORT</string>
   </dict>
