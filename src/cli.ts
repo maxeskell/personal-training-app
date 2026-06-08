@@ -551,8 +551,9 @@ async function cmdArchiveStatus(): Promise<void> {
 async function cmdDashboard(): Promise<void> {
   const { window, state } = await buildTodayState();
   const decisions = await new DecisionLog().all();
-  const insights = state.raw ? buildInsights(state, await loadArchive()) : undefined;
-  const html = renderDashboard({ window, decisions, insights });
+  const archive = await loadArchive();
+  const insights = state.raw ? buildInsights(state, archive, { history: window }) : undefined;
+  const html = renderDashboard({ window, decisions, insights, garminDays: archive?.garminDays });
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
   const dir = join(process.cwd(), "reports");

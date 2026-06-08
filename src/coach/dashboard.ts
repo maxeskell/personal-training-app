@@ -3,6 +3,7 @@ import type { DecisionRecord } from "../state/decisionLog.js";
 import type { InsightReport } from "../insights/engine.js";
 import { findingKey } from "../insights/metrics.js";
 import { paceStr } from "../insights/zones.js";
+import { coachHeadline, tsbBand, rampBand, type Tone } from "../insights/headline.js";
 
 /**
  * Glanceable local dashboard (Path-B need #2): a single self-contained HTML file with
@@ -54,44 +55,54 @@ export interface DashboardInput {
   window: AthleteState[];
   decisions: DecisionRecord[];
   insights?: InsightReport;
+  /** Backfilled Garmin daily series — drives the multi-week Trends + health strip (not the 1-day state store). */
+  garminDays?: Array<{
+    date: string;
+    hrvMs?: number;
+    restingHr?: number;
+    sleepHours?: number;
+    sleepScore?: number;
+    avgStressLevel?: number;
+    bodyBatteryChange?: number;
+    deepSleepSec?: number;
+  }>;
 }
 
-function renderSignals(ins: InsightReport): string {
-  const sevColor = (s: string) => (s === "flag" ? "#c0392b" : s === "watch" ? "#c98a00" : "#1a8a3a");
-  const findings = ins.findings.length
-    ? ins.findings
-        .map(
-          (f) =>
-            `<div class="finding"><span class="badge" style="background:${sevColor(f.severity)}">${f.severity}</span>
-             <b>${escapeHtml(f.title)}</b><div class="fdetail">${escapeHtml(f.detail)}</div>
-             <div class="ev">${escapeHtml(f.evidence)}${f.recommendation ? " · → " + escapeHtml(f.recommendation) : ""}</div></div>`,
-        )
-        .join("")
-    : `<div class="muted">No signals flagged — carry on.</div>`;
+const TONE_COLOR: Record<Tone, string> = { good: "#1a8a3a", neutral: "#777", warn: "#c98a00", bad: "#c0392b" };
+const SEV_COLOR: Record<string, string> = { red: "#c0392b", amber: "#c98a00", green: "#1a8a3a", flag: "#c0392b", watch: "#c98a00", info: "#1a8a3a" };
 
+function renderSignals(ins: InsightReport): string {
   const L = ins.load;
+  const band = tsbBand(L?.tsb);
+  const ramp = L ? rampBand(L.rampPerWeek) : null;
   const ctlSpark = L ? spark(L.series.map((p) => p.ctl), 160, 30) : "";
   const trend = (label: string, t: { recent: number | null; deltaPct: number | null; n: number }) =>
     t.recent == null
       ? ""
       : `<tr><td>${label}</td><td class="num">${t.recent}</td><td class="num">${t.deltaPct == null ? "—" : (t.deltaPct >= 0 ? "+" : "") + t.deltaPct + "%"}</td><td class="muted">${t.n} pts</td></tr>`;
+  // Durability is a negative-based decay index — a % change is meaningless, so show recent vs prior absolute.
+  const durabilityRow = (t: { recent: number | null; prior: number | null; n: number }) =>
+    t.recent == null
+      ? ""
+      : `<tr><td>Run durability</td><td class="num">${t.recent}</td><td class="muted" colspan="2">${t.prior != null ? `was ${t.prior} · ` : ""}closer to 0 = more durable</td></tr>`;
 
-  return `<div class="card"><h2>Signals (insight engine)</h2>
-    ${findings}
-    <div class="grid" style="margin-top:14px">
+  return `<div class="card"><h2>Load &amp; trends</h2>
+    <div class="grid">
       <div><div class="k">Fitness (CTL)</div><div class="v">${L ? L.ctl : "—"}</div></div>
       <div><div class="k">Fatigue (ATL)</div><div class="v">${L ? L.atl : "—"}</div></div>
-      <div><div class="k">Form (TSB)</div><div class="v">${L ? L.tsb : "—"}</div></div>
-      <div><div class="k">CTL trend</div>${ctlSpark || '<span class="muted">—</span>'}</div>
+      <div><div class="k">Form (TSB)</div><div class="v">${L ? L.tsb : "—"}</div>${band ? `<div class="k" style="color:${TONE_COLOR[band.tone]}">${escapeHtml(band.label)}</div>` : ""}</div>
+      <div><div class="k">CTL trend</div>${ctlSpark || '<span class="muted">—</span>'}${ramp ? `<div class="k" style="color:${TONE_COLOR[ramp.tone]}">+${L!.rampPerWeek}/wk · ${escapeHtml(ramp.label)}</div>` : ""}</div>
     </div>
     <table style="margin-top:12px"><tr class="k"><td>Trend (recent vs prior)</td><td>Now</td><td>Δ</td><td></td></tr>
       ${trend("Run efficiency (EF)", ins.ef.run)}
       ${trend("Ride efficiency (EF)", ins.ef.ride)}
-      ${trend("Run durability %", ins.durability.run)}
+      ${durabilityRow(ins.durability.run)}
       ${trend("Run aerobic threshold (HR)", ins.threshold.run)}
     </table>
-    <div class="k" style="margin-top:8px">CTL/ATL/TSB derived from daily ESS. EF on steady runs ≥40min. Durability/threshold from AI Endurance's DFA-α1. ACWR intentionally not used (validity).</div>
-    ${renderAnalytics(ins)}
+    <details style="margin-top:10px"><summary style="cursor:pointer;color:#888;font-size:12px">Methods &amp; n=1 analytics — how these are computed</summary>
+      <div class="k" style="margin-top:8px">CTL/ATL/TSB derived from daily ESS. EF on steady runs ≥40min. Durability/threshold from AI Endurance's DFA-α1. ACWR intentionally not used (validity).</div>
+      ${renderAnalytics(ins)}
+    </details>
   </div>`;
 }
 
@@ -126,9 +137,9 @@ function renderInsightsBox(ins: InsightReport): string {
     .map((f) => {
       const key = findingKey(f);
       const conf = Math.round((f.confidence ?? 0.6) * 100);
-      return `<div class="insight" data-key="${escapeHtml(key)}">
+      return `<div class="insight sev-${f.severity}" data-key="${escapeHtml(key)}">
         <div><span class="badge" style="background:${sevColor(f.severity)}">${f.severity}</span>
-          <b>${escapeHtml(f.title)}</b> <span class="muted">· ${conf}% conf · ${escapeHtml(f.family)}</span></div>
+          <b style="${f.severity === "flag" ? "font-size:15px" : ""}">${escapeHtml(f.title)}</b> <span class="muted">· ${conf}% conf · ${escapeHtml(f.family)}</span></div>
         <div class="fdetail">${escapeHtml(f.detail)}</div>
         ${f.recommendation ? `<div class="ev">→ ${escapeHtml(f.recommendation)}</div>` : ""}
         <div class="ev">${escapeHtml(f.evidence)}</div>
@@ -245,15 +256,58 @@ function hms(sec: number): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
 }
 
-export function renderDashboard({ window, decisions, insights }: DashboardInput): string {
-  const today = window[window.length - 1];
+/** A small status chip (label + value, tone-coloured). */
+function chip(label: string, value: string, tone: Tone = "neutral"): string {
+  return `<span style="display:inline-block;background:#f4f1ea;border-left:3px solid ${TONE_COLOR[tone]};border-radius:4px;padding:3px 8px;margin:0 6px 6px 0;font-size:12px"><span class="k">${escapeHtml(label)}</span> <b>${escapeHtml(value)}</b></span>`;
+}
 
-  // Today: latest readiness note + headline signals.
+/**
+ * The "Today" decision header (#1) — leads with one synthesised call + the single action, corroborating
+ * drivers, an always-visible health strip (#8), the LLM readiness narrative, and the key metrics.
+ */
+function renderHeader(today: AthleteState, insights: InsightReport | undefined, decisions: DecisionRecord[], gar: DashboardInput["garminDays"]): string {
+  const hl = insights ? coachHeadline(insights, today) : null;
   const lastReadiness = [...decisions].reverse().find((d) => d.kind === "readiness");
-  const verdictWord = lastReadiness?.summary.split(":")[0]?.trim().toLowerCase() ?? "unknown";
-  const verdictColor =
-    verdictWord === "green" ? "#1a8a3a" : verdictWord === "amber" ? "#c98a00" : verdictWord === "red" ? "#c0392b" : "#777";
+  const verdictWord = lastReadiness?.summary.split(":")[0]?.trim().toLowerCase();
+  const sev = hl?.severity ?? (verdictWord === "green" || verdictWord === "amber" || verdictWord === "red" ? verdictWord : "green");
+  const color = SEV_COLOR[sev] ?? "#777";
+  const narrative = lastReadiness?.summary.split(":").slice(1).join(":").trim();
   const r = today.recovery.value;
+  const ts = today.trainingStatus.value;
+  const latestGar = gar && gar.length ? gar[gar.length - 1] : undefined;
+
+  // Health strip — always visible so "quiet" is distinguishable from "not computed".
+  const stress = latestGar?.avgStressLevel;
+  const recharge = latestGar?.bodyBatteryChange;
+  const chips = [
+    today.sleep.value?.score != null ? chip("Sleep", `${today.sleep.value.score}`, today.sleep.value.score >= 70 ? "good" : today.sleep.value.score >= 50 ? "warn" : "bad") : "",
+    today.hrvStatus.value?.status ? chip("HRV", today.hrvStatus.value.status, /balanced/i.test(today.hrvStatus.value.status) ? "good" : "warn") : "",
+    ts?.acwrStatus ? chip("Acute:chronic", `${ts.loadRatio ?? "?"} ${ts.acwrStatus}`, ts.acwrStatus.toUpperCase() === "HIGH" ? "bad" : "good") : "",
+    stress != null ? chip("Day stress", `${Math.round(stress)}`, stress >= 50 ? "warn" : "good") : "",
+    recharge != null ? chip("Overnight recharge", `+${Math.round(recharge)}`, recharge >= 40 ? "good" : "warn") : "",
+    r?.limiterToday ? chip("Limiter", String(r.limiterToday), "warn") : "",
+  ].filter(Boolean).join("");
+
+  return `<div class="card" style="border-top:4px solid ${color}">
+    <h2>Today — ${today.date.slice(5)}</h2>
+    <div class="verdict"><span class="dot" style="background:${color}"></span>
+      <span class="big" style="color:${color}">${escapeHtml(sev)}</span></div>
+    ${hl ? `<p style="font-size:16px;color:#222;margin:10px 0 6px;font-weight:500">${escapeHtml(hl.line)}</p>` : ""}
+    ${hl?.action ? `<div style="background:${color};color:#fff;border-radius:8px;padding:10px 12px;font-size:14px;margin:6px 0 12px">➡️ ${escapeHtml(hl.action)}</div>` : ""}
+    ${hl && hl.drivers.length ? `<div class="k" style="margin-bottom:10px">${hl.drivers.map(escapeHtml).join(" · ")}</div>` : ""}
+    <div style="margin:6px 0 12px">${chips}</div>
+    ${narrative ? `<details><summary style="cursor:pointer;font-size:13px;color:#888">Readiness detail</summary><p style="font-size:14px;color:#444;margin:8px 0">${escapeHtml(narrative)}</p></details>` : ""}
+    <div class="grid" style="margin-top:6px">
+      <div><div class="k">HRV (ms)</div><div class="v">${fmt(today.hrvOvernight.value)}</div></div>
+      <div><div class="k">Resting HR</div><div class="v">${fmt(today.restingHr.value)}</div></div>
+      <div><div class="k">Sleep (h)</div><div class="v">${fmt(today.sleep.value?.hours, 1)}</div></div>
+      <div><div class="k">Cardio rec.</div><div class="v">${fmt(r?.cardioRecovery)}</div></div>
+    </div>
+  </div>`;
+}
+
+export function renderDashboard({ window, decisions, insights, garminDays }: DashboardInput): string {
+  const today = window[window.length - 1];
 
   // Week: load by sport.
   const load = activitiesLast7(today);
@@ -261,13 +315,22 @@ export function renderDashboard({ window, decisions, insights }: DashboardInput)
     .map(([s, e]) => `<tr><td>${s}</td><td>${e.n}</td><td>${Math.round(e.min)} min</td><td>${e.km.toFixed(1)} km</td></tr>`)
     .join("");
 
-  // Trends.
-  const series = (pick: (s: AthleteState) => number | null | undefined) => window.map(pick);
-  const trendRow = (label: string, pick: (s: AthleteState) => number | null | undefined, d = 0) => {
-    const vals = series(pick);
+  // Trends from the backfilled Garmin daily series (the multi-week archive), not the 1-day state store.
+  const gar = (garminDays ?? []).slice(-42);
+  const garRow = (label: string, pick: (d: NonNullable<DashboardInput["garminDays"]>[number]) => number | null | undefined, dec = 0) => {
+    const vals = gar.map(pick);
+    if (vals.filter((v) => v != null).length < 2) return "";
     const last = [...vals].reverse().find((v) => v != null);
-    return `<tr><td>${label}</td><td>${spark(vals)}</td><td class="num">${last == null ? "—" : last.toFixed(d)}</td></tr>`;
+    return `<tr><td>${label}</td><td>${spark(vals)}</td><td class="num">${last == null ? "—" : last.toFixed(dec)}</td></tr>`;
   };
+  const trendRows = [
+    garRow("HRV (ms)", (d) => d.hrvMs),
+    garRow("Resting HR", (d) => d.restingHr),
+    garRow("Sleep (h)", (d) => d.sleepHours, 1),
+    garRow("Sleep score", (d) => d.sleepScore),
+    garRow("Day stress (avg)", (d) => d.avgStressLevel),
+    garRow("Deep sleep (min)", (d) => (d.deepSleepSec != null ? d.deepSleepSec / 60 : null)),
+  ].join("");
 
   // Race: next goals + countdown.
   const goals = (today.raw?.getRaceGoalEvent as { goals?: Array<{ event_name?: string; event_date?: string; priority?: unknown }> } | undefined)?.goals ?? [];
@@ -281,10 +344,16 @@ export function renderDashboard({ window, decisions, insights }: DashboardInput)
     )
     .join("");
 
+  // Humanised activity log — plain labels, status icon, dev ids stripped from the summary.
+  const KIND_LABEL: Record<string, string> = { readiness: "Readiness", "plan-adjust": "Plan change", "insight-feedback": "Your feedback", note: "Note" };
+  const STATUS_LABEL: Record<string, string> = { accepted: "✓ agreed", declined: "✕ dismissed", deferred: "○ ignored", proposed: "• proposed", executed: "✓ applied", note: "" };
   const recentDecisions = [...decisions]
     .reverse()
     .slice(0, 8)
-    .map((d) => `<tr><td>${d.kind}</td><td>${d.status}</td><td>${escapeHtml((d.summary ?? "").slice(0, 90))}</td></tr>`)
+    .map((d) => {
+      const summary = (d.summary ?? "").replace(/\s*\(?id=\d+\)?/g, "").replace(/^[a-z]+:\s*/i, "").trim();
+      return `<tr><td>${escapeHtml(KIND_LABEL[d.kind] ?? d.kind)}</td><td class="muted">${escapeHtml(STATUS_LABEL[d.status] ?? d.status)}</td><td>${escapeHtml(summary.slice(0, 90))}</td></tr>`;
+    })
     .join("");
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>Endurance Coach — ${today.date}</title>
@@ -309,7 +378,10 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .syncbtn:disabled{opacity:.55;cursor:default}
 .syncstatus{margin-left:10px;font-size:13px;color:#888}
 .insights{border:1px solid #e7d9c6}
-.insight{padding:10px 0;border-bottom:1px solid #f0ede5}.insight:last-child{border:0}
+.insight{padding:10px 12px;border-bottom:1px solid #f0ede5;border-left:3px solid transparent;margin-bottom:2px}.insight:last-child{border-bottom:0}
+.insight.sev-flag{border-left-color:#c0392b;background:#fdf3f2}
+.insight.sev-watch{border-left-color:#c98a00;background:#fdfaf2}
+.insight.sev-info{border-left-color:#cfe7d6}
 .acts{margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .acts button{font-size:12px;padding:4px 10px;border:1px solid #ddd;border-radius:14px;background:#fff;cursor:pointer}
 .acts button:disabled{opacity:.4;cursor:default}
@@ -331,6 +403,9 @@ async function sync(){
   catch(e){ b.disabled=false; b.textContent='🔄 Sync latest data'; s.textContent='Sync failed: '+e+' (try again)'; }
 }
 </script>
+
+${insights ? renderHeader(today, insights, decisions, garminDays) : ""}
+${insights ? renderInsightsBox(insights) : ""}
 
 <div class="card"><h2>Ask your data</h2>
   <form id="askform" onsubmit="return ask(event)">
@@ -357,40 +432,15 @@ async function feedback(btn,reaction,key,summary){
 }
 </script>
 
-${insights ? renderInsightsBox(insights) : ""}
-
-<div class="card"><h2>Today</h2>
-  <div class="verdict"><span class="dot" style="background:${verdictColor}"></span>
-    <span class="big" style="color:${verdictColor}">${verdictWord}</span></div>
-  <p style="font-size:14px;color:#444;margin:10px 0 14px">${escapeHtml(lastReadiness?.summary.split(":").slice(1).join(":").trim() ?? "Run readiness to populate.")}</p>
-  <div class="grid">
-    <div><div class="k">HRV (ms)</div><div class="v">${fmt(today.hrvOvernight.value)}</div></div>
-    <div><div class="k">Resting HR</div><div class="v">${fmt(today.restingHr.value)}</div></div>
-    <div><div class="k">Sleep (h)</div><div class="v">${fmt(today.sleep.value?.hours, 1)}</div></div>
-    <div><div class="k">Cardio rec.</div><div class="v">${fmt(r?.cardioRecovery)}</div></div>
-    <div><div class="k">Run ortho.</div><div class="v">${fmt(r?.orthopedic?.run)}</div></div>
-    <div><div class="k">Acute:chronic</div><div class="v">${today.trainingStatus.value?.loadRatio ?? "—"}${today.trainingStatus.value?.acwrStatus ? ` <span class="k">${today.trainingStatus.value.acwrStatus}</span>` : ""}</div></div>
-    <div><div class="k">HRV status</div><div class="v" style="font-size:14px">${escapeHtml(today.hrvStatus.value?.status ?? "—")}</div></div>
-  </div>
-  ${today.trainingStatus.value?.label ? `<div class="k" style="margin-top:8px">Garmin training status: ${escapeHtml(today.trainingStatus.value.label)} · acute ${today.trainingStatus.value.acuteLoad ?? "—"} / chronic ${today.trainingStatus.value.chronicLoad ?? "—"} (MODEL, directional)</div>` : ""}
-</div>
-
 ${insights ? renderSignals(insights) : ""}
 
 <div class="card"><h2>This week — load by sport</h2>
   <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows || '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
 </div>
 
-<div class="card"><h2>Trends (last ${window.length} days)</h2>
-  <table>
-    ${trendRow("HRV (ms)", (s) => s.hrvOvernight.value)}
-    ${trendRow("Resting HR", (s) => s.restingHr.value)}
-    ${trendRow("Sleep (h)", (s) => s.sleep.value?.hours, 1)}
-    ${trendRow("Cardio recovery", (s) => s.recovery.value?.cardioRecovery)}
-    ${trendRow("Run orthopedic", (s) => s.recovery.value?.orthopedic?.run)}
-    ${trendRow("Weight (kg)", (s) => s.weightKg.value, 1)}
-  </table>
-  <div class="k" style="margin-top:8px">Weight is a trend, never a daily target.</div>
+<div class="card"><h2>Trends (last ${gar.length || 0} days)</h2>
+  ${trendRows ? `<table>${trendRows}</table>` : '<div class="muted">Backfill the Garmin daily archive to populate trends (npm run backfill).</div>'}
+  <div class="k" style="margin-top:8px">From the backfilled Garmin daily history.</div>
 </div>
 
 ${renderZones(today)}
