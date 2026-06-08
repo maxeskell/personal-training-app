@@ -9,7 +9,7 @@
  * Both are MODEL estimates → directional: we surface the state + the numbers, with the caveat attached.
  */
 
-import type { TrainingStatusSignals, HrvStatusSignals } from "../state/types.js";
+import type { TrainingStatusSignals, HrvStatusSignals, EnduranceScoreSignals, PowerCurveSignals } from "../state/types.js";
 import type { Finding } from "./metrics.js";
 
 /** Acute:chronic load + training status → overtraining / injury-risk finding. */
@@ -63,6 +63,51 @@ export function hrvStatusFinding(h: HrvStatusSignals | null | undefined): Findin
     evidence: `get_hrv_data: status ${h.status} [garmin]`,
     recommendation: low ? "Favour easy/aerobic today; gate any hard session on HRV returning to baseline." : undefined,
     confidence: low ? 0.7 : 0.5,
+  };
+}
+
+/** Endurance score — sustained-effort capacity. Rising = the marathon-relevant adaptation (E5). */
+export function enduranceScoreFinding(e: EnduranceScoreSignals | null | undefined): Finding | null {
+  if (!e || e.current == null) return null;
+  const vsAvg = e.periodAvg != null ? e.current - e.periodAvg : null;
+  const dir = vsAvg == null ? "" : vsAvg >= 0 ? "up" : "down";
+  return {
+    family: "Endurance score",
+    title: vsAvg != null && vsAvg < -50 ? "Endurance score slipping" : "Endurance score",
+    severity: vsAvg != null && vsAvg < -50 ? "watch" : "info",
+    detail:
+      `Garmin endurance score ${e.current}${e.classification ? ` (${e.classification})` : ""}` +
+      `${vsAvg != null ? `, ${dir} ${Math.abs(vsAvg)} vs your recent average` : ""}` +
+      `${e.nextThresholdLabel != null ? ` — ${e.nextThresholdGap} from "${e.nextThresholdLabel.replace(/_/g, " ")}"` : ""}. ` +
+      `Rising endurance score (especially while VO2max plateaus) is exactly the sustained-effort adaptation the marathon build is after.`,
+    evidence: `get_endurance_score [garmin MODEL — trend over absolute]`,
+    confidence: 0.5,
+  };
+}
+
+/** Power-duration curve → FTP estimate + the athlete's relative strength across durations. */
+export function powerCurveFinding(p: PowerCurveSignals | null | undefined): Finding | null {
+  if (!p || !p.bests.length || p.ftpEstimateW == null || p.ftpEstimateW <= 0) return null;
+  // Classify the strongest duration band relative to FTP (sprint/anaerobic vs VO2 vs threshold/endurance).
+  const pick = (d: string) => p.bests.find((b) => b.duration === d)?.watts;
+  const short = pick("1min") ?? pick("30s") ?? pick("5s");
+  const mid = pick("5min");
+  const long = pick("20min") ?? pick("60min");
+  const ratios: Array<[string, number]> = [];
+  if (short) ratios.push(["anaerobic/sprint (1-min)", short / p.ftpEstimateW]);
+  if (mid) ratios.push(["VO2 (5-min)", mid / p.ftpEstimateW]);
+  if (long) ratios.push(["threshold/endurance (20-60min)", long / p.ftpEstimateW]);
+  if (ratios.length < 2) return null;
+  const strongest = ratios.sort((a, b) => b[1] - a[1])[0];
+  return {
+    family: "Power-duration curve",
+    title: `Power profile leans ${strongest[0].split(" ")[0]}`,
+    severity: "info",
+    detail:
+      `Estimated FTP ${p.ftpEstimateW} W (from ${p.activitiesAnalyzed ?? "?"} activities). Relative to FTP your strongest band is ${strongest[0]} — ` +
+      `improvements at 1/5-min point to anaerobic/VO2 gains, at 20–60-min to threshold gains. Pull more power-equipped sessions (fit-sync) to sharpen this.`,
+    evidence: `get_power_duration_curve season bests [garmin]`,
+    confidence: 0.45,
   };
 }
 

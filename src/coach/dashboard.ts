@@ -183,6 +183,28 @@ function renderZones(today: AthleteState): string {
   </div>`;
 }
 
+/** Garmin model scores: endurance score, hill score, and the power-duration curve (MMP). */
+function renderScores(today: AthleteState): string {
+  const e = today.enduranceScore.value;
+  const h = today.hillScore.value;
+  const p = today.powerCurve.value;
+  if (!e && !h && !p) return "";
+  const mmpRows = p?.bests?.length
+    ? `<table style="margin-top:8px"><tr class="k"><td>Duration</td><td>Best</td></tr>${p.bests
+        .map((b) => `<tr><td>${escapeHtml(b.duration)}</td><td class="num">${b.watts} W</td></tr>`)
+        .join("")}</table>`
+    : "";
+  return `<div class="card"><h2>Garmin scores</h2>
+    <div class="grid">
+      ${e ? `<div><div class="k">Endurance score</div><div class="v">${e.current ?? "—"}</div><div class="k">${escapeHtml(e.classification ?? "")}${e.nextThresholdGap != null ? ` · ${e.nextThresholdGap} to ${escapeHtml((e.nextThresholdLabel ?? "").replace(/_/g, " "))}` : ""}</div></div>` : ""}
+      ${h ? `<div><div class="k">Hill score</div><div class="v">${h.overall ?? "—"}</div><div class="k">str ${h.strength ?? "—"} / end ${h.endurance ?? "—"}</div></div>` : ""}
+      ${p?.ftpEstimateW != null ? `<div><div class="k">FTP estimate</div><div class="v">${p.ftpEstimateW} W</div><div class="k">${p.activitiesAnalyzed ?? "?"} activities</div></div>` : ""}
+    </div>
+    ${mmpRows}
+    <div class="k" style="margin-top:8px">Endurance/hill/MMP are Garmin MODEL estimates — read the trend. Power curve sharpens as fit-sync pulls power-equipped sessions.</div>
+  </div>`;
+}
+
 /** Estimated race splits dependent on training (durability-shaped pacing plan). */
 function renderSplits(ins: InsightReport): string {
   if (!ins.splits.length) return "";
@@ -359,6 +381,8 @@ ${insights ? renderSignals(insights) : ""}
 </div>
 
 ${renderZones(today)}
+
+${renderScores(today)}
 
 <div class="card"><h2>Race</h2>
   <table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>
