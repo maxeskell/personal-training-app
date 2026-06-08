@@ -17,7 +17,7 @@ module.exports = {
       watch_delay: 2000, // debounce so a multi-file pull triggers a single restart
       env: {
         COACH_PORT: "3000",
-        COACH_HOST: "0.0.0.0", // bind to LAN so a phone on the same Wi-Fi can reach it
+        COACH_LAN: "1", // bind the LAN for phone access; all routes still require the pairing token
       },
     },
   ],
