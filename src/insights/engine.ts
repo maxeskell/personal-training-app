@@ -28,6 +28,7 @@ import { analyseFuelling, fuellingFinding, type FuellingAnalysis } from "./fuell
 import { loadSessionDecays, fitFindings, type SessionDecay } from "./fit.js";
 import { trainingStatusFinding, hrvStatusFinding } from "./garminHealth.js";
 import { garminTrendFindings } from "./garminTrends.js";
+import { analyseHeat, heatFinding } from "./heat.js";
 import { finiteNums } from "./stats.js";
 
 /** Optional historical archive to widen the metrics beyond the live 40-activity / 60-day window. */
@@ -459,6 +460,12 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
 
   // 5c. Garmin daily-series trends (illness early-warning, stress, Body-Battery, sleep, fuelling).
   findings.push(...garminTrendFindings(archive?.garminDays));
+
+  // 5d. Heat confounder — EF vs per-activity .FIT temperature (run + ride).
+  for (const sport of ["Run", "Ride"] as const) {
+    const hf = heatFinding(analyseHeat(sessionDecays, sport));
+    if (hf) findings.push(hf);
+  }
 
   // 6. Cross-day trends from the history window (VO2max engine; race-predictor trajectory).
   findings.push(...historyTrendFindings(opts?.history));
