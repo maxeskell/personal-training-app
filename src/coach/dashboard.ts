@@ -205,6 +205,19 @@ function renderScores(today: AthleteState): string {
   </div>`;
 }
 
+/** Estimated race times across standard distances (Garmin race predictor). */
+function renderRacePredictions(today: AthleteState): string {
+  const rp = today.racePredictions.value;
+  if (!rp || !rp.predictions.length) return "";
+  const rows = rp.predictions
+    .map((p) => `<tr><td>${escapeHtml(p.label)}</td><td class="num">${hms(p.timeSeconds)}</td></tr>`)
+    .join("");
+  return `<div class="card"><h2>Estimated race times</h2>
+    <table><tr class="k"><td>Distance</td><td>Predicted</td></tr>${rows}</table>
+    <div class="k" style="margin-top:8px">Garmin race predictor${rp.date ? ` (as of ${escapeHtml(rp.date)})` : ""} — MODEL estimate; watch the trend, and see "Estimated race splits" below for race-day pacing.</div>
+  </div>`;
+}
+
 /** Estimated race splits dependent on training (durability-shaped pacing plan). */
 function renderSplits(ins: InsightReport): string {
   if (!ins.splits.length) return "";
@@ -387,6 +400,8 @@ ${renderScores(today)}
 <div class="card"><h2>Race</h2>
   <table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>
 </div>
+
+${renderRacePredictions(today)}
 
 ${insights ? renderSplits(insights) : ""}
 
