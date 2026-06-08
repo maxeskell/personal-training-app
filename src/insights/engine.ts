@@ -1,6 +1,7 @@
 import type { AthleteState } from "../state/types.js";
 import {
   richActivities,
+  type RichActivity,
   loadModel,
   runLoadRamp,
   efTrend,
@@ -15,7 +16,13 @@ import {
   type MonotonyStrain,
   type TID,
 } from "./metrics.js";
-import { analyseRecoverySeries, type Correlation, type Anomaly } from "./correlations.js";
+import { analyseRecoverySeries, sleepVsNextDayLoad, type Correlation, type Anomaly } from "./correlations.js";
+
+/** Optional historical archive to widen the metrics beyond the live 40-activity / 60-day window. */
+export interface ArchiveInput {
+  activities?: RichActivity[];
+  garminDays?: Array<{ date: string; sleepHours?: number }>;
+}
 
 export interface PredictionVsGoal {
   race: string;
@@ -73,10 +80,12 @@ function predictionsVsGoals(state: AthleteState): PredictionVsGoal[] {
     .sort((a, b) => (a.daysTo ?? 0) - (b.daysTo ?? 0));
 }
 
-/** Build the full insight report + detector findings from today's assembled state. */
-export function buildInsights(state: AthleteState): InsightReport {
+/** Build the full insight report + detector findings from today's state (+ optional history archive). */
+export function buildInsights(state: AthleteState, archive?: ArchiveInput): InsightReport {
   const raw = state.raw ?? {};
-  const acts = richActivities(raw);
+  const live = richActivities(raw);
+  // Prefer the archived history when it's deeper than the live 40-deep window.
+  const acts = archive?.activities && archive.activities.length > live.length ? archive.activities : live;
   const load = loadModel((raw.getRecoveryModel as { data?: { date?: unknown[]; external_stress_score?: unknown[] } } | undefined)?.data);
   const runRamp = runLoadRamp(acts);
   const ef = { run: efTrend(acts, "Run"), ride: efTrend(acts, "Ride") };
@@ -86,6 +95,13 @@ export function buildInsights(state: AthleteState): InsightReport {
   const tid = intensityDistribution(state.adherenceByZone.value);
   const recData = (raw.getRecoveryModel as { data?: Parameters<typeof analyseRecoverySeries>[0] } | undefined)?.data;
   const { correlations, anomalies } = analyseRecoverySeries(recData);
+  // Archive-powered: last night's sleep → next-day load (needs backfilled Garmin sleep history).
+  if (archive?.garminDays && archive.garminDays.length >= 20) {
+    const essByDate = new Map<string, number>();
+    for (const a of acts) if (a.ess != null) essByDate.set(a.date, (essByDate.get(a.date) ?? 0) + a.ess);
+    const sleepCorr = sleepVsNextDayLoad(archive.garminDays, essByDate);
+    if (sleepCorr) correlations.unshift(sleepCorr);
+  }
   const predictions = predictionsVsGoals(state);
 
   const findings: Finding[] = [];

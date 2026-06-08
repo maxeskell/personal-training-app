@@ -11,8 +11,23 @@ import { runRacePrep } from "./coach/racePrep.js";
 import { proposeAdjustments, parseArgs } from "./coach/planAdjust.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
-import { buildInsights } from "./insights/engine.js";
+import { buildInsights, type ArchiveInput } from "./insights/engine.js";
+import { mapRichActivity } from "./insights/metrics.js";
+import { ArchiveStore } from "./archive/store.js";
+import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate } from "./archive/backfill.js";
 import { answerQuestion } from "./coach/ask.js";
+
+/** Load the local history archive (if any) as insight inputs. Undefined when empty. */
+async function loadArchive(): Promise<ArchiveInput | undefined> {
+  const store = new ArchiveStore();
+  const acts = await store.loadActivities();
+  const gar = await store.loadGarminDays();
+  if (!acts.length && !gar.length) return undefined;
+  return {
+    activities: acts.map((a) => mapRichActivity(a.raw, a.sport)),
+    garminDays: gar.map((d) => ({ date: d.date, sleepHours: d.sleepHours })),
+  };
+}
 import { notify } from "./notify.js";
 import { fileChecks } from "./health.js";
 import open from "open";
@@ -233,7 +248,7 @@ async function cmdPing(): Promise<void> {
 async function cmdDeepDive(): Promise<void> {
   if (!requireLLM()) process.exit(1);
   const { state } = await buildTodayState();
-  const ins = buildInsights(state);
+  const ins = buildInsights(state, await loadArchive());
 
   const ev = (t: { recent: number | null; prior: number | null; deltaPct: number | null; n: number }) =>
     `recent ${t.recent ?? "—"} vs prior ${t.prior ?? "—"} (Δ ${t.deltaPct ?? "—"}%, n=${t.n})`;
@@ -279,15 +294,79 @@ async function cmdAsk(): Promise<void> {
     process.exit(1);
   }
   const { state } = await buildTodayState();
-  const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt()), question, state);
+  const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt()), question, state, await loadArchive());
   console.log("\n" + answer + "\n");
+}
+
+/**
+ * `backfill [fromDate] [--chunk N]` — archive full history.
+ *  - AIE activities (month-paged, ~2024+) + AIE recovery already in the daily snapshot.
+ *  - Garmin ACTIVITIES: ALL of them (the full decade), paginated — one-shot, fast.
+ *  - Garmin DAILY metrics (sleep/HRV/RHR): from your earliest Garmin activity forward, throttled,
+ *    resumable, and CHUNKED (--chunk N caps days per run) so a decade grinds over days/weeks.
+ *  `fromDate` defaults to "auto" (earliest Garmin activity). Pass a date to override.
+ */
+async function cmdBackfill(): Promise<void> {
+  const args = process.argv.slice(3);
+  const chunkIdx = args.indexOf("--chunk");
+  const chunk = chunkIdx >= 0 ? Number(args[chunkIdx + 1]) : Infinity;
+  const dailyOnly = args.includes("--daily-only"); // scheduled grind uses this (skips AIE + activity re-paginate)
+  const fromArg = args.find((a) => /^\d{4}-\d{2}-\d{2}$/.test(a)) || "auto";
+  const to = todayIso();
+  const store = new ArchiveStore();
+  console.log(`\nBackfilling into ${config.dataDir}/archive/ …\n`);
+
+  // AIE activities (only go back to ~2024) — skipped in daily-only grind mode.
+  if (!dailyOnly) {
+    await withAie(async (aie) => {
+      const added = await backfillActivities(aie, store, fromArg === "auto" ? "2024-01-01" : fromArg, to, (m) => console.log(m));
+      console.log(`AIE activities: +${added} new.\n`);
+    });
+  }
+
+  if (!config.garmin.enabled) {
+    console.log("Garmin disabled — skipped (set GARMIN_ENABLED=true to include it).\n");
+  } else {
+    const g = new GarminClient();
+    if (await g.connect()) {
+      // All Garmin activities first (fast, gives us the earliest date) — skipped in grind mode.
+      if (!dailyOnly) {
+        console.log("Garmin activities (full history, paginated):");
+        const a = await backfillGarminActivities(g, store, (m) => console.log(m));
+        console.log(`Garmin activities: +${a} new.\n`);
+      }
+
+      const from = fromArg === "auto" ? (await earliestGarminActivityDate(store)) ?? "2014-01-01" : fromArg;
+      console.log(`Garmin daily metrics from ${from} (throttled, resumable${Number.isFinite(chunk) ? `, ${chunk}/run` : ""}):`);
+      const d = await backfillGarmin(g, store, from, to, (m) => console.log(m), 250, chunk);
+      console.log(`Garmin daily: +${d} new days.\n`);
+      await g.close();
+    } else {
+      console.log("Garmin enabled but unavailable — skipped (re-run when connected).\n");
+    }
+  }
+
+  await printArchiveStatus(store);
+}
+
+async function printArchiveStatus(store: ArchiveStore): Promise<void> {
+  const s = await store.summary();
+  console.log(`\nArchive (${config.dataDir}/archive/):`);
+  console.log(`  AIE activities:    ${s.activities} (${s.actRange})`);
+  console.log(`  Garmin activities: ${s.garminActivities} (${s.garActRange})`);
+  console.log(`  Garmin daily:      ${s.garminDays} days (${s.garRange})`);
+}
+
+/** `archive-status` — show what's archived (used by `npm run backfill:status`). */
+async function cmdArchiveStatus(): Promise<void> {
+  await printArchiveStatus(new ArchiveStore());
 }
 
 /** `dashboard` — generate the glanceable Today/Week/Trends/Race HTML and open it. */
 async function cmdDashboard(): Promise<void> {
   const { window, state } = await buildTodayState();
   const decisions = await new DecisionLog().all();
-  const insights = state.raw ? buildInsights(state) : undefined;
+  const insights = state.raw ? buildInsights(state, await loadArchive()) : undefined;
   const html = renderDashboard({ window, decisions, insights });
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
@@ -418,7 +497,7 @@ async function cmdPropose(): Promise<void> {
 async function cmdAct(): Promise<void> {
   if (!requireLLM()) process.exit(1);
   const { state } = await buildTodayState();
-  const ins = buildInsights(state);
+  const ins = buildInsights(state, await loadArchive());
   const actionable = ins.findings.filter((f) => f.severity !== "info");
   if (!actionable.length) {
     console.log("\nNo flagged signals to act on — the insight engine sees nothing needing a plan change.\n");
@@ -525,6 +604,8 @@ const commands: Record<string, () => Promise<void>> = {
   "deep-dive": cmdDeepDive,
   act: cmdAct,
   ask: cmdAsk,
+  backfill: cmdBackfill,
+  "archive-status": cmdArchiveStatus,
   decisions: cmdDecisions,
 };
 
@@ -545,6 +626,7 @@ if (!run) {
   console.log("  deep-dive  insight-engine analysis (load/EF/durability/ramp/goal) → report");
   console.log("  act        turn flagged insight findings into gated plan-adjustment proposals");
   console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
+  console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
   console.log('  decisions [pending | retro <id> "<note>"]   view log / pending / add retrospective');
   console.log("  (LLM flows need ANTHROPIC_API_KEY)");
   process.exit(1);

@@ -6,7 +6,9 @@ import { StateStore } from "./state/store.js";
 import { assembleState } from "./state/assemble.js";
 import { DecisionLog } from "./state/decisionLog.js";
 import { renderDashboard } from "./coach/dashboard.js";
-import { buildInsights } from "./insights/engine.js";
+import { buildInsights, type ArchiveInput } from "./insights/engine.js";
+import { mapRichActivity } from "./insights/metrics.js";
+import { ArchiveStore } from "./archive/store.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
 import { answerQuestion } from "./coach/ask.js";
@@ -23,6 +25,17 @@ import { config } from "./config.js";
  */
 const PORT = Number(process.env.COACH_PORT ?? 3000);
 const HOST = process.env.COACH_HOST ?? "0.0.0.0"; // all interfaces → reachable on the LAN
+
+async function loadArchive(): Promise<ArchiveInput | undefined> {
+  const store = new ArchiveStore();
+  const acts = await store.loadActivities();
+  const gar = await store.loadGarminDays();
+  if (!acts.length && !gar.length) return undefined;
+  return {
+    activities: acts.map((a) => mapRichActivity(a.raw, a.sport)),
+    garminDays: gar.map((d) => ({ date: d.date, sleepHours: d.sleepHours })),
+  };
+}
 
 function lanUrls(): string[] {
   const out: string[] = [`http://localhost:${PORT}`];
@@ -44,7 +57,7 @@ async function renderLatest(): Promise<string> {
   }
   const latest = window[window.length - 1];
   const decisions = await new DecisionLog().all();
-  const insights = latest.raw ? buildInsights(latest) : undefined;
+  const insights = latest.raw ? buildInsights(latest, await loadArchive()) : undefined;
   return renderDashboard({ window, decisions, insights });
 }
 
@@ -96,7 +109,7 @@ const server = createServer(async (req, res) => {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer: "No data assembled yet — hit ↻ refresh first." }));
         return;
       }
-      const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt()), question, state);
+      const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt()), question, state, await loadArchive());
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer }));
       return;
     }
