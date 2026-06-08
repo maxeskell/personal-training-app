@@ -43,15 +43,25 @@ export class DecisionLog {
   }
 
   async all(): Promise<DecisionRecord[]> {
+    let text: string;
     try {
-      const text = await readFile(this.file, "utf8");
-      return text
-        .split("\n")
-        .filter((l) => l.trim())
-        .map((l) => JSON.parse(l) as DecisionRecord);
+      text = await readFile(this.file, "utf8");
     } catch {
-      return [];
+      return []; // no log yet
     }
+    // Parse per line so one corrupt/partial line (crash mid-append) can't lose the whole audit trail.
+    const out: DecisionRecord[] = [];
+    let skipped = 0;
+    for (const l of text.split("\n")) {
+      if (!l.trim()) continue;
+      try {
+        out.push(JSON.parse(l) as DecisionRecord);
+      } catch {
+        skipped++;
+      }
+    }
+    if (skipped) console.warn(`[decisionLog] skipped ${skipped} unparseable line(s)`);
+    return out;
   }
 
   /** Append a status change as a new line referencing the original id (append-only audit trail). */
