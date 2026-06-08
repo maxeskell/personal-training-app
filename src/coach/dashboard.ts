@@ -1,5 +1,6 @@
 import type { AthleteState, ActualActivity } from "../state/types.js";
 import type { DecisionRecord } from "../state/decisionLog.js";
+import type { InsightReport } from "../insights/engine.js";
 
 /**
  * Glanceable local dashboard (Path-B need #2): a single self-contained HTML file with
@@ -50,9 +51,48 @@ function activitiesLast7(today: AthleteState): Map<string, { n: number; min: num
 export interface DashboardInput {
   window: AthleteState[];
   decisions: DecisionRecord[];
+  insights?: InsightReport;
 }
 
-export function renderDashboard({ window, decisions }: DashboardInput): string {
+function renderSignals(ins: InsightReport): string {
+  const sevColor = (s: string) => (s === "flag" ? "#c0392b" : s === "watch" ? "#c98a00" : "#1a8a3a");
+  const findings = ins.findings.length
+    ? ins.findings
+        .map(
+          (f) =>
+            `<div class="finding"><span class="badge" style="background:${sevColor(f.severity)}">${f.severity}</span>
+             <b>${escapeHtml(f.title)}</b><div class="fdetail">${escapeHtml(f.detail)}</div>
+             <div class="ev">${escapeHtml(f.evidence)}${f.recommendation ? " · → " + escapeHtml(f.recommendation) : ""}</div></div>`,
+        )
+        .join("")
+    : `<div class="muted">No signals flagged — carry on.</div>`;
+
+  const L = ins.load;
+  const ctlSpark = L ? spark(L.series.map((p) => p.ctl), 160, 30) : "";
+  const trend = (label: string, t: { recent: number | null; deltaPct: number | null; n: number }) =>
+    t.recent == null
+      ? ""
+      : `<tr><td>${label}</td><td class="num">${t.recent}</td><td class="num">${t.deltaPct == null ? "—" : (t.deltaPct >= 0 ? "+" : "") + t.deltaPct + "%"}</td><td class="muted">${t.n} pts</td></tr>`;
+
+  return `<div class="card"><h2>Signals (insight engine)</h2>
+    ${findings}
+    <div class="grid" style="margin-top:14px">
+      <div><div class="k">Fitness (CTL)</div><div class="v">${L ? L.ctl : "—"}</div></div>
+      <div><div class="k">Fatigue (ATL)</div><div class="v">${L ? L.atl : "—"}</div></div>
+      <div><div class="k">Form (TSB)</div><div class="v">${L ? L.tsb : "—"}</div></div>
+      <div><div class="k">CTL trend</div>${ctlSpark || '<span class="muted">—</span>'}</div>
+    </div>
+    <table style="margin-top:12px"><tr class="k"><td>Trend (recent vs prior)</td><td>Now</td><td>Δ</td><td></td></tr>
+      ${trend("Run efficiency (EF)", ins.ef.run)}
+      ${trend("Ride efficiency (EF)", ins.ef.ride)}
+      ${trend("Run durability %", ins.durability.run)}
+      ${trend("Run aerobic threshold (HR)", ins.threshold.run)}
+    </table>
+    <div class="k" style="margin-top:8px">CTL/ATL/TSB derived from daily ESS. EF on steady runs ≥40min. Durability/threshold from AI Endurance's DFA-α1. ACWR intentionally not used (validity).</div>
+  </div>`;
+}
+
+export function renderDashboard({ window, decisions, insights }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Today: latest readiness note + headline signals.
@@ -109,8 +149,12 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .spark polyline{stroke:#888}.spark.up polyline{stroke:#1a8a3a}.spark.down polyline{stroke:#c0392b}
 .grid{display:flex;gap:14px;flex-wrap:wrap}.grid>div{flex:1;min-width:120px}
 .k{color:#999;font-size:12px}.v{font-size:18px;font-weight:600}
+.finding{padding:8px 0;border-bottom:1px solid #f0ede5}.finding:last-child{border:0}
+.badge{color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:10px;margin-right:8px}
+.fdetail{font-size:13px;color:#444;margin:3px 0}.ev{font-size:11px;color:#999}
+.refresh{float:right;font-size:12px;color:#888;text-decoration:none}
 </style></head><body>
-<h1>Endurance Coach</h1><div class="sub">as of ${today.assembledAt}</div>
+<h1>Endurance Coach <a class="refresh" href="/refresh">↻ refresh</a></h1><div class="sub">as of ${today.assembledAt}</div>
 
 <div class="card"><h2>Today</h2>
   <div class="verdict"><span class="dot" style="background:${verdictColor}"></span>
@@ -124,6 +168,8 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
     <div><div class="k">Run ortho.</div><div class="v">${fmt(r?.orthopedic?.run)}</div></div>
   </div>
 </div>
+
+${insights ? renderSignals(insights) : ""}
 
 <div class="card"><h2>This week — load by sport</h2>
   <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows || '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>

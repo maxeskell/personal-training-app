@@ -52,9 +52,11 @@ export class CoachLLM {
 
   /** Plain-prose completion (for the weekly review and race-prep reports). Same cached system prompt. */
   async text(userContent: string): Promise<{ text: string; cacheRead: number }> {
+    // Headroom matters: adaptive thinking consumes part of max_tokens, so a low cap can leave no
+    // room for the prose. 12k comfortably covers thinking + a long report.
     const res = await this.client.messages.create({
       model: this.model,
-      max_tokens: 4000,
+      max_tokens: 12000,
       thinking: { type: "adaptive" },
       output_config: { effort: "high" } as never,
       system: [
@@ -66,6 +68,9 @@ export class CoachLLM {
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
       .join("\n");
+    if (!text && res.stop_reason === "max_tokens") {
+      throw new Error("Model hit max_tokens before emitting prose — raise max_tokens.");
+    }
     return { text, cacheRead: res.usage.cache_read_input_tokens ?? 0 };
   }
 }

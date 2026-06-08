@@ -11,6 +11,7 @@ import { runRacePrep } from "./coach/racePrep.js";
 import { proposeAdjustments, parseArgs } from "./coach/planAdjust.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
+import { buildInsights } from "./insights/engine.js";
 import { notify } from "./notify.js";
 import { fileChecks } from "./health.js";
 import open from "open";
@@ -227,11 +228,50 @@ async function cmdPing(): Promise<void> {
   console.log(`\n(report written; desktop notification sent if on macOS)`);
 }
 
+/** `deep-dive` — compute insight metrics, synthesise a coach-style analysis, write a report. */
+async function cmdDeepDive(): Promise<void> {
+  if (!requireLLM()) process.exit(1);
+  const { state } = await buildTodayState();
+  const ins = buildInsights(state);
+
+  const ev = (t: { recent: number | null; prior: number | null; deltaPct: number | null; n: number }) =>
+    `recent ${t.recent ?? "—"} vs prior ${t.prior ?? "—"} (Δ ${t.deltaPct ?? "—"}%, n=${t.n})`;
+  const summary = [
+    `INSIGHT METRICS for ${ins.date} (computed locally; cite these):`,
+    ins.load ? `- Load: CTL ${ins.load.ctl} / ATL ${ins.load.atl} / TSB ${ins.load.tsb}, ΔCTL/wk ${ins.load.rampPerWeek} [derived from daily ESS]` : "- Load: insufficient ESS history",
+    `- Run-load ramp: this week ${ins.runRamp.thisWeekEss} ESS vs baseline ${ins.runRamp.baselineEss} (jump ${ins.runRamp.jumpPct ?? "—"}%) [ai-endurance]`,
+    `- Run EF: ${ev(ins.ef.run)} | Ride EF: ${ev(ins.ef.ride)} [derived, steady ≥40min]`,
+    `- Run durability %: ${ev(ins.durability.run)} [ai-endurance DFA-α1]`,
+    `- Run aerobic threshold HR: ${ev(ins.threshold.run)} [ai-endurance DFA-α1, artifact-filtered]`,
+    `- Predictions vs goals: ${ins.predictions.map((p) => `${p.race} T-${p.daysTo}d pred ${p.predictedSec ?? "?"}s vs target ${p.targetSec ?? "?"}s`).join("; ") || "none"}`,
+    "",
+    `DETECTOR FINDINGS (already triaged by severity):`,
+    ...ins.findings.map((f) => `- [${f.severity}] ${f.title}: ${f.detail} (${f.evidence})`),
+  ].join("\n");
+
+  const prompt = [
+    "Write a deep-dive analysis as markdown — the trends/issues a sharp coach would pull out of these",
+    "metrics over time. LEAD with the single most important finding. Group by theme (load & form,",
+    "efficiency & durability, injury risk, goal tracking). Be specific, cite the numbers, distinguish",
+    "trend from noise (call out where n is small). Where relevant, note ACWR is intentionally not used.",
+    "Honour the season shape and the marathon-off-tri run-load caution. End with 2–4 concrete actions.",
+    "",
+    summary,
+  ].join("\n");
+
+  const { text, cacheRead } = await new CoachLLM(await loadSystemPrompt()).text(prompt);
+  const md = `# Deep dive — ${ins.date}\n\n${text}`;
+  console.log("\n" + md + "\n");
+  const path = await writeReport("deep-dive", todayIso(), md);
+  console.log(`(report → ${path}; cache read ${cacheRead} tokens)`);
+}
+
 /** `dashboard` — generate the glanceable Today/Week/Trends/Race HTML and open it. */
 async function cmdDashboard(): Promise<void> {
-  const { window } = await buildTodayState();
+  const { window, state } = await buildTodayState();
   const decisions = await new DecisionLog().all();
-  const html = renderDashboard({ window, decisions });
+  const insights = state.raw ? buildInsights(state) : undefined;
+  const html = renderDashboard({ window, decisions, insights });
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
   const dir = join(process.cwd(), "reports");
@@ -425,6 +465,7 @@ const commands: Record<string, () => Promise<void>> = {
   confirm: cmdConfirm,
   decline: cmdDecline,
   dashboard: cmdDashboard,
+  "deep-dive": cmdDeepDive,
   decisions: cmdDecisions,
 };
 
@@ -442,6 +483,7 @@ if (!run) {
   console.log('  propose "<request>"  gated plan-adjustment proposals');
   console.log("  confirm <id> / decline <id>   apply or dismiss a proposal");
   console.log("  dashboard  generate + open the glanceable Today/Week/Trends/Race view");
+  console.log("  deep-dive  insight-engine analysis (load/EF/durability/ramp/goal) → report");
   console.log('  decisions [pending | retro <id> "<note>"]   view log / pending / add retrospective');
   console.log("  (LLM flows need ANTHROPIC_API_KEY)");
   process.exit(1);

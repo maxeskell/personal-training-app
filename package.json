@@ -24,7 +24,12 @@
     "dashboard": "tsx src/cli.ts dashboard",
     "decisions": "tsx src/cli.ts decisions",
     "schedule:install": "bash scripts/install-schedule.sh",
-    "schedule:uninstall": "bash scripts/uninstall-schedule.sh"
+    "schedule:uninstall": "bash scripts/uninstall-schedule.sh",
+    "serve": "tsx src/server.ts",
+    "serve:start": "pm2 start ecosystem.config.cjs",
+    "serve:stop": "pm2 stop endurance-dashboard",
+    "serve:logs": "pm2 logs endurance-dashboard",
+    "deep-dive": "tsx src/cli.ts deep-dive"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",
