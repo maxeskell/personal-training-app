@@ -52,6 +52,8 @@ export function buildAskContext(state: AthleteState, insights: InsightReport): s
     `TODAY (${state.date}) [provenance in brackets]:`,
     `- HRV ${fmt(state.hrvOvernight.value)}ms (7d base ${fmt(state.hrv7dBaseline.value)}), RHR ${fmt(state.restingHr.value)}bpm (base ${fmt(state.restingHr7dBaseline.value)}), sleep ${fmt(state.sleep.value?.hours, 1)}h/${fmt(state.sleep.value?.score)} [garmin]`,
     `- Recovery: cardio ${fmt(r?.cardioRecovery)}/100, orthopedic run/bike/swim ${fmt(r?.orthopedic?.run)}/${fmt(r?.orthopedic?.bike)}/${fmt(r?.orthopedic?.swim)}, limiter ${r?.limiterToday ?? "—"} [ai-endurance]`,
+    state.trainingStatus.value ? `- Garmin training status: ${state.trainingStatus.value.label ?? "—"}, acute:chronic ${state.trainingStatus.value.loadRatio ?? "—"} (${state.trainingStatus.value.acwrStatus ?? "—"}), acute ${state.trainingStatus.value.acuteLoad ?? "—"}/chronic ${state.trainingStatus.value.chronicLoad ?? "—"} [garmin MODEL]` : "",
+    state.hrvStatus.value ? `- Garmin HRV status: ${state.hrvStatus.value.status ?? "—"} (last night ${state.hrvStatus.value.lastNightMs ?? "—"}ms, baseline ${state.hrvStatus.value.baselineLowMs ?? "—"}-${state.hrvStatus.value.baselineUpperMs ?? "—"}ms) [garmin]` : "",
     `- Weight ${fmt(state.weightKg.value, 1)}kg (trend only), VO2max ${fmt(state.vo2max.value)} [${state.weightKg.source}/${state.vo2max.source}]`,
     "",
     `INSIGHTS:`,
