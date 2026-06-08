@@ -13,7 +13,12 @@
     "auth:aie": "tsx src/cli.ts auth",
     "verify:reads": "tsx src/cli.ts verify",
     "state:today": "tsx src/cli.ts state",
-    "readiness": "tsx src/cli.ts readiness"
+    "readiness": "tsx src/cli.ts readiness",
+    "weekly": "tsx src/cli.ts weekly",
+    "race": "tsx src/cli.ts race",
+    "propose": "tsx src/cli.ts propose",
+    "confirm": "tsx src/cli.ts confirm",
+    "decline": "tsx src/cli.ts decline"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",

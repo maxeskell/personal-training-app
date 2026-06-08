@@ -36,8 +36,13 @@ Solid = required (AIE). Dotted = optional (Garmin). Must be fully useful on AIE 
   **decision log** (`src/state/decisionLog.ts`, need #3). Readiness leads on interpretable signals +
   trend, Garmin scores tiebreak-only, cites its data. *Pending your action:* set `ANTHROPIC_API_KEY`
   to run `npm run readiness` live.
-- **M4 — The four flows + dated markdown reports.** Daily readiness, weekly review, gated plan-adjust,
-  race prep. **This is the product** — meets the §9 acceptance criteria.
+- **M4 — The four flows + dated markdown reports. ✅ built & verified live.** Daily readiness
+  (`readiness`), weekly review (`weekly` — takeaway-led, load/adherence/trend), gated plan-adjust
+  (`propose`/`confirm`/`decline` — real workoutIds, trade-offs, no week-restructure, confirm-before-write
+  across processes via the decision log), race prep (`race [name]` — time-to-race calibrated, surfaces
+  the Alderford capped-tempo call + Loch Ness run-load caution). Prose flows write dated markdown to
+  `reports/`. **This is the product** — meets the §9 acceptance criteria (verified §9.5 explicitly;
+  §9.4 confirmed: 0 executed writes after declining proposals).
 - **M5 — Scheduling + dashboard.** Both apply: a pushed 06:00 readiness ping, and a glanceable
   Today/Week/Trends/Race view. Decision log (need #3) lands as part of M2/M4's store + M4 reports.
 - **M6 — Harden.** Garmin-breakage handling, AIE tool-change tolerance, secret hygiene, decision-log review.

@@ -24,9 +24,18 @@ npm run auth:aie              # one-time OAuth (opens browser); caches tokens in
 npm run verify:reads          # exercises every read tool; confirms the write-gate
 npm run state:today           # assembles + persists + summarises today's AthleteState
 
-export ANTHROPIC_API_KEY=sk-ant-...   # for the LLM readiness core (M3)
+export ANTHROPIC_API_KEY=sk-ant-...   # for the LLM coaching flows (M3+M4)
 npm run readiness             # green/amber/red verdict with cited drivers + wellbeing check
+npm run weekly                # weekly review (takeaway-led) → dated report in reports/
+npm run race                  # race-specific prep for the next race → dated report
+npm run race -- "Loch Ness"   # …or a named race
+npm run propose -- "move my long run off race week"   # gated plan-adjustment proposals
+npm run confirm -- <id>       # apply a proposal (the ONLY path that writes to AI Endurance)
+npm run decline -- <id>       # dismiss a proposal
 ```
+
+The four flows (readiness / weekly / propose+confirm / race) are the product. Every write goes
+through the gate: `propose` only logs proposals + trade-offs; nothing changes until you `confirm`.
 
 Garmin is **optional** — leave `GARMIN_ENABLED=false` and the coach runs on AI Endurance alone.
 To enable it, run the one-time `garmin-mcp-auth` (see `.env.example`) then set `GARMIN_ENABLED=true`.
