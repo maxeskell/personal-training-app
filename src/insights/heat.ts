@@ -80,7 +80,9 @@ export function analyseHeat(records: HeatInput[], sport: "Run" | "Ride"): HeatAn
   const efChangePct = recentEf != null && priorEf != null && priorEf !== 0 ? +(((recentEf - priorEf) / priorEf) * 100).toFixed(1) : null;
 
   let heatAttributedPct: number | null = null;
-  if (pctPerC != null && recentTempC != null && priorTempC != null && efChangePct != null && efChangePct !== 0) {
+  // Floor the denominator: an attribution ratio on a near-zero EF change is meaningless (a 0.05% change
+  // would read as "100% heat"). Only attribute when the EF actually moved by ≥2%.
+  if (pctPerC != null && recentTempC != null && priorTempC != null && efChangePct != null && Math.abs(efChangePct) >= 2) {
     const expectedFromHeat = pctPerC * (recentTempC - priorTempC); // expected EF % change from the temp shift
     // Only meaningful when both the actual change and the heat-expected change point the same way.
     if (Math.sign(expectedFromHeat) === Math.sign(efChangePct)) {

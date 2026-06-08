@@ -26,6 +26,7 @@ export interface Correlation {
   significant: boolean; // CI excludes 0
   /** Survives Benjamini–Hochberg FDR control across the scanned set (q=0.1). */
   fdrPass?: boolean;
+  lagsScanned?: number; // how many lags the selection searched (for multiplicity-aware FDR)
   interpretation: string;
 }
 export interface Anomaly {
@@ -106,6 +107,7 @@ export function analyseRecoverySeries(
         ciHigh: c.ciHigh,
         effN: c.effN,
         significant: c.significant,
+        lagsScanned: opts.maxLag - opts.minLag + 1,
         interpretation: mk(c.r, scan.bestLag, c.significant),
       });
     }
@@ -145,9 +147,14 @@ export function analyseRecoverySeries(
   z(hrv, "HRV", "low", "unusually suppressed");
 
   // FDR control across the scanned set (brief §2/§4): a relationship is "confirmed" only if its CI
-  // clears 0 AND it survives Benjamini–Hochberg at q=0.1. Otherwise it's hypothesis-generating.
+  // clears 0 AND it survives Benjamini–Hochberg at q=0.1. The per-relationship p is first inflated by the
+  // number of lags scanned (a Bonferroni step) so the lag SEARCH can't sneak past the multiplicity guard —
+  // i.e. no double-dipping the selection that picked the best lag.
   if (correlations.length) {
-    const pass = benjaminiHochberg(correlations.map((c) => corrPValue(c.r, c.effN)), 0.1);
+    const pass = benjaminiHochberg(
+      correlations.map((c) => Math.min(1, corrPValue(c.r, c.effN) * (c.lagsScanned ?? 1))),
+      0.1,
+    );
     correlations.forEach((c, i) => {
       c.fdrPass = pass[i] && c.significant;
       if (!c.fdrPass && !/tentative/.test(c.interpretation)) c.interpretation += " [exploratory — not FDR-confirmed]";
