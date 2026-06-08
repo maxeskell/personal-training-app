@@ -162,6 +162,30 @@ export function benjaminiHochberg(pvals: number[], q = 0.1): boolean[] {
   return pass;
 }
 
+/** Small deterministic PRNG (mulberry32) so permutation tests are reproducible run-to-run. */
+export function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Circular-shift a series by `offset`. This is the correct permutation for autocorrelated time series:
+ * it destroys the predictor↔outcome alignment (the thing under test) while PRESERVING the outcome's own
+ * serial structure, so the null isn't artificially easy to beat.
+ */
+export function circularShift<T>(xs: T[], offset: number): T[] {
+  const n = xs.length;
+  if (n === 0) return xs;
+  const k = ((offset % n) + n) % n;
+  return xs.slice(n - k).concat(xs.slice(0, n - k));
+}
+
 /** Rolling personal baseline: z-score of the last point vs the trailing window (excludes itself). */
 export function trailingZ(series: Maybe[], window = 42): { z: number; mean: number; sd: number } | null {
   const v = series.filter((x): x is number => x != null);

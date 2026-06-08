@@ -17,10 +17,16 @@ export interface FuellingAnalysis {
   flag: boolean;
 }
 
-/** Linear kg/week trend from a dated series (sparse weigh-ins are fine). */
+/**
+ * Linear kg/week trend from a dated series. Conservative by design (review #4): needs a real multi-week
+ * window — ≥6 readings spanning ≥21 days — before it will report a trend, so day-to-day BIA noise can't
+ * trip it.
+ */
 function perWeekTrend(points: Array<{ date: string; kg: number }>): number | null {
-  if (points.length < 4) return null;
+  if (points.length < 6) return null;
   const sorted = [...points].sort((a, b) => a.date.localeCompare(b.date));
+  const spanDays = (new Date(`${sorted[sorted.length - 1].date}T00:00:00Z`).getTime() - new Date(`${sorted[0].date}T00:00:00Z`).getTime()) / 86_400_000;
+  if (spanDays < 21) return null;
   const epoch = new Date(`${sorted[0].date}T00:00:00Z`).getTime();
   const xs = sorted.map((p) => (new Date(`${p.date}T00:00:00Z`).getTime() - epoch) / 86_400_000);
   const ys = sorted.map((p) => p.kg);
@@ -43,8 +49,11 @@ export function analyseFuelling(
 ): FuellingAnalysis {
   const weightTrendKgPerWk = perWeekTrend(weightSeries) ?? weightTrendFallbackKgPerWk ?? null;
   const muscleTrendKgPerWk = perWeekTrend(muscleSeries);
-  // Red flag: weight clearly dropping AND muscle dropping with it.
-  const flag = weightTrendKgPerWk != null && muscleTrendKgPerWk != null && weightTrendKgPerWk < -0.1 && muscleTrendKgPerWk < -0.05;
+  // Gentle flag only when there's a populated muscle TREND AND both weight and muscle are clearly
+  // falling together over weeks. Thresholds are deliberately large — BIA muscle mass is noisy, so this
+  // is a "worth a look" nudge, not a measurement claim.
+  const flag =
+    weightTrendKgPerWk != null && muscleTrendKgPerWk != null && weightTrendKgPerWk < -0.2 && muscleTrendKgPerWk < -0.1;
   return { weightTrendKgPerWk, muscleTrendKgPerWk, flag };
 }
 
@@ -52,13 +61,13 @@ export function fuellingFinding(f: FuellingAnalysis): Finding | null {
   if (!f.flag) return null;
   return {
     family: "Fuelling & body comp",
-    title: "Weight loss is taking muscle with it",
-    severity: "flag",
+    title: "Weight and muscle both trending down",
+    severity: "watch",
     detail:
-      `Weight is trending down ${Math.abs(f.weightTrendKgPerWk!)} kg/wk AND skeletal muscle ${Math.abs(f.muscleTrendKgPerWk!)} kg/wk — ` +
-      `that's under-fuelling cannibalising the engine, not a W/kg gain. Eat more, especially protein and around sessions; this is a stop signal.`,
-    evidence: `weight ${f.weightTrendKgPerWk} kg/wk, skeletal muscle ${f.muscleTrendKgPerWk} kg/wk (BIA trends) [garmin Index S2]`,
-    recommendation: "Raise daily intake toward the adequate-fuelling range and re-check muscle mass in 2–3 weeks.",
-    confidence: 0.85,
+      `Over recent weeks both weight (~${Math.abs(f.weightTrendKgPerWk!)} kg/wk) and bioimpedance skeletal-muscle mass (~${Math.abs(f.muscleTrendKgPerWk!)} kg/wk) are drifting down together. ` +
+      `BIA muscle mass is noisy, so this isn't a diagnosis — but losing muscle alongside weight can mean under-fuelling rather than a useful W/kg gain. Worth a look: prioritise fuelling around sessions and protein.`,
+    evidence: `weight ${f.weightTrendKgPerWk} kg/wk, BIA skeletal muscle ${f.muscleTrendKgPerWk} kg/wk over ≥3 weeks [garmin Index S2 — noisy]`,
+    recommendation: "If this persists, consider checking in with a sports dietitian / professional rather than acting on the scale alone.",
+    confidence: 0.55,
   };
 }

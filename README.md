@@ -64,8 +64,12 @@ detector self-gates and stays silent until there's enough of your own history be
 - **Rigorous correlations (Q1):** lagged cross-correlation (predictor at *t−k* → outcome at *t*) with a
   Fisher-z 95% CI computed on the *effective* sample size (discounted for serial dependence). Nothing is
   called real unless its CI clears 0 — the brief's #1 guardrail against naive-Pearson nonsense.
-- **Backtested monitoring rule set (Q1, Deliverable #3):** candidate HRV/RHR threshold rules scored
-  against your own history with hit-rate / false-alarm-rate / lead-time — a personalised amber rule.
+- **Validated monitoring rule set (Q1, Deliverable #3):** candidate HRV/RHR threshold rules selected on
+  the earlier ~60% of your history and scored on the **held-out** later ~40%, with a circular-shift
+  **permutation null** — a rule is only reported as skilful if it beats chance out-of-sample (else it's
+  labelled exploratory). Runs against the **backfilled Garmin series** with **sleep score** as an
+  outcome *independent* of the HRV/RHR predictors (falling back to the AIE recovery series, relabelled as
+  concordance, when that history isn't there yet).
 - **Change-point detection (§5):** dates genuine regime shifts in CTL, HRV and RHR (binary segmentation,
   L2 cost) so inflections can be tied to a training/illness/kit change, not smoothed away.
 - **Brick decoupling (Q4):** run efficiency off the bike vs fresh — the triathlon-specific signal.
