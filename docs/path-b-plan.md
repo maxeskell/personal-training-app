@@ -155,3 +155,11 @@ need #2), spawning the Python `garmin_mcp` over stdio for the optional 5 metrics
 - Official **`@modelcontextprotocol/sdk`** (npm) ships client transports (stdio + Streamable HTTP) and
   **OAuth helpers**; the MCP authorization spec (OAuth 2.1 + PKCE) landed 2025-03-25. A single client
   can connect to both servers. This is the standard, supported path — no need to hand-roll OAuth.
+
+---
+
+## Next layer (beyond M6): the Insight Engine
+With M1–M6 delivering the daily operating system, the next layer mines the data for the **trends,
+issues, and insights a professional coach would pull out** — efficiency factor, aerobic decoupling,
+run-load ACWR (injury window), CTL/ATL/TSB, intensity distribution, prediction-vs-goal, and n=1
+correlations. Full design: **[Insight_Engine_Spec.md](specs/Insight_Engine_Spec.md)** (milestones N1–N4).

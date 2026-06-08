@@ -67,6 +67,7 @@ and token dirs are gitignored; token-shaped strings are redacted from logs and n
 - [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) — decision gate + engineering plan (authoritative).
 - [Project Instructions](docs/specs/AI_Triathlon_Coach_Project_Instructions.md) — the coach persona / system prompt.
 - [Integration Spec](docs/specs/Endurance_Coach_Integration_Spec.md) — data-integration detail.
+- [Insight Engine Spec](docs/specs/Insight_Engine_Spec.md) — **next layer**: deeper data-mining (EF, aerobic decoupling, run-load ACWR, CTL/ATL/TSB, TID, prediction-vs-goal) — the trends/issues a pro coach pulls out.
 
 ## Principles
 
