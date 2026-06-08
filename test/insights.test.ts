@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { analyseHeat, heatFinding, type HeatInput } from "../src/insights/heat.js";
 import { estimateRunSplits } from "../src/insights/splits.js";
 import { deriveZones, paceStr } from "../src/insights/zones.js";
-import { findingKey, findingScore, surfaceFindings, type Finding } from "../src/insights/metrics.js";
+import { findingKey, findingScore, surfaceFindings, alertFindings, type Finding } from "../src/insights/metrics.js";
 import { trainingStatusFinding, hrvStatusFinding, enduranceScoreFinding, powerCurveFinding } from "../src/insights/garminHealth.js";
 import { garminTrendFindings, illnessEarlyWarning, fuellingFromGarmin, type GarminDaily } from "../src/insights/garminTrends.js";
 
@@ -62,6 +62,17 @@ test("findings: stable key, score ranking, confidence gate + suppression", () =>
   // low-confidence (0.35) gated out; suppressed key removed
   const out = surfaceFindings(fs, new Set([findingKey(fs[2])]));
   assert.deepEqual(out.map((f) => f.title), ["Run load spiked 60% this week"]);
+});
+
+test("alertFindings: flags + health watch-families fire; ordinary watch/info don't", () => {
+  const surfaced: Finding[] = [
+    { family: "Load & injury risk", title: "Overreaching", severity: "flag", detail: "d", evidence: "e" },
+    { family: "Illness early-warning", title: "Pre-illness signals", severity: "watch", detail: "d", evidence: "e" },
+    { family: "Aerobic efficiency", title: "Run EF slipping", severity: "watch", detail: "d", evidence: "e" },
+    { family: "Endurance score", title: "Endurance score", severity: "info", detail: "d", evidence: "e" },
+  ];
+  assert.deepEqual(alertFindings(surfaced).map((f) => f.title), ["Overreaching", "Pre-illness signals"]);
+  assert.equal(alertFindings([]).length, 0);
 });
 
 // ---------- garmin health ----------

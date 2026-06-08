@@ -12,7 +12,7 @@ import { proposeAdjustments, parseArgs } from "./coach/planAdjust.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { buildInsights, type ArchiveInput } from "./insights/engine.js";
-import { mapRichActivity } from "./insights/metrics.js";
+import { mapRichActivity, alertFindings } from "./insights/metrics.js";
 import { ArchiveStore, type FitSummary } from "./archive/store.js";
 import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate } from "./archive/backfill.js";
 import { answerQuestion } from "./coach/ask.js";
@@ -731,6 +731,33 @@ async function cmdAct(): Promise<void> {
   console.log(`(cache read ${cacheRead} tokens)`);
 }
 
+/**
+ * `check` — fire-only health watch. Deterministic (no LLM, so cheap to run on a schedule): assembles
+ * today's state, gates the findings (confidence + your agree/disagree feedback), and sends ONE macOS
+ * notification only if something genuinely warrants attention (any flag, or a health/injury early-warning).
+ * Silent otherwise — it taps you on the shoulder when it matters, not every day.
+ */
+async function cmdCheck(): Promise<void> {
+  const { state, window } = await buildTodayState();
+  if (!state.raw) {
+    console.log("\nNo data assembled — skipping check.");
+    return;
+  }
+  const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
+  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window });
+  const alerts = alertFindings(ins.topFindings);
+  if (!alerts.length) {
+    console.log(`\n✓ All clear (${state.date}) — nothing above the alert bar.`);
+    return;
+  }
+  const top = alerts.slice(0, 3);
+  console.log(`\n⚠ ${alerts.length} alert(s) for ${state.date}:`);
+  for (const f of top) console.log(`  • [${f.severity}] ${f.title}: ${f.detail}`);
+  const msg = top.map((f) => f.title).join(" · ") + (alerts.length > top.length ? ` (+${alerts.length - top.length} more)` : "");
+  await notify(`Coach: ${alerts.length} signal${alerts.length > 1 ? "s" : ""}`, msg);
+  console.log(`\n(macOS notification sent if on darwin — run \`npm run act\` to turn these into gated plan proposals.)`);
+}
+
 /** `confirm <id>` — the ONLY path that fires a write, and only for a logged proposal. */
 async function cmdConfirm(): Promise<void> {
   const id = process.argv[3];
@@ -801,6 +828,7 @@ const commands: Record<string, () => Promise<void>> = {
   dashboard: cmdDashboard,
   "deep-dive": cmdDeepDive,
   act: cmdAct,
+  check: cmdCheck,
   ask: cmdAsk,
   backfill: cmdBackfill,
   "archive-status": cmdArchiveStatus,
@@ -825,6 +853,7 @@ if (!run) {
   console.log("  dashboard  generate + open the glanceable Today/Week/Trends/Race view");
   console.log("  deep-dive  insight-engine analysis (load/EF/durability/ramp/goal) → report");
   console.log("  act        turn surfaced (gated, feedback-aware) findings into gated plan-adjustment proposals");
+  console.log("  check      fire-only health watch: macOS alert ONLY if a flag / early-warning fires (no LLM)");
   console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
   console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
   console.log("  probe      capture live Garmin tool surface + AIE detail samples → reports/ (Phase-2 mapping)");

@@ -43,10 +43,15 @@ npm run fit-sync              # archive recent Garmin activity summaries (temp/E
 npm run decisions             # view the decision log (audit trail)
 npm run decisions -- retro <id> "how it held up"   # add a retrospective to a decision
 npm test                      # unit tests for the insight/stat modules (node:test, no extra deps)
+npm run check                 # fire-only health watch: macOS alert ONLY if a flag/early-warning fires
 
 # Schedule the 06:00 ping (macOS launchd; cron fallback on Linux):
 npm run schedule:install      # optional HH MM args, e.g. -- 6 30
 npm run schedule:uninstall
+
+# Proactive daily watch (fit-sync + fire-only check; notifies only when something fires):
+npm run watch:install         # optional HH MM args, e.g. -- 7 30
+npm run watch:uninstall
 ```
 
 The four flows (readiness / weekly / propose+confirm / race) are the product. Every write goes
