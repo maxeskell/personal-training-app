@@ -201,7 +201,7 @@ async function gatherReadiness(): Promise<{
 }> {
   const { state, window } = await buildTodayState();
   const risk = assessHealthRisk(window); // deterministic guardrail, runs before the model
-  const llm = new CoachLLM(await loadSystemPrompt(), "readiness");
+  const llm = new CoachLLM(await loadSystemPrompt(), "readiness", "medium");
   const { verdict, cacheRead, costUsd } = await assessReadiness(llm, window);
   await new DecisionLog().append({
     id: decisionId(`readiness:${state.date}`),
@@ -318,7 +318,7 @@ async function cmdAsk(): Promise<void> {
     process.exit(1);
   }
   const { state } = await buildTodayState();
-  const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt(), "ask"), question, state, await loadArchive());
+  const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt(), "ask", "medium"), question, state, await loadArchive());
   console.log("\n" + answer + "\n");
 }
 
@@ -335,7 +335,7 @@ async function cmdSession(): Promise<void> {
   const archive = await loadArchive();
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
   const insights = buildInsights(state, archive, { suppressed, history: window });
-  const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session"), state, insights, {
+  const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), state, insights, {
     date,
     decays: loadSessionDecays(),
     fitSummaries: await new ArchiveStore().loadFitSummaries(),
@@ -590,7 +590,7 @@ async function cmdDashboard(): Promise<void> {
   const decisions = await new DecisionLog().all();
   const archive = await loadArchive();
   const insights = state.raw ? buildInsights(state, archive, { history: window }) : undefined;
-  const html = renderDashboard({ window, decisions, insights, garminDays: archive?.garminDays });
+  const html = renderDashboard({ window, decisions, insights, garminDays: archive?.garminDays, costRecords: await readCostRecords() });
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
   const dir = join(process.cwd(), "reports");
