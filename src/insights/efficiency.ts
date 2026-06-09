@@ -10,7 +10,7 @@
  */
 
 import type { RichActivity, LoadModel, Finding } from "./metrics.js";
-import { mean } from "./stats.js";
+import { mean, slope } from "./stats.js";
 
 export interface EfficiencyAnalysis {
   n: number;
@@ -18,21 +18,6 @@ export interface EfficiencyAnalysis {
   residualSlopePer30d: number | null; // EF gain not explained by fitness, per 30 days
   fitnessExplains: boolean | null; // true when EF gains track CTL (no independent economy gain)
   swimSwolfDeltaPct: number | null; // SWOLF lower = better, so negative delta is an improvement
-}
-
-/** Least-squares slope of y on x. */
-function slope(xs: number[], ys: number[]): number | null {
-  const n = xs.length;
-  if (n < 3) return null;
-  const mx = mean(xs)!;
-  const my = mean(ys)!;
-  let sxy = 0;
-  let sxx = 0;
-  for (let i = 0; i < n; i++) {
-    sxy += (xs[i] - mx) * (ys[i] - my);
-    sxx += (xs[i] - mx) ** 2;
-  }
-  return sxx === 0 ? null : sxy / sxx;
 }
 
 function dayIndex(dateIso: string, epoch: string): number {
@@ -89,7 +74,7 @@ export function efficiencyFinding(e: EfficiencyAnalysis): Finding | null {
     severity: "info",
     detail:
       economyUp
-        ? `Run efficiency is improving even after removing the fitness (CTL) trend (residual +${e.residualSlopePer30d}/30d over ${e.n} steady runs) — a real economy win, the marathon-relevant lever.`
+        ? `Run efficiency is improving even after removing the fitness (CTL) trend (residual +${e.residualSlopePer30d}/30d over ${e.n} steady runs) — likely an economy gain, the marathon-relevant lever. (CTL and time are correlated, so read as suggestive, not definitive.)`
         : e.fitnessExplains
           ? `Run EF is rising, but it tracks fitness (CTL) — the fitness-removed residual is flat (${e.residualSlopePer30d}/30d). Gains are engine, not economy; technique/economy work still has headroom.`
           : `Fitness-adjusted run economy is roughly flat (${e.residualSlopePer30d}/30d over ${e.n} runs).`,

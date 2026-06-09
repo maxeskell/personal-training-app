@@ -10,7 +10,7 @@
  */
 
 import type { Finding } from "./metrics.js";
-import { mean } from "./stats.js";
+import { mean, slope } from "./stats.js";
 
 /** Any per-activity record with the fields the heat regression needs (SessionDecay or FitSummary). */
 export interface HeatInput {
@@ -39,20 +39,6 @@ interface Pt {
   temp: number;
 }
 
-/** Least-squares slope of y on x. */
-function slope(pts: Array<{ x: number; y: number }>): number | null {
-  if (pts.length < 3) return null;
-  const mx = mean(pts.map((p) => p.x))!;
-  const my = mean(pts.map((p) => p.y))!;
-  let sxy = 0;
-  let sxx = 0;
-  for (const p of pts) {
-    sxy += (p.x - mx) * (p.y - my);
-    sxx += (p.x - mx) ** 2;
-  }
-  return sxx === 0 ? null : sxy / sxx;
-}
-
 export function analyseHeat(records: HeatInput[], sport: "Run" | "Ride"): HeatAnalysis {
   const pts: Pt[] = records
     .filter((d) => d.sport === sport && d.avgPowerW != null && d.avgHr != null && d.avgHr > 0 && d.avgTempC != null)
@@ -67,7 +53,7 @@ export function analyseHeat(records: HeatInput[], sport: "Run" | "Ride"): HeatAn
   if (Math.max(...temps) - Math.min(...temps) < 4) return empty; // need a real temperature range
 
   const meanEf = mean(pts.map((p) => p.ef))!;
-  const slopeEfPerC = slope(pts.map((p) => ({ x: p.temp, y: p.ef })));
+  const slopeEfPerC = slope(pts.map((p) => p.temp), pts.map((p) => p.ef));
   const pctPerC = slopeEfPerC == null || meanEf === 0 ? null : +((slopeEfPerC / meanEf) * 100).toFixed(2);
 
   const half = Math.min(5, Math.floor(pts.length / 2));
