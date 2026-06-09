@@ -64,6 +64,23 @@ export const config = {
     cacheReadPerMTok: Number(process.env.COACH_PRICE_CACHE_READ ?? 0.5),
   },
 
+  /**
+   * Local LLM server — OPTIONAL, degradable. An OpenAI-compatible wrapper around Ollama
+   * (see the local-llm-server repo). Used only for cheap, low-stakes side tasks (intent
+   * routing for `ask`), NEVER for coaching output — that stays on Opus. Off unless
+   * COACH_LOCAL_INTENT=true, so the zero-cost regex fast-path is the default everywhere.
+   */
+  localLlm: {
+    enabled: process.env.COACH_LOCAL_INTENT === "true",
+    /** Base URL incl. the OpenAI version prefix; trailing slash trimmed so we can append cleanly. */
+    baseUrl: (process.env.LOCAL_LLM_URL ?? "http://localhost:8000/v1").replace(/\/+$/, ""),
+    /** Bearer token — empty means the server has auth disabled (its local default). */
+    apiKey: process.env.LOCAL_LLM_API_KEY ?? "",
+    model: process.env.LOCAL_LLM_MODEL ?? "llama3.2:1b",
+    /** Hard timeout (ms) — a slow/missing local server must never stall the Q&A; we fall back to regex. */
+    timeoutMs: Number(process.env.LOCAL_LLM_TIMEOUT_MS ?? 4000),
+  },
+
   /** Where persisted secrets/tokens live — gitignored, outside the repo by default. */
   secretsDir: process.env.COACH_SECRETS_DIR ?? join(home, ".endurance-coach"),
 
