@@ -51,7 +51,8 @@ test("assembleSession: joins .FIT biomechanics and archive thermal summary by da
 test("buildSessionContext: states plainly when no .FIT stream is present (never fabricates)", () => {
   const d = assembleSession(stateWithRuns(), undefined)!;
   const ctx = buildSessionContext(d, stateWithRuns(), undefined);
-  assert.match(ctx, /no \.FIT stream synced/);
+  assert.match(ctx, /no raw \.FIT stream/);
+  assert.match(ctx, /data\/fit-streams\//); // points at the real source, not fit-sync
 });
 
 test("isLastSessionQuestion: routes recency+session-noun questions, leaves general Q&A alone", () => {

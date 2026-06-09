@@ -152,7 +152,7 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
       `- Session mean temperature ${fmt(dy.avgTempC, 1)}°C`,
     );
   } else {
-    lines.push("", `IN-SESSION BIOMECHANICS: no .FIT stream synced for this session — cadence/GCT/decoupling unavailable (run \`fit-sync\` to enable).`);
+    lines.push("", `IN-SESSION BIOMECHANICS: no raw .FIT stream for this session — cadence/GCT/decoupling unavailable. These need a per-second .FIT exported from Garmin Connect into data/fit-streams/ (no Garmin tool serves it, and \`fit-sync\` only covers the thermal layer, not biomechanics).`);
   }
 
   if (d.fit) {

@@ -17,6 +17,7 @@ import { answerQuestion } from "./coach/ask.js";
 import { runSessionFeedback } from "./coach/session.js";
 import { loadSessionDecays } from "./insights/fit.js";
 import { readCostRecords } from "./llm/costLog.js";
+import { syncFitSummaries } from "./archive/fitSync.js";
 import { proposeAdjustments, validateProposals, buildProposerContext } from "./coach/planAdjust.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { alertFindings } from "./insights/metrics.js";
@@ -97,6 +98,16 @@ async function refresh(): Promise<void> {
     const today = new Date().toISOString().slice(0, 10);
     const state = await assembleState(aie, garmin, store, { date: today, assembledAt: new Date().toISOString() });
     await store.save(state);
+    // Keep the thermal layer (session card + heat confounder) current, hands-free. fit-sync dedups
+    // against the archive, so steady-state this fetches ~0–1 new activities; only the first run is slow.
+    // Best-effort: a fit-sync failure must never break a refresh. (Biomechanics still need a raw .FIT.)
+    if (garmin) {
+      try {
+        await syncFitSummaries(garmin, new ArchiveStore(), 5);
+      } catch (e) {
+        console.warn(`fit-sync during refresh failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
   } finally {
     await aie.close();
     await garmin?.close();
