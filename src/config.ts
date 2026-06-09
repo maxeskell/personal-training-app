@@ -52,6 +52,18 @@ export const config = {
     refreshBudgetMs: Number(process.env.GARMIN_REFRESH_BUDGET_MS ?? 90000),
   },
 
+  /**
+   * Anthropic pricing ($ per million tokens) for local cost accounting — claude-opus-4-8.
+   * cacheWrite is the 5-minute-TTL rate (1.25× input); cacheRead is 0.1× input. Override via env
+   * if the published rates change. Used only for the cost log / `cost` report — never sent anywhere.
+   */
+  pricing: {
+    inputPerMTok: Number(process.env.COACH_PRICE_INPUT ?? 5),
+    outputPerMTok: Number(process.env.COACH_PRICE_OUTPUT ?? 25),
+    cacheWritePerMTok: Number(process.env.COACH_PRICE_CACHE_WRITE ?? 6.25),
+    cacheReadPerMTok: Number(process.env.COACH_PRICE_CACHE_READ ?? 0.5),
+  },
+
   /** Where persisted secrets/tokens live — gitignored, outside the repo by default. */
   secretsDir: process.env.COACH_SECRETS_DIR ?? join(home, ".endurance-coach"),
 

@@ -68,7 +68,7 @@ export function summarizeWeek(window: AthleteState[]): string {
 export async function runWeeklyReview(
   llm: CoachLLM,
   window: AthleteState[],
-): Promise<{ markdown: string; cacheRead: number }> {
+): Promise<{ markdown: string; cacheRead: number; costUsd: number }> {
   const summary = summarizeWeek(window);
   const prompt = [
     "Write this week's training review as markdown. LEAD WITH THE TAKEAWAY (one bold sentence first),",
@@ -80,7 +80,7 @@ export async function runWeeklyReview(
     "",
     summary,
   ].join("\n");
-  const { text, cacheRead } = await llm.text(prompt);
+  const { text, cacheRead, costUsd } = await llm.text(prompt);
   const markdown = `# Weekly review — ${window[window.length - 1].date}\n\n${text}`;
-  return { markdown, cacheRead };
+  return { markdown, cacheRead, costUsd };
 }
