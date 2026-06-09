@@ -114,7 +114,9 @@ server's `/insight-feedback` endpoint — credentials never leave the Mac.
 ## Deep session feedback
 
 `npm run session` (or the dashboard's **Last session** card → *Deep feedback*) gives coach-quality
-feedback on a single session. It joins your **AI Endurance metrics** (power/HR/ESS/durability) with the
+feedback on a single session. The card also shows what the session was **meant to be** — the matching
+planned workout (title, planned vs done time), or an explicit note when nothing in the plan matched. It
+joins your **AI Endurance metrics** (power/HR/ESS/durability) with the
 **.FIT biomechanics** (in-session cadence/GCT/vertical-osc drift, aerobic decoupling, temperature) and the
 **archive thermal summary**, then reads it against your **prior comparable sessions** and that day's **TSB**
 — so a dip in deep fatigue or heat isn't mistaken for lost fitness. When a `.FIT` stream isn't synced it
@@ -131,13 +133,22 @@ projection, and the dashboard carries an **API cost** card. To keep it down, the
 
 ## Zones, thresholds & race splits
 
-- **Zones & thresholds** card: HR / power / pace zones per discipline plus your headline numbers — **bike
-  FTP (W and W/kg), run threshold pace + LTHR, swim CSS**. Pulled from `getUser`; where only thresholds are
-  exposed, zones are derived with standard models (Coggan power, %-LTHR, %-threshold pace).
-- **Estimated race splits**: AI Endurance's predicted finish broken into a per-segment pacing plan, shaped
-  by your **durability trend** — improving durability earns a gentle negative split; weak/unknown durability
-  gets a conservative start that protects against the late fade. (Predicted time is a MODEL estimate — the
-  plan is a target, not a guarantee.)
+- **Zones & thresholds** card, grouped 🏊 swim / 🚴 bike / 🏃 run for clear separation, plus your headline
+  numbers — **bike FTP (W and W/kg), run threshold pace + LTHR, swim CSS**. Pulled from `getUser`; where
+  only thresholds are exposed, zones are derived with standard models (Coggan power, %-LTHR, %-threshold
+  pace). **Bike HR zones** use your bike LTHR when the profile exposes one, else fall back to run LTHR
+  with a visible note (bike LTHR typically sits a few bpm lower — treat zone tops conservatively).
+- **Estimated race splits** for every upcoming race:
+  - **Run races**: AI Endurance's predicted finish broken into a per-segment pacing plan, shaped by your
+    **durability trend** — improving durability earns a gentle negative split; weak/unknown durability gets
+    a conservative start that protects against the late fade.
+  - **Triathlons** (sprint/Olympic/70.3/IM, detected from the goal's name/type): per-leg
+    swim/T1/bike/T2/run estimates from your **current numbers** — swim from CSS, bike from FTP at the
+    format's standard intensity (power → flat-course speed via a physics model), run from your standalone
+    Garmin run prediction with an off-the-bike penalty (threshold-pace fallback), plus fixed transition
+    estimates. A leg whose input is missing (e.g. no CSS set) is named as missing, never invented.
+
+  (Predicted times are MODEL estimates — the plan is a target, not a guarantee.)
 
 ## Online dashboard (view it on your phone over Wi-Fi)
 
