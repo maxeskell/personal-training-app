@@ -379,6 +379,8 @@ function mapZonesThresholds(state: AthleteState, payload: unknown): void {
   }
   const runHr = firstNum(payload, ["run_threshold_hr", "lactate_threshold_hr", "threshold_heart_rate", "lthr", "threshold_hr"]);
   if (runHr != null && runHr > 0) thresholds.runThresholdHr = Math.round(runHr);
+  const bikeHr = firstNum(payload, ["bike_threshold_hr", "cycling_threshold_hr", "bike_lactate_threshold_hr", "cycling_lactate_threshold_hr"]);
+  if (bikeHr != null && bikeHr > 0) thresholds.bikeThresholdHr = Math.round(bikeHr);
   // Pace fields may be sec/km already, or m/s (convert). Accept a sane sec/km range.
   const paceRaw = firstNum(payload, ["run_threshold_pace_sec_per_km", "threshold_pace", "run_threshold_pace", "running_threshold_pace"]);
   if (paceRaw != null && paceRaw > 0) {
@@ -469,7 +471,16 @@ function mapPowerCurve(state: AthleteState, payload: unknown): void {
   const bests: PowerCurveSignals["bests"] = [];
   for (const [duration, v] of Object.entries(sb as Record<string, unknown>)) {
     const watts = asNumber(get(v, "watts"));
-    if (watts != null) bests.push({ duration, watts, date: typeof get(v, "date") === "string" ? (get(v, "date") as string) : undefined });
+    if (watts == null) continue;
+    // When each best was set (user ask) — probe the likely keys; epoch-ms also accepted.
+    const dRaw = get(v, "date") ?? get(v, "start_time") ?? get(v, "start_time_local") ?? get(v, "activity_date") ?? get(v, "begin_timestamp");
+    const date =
+      typeof dRaw === "string" && dRaw
+        ? dRaw.slice(0, 10)
+        : typeof dRaw === "number" && dRaw > 1e12
+          ? new Date(dRaw).toISOString().slice(0, 10)
+          : undefined;
+    bests.push({ duration, watts, date });
   }
   if (!bests.length) return;
   state.powerCurve = {
@@ -599,6 +610,25 @@ function mapPlanned(payload: unknown): AthleteState["plannedSessions"]["value"] 
   }));
 }
 
+/**
+ * Activity distance in km. `distance_in_km` is the verified run/ride key, but swims can sync with it
+ * absent or zero (pool swims carry metres), so probe metre-named keys and treat 0 as unknown —
+ * a missing distance renders as "—", never a misleading 0.0 km.
+ */
+function activityDistanceKm(a: unknown, sport: ActualActivity["sport"]): number | undefined {
+  const km = asNumber(get(a, "distance_in_km")) ?? asNumber(get(a, "distance_km"));
+  if (km != null && km > 0) return km;
+  const m =
+    asNumber(get(a, "distance_in_m")) ??
+    asNumber(get(a, "distance_in_meters")) ??
+    asNumber(get(a, "distance_m")) ??
+    asNumber(get(a, "total_distance_m")) ??
+    // Generic keys are metre-valued for swims; rides/runs already resolve via the km keys above.
+    (sport === "Swim" ? asNumber(get(a, "activity_distance")) ?? asNumber(get(a, "distance")) : undefined);
+  if (m != null && m > 0) return +(m / 1000).toFixed(2);
+  return undefined;
+}
+
 function collectActivities(raw: Record<string, unknown>): ActualActivity[] {
   const out: ActualActivity[] = [];
   const push = (payload: unknown, sport: ActualActivity["sport"]) => {
@@ -610,7 +640,7 @@ function collectActivities(raw: Record<string, unknown>): ActualActivity[] {
         date: String(get(a, "activity_date_local") ?? get(a, "activity_date") ?? "").slice(0, 10),
         sport,
         durationMin: movingSec != null ? Math.round(movingSec / 60) : undefined,
-        distanceKm: asNumber(get(a, "distance_in_km")),
+        distanceKm: activityDistanceKm(a, sport),
       });
     }
   };

@@ -48,6 +48,43 @@ test("adversarial finding/goal text can't break handlers or inject markup (Spec 
   for (const [i, sc] of scripts.entries()) assert.doesNotThrow(() => new Function(sc), `script ${i}`);
 });
 
+test("week table uses h:mm, missing swim distance shows — , planned session joins the last-session card", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.actualActivities = {
+    value: [
+      { date: "2026-06-08", sport: "Run", durationMin: 95, distanceKm: 18.2 },
+      { date: "2026-06-07", sport: "Swim", durationMin: 45 }, // no distance — AIE swim feed gap
+    ],
+    source: "ai-endurance",
+  };
+  s.plannedSessions = { value: [{ date: "2026-06-08", sport: "Run", title: "Tempo 3x10min", type: "Run", durationMin: 90 }], source: "ai-endurance" };
+  s.raw = { getRunningActivity: { activities: [{ activity_date_local: "2026-06-08", activity_movingtime: 95 * 60, activity_avhr: 150 }] } };
+  const html = renderDashboard({ window: [s], decisions: [] });
+  assert.match(html, /1h 35m/); // 95 min in h:mm, not "95 min"
+  assert.ok(!/95 min/.test(html));
+  assert.match(html, /<tr><td>Swim<\/td><td>1<\/td><td>45m<\/td><td><span class="muted">—<\/span><\/td>/);
+  assert.match(html, /Planned: <b>Tempo 3x10min/); // what the session was meant to be
+  assert.match(html, /1h 30m planned → 1h 35m done/);
+});
+
+test("trends keep one sleep graph (score); power-curve bests carry the date they were set", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.powerCurve = {
+    value: { ftpEstimateW: 250, activitiesAnalyzed: 9, bests: [{ duration: "5min", watts: 320, date: "2026-05-19" }, { duration: "20min", watts: 255 }] },
+    source: "garmin",
+  };
+  const garminDays = Array.from({ length: 10 }, (_, i) => ({
+    date: `2026-05-${String(i + 1).padStart(2, "0")}`,
+    sleepHours: 7 + (i % 2),
+    sleepScore: 70 + i,
+  }));
+  const html = renderDashboard({ window: [s], decisions: [], garminDays });
+  assert.match(html, /<tr><td>Sleep score<\/td>/);
+  assert.ok(!html.includes("<tr><td>Sleep (h)</td>"), "duplicate sleep-hours sparkline removed");
+  assert.match(html, /<td>Set on<\/td>/);
+  assert.match(html, /2026-05-19/);
+});
+
 test("API cost card renders windowed totals + a monthly projection when records are present", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
   const costRecords = [

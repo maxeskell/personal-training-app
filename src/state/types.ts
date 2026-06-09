@@ -154,6 +154,7 @@ export interface DisciplineZones {
 export interface DisciplineThresholds {
   bikeFtpW?: number;
   bikeFtpWkg?: number;
+  bikeThresholdHr?: number; // bike LTHR when exposed; bike HR zones fall back to run LTHR when absent
   runThresholdPaceSecPerKm?: number;
   runThresholdHr?: number;
   runThresholdPowerW?: number; // running power threshold (FR970 native running power)
