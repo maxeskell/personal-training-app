@@ -1,6 +1,10 @@
-import { mkdir, readFile, appendFile } from "node:fs/promises";
+import { mkdir, readFile, appendFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "../config.js";
+
+/** Parsed-JSONL cache keyed by path, invalidated by file mtime+size — avoids re-parsing the (large,
+ *  decade-deep) archive on every dashboard request. Appends bump mtime, so the cache self-invalidates. */
+const jsonlCache = new Map<string, { mtimeMs: number; size: number; data: unknown[] }>();
 
 /**
  * Local historical archive (append-only JSONL). The backfill writes here; the insight engine reads
@@ -76,6 +80,19 @@ export class ArchiveStore {
     await mkdir(this.dir, { recursive: true });
   }
   private async readJsonl<T>(path: string): Promise<T[]> {
+    // Serve from cache when the file is unchanged (mtime+size) — re-parsing the decade-deep archive on
+    // every request was O(file) × routes.
+    let mtimeMs = 0;
+    let size = 0;
+    try {
+      const st = await stat(path);
+      mtimeMs = st.mtimeMs;
+      size = st.size;
+      const hit = jsonlCache.get(path);
+      if (hit && hit.mtimeMs === mtimeMs && hit.size === size) return hit.data as T[];
+    } catch {
+      return []; // no file yet
+    }
     let text: string;
     try {
       text = await readFile(path, "utf8");
@@ -94,6 +111,7 @@ export class ArchiveStore {
       }
     }
     if (skipped) console.warn(`[archive] skipped ${skipped} unparseable line(s) in ${path}`);
+    jsonlCache.set(path, { mtimeMs, size, data: out });
     return out;
   }
 

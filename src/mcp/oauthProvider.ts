@@ -111,7 +111,9 @@ export class FileOAuthClientProvider implements OAuthClientProvider {
         timeoutMs,
       ),
     );
-    return Promise.race([this.codePromise, timeout]);
+    // Always free the loopback port + listener once the flow settles (success OR timeout) — otherwise a
+    // timed-out flow leaks the callback server and holds the redirect port.
+    return Promise.race([this.codePromise, timeout]).finally(() => this.closeCallbackServer());
   }
 
   private startCallbackServer(): void {
