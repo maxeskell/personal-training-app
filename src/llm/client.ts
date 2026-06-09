@@ -15,8 +15,16 @@ export class CoachLLM {
   private readonly client: Anthropic;
   readonly model = "claude-opus-4-8";
 
-  /** `operation` labels the call in the cost log (e.g. "readiness", "ask", "session"). */
-  constructor(private readonly systemPrompt: string, private readonly operation = "unknown") {
+  /**
+   * `operation` labels the call in the cost log (e.g. "readiness", "ask", "session").
+   * `effort` trades reasoning depth for token cost — "high" (default) for the deep flows
+   * (weekly / race / deep-dive / plan proposals), "medium" for the cheap, frequent ones.
+   */
+  constructor(
+    private readonly systemPrompt: string,
+    private readonly operation = "unknown",
+    private readonly effort: "low" | "medium" | "high" | "xhigh" | "max" = "high",
+  ) {
     // Anthropic() reads ANTHROPIC_API_KEY from the environment.
     this.client = new Anthropic();
   }
@@ -48,7 +56,7 @@ export class CoachLLM {
       max_tokens: 4000,
       thinking: { type: "adaptive" },
       output_config: {
-        effort: "high",
+        effort: this.effort,
         format: { type: "json_schema", schema },
       } as never, // SDK types for output_config.effort+format are still settling; shape is correct per API.
       system: [
@@ -85,7 +93,7 @@ export class CoachLLM {
       model: this.model,
       max_tokens: 12000,
       thinking: { type: "adaptive" },
-      output_config: { effort: "high" } as never,
+      output_config: { effort: this.effort } as never,
       system: [
         { type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } },
       ],

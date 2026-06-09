@@ -5,6 +5,7 @@ import { findingKey } from "../insights/metrics.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone } from "../insights/headline.js";
 import { assembleSession } from "./session.js";
+import { summarizeCost, type CostRecord } from "../llm/costLog.js";
 
 /**
  * Glanceable local dashboard (Path-B need #2): a single self-contained HTML file with
@@ -67,6 +68,8 @@ export interface DashboardInput {
     bodyBatteryChange?: number;
     deepSleepSec?: number;
   }>;
+  /** LLM cost-log records — drives the API-cost card. */
+  costRecords?: CostRecord[];
 }
 
 const TONE_COLOR: Record<Tone, string> = { good: "#1a8a3a", neutral: "#777", warn: "#c98a00", bad: "#c0392b" };
@@ -185,6 +188,20 @@ function renderLastSession(today: AthleteState, insights: InsightReport | undefi
     <div style="font-size:14px;margin-bottom:10px">${escapeHtml(bits)}</div>
     <button class="actbtn" onclick="sessionFeedback()">🔍 Deep feedback on this session</button>
     <div id="sessionfb" style="margin-top:12px;font-size:14px;color:#333;white-space:pre-wrap"></div>
+  </div>`;
+}
+
+/** API-cost card: windowed token spend + a monthly projection + the top flows. */
+function renderCost(records: CostRecord[] | undefined): string {
+  if (!records || !records.length) return "";
+  const w7 = summarizeCost(records, 7).total;
+  const w30 = summarizeCost(records, 30);
+  const all = summarizeCost(records).total;
+  const monthly = w7.calls ? (w7.costUsd / 7) * 30 : 0;
+  const top = w30.byOperation.slice(0, 4).map((o) => `${o.operation} $${o.costUsd.toFixed(3)}`).join(" · ");
+  return `<div class="card"><h2>API cost</h2>
+    <div style="font-size:14px;margin-bottom:8px">7d <b>$${w7.costUsd.toFixed(3)}</b> · 30d <b>$${w30.total.costUsd.toFixed(3)}</b> · all <b>$${all.costUsd.toFixed(3)}</b> · ≈ <b>$${monthly.toFixed(2)}/mo</b> at the 7-day rate</div>
+    ${top ? `<div class="k">last 30d by flow: ${escapeHtml(top)}</div>` : ""}
   </div>`;
 }
 
@@ -330,7 +347,7 @@ function renderHeader(today: AthleteState, insights: InsightReport | undefined, 
   </div>`;
 }
 
-export function renderDashboard({ window, decisions, insights, garminDays }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, garminDays, costRecords }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Week: load by sport.
@@ -511,6 +528,8 @@ ${insights ? renderSplits(insights) : ""}
 <div class="card"><h2>Recent decisions</h2>
   <table><tr class="k"><td>Kind</td><td>Status</td><td>Summary</td></tr>${recentDecisions || '<tr><td colspan="3" class="muted">none yet</td></tr>'}</table>
 </div>
+
+${renderCost(costRecords)}
 </body></html>`;
 }
 

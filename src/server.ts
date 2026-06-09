@@ -16,6 +16,7 @@ import { loadSystemPrompt } from "./coach/persona.js";
 import { answerQuestion } from "./coach/ask.js";
 import { runSessionFeedback } from "./coach/session.js";
 import { loadSessionDecays } from "./insights/fit.js";
+import { readCostRecords } from "./llm/costLog.js";
 import { proposeAdjustments, validateProposals, buildProposerContext } from "./coach/planAdjust.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { alertFindings } from "./insights/metrics.js";
@@ -83,7 +84,7 @@ async function renderLatest(): Promise<string> {
   const suppressed = suppressedInsightKeys(await log.insightReactions());
   const archive = await loadArchive();
   const insights = latest.raw ? buildInsights(latest, archive, { suppressed, history: window }) : undefined;
-  return renderDashboard({ window, decisions, insights, garminDays: archive?.garminDays });
+  return renderDashboard({ window, decisions, insights, garminDays: archive?.garminDays, costRecords: await readCostRecords() });
 }
 
 async function refresh(): Promise<void> {
@@ -181,7 +182,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer: "No data assembled yet — hit ↻ refresh first." }));
         return;
       }
-      const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt(), "ask"), question, state, await loadArchive());
+      const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt(), "ask", "medium"), question, state, await loadArchive());
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer }));
       return;
     }
@@ -194,7 +195,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       if (!li) return json({ markdown: "No data assembled yet — hit ↻ Sync first." });
       const reqDate = String((JSON.parse((await readBody(req)) || "{}") as { date?: string }).date ?? "");
       const date = /^\d{4}-\d{2}-\d{2}$/.test(reqDate) ? reqDate : undefined;
-      const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session"), li.state, li.insights, {
+      const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), li.state, li.insights, {
         date,
         decays: loadSessionDecays(),
         fitSummaries: await new ArchiveStore().loadFitSummaries(),
