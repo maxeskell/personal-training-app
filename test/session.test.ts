@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { assembleSession, buildSessionContext } from "../src/coach/session.js";
+import { isLastSessionQuestion } from "../src/coach/ask.js";
 import { emptyState } from "../src/state/types.js";
 import type { SessionDecay } from "../src/insights/fit.js";
 import type { FitSummary } from "../src/archive/store.js";
@@ -51,4 +52,15 @@ test("buildSessionContext: states plainly when no .FIT stream is present (never 
   const d = assembleSession(stateWithRuns(), undefined)!;
   const ctx = buildSessionContext(d, stateWithRuns(), undefined);
   assert.match(ctx, /no \.FIT stream synced/);
+});
+
+test("isLastSessionQuestion: routes recency+session-noun questions, leaves general Q&A alone", () => {
+  // Routed — a recency word plus a session noun.
+  for (const q of ["what happened in my last run?", "how did my latest ride go?", "feedback on today's session", "analyse my most recent swim"]) {
+    assert.equal(isLastSessionQuestion(q), true, q);
+  }
+  // Not routed — no recency word, or no session noun.
+  for (const q of ["how were my long rides this month?", "am I overtraining?", "what's my FTP?", "how is my fitness trending?"]) {
+    assert.equal(isLastSessionQuestion(q), false, q);
+  }
 });

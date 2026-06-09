@@ -6,6 +6,20 @@ import { paceStr } from "../insights/zones.js";
 import { coachHeadline } from "../insights/headline.js";
 import { DecisionLog, suppressedInsightKeys } from "../state/decisionLog.js";
 import { screenNutritionPrompt } from "../guardrails/wellbeing.js";
+import { runSessionFeedback } from "./session.js";
+import { loadSessionDecays } from "../insights/fit.js";
+import { ArchiveStore } from "../archive/store.js";
+
+/**
+ * "What happened in my last run?" — a recency word + a session noun routes to the deep single-session
+ * pipeline instead of the general Q&A. Conservative on purpose: "how were my long rides this month?"
+ * has no recency word, so it stays in general Q&A.
+ */
+const SESSION_RECENCY = /\b(last|latest|most[- ]recent|recent|todays?|yesterdays?|this morning'?s?)\b/i;
+const SESSION_NOUN = /\b(run|ride|bike|cycl\w*|swim|session|workout|activity|long run|long ride|brick)\b/i;
+export function isLastSessionQuestion(q: string): boolean {
+  return SESSION_RECENCY.test(q) && SESSION_NOUN.test(q);
+}
 
 /**
  * Free-form Q&A over the athlete's data (dashboard chat box + `ask` CLI). Answers from a CURATED
@@ -97,6 +111,16 @@ export async function answerQuestion(llm: CoachLLM, question: string, state: Ath
 
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
   const insights = state.raw ? buildInsights(state, archive, { suppressed }) : undefined;
+
+  // Route last-session questions to the deep single-session pipeline (joins .FIT biomechanics + thermal).
+  if (insights && isLastSessionQuestion(question)) {
+    const feedback = await runSessionFeedback(llm, state, insights, {
+      decays: loadSessionDecays(),
+      fitSummaries: await new ArchiveStore().loadFitSummaries(),
+    });
+    if (feedback) return { answer: feedback.markdown };
+  }
+
   const context = insights ? buildAskContext(state, insights) : "(no assembled data available)";
 
   const prompt = [

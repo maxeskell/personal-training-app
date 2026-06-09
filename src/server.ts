@@ -14,6 +14,8 @@ import { ArchiveStore } from "./archive/store.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
 import { answerQuestion } from "./coach/ask.js";
+import { runSessionFeedback } from "./coach/session.js";
+import { loadSessionDecays } from "./insights/fit.js";
 import { proposeAdjustments, validateProposals, buildProposerContext } from "./coach/planAdjust.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { alertFindings } from "./insights/metrics.js";
@@ -182,6 +184,22 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt()), question, state, await loadArchive());
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer }));
       return;
+    }
+
+    // Deep feedback on a single session (the dashboard "Last session" card posts here).
+    if (url.pathname === "/session-feedback" && req.method === "POST") {
+      const json = (b: object) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(b));
+      if (!CoachLLM.hasApiKey()) return json({ markdown: "ANTHROPIC_API_KEY isn't set on the server, so I can't analyse sessions yet." });
+      const li = await latestInsights();
+      if (!li) return json({ markdown: "No data assembled yet — hit ↻ Sync first." });
+      const reqDate = String((JSON.parse((await readBody(req)) || "{}") as { date?: string }).date ?? "");
+      const date = /^\d{4}-\d{2}-\d{2}$/.test(reqDate) ? reqDate : undefined;
+      const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt()), li.state, li.insights, {
+        date,
+        decays: loadSessionDecays(),
+        fitSummaries: await new ArchiveStore().loadFitSummaries(),
+      });
+      return json({ markdown: feedback?.markdown ?? "No recent activity found to analyse." });
     }
 
     // Insight feedback (the insights box posts agree/disagree/ignore here).

@@ -4,6 +4,7 @@ import type { InsightReport } from "../insights/engine.js";
 import { findingKey } from "../insights/metrics.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone } from "../insights/headline.js";
+import { assembleSession } from "./session.js";
 
 /**
  * Glanceable local dashboard (Path-B need #2): a single self-contained HTML file with
@@ -165,6 +166,26 @@ function zoneTable(title: string, z: ZoneSet | undefined): string {
     .map((lab, i) => `<tr><td>${escapeHtml(lab)}</td><td class="num">${fmtVal(z.bounds[i])}–${fmtVal(z.bounds[i + 1])} ${z.unit}</td></tr>`)
     .join("");
   return `<div style="flex:1;min-width:200px"><div class="k">${title} <span class="muted">(${z.source})</span></div><table>${rows}</table></div>`;
+}
+
+/** "Last session" card: the most recent activity at a glance + a button for deep LLM feedback. */
+function renderLastSession(today: AthleteState, insights: InsightReport | undefined): string {
+  const d = assembleSession(today, insights);
+  if (!d) return "";
+  const efNorm = d.ef != null ? `EF ${d.ef.toFixed(3)}${d.comparable.efMean != null ? ` (norm ${d.comparable.efMean})` : ""}` : "";
+  const bits = [
+    d.durationMin != null ? `${d.durationMin}min` : "",
+    d.avgPowerW != null ? `${d.avgPowerW}W` : "",
+    d.avgHr != null ? `${d.avgHr}bpm` : "",
+    efNorm,
+    d.ess != null ? `ESS ${d.ess}` : "",
+    d.durabilityPct != null ? `durability ${d.durabilityPct}%` : "",
+  ].filter(Boolean).join(" · ");
+  return `<div class="card"><h2>Last session — ${d.date} ${d.sport}</h2>
+    <div style="font-size:14px;margin-bottom:10px">${escapeHtml(bits)}</div>
+    <button class="actbtn" onclick="sessionFeedback()">🔍 Deep feedback on this session</button>
+    <div id="sessionfb" style="margin-top:12px;font-size:14px;color:#333;white-space:pre-wrap"></div>
+  </div>`;
 }
 
 /** Zones + FTP/threshold markers per discipline. */
@@ -411,6 +432,7 @@ async function sync(){
 
 ${insights ? renderHeader(today, insights, decisions, garminDays) : ""}
 ${insights ? renderInsightsBox(insights) : ""}
+${renderLastSession(today, insights)}
 
 <div class="card"><h2>Ask your data</h2>
   <form id="askform" onsubmit="return ask(event)">
@@ -426,6 +448,10 @@ async function ask(e){e.preventDefault();var q=document.getElementById('q').valu
   try{var r=await fetch('/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:q})});
     var j=await r.json();a.textContent=j.answer||'(no answer)';}catch(err){a.textContent='Error: '+err;}
   return false;}
+async function sessionFeedback(){
+  var box=document.getElementById('sessionfb'); box.textContent='Analysing this session…';
+  try{var r=await fetch('/session-feedback',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
+    var j=await r.json(); box.textContent=j.markdown||'(no feedback)';}catch(err){box.textContent='Error: '+err;}}
 async function feedback(btn){
   var box=btn.closest('.insight');var reaction=btn.getAttribute('data-reaction');
   var key=box.getAttribute('data-key');var summary=box.getAttribute('data-summary');
