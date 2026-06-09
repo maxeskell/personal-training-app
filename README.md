@@ -38,6 +38,8 @@ npm run ping                  # unattended morning readiness: verdict + report +
 npm run dashboard             # one-off glanceable HTML, opened in your browser
 npm run deep-dive             # insight-engine analysis (load/EF/durability/ramp/goal) → report
 npm run ask -- "how were my long rides this month?"   # free-form Q&A over your data
+npm run session               # deep, coach-quality feedback on your last session (or: npm run session 2026-06-09)
+npm run cost                  # token-cost report by flow (today/7d/30d/all + monthly projection); npm run cost 14 for a window
 npm run probe                 # Phase-2: dump live Garmin tool surface + AIE detail samples → reports/ (for mapping)
 npm run fit-sync              # archive recent Garmin activity summaries (temp/EF) → feeds the heat confounder
 npm run decisions             # view the decision log (audit trail)
@@ -102,6 +104,24 @@ signal strength, each with **👍 Agree / 👎 Disagree / ✕ Ignore**. Every re
 log. **Disagree or Ignore hides that insight for ~2 weeks** and the coach (readiness/weekly/ask) reads your
 feedback so it stops re-raising calls you've rejected; **Agree** keeps it active. Feedback posts to the
 server's `/insight-feedback` endpoint — credentials never leave the Mac.
+
+## Deep session feedback
+
+`npm run session` (or the dashboard's **Last session** card → *Deep feedback*) gives coach-quality
+feedback on a single session. It joins your **AI Endurance metrics** (power/HR/ESS/durability) with the
+**.FIT biomechanics** (in-session cadence/GCT/vertical-osc drift, aerobic decoupling, temperature) and the
+**archive thermal summary**, then reads it against your **prior comparable sessions** and that day's **TSB**
+— so a dip in deep fatigue or heat isn't mistaken for lost fitness. When a `.FIT` stream isn't synced it
+says what it can't assess rather than guessing. "What happened in my last run?" in the Ask box routes here
+automatically.
+
+## Token cost (know — and control — what you spend)
+
+Every LLM call's token usage + dollar cost is logged locally (`data/cost-log.jsonl` — counts and cost only,
+no prompt text). `npm run cost` reports spend by flow over today / 7d / 30d / all-time with a monthly
+projection, and the dashboard carries an **API cost** card. To keep it down, the cheap, frequent flows
+(`ask`, `readiness`, `session`) run at `effort: "medium"` while the deep flows (`weekly`, `race`,
+`deep-dive`, plan proposals) stay `"high"`. Rates are configurable in `src/config.ts` (`COACH_PRICE_*`).
 
 ## Zones, thresholds & race splits
 
