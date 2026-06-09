@@ -47,6 +47,9 @@ export const config = {
     /** Hard timeout (ms) for any Garmin call — never let it block the coach. Some endpoints
      *  (power-duration curve, race predictions) parse many activities server-side and are slow. */
     timeoutMs: Number(process.env.GARMIN_TIMEOUT_MS ?? 25000),
+    /** Overall wall-clock budget for the whole Garmin phase of an assemble — past it, remaining reads
+     *  are skipped (degrade to AIE-only) so one slow tool can't make /refresh hang for minutes. */
+    refreshBudgetMs: Number(process.env.GARMIN_REFRESH_BUDGET_MS ?? 90000),
   },
 
   /** Where persisted secrets/tokens live — gitignored, outside the repo by default. */

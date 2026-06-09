@@ -175,7 +175,12 @@ export interface Decision {
   status: "proposed" | "accepted" | "declined" | "deferred";
 }
 
+/** Bump when the persisted AthleteState shape changes in a way future migrations need to detect. */
+export const STATE_SCHEMA_VERSION = 1;
+
 export interface AthleteState {
+  /** Schema version of this persisted record (see STATE_SCHEMA_VERSION). */
+  schemaVersion?: number;
   /** ISO date (YYYY-MM-DD) this state describes. */
   date: string;
   assembledAt: string;
@@ -240,6 +245,7 @@ export function emptyState(date: string, assembledAt: string): AthleteState {
     source,
   });
   return {
+    schemaVersion: STATE_SCHEMA_VERSION,
     date,
     assembledAt,
     plannedSessions: absent<PlannedSession[]>(),

@@ -14,6 +14,7 @@ import {
   type RecoveryModel,
 } from "./types.js";
 import { deriveZones } from "../insights/zones.js";
+import { config } from "../config.js";
 
 /**
  * Assemble today's AthleteState from AI Endurance (spine) + optional Garmin.
@@ -179,7 +180,11 @@ export async function assembleState(
     // The Taxuspt MCP processes one CallToolRequest at a time, so firing these in parallel just races
     // them against a single 15s timeout (the queued ones expire before they run). Call SEQUENTIALLY —
     // no slower against a serial server, and each call's timeout starts when it's actually dispatched.
-    const callG = (tool: string, args: Record<string, unknown>) => garmin.tryCall(tool, args).then(garminInner);
+    // Sequential, with an overall wall-clock budget: once exceeded, remaining reads are skipped (null)
+    // so a slow tool can't make the whole assemble (and /refresh) hang for minutes.
+    const deadline = Date.now() + config.garmin.refreshBudgetMs;
+    const callG = (tool: string, args: Record<string, unknown>): Promise<unknown> =>
+      Date.now() > deadline ? Promise.resolve(null) : garmin.tryCall(tool, args).then(garminInner);
     const sleep = await callG("get_sleep_summary", { date: opts.date });
     const battery = await callG("get_body_battery", { start_date: weekAgo, end_date: opts.date });
     const readiness = await callG("get_training_readiness", { date: opts.date });
