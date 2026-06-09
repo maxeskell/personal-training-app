@@ -21,10 +21,28 @@ export function mean(xs: number[]): number | null {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 }
 
+// Population SD (÷n), used intentionally for personal-baseline z-scores ("how far is today from my own
+// history"), not as an inferential sample estimator. The inferential paths (Fisher-z CIs) use n via
+// 1/sqrt(effN-3) and don't depend on this; effN is a heuristic autocorrelation discount, not a true df.
 export function sd(xs: number[]): number | null {
   if (xs.length < 2) return null;
   const m = mean(xs)!;
   return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length);
+}
+
+/** Least-squares slope of ys on xs (paired). Null if <3 points or x has no spread. One canonical impl. */
+export function slope(xs: number[], ys: number[]): number | null {
+  const n = Math.min(xs.length, ys.length);
+  if (n < 3) return null;
+  const mx = mean(xs.slice(0, n))!;
+  const my = mean(ys.slice(0, n))!;
+  let sxy = 0;
+  let sxx = 0;
+  for (let i = 0; i < n; i++) {
+    sxy += (xs[i] - mx) * (ys[i] - my);
+    sxx += (xs[i] - mx) ** 2;
+  }
+  return sxx === 0 ? null : sxy / sxx;
 }
 
 /** Lag-1 autocorrelation of a series — used to discount the effective sample size. */

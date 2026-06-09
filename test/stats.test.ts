@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { corrPValue, benjaminiHochberg, circularShift, mulberry32, trailingZ, mean, sd, finiteNums } from "../src/insights/stats.js";
+import { corrPValue, benjaminiHochberg, circularShift, mulberry32, trailingZ, mean, sd, finiteNums, slope } from "../src/insights/stats.js";
+
+test("slope: exact on a line, null on too-few / no x-spread", () => {
+  assert.ok(Math.abs(slope([0, 1, 2, 3], [1, 3, 5, 7])! - 2) < 1e-9); // y = 2x + 1
+  assert.equal(slope([1, 2], [1, 2]), null); // <3 points
+  assert.equal(slope([5, 5, 5], [1, 2, 3]), null); // no x spread
+});
 
 test("mean/sd/finiteNums basics", () => {
   assert.equal(mean([2, 4, 6]), 4);

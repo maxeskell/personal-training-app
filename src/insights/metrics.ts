@@ -139,8 +139,11 @@ export function loadModel(recoveryData: { date?: unknown[]; external_stress_scor
 
   const ctlK = 2 / (42 + 1);
   const atlK = 2 / (7 + 1);
-  let ctl = ess[0];
-  let atl = ess[0];
+  // Seed the EWMAs with a short burn-in mean rather than a single day (ess[0] alone biases early
+  // CTL/ATL/TSB toward one possibly-atypical session).
+  const seed = (mean(ess.slice(0, Math.min(7, ess.length))) ?? ess[0]) || 0;
+  let ctl = seed;
+  let atl = seed;
   const series = dates.map((date, i) => {
     ctl = ess[i] * ctlK + ctl * (1 - ctlK);
     atl = ess[i] * atlK + atl * (1 - atlK);
