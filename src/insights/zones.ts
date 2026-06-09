@@ -46,6 +46,12 @@ export function deriveZones(t: DisciplineThresholds | null | undefined): Discipl
   if (t.bikeFtpW && t.bikeFtpW > 0) {
     z.bike = { power: fromThreshold("power", "W", t.bikeFtpW, POWER_EDGES, POWER_LABELS) };
   }
+  // Bike HR zones from bike LTHR when set; else fall back to run LTHR (bike LTHR usually sits a few
+  // bpm lower, so the dashboard flags the fallback and advises treating zone tops conservatively).
+  const bikeHr = t.bikeThresholdHr ?? t.runThresholdHr;
+  if (bikeHr && bikeHr > 0) {
+    z.bike = { ...(z.bike ?? {}), hr: fromThreshold("hr", "bpm", bikeHr, HR_EDGES, HR_LABELS) };
+  }
   if (t.runThresholdPowerW && t.runThresholdPowerW > 0) {
     // Running power zones use the same Coggan %-of-threshold model as the bike.
     z.run = { ...(z.run ?? {}), power: fromThreshold("power", "W", t.runThresholdPowerW, POWER_EDGES, POWER_LABELS) };
