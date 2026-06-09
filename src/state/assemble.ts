@@ -398,18 +398,30 @@ function mapZonesThresholds(state: AthleteState, payload: unknown): void {
 
 /**
  * Garmin FTP/lactate-threshold → thresholds + zones (verified shapes from `get_cycling_ftp` /
- * `get_lactate_threshold`). Wins over any AIE-derived thresholds. Note: Garmin's
+ * `get_lactate_threshold`). Garmin's lactate-threshold markers win over AIE, but its cycling FTP does
+ * NOT win blindly: Garmin only auto-detects cycling FTP from rides WITH power data and only revises it
+ * upward on a hard, sustained power effort, so with sparse/power-meter-less riding it can sit
+ * implausibly low. We therefore keep the HIGHER of Garmin's device FTP and any AIE/test-based value,
+ * and flag the gap rather than silently corrupting the power zones. Note: Garmin's
  * `lactate_threshold_speed_mps` has been observed reported ~10× too small, so we normalise a value in
  * the 0.2–0.8 range up by 10 before deriving pace, and only accept a plausible running speed.
  */
-function mapGarminThresholds(state: AthleteState, ftp: unknown, lactate: unknown): void {
+export function mapGarminThresholds(state: AthleteState, ftp: unknown, lactate: unknown): void {
   const t: DisciplineThresholds = { ...(state.thresholds.value ?? {}) };
   const weightKg = asNumber(get(lactate, "weight_kg")) ?? state.weightKg.value ?? undefined;
 
+  const priorBikeFtp = t.bikeFtpW; // AIE/test-derived value mapped earlier, if any
   const bikeFtp = asNumber(get(ftp, "functional_threshold_power_watts"));
   if (bikeFtp != null && bikeFtp > 0 && String(get(ftp, "sport") ?? "CYCLING").toUpperCase().includes("CYCL")) {
-    t.bikeFtpW = Math.round(bikeFtp);
-    if (weightKg && weightKg > 0) t.bikeFtpWkg = +(bikeFtp / weightKg).toFixed(2);
+    const garminFtp = Math.round(bikeFtp);
+    if (priorBikeFtp != null && garminFtp < priorBikeFtp) {
+      // Keep the higher (test-based) value driving the zones, but surface the conflict.
+      t.bikeFtpNote = `Garmin auto-detects ${garminFtp} W from sparse power-meter rides — keeping the higher test-based ${priorBikeFtp} W. Do a power-meter FTP effort to let Garmin re-detect.`;
+      if (weightKg && weightKg > 0) t.bikeFtpWkg = +(priorBikeFtp / weightKg).toFixed(2);
+    } else {
+      t.bikeFtpW = garminFtp;
+      if (weightKg && weightKg > 0) t.bikeFtpWkg = +(garminFtp / weightKg).toFixed(2);
+    }
   }
 
   const ltHr = asNumber(get(lactate, "lactate_threshold_heart_rate_bpm"));

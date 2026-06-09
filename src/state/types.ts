@@ -158,6 +158,7 @@ export interface DisciplineThresholds {
   runThresholdHr?: number;
   runThresholdPowerW?: number; // running power threshold (FR970 native running power)
   swimCssSecPer100?: number;
+  bikeFtpNote?: string; // set when Garmin's auto-detected FTP conflicts with a higher test-based value
 }
 
 export interface SyncGap {

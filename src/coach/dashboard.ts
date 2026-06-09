@@ -181,8 +181,10 @@ function renderZones(today: AthleteState): string {
         t.swimCssSecPer100 != null ? `Swim CSS <b>${paceStr(t.swimCssSecPer100)}/100m</b>` : "",
       ].filter(Boolean).join(" · ")
     : "";
+  const ftpNote = t?.bikeFtpNote ? `<div style="font-size:12px;color:#b45309;margin-bottom:12px">⚠ ${t.bikeFtpNote}</div>` : "";
   return `<div class="card"><h2>Zones & thresholds</h2>
-    ${markers ? `<div style="font-size:14px;margin-bottom:12px">${markers}</div>` : ""}
+    ${markers ? `<div style="font-size:14px;margin-bottom:${ftpNote ? "4px" : "12px"}">${markers}</div>` : ""}
+    ${ftpNote}
     <div class="grid">
       ${zoneTable("Bike power", z?.bike?.power)}
       ${zoneTable("Run power", z?.run?.power)}
