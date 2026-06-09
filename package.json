@@ -37,6 +37,8 @@
     "watch:install": "bash scripts/install-watch.sh",
     "watch:uninstall": "bash scripts/uninstall-watch.sh",
     "ask": "tsx src/cli.ts ask",
+    "session": "tsx src/cli.ts session",
+    "cost": "tsx src/cli.ts cost",
     "test": "tsx --test test/*.test.ts",
     "probe": "tsx src/cli.ts probe",
     "fit-sync": "tsx src/cli.ts fit-sync",

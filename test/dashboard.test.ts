@@ -47,3 +47,17 @@ test("adversarial finding/goal text can't break handlers or inject markup (Spec 
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
   for (const [i, sc] of scripts.entries()) assert.doesNotThrow(() => new Function(sc), `script ${i}`);
 });
+
+test("API cost card renders windowed totals + a monthly projection when records are present", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  const costRecords = [
+    { ts: new Date().toISOString(), operation: "ask", model: "claude-opus-4-8", input: 100, output: 200, cacheWrite: 0, cacheRead: 0, costUsd: 0.05, schemaVersion: 1 },
+    { ts: new Date().toISOString(), operation: "weekly", model: "claude-opus-4-8", input: 100, output: 800, cacheWrite: 0, cacheRead: 0, costUsd: 0.2, schemaVersion: 1 },
+  ];
+  const html = renderDashboard({ window: [s], decisions: [], costRecords });
+  assert.match(html, /API cost/);
+  assert.match(html, /\/mo/); // monthly projection present
+  assert.match(html, /weekly \$0\.200/); // top-flow breakdown, cost-desc
+  // No card when there are no records.
+  assert.ok(!renderDashboard({ window: [s], decisions: [] }).includes("API cost"));
+});
