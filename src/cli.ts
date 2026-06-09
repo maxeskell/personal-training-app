@@ -17,6 +17,8 @@ import { mapRichActivity, alertFindings } from "./insights/metrics.js";
 import { ArchiveStore, type FitSummary } from "./archive/store.js";
 import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate } from "./archive/backfill.js";
 import { answerQuestion } from "./coach/ask.js";
+import { runSessionFeedback } from "./coach/session.js";
+import { loadSessionDecays } from "./insights/fit.js";
 
 /** Load the local history archive (if any) as insight inputs. Undefined when empty. */
 async function loadArchive(): Promise<ArchiveInput | undefined> {
@@ -311,6 +313,33 @@ async function cmdAsk(): Promise<void> {
   const { state } = await buildTodayState();
   const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt()), question, state, await loadArchive());
   console.log("\n" + answer + "\n");
+}
+
+/** `session [date]` — deep, coach-quality feedback on one session (the most recent, or a given date). */
+async function cmdSession(): Promise<void> {
+  if (!requireLLM()) process.exit(1);
+  const arg = process.argv[3];
+  const date = arg && /^\d{4}-\d{2}-\d{2}$/.test(arg) ? arg : undefined;
+  const { state, window } = await buildTodayState();
+  if (!state.raw) {
+    console.error("\nNo data assembled — cannot build session feedback.\n");
+    process.exit(1);
+  }
+  const archive = await loadArchive();
+  const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
+  const insights = buildInsights(state, archive, { suppressed, history: window });
+  const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt()), state, insights, {
+    date,
+    decays: loadSessionDecays(),
+    fitSummaries: await new ArchiveStore().loadFitSummaries(),
+  });
+  if (!feedback) {
+    console.error(date ? `\nNo activity found for ${date}.\n` : "\nNo recent activity found to analyse.\n");
+    process.exit(1);
+  }
+  const path = await writeReport("session-feedback", feedback.detail.date, feedback.markdown);
+  console.log("\n" + feedback.markdown + "\n");
+  console.log(`(report → ${path}; cache read ${feedback.cacheRead} tokens)`);
 }
 
 /**
@@ -832,6 +861,7 @@ const commands: Record<string, () => Promise<void>> = {
   act: cmdAct,
   check: cmdCheck,
   ask: cmdAsk,
+  session: cmdSession,
   backfill: cmdBackfill,
   "archive-status": cmdArchiveStatus,
   probe: cmdProbe,
@@ -857,6 +887,7 @@ if (!run) {
   console.log("  act        turn surfaced (gated, feedback-aware) findings into gated plan-adjustment proposals");
   console.log("  check      fire-only health watch: macOS alert ONLY if a flag / early-warning fires (no LLM)");
   console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
+  console.log("  session [date]  deep, coach-quality feedback on one session (most recent, or YYYY-MM-DD)");
   console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
   console.log("  probe      capture live Garmin tool surface + AIE detail samples → reports/ (Phase-2 mapping)");
   console.log("  fit-sync [n]  download recent Garmin run/ride .FIT files (get_activity_fit_data) → streams dir");
