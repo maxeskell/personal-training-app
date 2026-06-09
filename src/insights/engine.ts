@@ -29,7 +29,7 @@ import { loadSessionDecays, fitFindings, type SessionDecay } from "./fit.js";
 import { trainingStatusFinding, hrvStatusFinding, enduranceScoreFinding, powerCurveFinding } from "./garminHealth.js";
 import { garminTrendFindings } from "./garminTrends.js";
 import { analyseHeat, heatFinding } from "./heat.js";
-import { finiteNums } from "./stats.js";
+import { finiteNums, slope } from "./stats.js";
 
 /** Optional historical archive to widen the metrics beyond the live 40-activity / 60-day window. */
 export interface ArchiveInput {
@@ -181,16 +181,7 @@ function slopePerDay(points: Array<{ date: string; v: number }>): number | null 
   if (points.length < 4) return null;
   const epoch = new Date(`${points[0].date}T00:00:00Z`).getTime();
   const xs = points.map((p) => (new Date(`${p.date}T00:00:00Z`).getTime() - epoch) / 86_400_000);
-  const ys = points.map((p) => p.v);
-  const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
-  const my = ys.reduce((a, b) => a + b, 0) / ys.length;
-  let sxy = 0;
-  let sxx = 0;
-  for (let i = 0; i < xs.length; i++) {
-    sxy += (xs[i] - mx) * (ys[i] - my);
-    sxx += (xs[i] - mx) ** 2;
-  }
-  return sxx === 0 ? null : sxy / sxx;
+  return slope(xs, points.map((p) => p.v));
 }
 
 /** Cross-day trend findings (VO2max engine growth; race-predictor trajectory) from the history window. */
