@@ -41,7 +41,7 @@ npm run ask -- "how were my long rides this month?"   # free-form Q&A over your 
 npm run session               # deep, coach-quality feedback on your last session (or: npm run session 2026-06-09)
 npm run cost                  # token-cost report by flow (today/7d/30d/all + monthly projection); npm run cost 14 for a window
 npm run probe                 # Phase-2: dump live Garmin tool surface + AIE detail samples → reports/ (for mapping)
-npm run fit-sync              # archive recent Garmin activity summaries (temp/EF) → feeds the heat confounder
+npm run fit-sync              # archive recent Garmin activity *summaries* (temp/effort) — also runs automatically on dashboard Sync
 npm run decisions             # view the decision log (audit trail)
 npm run decisions -- retro <id> "how it held up"   # add a retrospective to a decision
 npm test                      # unit tests for the insight/stat modules (node:test, no extra deps)
@@ -87,10 +87,16 @@ detector self-gates and stays silent until there's enough of your own history be
 - **Taper target (Q6):** the race-day form (TSB) band that accompanied your best past races.
 - **Economy vs fitness (Q5):** run EF residualised on CTL — separates real economy gains from "just fitness".
 - **Fuelling red flag (Q7):** fires when weight *and* skeletal-muscle-mass trend down together.
-- **Stream-level (.FIT) analysis (§1):** optional — point `FIT_STREAMS_DIR` at a folder of **raw Garmin
-  `.FIT` files** (decoded in-process by a dependency-free parser; no extraction step). Unlocks
-  within-session **aerobic decoupling** (power/speed:HR drift), **per-activity temperature** (the heat
-  confounder), and run **biomechanics** (cadence/GCT decay on HRM-strap runs). See `.env.example`.
+- **Stream-level (.FIT) analysis (§1)** — two layers, two sources:
+  - **Thermal / effort** (per-activity temperature for the heat confounder, hot/cool-third HR, training
+    effect) comes from `fit-sync`, which pulls Garmin's *parsed summary* (`get_activity_fit_data`). This
+    now runs **automatically as part of dashboard Sync** (small, dedup'd) — and daily if you install the
+    watch. No manual step.
+  - **In-session biomechanics** (aerobic decoupling, cadence/GCT/vertical-osc decay) needs **raw
+    per-second `.FIT` files** — point `FIT_STREAMS_DIR` (default `data/fit-streams/`) at a folder of them
+    and the dependency-free parser decodes them in-process. **No Garmin MCP tool exposes the per-second
+    stream**, so this layer is populated by manually exporting the original `.FIT` from Garmin Connect
+    (Activity → ⚙ → *Export Original*) into that folder. `fit-sync` does **not** produce it. See `.env.example`.
 
 Every finding now carries a **confidence score**; only good-signal findings are surfaced, and the most
 important also feed a multiple-comparisons guard: the exploratory correlation scan is **FDR-controlled**
