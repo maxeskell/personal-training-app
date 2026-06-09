@@ -1,4 +1,4 @@
-import type { AthleteState, ActualActivity, ZoneSet } from "../state/types.js";
+import type { AthleteState, ActualActivity, PlannedSession, ZoneSet } from "../state/types.js";
 import type { DecisionRecord } from "../state/decisionLog.js";
 import type { InsightReport } from "../insights/engine.js";
 import { findingKey } from "../insights/metrics.js";
@@ -171,8 +171,18 @@ function zoneTable(title: string, z: ZoneSet | undefined): string {
   return `<div style="flex:1;min-width:200px"><div class="k">${title} <span class="muted">(${z.source})</span></div><table>${rows}</table></div>`;
 }
 
-/** "Last session" card: the most recent activity at a glance + a button for deep LLM feedback. */
-function renderLastSession(today: AthleteState, insights: InsightReport | undefined): string {
+/** Find the planned session matching a date+sport anywhere in the trailing state window (newest first). */
+function plannedFor(window: AthleteState[], date: string, sport: string): PlannedSession | undefined {
+  for (let i = window.length - 1; i >= 0; i--) {
+    const hit = (window[i].plannedSessions.value ?? []).find((p) => p.date.slice(0, 10) === date && p.sport === sport);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+/** "Last session" card: the most recent activity at a glance, what it was MEANT to be, + deep LLM feedback. */
+function renderLastSession(window: AthleteState[], insights: InsightReport | undefined): string {
+  const today = window[window.length - 1];
   const d = assembleSession(today, insights);
   if (!d) return "";
   const efNorm = d.ef != null ? `EF ${d.ef.toFixed(3)}${d.comparable.efMean != null ? ` (norm ${d.comparable.efMean})` : ""}` : "";
@@ -184,8 +194,21 @@ function renderLastSession(today: AthleteState, insights: InsightReport | undefi
     d.ess != null ? `ESS ${d.ess}` : "",
     d.durabilityPct != null ? `durability ${d.durabilityPct}%` : "",
   ].filter(Boolean).join(" · ");
+  // What this session was meant to be (user ask) — the matching planned workout, with planned-vs-done time.
+  const plan = plannedFor(window, d.date, d.sport);
+  const planBits = plan
+    ? [
+        plan.title,
+        plan.type && plan.type !== plan.title ? plan.type : "",
+        plan.durationMin != null ? `${hMin(plan.durationMin)} planned${d.durationMin != null ? ` → ${hMin(d.durationMin)} done` : ""}` : "",
+      ].filter(Boolean).join(" · ") || "planned session"
+    : "";
+  const planLine = plan
+    ? `<div style="font-size:13px;color:#666;margin-bottom:10px">📋 Planned: <b>${escapeHtml(planBits)}</b></div>`
+    : `<div class="k" style="margin-bottom:10px">📋 No planned workout matched this date/sport — unscheduled, or swapped from the plan.</div>`;
   return `<div class="card"><h2>Last session — ${d.date} ${d.sport}</h2>
-    <div style="font-size:14px;margin-bottom:10px">${escapeHtml(bits)}</div>
+    <div style="font-size:14px;margin-bottom:6px">${escapeHtml(bits)}</div>
+    ${planLine}
     <button class="actbtn" onclick="sessionFeedback()">🔍 Deep feedback on this session</button>
     <div id="sessionfb" style="margin-top:12px;font-size:14px;color:#333;white-space:pre-wrap"></div>
   </div>`;
@@ -205,7 +228,7 @@ function renderCost(records: CostRecord[] | undefined): string {
   </div>`;
 }
 
-/** Zones + FTP/threshold markers per discipline. */
+/** Zones + FTP/threshold markers, grouped per discipline (swim / bike / run) for clear separation. */
 function renderZones(today: AthleteState): string {
   const z = today.zones.value;
   const t = today.thresholds.value;
@@ -213,6 +236,7 @@ function renderZones(today: AthleteState): string {
   const markers = t
     ? [
         t.bikeFtpW != null ? `Bike FTP <b>${t.bikeFtpW} W</b>${t.bikeFtpWkg != null ? ` (${t.bikeFtpWkg} W/kg)` : ""}` : "",
+        t.bikeThresholdHr != null ? `Bike LTHR <b>${t.bikeThresholdHr} bpm</b>` : "",
         t.runThresholdPowerW != null ? `Run FTP <b>${t.runThresholdPowerW} W</b>` : "",
         t.runThresholdPaceSecPerKm != null ? `Run threshold <b>${paceStr(t.runThresholdPaceSecPerKm)}/km</b>` : "",
         t.runThresholdHr != null ? `Run LTHR <b>${t.runThresholdHr} bpm</b>` : "",
@@ -220,16 +244,21 @@ function renderZones(today: AthleteState): string {
       ].filter(Boolean).join(" · ")
     : "";
   const ftpNote = t?.bikeFtpNote ? `<div style="font-size:12px;color:#b45309;margin-bottom:12px">⚠ ${t.bikeFtpNote}</div>` : "";
+  const disc = (name: string, tables: string[]) => {
+    const inner = tables.filter(Boolean).join("");
+    return inner ? `<div class="disc"><div class="disch">${name}</div><div class="grid">${inner}</div></div>` : "";
+  };
+  const bikeHrNote =
+    z?.bike?.hr && t?.bikeThresholdHr == null
+      ? `<div class="k" style="margin-top:8px">Bike HR zones are derived from your run LTHR — bike LTHR typically sits a few bpm lower, so treat the zone tops conservatively.</div>`
+      : "";
   return `<div class="card"><h2>Zones & thresholds</h2>
     ${markers ? `<div style="font-size:14px;margin-bottom:${ftpNote ? "4px" : "12px"}">${markers}</div>` : ""}
     ${ftpNote}
-    <div class="grid">
-      ${zoneTable("Bike power", z?.bike?.power)}
-      ${zoneTable("Run power", z?.run?.power)}
-      ${zoneTable("Run pace", z?.run?.pace)}
-      ${zoneTable("Run HR", z?.run?.hr)}
-      ${zoneTable("Swim pace", z?.swim?.pace)}
-    </div>
+    ${disc("🏊 Swim", [zoneTable("Pace", z?.swim?.pace)])}
+    ${disc("🚴 Bike", [zoneTable("Power", z?.bike?.power), zoneTable("HR", z?.bike?.hr)])}
+    ${disc("🏃 Run", [zoneTable("Power", z?.run?.power), zoneTable("Pace", z?.run?.pace), zoneTable("HR", z?.run?.hr)])}
+    ${bikeHrNote}
     <div class="k" style="margin-top:8px">Derived zones use standard models (Coggan power / %-LTHR / %-threshold pace). Threshold-pace MODEL estimates are trend-relative.</div>
   </div>`;
 }
@@ -241,8 +270,8 @@ function renderScores(today: AthleteState): string {
   const p = today.powerCurve.value;
   if (!e && !h && !p) return "";
   const mmpRows = p?.bests?.length
-    ? `<table style="margin-top:8px"><tr class="k"><td>Duration</td><td>Best</td></tr>${p.bests
-        .map((b) => `<tr><td>${escapeHtml(b.duration)}</td><td class="num">${b.watts} W</td></tr>`)
+    ? `<table style="margin-top:8px"><tr class="k"><td>Duration</td><td>Best</td><td>Set on</td></tr>${p.bests
+        .map((b) => `<tr><td>${escapeHtml(b.duration)}</td><td class="num">${b.watts} W</td><td class="muted">${b.date ? escapeHtml(String(b.date).slice(0, 10)) : "—"}</td></tr>`)
         .join("")}</table>`
     : "";
   return `<div class="card"><h2>Garmin scores</h2>
@@ -269,23 +298,23 @@ function renderRacePredictions(today: AthleteState): string {
   </div>`;
 }
 
-/** Estimated race splits dependent on training (durability-shaped pacing plan). */
+/** Estimated race splits dependent on training: run plans + per-leg triathlon plans. */
 function renderSplits(ins: InsightReport): string {
   if (!ins.splits.length) return "";
   const blocks = ins.splits
     .map((p) => {
       const rows = p.segments
-        .map((s) => `<tr><td>${escapeHtml(s.label)}</td><td class="num">${paceStr(s.targetPaceSecPerKm)}/km</td><td class="num">${hms(s.cumulativeSec)}</td></tr>`)
+        .map((s) => `<tr><td>${escapeHtml(s.label)}</td><td class="num">${s.target ? escapeHtml(s.target) : `${paceStr(s.targetPaceSecPerKm)}/km`}</td><td class="num">${hms(s.cumulativeSec)}</td></tr>`)
         .join("");
       return `<div style="margin-bottom:14px">
         <div style="font-size:14px"><b>${escapeHtml(p.race)}</b> — target ${hms(p.predictedSec)} over ${p.distanceKm} km</div>
         <div class="ev" style="margin:4px 0">${escapeHtml(p.strategy)}</div>
-        <table><tr class="k"><td>Segment</td><td>Target pace</td><td>Cumulative</td></tr>${rows}</table>
+        <table><tr class="k"><td>Segment</td><td>Target</td><td>Cumulative</td></tr>${rows}</table>
       </div>`;
     })
     .join("");
   return `<div class="card"><h2>Estimated race splits</h2>${blocks}
-    <div class="k">Built from AI Endurance's predicted finish (MODEL — trend over absolute), shaped by your durability trend.</div>
+    <div class="k">Run races build from AI Endurance's predicted finish shaped by your durability trend; triathlon legs are modelled from your current CSS / FTP / run predictions at standard race intensities (MODEL — a pacing plan, not a guarantee).</div>
   </div>`;
 }
 
@@ -294,6 +323,14 @@ function hms(sec: number): string {
   const m = Math.floor((sec % 3600) / 60);
   const s = Math.round(sec % 60);
   return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** Minutes → "1h 35m" / "45m" (user ask: weekly totals in hours+minutes, not raw minutes). */
+function hMin(totalMin: number): string {
+  const t = Math.round(totalMin);
+  const h = Math.floor(t / 60);
+  const m = t % 60;
+  return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
 }
 
 /** A small status chip (label + value, tone-coloured). */
@@ -350,10 +387,10 @@ function renderHeader(today: AthleteState, insights: InsightReport | undefined, 
 export function renderDashboard({ window, decisions, insights, garminDays, costRecords }: DashboardInput): string {
   const today = window[window.length - 1];
 
-  // Week: load by sport.
+  // Week: load by sport. Time in h:mm (user ask); a zero distance renders "—" not a misleading 0.0 km.
   const load = activitiesLast7(today);
   const loadRows = [...load.entries()]
-    .map(([s, e]) => `<tr><td>${s}</td><td>${e.n}</td><td>${Math.round(e.min)} min</td><td>${e.km.toFixed(1)} km</td></tr>`)
+    .map(([s, e]) => `<tr><td>${s}</td><td>${e.n}</td><td>${hMin(e.min)}</td><td>${e.km > 0 ? `${e.km.toFixed(1)} km` : '<span class="muted">—</span>'}</td></tr>`)
     .join("");
 
   // Trends from the backfilled Garmin daily series (the multi-week archive), not the 1-day state store.
@@ -364,10 +401,10 @@ export function renderDashboard({ window, decisions, insights, garminDays, costR
     const last = [...vals].reverse().find((v) => v != null);
     return `<tr><td>${label}</td><td>${spark(vals)}</td><td class="num">${last == null ? "—" : last.toFixed(dec)}</td></tr>`;
   };
+  // Sleep score only — the hours sparkline tracked it near-identically (user ask: drop the duplicate).
   const trendRows = [
     garRow("HRV (ms)", (d) => d.hrvMs),
     garRow("Resting HR", (d) => d.restingHr),
-    garRow("Sleep (h)", (d) => d.sleepHours, 1),
     garRow("Sleep score", (d) => d.sleepScore),
     garRow("Day stress (avg)", (d) => d.avgStressLevel),
     garRow("Deep sleep (min)", (d) => (d.deepSleepSec != null ? d.deepSleepSec / 60 : null)),
@@ -411,6 +448,8 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .num{text-align:right;font-variant-numeric:tabular-nums} .muted{color:#bbb}
 .spark polyline{stroke:#888}.spark.up polyline{stroke:#1a8a3a}.spark.down polyline{stroke:#c0392b}
 .grid{display:flex;gap:14px;flex-wrap:wrap}.grid>div{flex:1;min-width:120px}
+.disc{border-top:2px solid #f0ede5;margin-top:12px;padding-top:10px}.disc:first-of-type{border-top:0;margin-top:0;padding-top:0}
+.disch{font-size:13px;font-weight:600;color:#555;margin-bottom:6px}
 .k{color:#999;font-size:12px}.v{font-size:18px;font-weight:600}
 .finding{padding:8px 0;border-bottom:1px solid #f0ede5}.finding:last-child{border:0}
 .badge{color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:10px;margin-right:8px}
@@ -449,7 +488,7 @@ async function sync(){
 
 ${insights ? renderHeader(today, insights, decisions, garminDays) : ""}
 ${insights ? renderInsightsBox(insights) : ""}
-${renderLastSession(today, insights)}
+${renderLastSession(window, insights)}
 
 <div class="card"><h2>Ask your data</h2>
   <form id="askform" onsubmit="return ask(event)">
