@@ -19,6 +19,7 @@ import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestG
 import { answerQuestion } from "./coach/ask.js";
 import { runSessionFeedback } from "./coach/session.js";
 import { loadSessionDecays } from "./insights/fit.js";
+import { readCostRecords, summarizeCost } from "./llm/costLog.js";
 
 /** Load the local history archive (if any) as insight inputs. Undefined when empty. */
 async function loadArchive(): Promise<ArchiveInput | undefined> {
@@ -73,6 +74,11 @@ function requireLLM(): boolean {
       "Add it to .env (ANTHROPIC_API_KEY=sk-ant-...) and re-run.\n",
   );
   return false;
+}
+
+/** Footer note for an LLM flow: dollar cost + cache-read tokens (see `cost` for the running total). */
+function costNote(costUsd: number, cacheRead: number): string {
+  return `cost $${costUsd.toFixed(4)}; cache read ${cacheRead} tokens`;
 }
 
 function todayIso(): string {
@@ -191,11 +197,12 @@ async function gatherReadiness(): Promise<{
   verdict: Awaited<ReturnType<typeof assessReadiness>>["verdict"];
   risk: ReturnType<typeof assessHealthRisk>;
   cacheRead: number;
+  costUsd: number;
 }> {
   const { state, window } = await buildTodayState();
   const risk = assessHealthRisk(window); // deterministic guardrail, runs before the model
-  const llm = new CoachLLM(await loadSystemPrompt());
-  const { verdict, cacheRead } = await assessReadiness(llm, window);
+  const llm = new CoachLLM(await loadSystemPrompt(), "readiness");
+  const { verdict, cacheRead, costUsd } = await assessReadiness(llm, window);
   await new DecisionLog().append({
     id: decisionId(`readiness:${state.date}`),
     timestamp: nowIso(),
@@ -203,7 +210,7 @@ async function gatherReadiness(): Promise<{
     summary: `${verdict.verdict}: ${verdict.why}`,
     status: "note",
   });
-  return { state, verdict, risk, cacheRead };
+  return { state, verdict, risk, cacheRead, costUsd };
 }
 
 function printReadiness(v: { verdict: string; why: string; drivers: Array<{ signal: string; reading: string; source: string }>; cautions: string[] }, risk: ReturnType<typeof assessHealthRisk>): void {
@@ -222,9 +229,9 @@ function printReadiness(v: { verdict: string; why: string; drivers: Array<{ sign
 /** `readiness` — interactive green/amber/red call with cited drivers. */
 async function cmdReadiness(): Promise<void> {
   if (!requireLLM()) process.exit(1);
-  const { verdict, risk, cacheRead } = await gatherReadiness();
+  const { verdict, risk, cacheRead, costUsd } = await gatherReadiness();
   printReadiness(verdict, risk);
-  console.log(`\n(logged to decision log; cache read ${cacheRead} tokens)`);
+  console.log(`\n(logged to decision log; ${costNote(costUsd, cacheRead)})`);
 }
 
 /** `ping` — unattended morning readiness: verdict + report + desktop notification. */
@@ -295,11 +302,11 @@ async function cmdDeepDive(): Promise<void> {
     summary,
   ].join("\n");
 
-  const { text, cacheRead } = await new CoachLLM(await loadSystemPrompt()).text(prompt);
+  const { text, cacheRead, costUsd } = await new CoachLLM(await loadSystemPrompt(), "deep-dive").text(prompt);
   const md = `# Deep dive — ${ins.date}\n\n${text}`;
   console.log("\n" + md + "\n");
   const path = await writeReport("deep-dive", todayIso(), md);
-  console.log(`(report → ${path}; cache read ${cacheRead} tokens)`);
+  console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
 }
 
 /** `ask "<question>"` — free-form Q&A over your data (same engine as the dashboard chat box). */
@@ -311,7 +318,7 @@ async function cmdAsk(): Promise<void> {
     process.exit(1);
   }
   const { state } = await buildTodayState();
-  const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt()), question, state, await loadArchive());
+  const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt(), "ask"), question, state, await loadArchive());
   console.log("\n" + answer + "\n");
 }
 
@@ -328,7 +335,7 @@ async function cmdSession(): Promise<void> {
   const archive = await loadArchive();
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
   const insights = buildInsights(state, archive, { suppressed, history: window });
-  const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt()), state, insights, {
+  const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session"), state, insights, {
     date,
     decays: loadSessionDecays(),
     fitSummaries: await new ArchiveStore().loadFitSummaries(),
@@ -339,7 +346,7 @@ async function cmdSession(): Promise<void> {
   }
   const path = await writeReport("session-feedback", feedback.detail.date, feedback.markdown);
   console.log("\n" + feedback.markdown + "\n");
-  console.log(`(report → ${path}; cache read ${feedback.cacheRead} tokens)`);
+  console.log(`(report → ${path}; ${costNote(feedback.costUsd, feedback.cacheRead)})`);
 }
 
 /**
@@ -653,11 +660,11 @@ async function cmdDecisions(): Promise<void> {
 async function cmdWeekly(): Promise<void> {
   if (!requireLLM()) process.exit(1);
   const { window } = await buildTodayState();
-  const llm = new CoachLLM(await loadSystemPrompt());
-  const { markdown, cacheRead } = await runWeeklyReview(llm, window);
+  const llm = new CoachLLM(await loadSystemPrompt(), "weekly");
+  const { markdown, cacheRead, costUsd } = await runWeeklyReview(llm, window);
   console.log("\n" + markdown + "\n");
   const path = await writeReport("weekly-review", todayIso(), markdown);
-  console.log(`(report → ${path}; cache read ${cacheRead} tokens)`);
+  console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
 }
 
 /** `race [name]` — event-specific prep, calibrated to time-to-race. */
@@ -665,11 +672,11 @@ async function cmdRace(): Promise<void> {
   if (!requireLLM()) process.exit(1);
   const raceName = process.argv.slice(3).join(" ").trim() || undefined;
   const { state } = await buildTodayState();
-  const llm = new CoachLLM(await loadSystemPrompt());
-  const { markdown, cacheRead, raceLabel } = await runRacePrep(llm, state, raceName);
+  const llm = new CoachLLM(await loadSystemPrompt(), "race");
+  const { markdown, cacheRead, costUsd, raceLabel } = await runRacePrep(llm, state, raceName);
   console.log("\n" + markdown + "\n");
   const path = await writeReport(`race-prep-${raceLabel.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`, todayIso(), markdown);
-  console.log(`(report → ${path}; cache read ${cacheRead} tokens)`);
+  console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
 }
 
 /** `propose "<request>"` — gated plan-adjustment proposals (nothing is written here). */
@@ -687,14 +694,14 @@ async function cmdPropose(): Promise<void> {
   }
   const { state, window } = await buildTodayState();
   const ins = buildInsights(state, await loadArchive(), { history: window });
-  const llm = new CoachLLM(await loadSystemPrompt());
-  const { result, cacheRead } = await proposeAdjustments(llm, request, state, buildProposerContext(state, ins));
+  const llm = new CoachLLM(await loadSystemPrompt(), "propose");
+  const { result, cacheRead, costUsd } = await proposeAdjustments(llm, request, state, buildProposerContext(state, ins));
   const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? []);
 
   if (!valid.length) {
     console.log(`\nNo applicable change proposed. ${result.notes}`);
     if (rejected.length) console.log(rejected.map((r) => `  · ${r}`).join("\n"));
-    console.log(`(cache read ${cacheRead} tokens)`);
+    console.log(`(${costNote(costUsd, cacheRead)})`);
     return;
   }
 
@@ -710,7 +717,7 @@ async function cmdPropose(): Promise<void> {
   if (rejected.length) console.log(`\nNot applied (couldn't be tied to a real session):\n${rejected.map((r) => `  · ${r}`).join("\n")}`);
   if (result.notes) console.log(`\nNotes: ${result.notes}`);
   console.log(`\nTo apply:  npm run confirm -- <id>     |  To dismiss:  npm run decline -- <id>`);
-  console.log(`(cache read ${cacheRead} tokens)`);
+  console.log(`(${costNote(costUsd, cacheRead)})`);
 }
 
 /** `act` — turn the GATED, feedback-aware top findings into gated plan-adjustment proposals (no write here). */
@@ -739,13 +746,13 @@ async function cmdAct(): Promise<void> {
       .map((f) => `- [${f.severity}] ${f.title}: ${f.detail}${f.recommendation ? ` (suggested: ${f.recommendation})` : ""}`)
       .join("\n");
 
-  const llm = new CoachLLM(await loadSystemPrompt());
-  const { result, cacheRead } = await proposeAdjustments(llm, request, state, ctx);
+  const llm = new CoachLLM(await loadSystemPrompt(), "act");
+  const { result, cacheRead, costUsd } = await proposeAdjustments(llm, request, state, ctx);
   const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? []);
   if (!valid.length) {
     console.log(`\nNo applicable plan change proposed. ${result.notes}`);
     if (rejected.length) console.log(rejected.map((r) => `  · ${r}`).join("\n"));
-    console.log(`(cache read ${cacheRead} tokens)`);
+    console.log(`(${costNote(costUsd, cacheRead)})`);
     return;
   }
   const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
@@ -759,7 +766,7 @@ async function cmdAct(): Promise<void> {
   if (rejected.length) console.log(`\nNot applied (no matching session):\n${rejected.map((r) => `  · ${r}`).join("\n")}`);
   if (result.notes) console.log(`\nNotes: ${result.notes}`);
   console.log(`\nApply:  npm run confirm -- <id>   |  Dismiss:  npm run decline -- <id>`);
-  console.log(`(cache read ${cacheRead} tokens)`);
+  console.log(`(${costNote(costUsd, cacheRead)})`);
 }
 
 /**
@@ -787,6 +794,36 @@ async function cmdCheck(): Promise<void> {
   const msg = top.map((f) => f.title).join(" · ") + (alerts.length > top.length ? ` (+${alerts.length - top.length} more)` : "");
   await notify(`Coach: ${alerts.length} signal${alerts.length > 1 ? "s" : ""}`, msg);
   console.log(`\n(macOS notification sent if on darwin — run \`npm run act\` to turn these into gated plan proposals.)`);
+}
+
+/** `cost [days]` — local token-cost report from the cost log: windowed totals + per-flow breakdown. */
+async function cmdCost(): Promise<void> {
+  const records = await readCostRecords();
+  if (!records.length) {
+    console.log("\nNo LLM calls logged yet. Run a flow (readiness / ask / weekly / session …) and check back.\n");
+    return;
+  }
+  const arg = Number(process.argv[3]);
+  const windows =
+    Number.isFinite(arg) && arg > 0
+      ? [{ label: `last ${arg}d`, days: arg }]
+      : [
+          { label: "today", days: 1 },
+          { label: "last 7d", days: 7 },
+          { label: "last 30d", days: 30 },
+          { label: "all-time", days: undefined as number | undefined },
+        ];
+
+  console.log(`\nToken cost — model ${records[records.length - 1].model}, ${records.length} call(s) logged:`);
+  for (const w of windows) {
+    const s = summarizeCost(records, w.days);
+    console.log(`\n  ${w.label}: $${s.total.costUsd.toFixed(4)} over ${s.total.calls} call(s)`);
+    for (const op of s.byOperation) {
+      console.log(`    ${op.operation.padEnd(12)} $${op.costUsd.toFixed(4).padStart(8)}  ${op.calls}× · in ${op.input}/out ${op.output}/cacheR ${op.cacheRead}`);
+    }
+  }
+  const w7 = summarizeCost(records, 7).total;
+  if (w7.calls) console.log(`\n  ≈ $${((w7.costUsd / 7) * 30).toFixed(2)}/month at the last-7-day rate.\n`);
 }
 
 /** `confirm <id>` — the ONLY path that fires a write, and only for a logged proposal. */
@@ -862,6 +899,7 @@ const commands: Record<string, () => Promise<void>> = {
   check: cmdCheck,
   ask: cmdAsk,
   session: cmdSession,
+  cost: cmdCost,
   backfill: cmdBackfill,
   "archive-status": cmdArchiveStatus,
   probe: cmdProbe,
@@ -888,6 +926,7 @@ if (!run) {
   console.log("  check      fire-only health watch: macOS alert ONLY if a flag / early-warning fires (no LLM)");
   console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
   console.log("  session [date]  deep, coach-quality feedback on one session (most recent, or YYYY-MM-DD)");
+  console.log("  cost [days]   local token-cost report (per-flow breakdown + windowed totals)");
   console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
   console.log("  probe      capture live Garmin tool surface + AIE detail samples → reports/ (Phase-2 mapping)");
   console.log("  fit-sync [n]  download recent Garmin run/ride .FIT files (get_activity_fit_data) → streams dir");

@@ -37,17 +37,17 @@ export async function runRacePrep(
   llm: CoachLLM,
   today: AthleteState,
   raceName?: string,
-): Promise<{ markdown: string; cacheRead: number; raceLabel: string }> {
+): Promise<{ markdown: string; cacheRead: number; costUsd: number; raceLabel: string }> {
   const goals = goalsFrom(today);
   const race = pickRace(goals, today.date, raceName);
 
   if (!race) {
-    const { text, cacheRead } = await llm.text(
+    const { text, cacheRead, costUsd } = await llm.text(
       "No race goals are available from AI Endurance right now. Give brief guidance on the season " +
         "shape from memory (Birmingham 11 Jul → Loch Ness 27 Sep, Alderford 6 Sep capped tempo) and " +
         "suggest confirming race goals in AI Endurance.",
     );
-    return { markdown: `# Race prep\n\n${text}`, cacheRead, raceLabel: "no race goal" };
+    return { markdown: `# Race prep\n\n${text}`, cacheRead, costUsd, raceLabel: "no race goal" };
   }
 
   const days = race.event_date ? daysBetween(today.date, race.event_date) : null;
@@ -80,7 +80,7 @@ export async function runRacePrep(
     "Be specific and cite the data where it informs a call.",
   ].join("\n");
 
-  const { text, cacheRead } = await llm.text(prompt);
+  const { text, cacheRead, costUsd } = await llm.text(prompt);
   const label = `${race.event_name ?? "race"}${days != null ? ` (T-${days}d)` : ""}`;
-  return { markdown: `# Race prep — ${label}\n\n${text}`, cacheRead, raceLabel: label };
+  return { markdown: `# Race prep — ${label}\n\n${text}`, cacheRead, costUsd, raceLabel: label };
 }

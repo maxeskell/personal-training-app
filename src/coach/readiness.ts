@@ -85,12 +85,12 @@ export function summarizeForReadiness(window: AthleteState[]): string {
 export async function assessReadiness(
   llm: CoachLLM,
   window: AthleteState[],
-): Promise<{ verdict: ReadinessVerdict; cacheRead: number }> {
+): Promise<{ verdict: ReadinessVerdict; cacheRead: number; costUsd: number }> {
   const summary = summarizeForReadiness(window);
   const prompt =
     "Assess today's training readiness from this snapshot. Apply the operating rules. " +
     "Remember: trend beats single point, one metric out of line is not red, Garmin scores are tiebreak only.\n\n" +
     summary;
-  const { value, cacheRead } = await llm.structured<ReadinessVerdict>(prompt, READINESS_SCHEMA);
-  return { verdict: value, cacheRead };
+  const { value, cacheRead, costUsd } = await llm.structured<ReadinessVerdict>(prompt, READINESS_SCHEMA);
+  return { verdict: value, cacheRead, costUsd };
 }
