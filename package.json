@@ -45,7 +45,10 @@
     "backfill": "tsx src/cli.ts backfill",
     "backfill:status": "tsx src/cli.ts archive-status",
     "backfill:install": "bash scripts/install-backfill.sh",
-    "backfill:uninstall": "bash scripts/uninstall-backfill.sh"
+    "backfill:uninstall": "bash scripts/uninstall-backfill.sh",
+    "update": "bash scripts/autoupdate.sh",
+    "autoupdate:install": "bash scripts/install-autoupdate.sh",
+    "autoupdate:uninstall": "bash scripts/uninstall-autoupdate.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.102.0",

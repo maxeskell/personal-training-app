@@ -170,6 +170,20 @@ Manual start (foreground, for dev): `cd /Users/maxeskell/personal-training-app &
 
 Alternative process manager (pm2): `npm i -g pm2 && npm run pm2:start && pm2 startup && pm2 save`.
 
+**Hands-free code updates (never run git):** install the auto-updater and merged changes pull + restart
+the dashboard on their own — you just use the app.
+
+```bash
+cd /Users/maxeskell/personal-training-app && npm run autoupdate:install     # pulls every 15 min + at login, then restarts
+cd /Users/maxeskell/personal-training-app && npm run autoupdate:install -- 3600   # …or a custom interval (seconds)
+npm run update                                                              # pull + restart right now, on demand
+npm run autoupdate:uninstall                                                # turn it off
+```
+
+It's safe: **fast-forward only**, and it skips the pull entirely if you have uncommitted local edits, so it
+can't clobber anything. Day-to-day you never touch git — and the dashboard's **🔄 Sync** button is unrelated
+(it re-pulls your *training data*, not code).
+
 > Note: the LAN dashboard has no login — fine on a trusted home network. Don't expose port 3000 to the
 > public internet; for remote access use a private tunnel (Tailscale/cloudflared), not port-forwarding.
 
