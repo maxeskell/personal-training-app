@@ -68,7 +68,7 @@ export async function proposeAdjustments(
   request: string,
   today: AthleteState,
   context?: string,
-): Promise<{ result: PlanAdjustResult; cacheRead: number }> {
+): Promise<{ result: PlanAdjustResult; cacheRead: number; costUsd: number }> {
   const planned = (today.plannedSessions.value ?? [])
     .map((p) => `  - id=${p.workoutId ?? "?"} ${p.date} ${p.sport ?? p.type ?? ""} ${p.durationMin ?? ""}m "${p.title ?? ""}"`)
     .join("\n");
@@ -93,8 +93,8 @@ export async function proposeAdjustments(
     WRITE_TOOL_REFERENCE,
   ].join("\n");
 
-  const { value, cacheRead } = await llm.structured<PlanAdjustResult>(prompt, PLAN_ADJUST_SCHEMA);
-  return { result: value, cacheRead };
+  const { value, cacheRead, costUsd } = await llm.structured<PlanAdjustResult>(prompt, PLAN_ADJUST_SCHEMA);
+  return { result: value, cacheRead, costUsd };
 }
 
 /** Upcoming races + countdown, sourced LIVE from AI Endurance goals (no hard-coded dates that go stale). */

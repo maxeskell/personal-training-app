@@ -1,20 +1,37 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { appendCostRecord, costUsd, type LlmUsage } from "./costLog.js";
 
 /**
  * Thin wrapper over the Anthropic SDK for the coach's reasoning core.
  *
  * - Model: claude-opus-4-8 with adaptive thinking + high effort (intelligence-sensitive).
- * - The (stable) system prompt is prompt-cached: persona + science priors don't change between
- *   requests, so we mark the system block ephemeral and pay the cache write once.
+ * - The (stable) system prompt is marked ephemeral for prompt-caching. NOTE: the prompt is currently
+ *   ~3k tokens, below Opus 4.8's 4096-token cache minimum, so the marker is a no-op until the prompt
+ *   grows — every call pays full input price today (see the cost report).
  * - Structured output via output_config.format guarantees a parseable verdict.
+ * - Every call records its token usage + dollar cost to the local cost log (see costLog.ts).
  */
 export class CoachLLM {
   private readonly client: Anthropic;
   readonly model = "claude-opus-4-8";
 
-  constructor(private readonly systemPrompt: string) {
+  /** `operation` labels the call in the cost log (e.g. "readiness", "ask", "session"). */
+  constructor(private readonly systemPrompt: string, private readonly operation = "unknown") {
     // Anthropic() reads ANTHROPIC_API_KEY from the environment.
     this.client = new Anthropic();
+  }
+
+  /** Pull the four billable buckets off a response, compute cost, and append to the cost log. */
+  private async meter(usageRaw: Anthropic.Usage): Promise<{ usage: LlmUsage; costUsd: number }> {
+    const usage: LlmUsage = {
+      input: usageRaw.input_tokens ?? 0,
+      output: usageRaw.output_tokens ?? 0,
+      cacheWrite: usageRaw.cache_creation_input_tokens ?? 0,
+      cacheRead: usageRaw.cache_read_input_tokens ?? 0,
+    };
+    const cost = costUsd(usage);
+    await appendCostRecord({ ts: new Date().toISOString(), operation: this.operation, model: this.model, ...usage, costUsd: cost });
+    return { usage, costUsd: cost };
   }
 
   static hasApiKey(): boolean {
@@ -25,7 +42,7 @@ export class CoachLLM {
    * One-shot structured completion. `schema` is a JSON Schema; the response is parsed and
    * returned as T. The system prompt is cached across calls within the 5-minute TTL.
    */
-  async structured<T>(userContent: string, schema: Record<string, unknown>): Promise<{ value: T; cacheRead: number }> {
+  async structured<T>(userContent: string, schema: Record<string, unknown>): Promise<{ value: T; cacheRead: number; costUsd: number }> {
     const res = await this.client.messages.create({
       model: this.model,
       max_tokens: 4000,
@@ -56,11 +73,12 @@ export class CoachLLM {
     for (const k of (schema.required as string[] | undefined) ?? []) {
       if (!(k in (value as Record<string, unknown>))) throw new Error(`LLM structured output missing required field: ${k}`);
     }
-    return { value, cacheRead: res.usage.cache_read_input_tokens ?? 0 };
+    const { usage, costUsd } = await this.meter(res.usage);
+    return { value, cacheRead: usage.cacheRead, costUsd };
   }
 
   /** Plain-prose completion (for the weekly review and race-prep reports). Same cached system prompt. */
-  async text(userContent: string): Promise<{ text: string; cacheRead: number }> {
+  async text(userContent: string): Promise<{ text: string; cacheRead: number; costUsd: number }> {
     // Headroom matters: adaptive thinking consumes part of max_tokens, so a low cap can leave no
     // room for the prose. 12k comfortably covers thinking + a long report.
     const res = await this.client.messages.create({
@@ -80,6 +98,7 @@ export class CoachLLM {
     if (!text && res.stop_reason === "max_tokens") {
       throw new Error("Model hit max_tokens before emitting prose — raise max_tokens.");
     }
-    return { text, cacheRead: res.usage.cache_read_input_tokens ?? 0 };
+    const { usage, costUsd } = await this.meter(res.usage);
+    return { text, cacheRead: usage.cacheRead, costUsd };
   }
 }

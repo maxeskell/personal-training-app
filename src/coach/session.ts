@@ -174,6 +174,7 @@ export interface SessionFeedback {
   detail: SessionDetail;
   markdown: string;
   cacheRead: number;
+  costUsd: number;
 }
 
 export async function runSessionFeedback(
@@ -198,6 +199,6 @@ export async function runSessionFeedback(
     buildSessionContext(detail, state, insights),
   ].join("\n");
 
-  const { text, cacheRead } = await llm.text(prompt);
-  return { detail, markdown: `# Session feedback — ${detail.date} ${detail.sport}\n\n${text}`, cacheRead };
+  const { text, cacheRead, costUsd } = await llm.text(prompt);
+  return { detail, markdown: `# Session feedback — ${detail.date} ${detail.sport}\n\n${text}`, cacheRead, costUsd };
 }

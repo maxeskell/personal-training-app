@@ -181,7 +181,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer: "No data assembled yet — hit ↻ refresh first." }));
         return;
       }
-      const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt()), question, state, await loadArchive());
+      const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt(), "ask"), question, state, await loadArchive());
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer }));
       return;
     }
@@ -194,7 +194,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       if (!li) return json({ markdown: "No data assembled yet — hit ↻ Sync first." });
       const reqDate = String((JSON.parse((await readBody(req)) || "{}") as { date?: string }).date ?? "");
       const date = /^\d{4}-\d{2}-\d{2}$/.test(reqDate) ? reqDate : undefined;
-      const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt()), li.state, li.insights, {
+      const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session"), li.state, li.insights, {
         date,
         decays: loadSessionDecays(),
         fitSummaries: await new ArchiveStore().loadFitSummaries(),
@@ -227,7 +227,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       const request =
         "Turn these surfaced signals into minimal, specific plan adjustments with trade-offs (don't restructure the week; smallest change that helps):\n" +
         actionable.map((f) => `- [${f.severity}] ${f.title}: ${f.detail}${f.recommendation ? ` (suggested: ${f.recommendation})` : ""}`).join("\n");
-      const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt()), request, li.state, ctx);
+      const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt(), "act"), request, li.state, ctx);
       const { valid, rejected } = validateProposals(result.proposals, li.state.plannedSessions.value ?? []);
       const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
       const proposals = [];
