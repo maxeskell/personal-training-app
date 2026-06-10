@@ -38,7 +38,7 @@ npm run ping                  # unattended morning readiness: verdict + report +
 npm run dashboard             # one-off glanceable HTML, opened in your browser
 npm run deep-dive             # insight-engine analysis (load/EF/durability/ramp/goal) → report
 npm run ask -- "how were my long rides this month?"   # free-form Q&A over your data
-npm run session               # deep, coach-quality feedback on your last session (or: npm run session 2026-06-09)
+npm run session               # deep feedback on your last session — needs its raw .FIT, --force for summary-only (or: npm run session 2026-06-09)
 npm run cost                  # token-cost report by flow (today/7d/30d/all + monthly projection); npm run cost 14 for a window
 npm run probe                 # Phase-2: dump live Garmin tool surface + AIE detail samples → reports/ (for mapping)
 npm run fit-sync              # archive recent Garmin activity *summaries* (temp/effort) — also runs automatically on dashboard Sync
@@ -93,10 +93,12 @@ detector self-gates and stays silent until there's enough of your own history be
     now runs **automatically as part of dashboard Sync** (small, dedup'd) — and daily if you install the
     watch. No manual step.
   - **In-session biomechanics** (aerobic decoupling, cadence/GCT/vertical-osc decay) needs **raw
-    per-second `.FIT` files** — point `FIT_STREAMS_DIR` (default `data/fit-streams/`) at a folder of them
-    and the dependency-free parser decodes them in-process. **No Garmin MCP tool exposes the per-second
-    stream**, so this layer is populated by manually exporting the original `.FIT` from Garmin Connect
-    (Activity → ⚙ → *Export Original*) into that folder. `fit-sync` does **not** produce it. See `.env.example`.
+    per-second `.FIT` files** in `FIT_STREAMS_DIR` (default `data/fit-streams/`); the dependency-free
+    parser decodes them in-process. These now **auto-download during Sync / `fit-sync`** (and on demand
+    when you ask for deep session feedback) via `download_activity_file` — added to `garmin_mcp` on
+    2026-06-10 and pinned in the default `GARMIN_MCP_ARGS`. On older builds, or for activities outside
+    the sync window, export the original `.FIT` from Garmin Connect (Activity → ⚙ → *Export Original*)
+    into that folder. See `.env.example`.
 
 Every finding now carries a **confidence score**; only good-signal findings are surfaced, and the most
 important also feed a multiple-comparisons guard: the exploratory correlation scan is **FDR-controlled**
@@ -114,12 +116,23 @@ server's `/insight-feedback` endpoint — credentials never leave the Mac.
 ## Deep session feedback
 
 `npm run session` (or the dashboard's **Last session** card → *Deep feedback*) gives coach-quality
-feedback on a single session. It joins your **AI Endurance metrics** (power/HR/ESS/durability) with the
+feedback on a single session. The card also shows what the session was **meant to be** — the matching
+planned workout (title, planned vs done time), or an explicit note when nothing in the plan matched. It
+joins your **AI Endurance metrics** (power/HR/ESS/durability) with the
 **.FIT biomechanics** (in-session cadence/GCT/vertical-osc drift, aerobic decoupling, temperature) and the
 **archive thermal summary**, then reads it against your **prior comparable sessions** and that day's **TSB**
-— so a dip in deep fatigue or heat isn't mistaken for lost fitness. When a `.FIT` stream isn't synced it
-says what it can't assess rather than guessing. "What happened in my last run?" in the Ask box routes here
-automatically.
+— so a dip in deep fatigue or heat isn't mistaken for lost fitness. It also reads your **upcoming 7 days
+of planned sessions** and says what (if anything) this session should change ahead — suggestions only;
+plan writes stay behind the gated two-step confirm. "What happened in my last run?" in the Ask box routes
+here automatically.
+
+**The deep dive only runs with the session's raw `.FIT` stream** — without it there are no biomechanics
+to read, so the LLM call is skipped (zero cost). The stream now **auto-downloads**: Sync / `fit-sync`
+pulls recent ones into `data/fit-streams/`, and the *Deep feedback* button fetches a missing one on
+demand (~10s) before analysing. The button only disappears (replaced by unlock instructions) when no
+automatic path exists — Garmin off, an old `garmin_mcp` build, or no archived activity id — in which case
+export the original `.FIT` manually (Garmin Connect → ⚙ → *Export Original*). To analyse from summary
+data anyway: `npm run session -- --force`. Ask-box questions fall back to general Q&A instead.
 
 ## Token cost (know — and control — what you spend)
 
@@ -131,13 +144,22 @@ projection, and the dashboard carries an **API cost** card. To keep it down, the
 
 ## Zones, thresholds & race splits
 
-- **Zones & thresholds** card: HR / power / pace zones per discipline plus your headline numbers — **bike
-  FTP (W and W/kg), run threshold pace + LTHR, swim CSS**. Pulled from `getUser`; where only thresholds are
-  exposed, zones are derived with standard models (Coggan power, %-LTHR, %-threshold pace).
-- **Estimated race splits**: AI Endurance's predicted finish broken into a per-segment pacing plan, shaped
-  by your **durability trend** — improving durability earns a gentle negative split; weak/unknown durability
-  gets a conservative start that protects against the late fade. (Predicted time is a MODEL estimate — the
-  plan is a target, not a guarantee.)
+- **Zones & thresholds** card, grouped 🏊 swim / 🚴 bike / 🏃 run for clear separation, plus your headline
+  numbers — **bike FTP (W and W/kg), run threshold pace + LTHR, swim CSS**. Pulled from `getUser`; where
+  only thresholds are exposed, zones are derived with standard models (Coggan power, %-LTHR, %-threshold
+  pace). **Bike HR zones** use your bike LTHR when the profile exposes one, else fall back to run LTHR
+  with a visible note (bike LTHR typically sits a few bpm lower — treat zone tops conservatively).
+- **Estimated race splits** for every upcoming race:
+  - **Run races**: AI Endurance's predicted finish broken into a per-segment pacing plan, shaped by your
+    **durability trend** — improving durability earns a gentle negative split; weak/unknown durability gets
+    a conservative start that protects against the late fade.
+  - **Triathlons** (sprint/Olympic/70.3/IM, detected from the goal's name/type): per-leg
+    swim/T1/bike/T2/run estimates from your **current numbers** — swim from CSS, bike from FTP at the
+    format's standard intensity (power → flat-course speed via a physics model), run from your standalone
+    Garmin run prediction with an off-the-bike penalty (threshold-pace fallback), plus fixed transition
+    estimates. A leg whose input is missing (e.g. no CSS set) is named as missing, never invented.
+
+  (Predicted times are MODEL estimates — the plan is a target, not a guarantee.)
 
 ## Online dashboard (view it on your phone over Wi-Fi)
 

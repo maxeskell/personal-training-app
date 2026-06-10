@@ -284,7 +284,7 @@ async function cmdDeepDive(): Promise<void> {
     `- Brick decoupling (Q4): ${ins.brick.decouplingPct != null ? `run EF off-bike ${ins.brick.decouplingPct}% vs fresh (${ins.brick.brickDays} brick days)` : "insufficient power-equipped runs"}`,
     `- Taper target (Q6): ${ins.taper.recommendedTsbLow != null ? `race-day TSB ~${ins.taper.recommendedTsbLow}..${ins.taper.recommendedTsbHigh} (${ins.taper.basis})` : "no past race-day TSB yet"}`,
     `- Economy vs fitness (Q5): ${ins.efficiency.residualSlopePer30d != null ? `fitness-removed EF residual ${ins.efficiency.residualSlopePer30d}/30d (${ins.efficiency.fitnessExplains ? "gains are fitness, not economy" : "independent economy gain"})` : "insufficient steady runs"}`,
-    `- Race split plans: ${ins.splits.map((p) => `${p.race} ${Math.round(p.predictedSec / 60)}min over ${p.distanceKm}km — ${p.strategy}`).join(" | ") || "no run races with predictions"}`,
+    `- Race split plans: ${ins.splits.map((p) => `${p.race} ${Math.round(p.predictedSec / 60)}min over ${p.distanceKm}km — ${p.strategy}`).join(" | ") || "no upcoming races with enough data for a plan"}`,
     "",
     `TOP SURFACED INSIGHTS (good-signal, ranked; suppressed/dismissed removed):`,
     ...ins.topFindings.slice(0, 5).map((f) => `- [${f.severity}, ${Math.round((f.confidence ?? 0.6) * 100)}%] ${f.title}: ${f.detail} (${f.evidence})`),
@@ -323,11 +323,12 @@ async function cmdAsk(): Promise<void> {
   console.log("\n" + answer + "\n");
 }
 
-/** `session [date]` — deep, coach-quality feedback on one session (the most recent, or a given date). */
+/** `session [date] [--force]` — deep, coach-quality feedback on one session (the most recent, or a given date). */
 async function cmdSession(): Promise<void> {
   if (!requireLLM()) process.exit(1);
-  const arg = process.argv[3];
-  const date = arg && /^\d{4}-\d{2}-\d{2}$/.test(arg) ? arg : undefined;
+  const args = process.argv.slice(3);
+  const force = args.includes("--force");
+  const date = args.find((a) => /^\d{4}-\d{2}-\d{2}$/.test(a));
   const { state, window } = await buildTodayState();
   if (!state.raw) {
     console.error("\nNo data assembled — cannot build session feedback.\n");
@@ -338,12 +339,18 @@ async function cmdSession(): Promise<void> {
   const insights = buildInsights(state, archive, { suppressed, history: window });
   const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), state, insights, {
     date,
+    force,
     decays: loadSessionDecays(),
     fitSummaries: await new ArchiveStore().loadFitSummaries(),
   });
   if (!feedback) {
     console.error(date ? `\nNo activity found for ${date}.\n` : "\nNo recent activity found to analyse.\n");
     process.exit(1);
+  }
+  if (feedback.skippedNoFit) {
+    console.log("\n" + feedback.markdown + "\n");
+    console.log("(no LLM call made — add --force for summary-only feedback anyway)");
+    return;
   }
   const path = await writeReport("session-feedback", feedback.detail.date, feedback.markdown);
   console.log("\n" + feedback.markdown + "\n");
@@ -492,11 +499,11 @@ async function cmdProbe(): Promise<void> {
 }
 
 /**
- * `fit-sync [n]` — pull per-activity summaries for the most recent n Garmin run/ride/swim activities via
- * get_activity_fit_data (+ get_activity_weather) and archive them. Taxuspt parses the .FIT server-side and
- * returns a SUMMARY (session totals, temperature_stats, lap HRV) — not per-second records — so this feeds
- * the heat confounder (per-activity EF + temperature) automatically. Resumable: archived ids are skipped.
- * (Per-second decoupling/biomechanics still come from raw .FIT files in the streams dir.)
+ * `fit-sync [n]` — pull the most recent n Garmin run/ride/swim activities into BOTH .FIT layers:
+ * per-activity summaries via get_activity_fit_data (+ get_activity_weather) → archive (heat confounder,
+ * thermal block), and raw per-second streams via download_activity_file → data/fit-streams/ (decoupling /
+ * cadence / GCT). Resumable: archived ids and existing stream files are skipped. On garmin_mcp builds
+ * older than d31de79 the stream layer degrades to manual export (Garmin Connect → Export Original).
  */
 async function cmdFitSync(): Promise<void> {
   if (!config.garmin.enabled) {
@@ -514,8 +521,8 @@ async function cmdFitSync(): Promise<void> {
     console.log(`\nfit-sync: scanning ${limit} recent activities → fit-summaries archive\n`);
     const r = await syncFitSummaries(g, store, limit, (m) => console.log(m));
     console.log(`\nfit-sync: +${r.added} new summaries, ${r.skipped} already archived, ${r.failed} failed → data/archive/fit-summaries.jsonl`);
-    console.log("These feed the heat confounder + the session card's thermal block (per-activity EF vs temperature).");
-    console.log("Per-second biomechanics (decoupling/cadence) need a raw .FIT exported into data/fit-streams/ — no Garmin tool exposes that.");
+    console.log(`fit-sync: ⬇ ${r.streamsDownloaded} raw .FIT streams → data/fit-streams/ ${r.streamsSupported ? "(biomechanics layer)" : "(download tool unavailable — garmin_mcp too old; streams need a manual Export Original)"}`);
+    console.log("Summaries feed the heat confounder + the session card's thermal block; streams unlock decoupling/cadence/GCT.");
   } finally {
     await g.close();
   }
@@ -550,7 +557,15 @@ async function cmdDashboard(): Promise<void> {
   const decisions = await new DecisionLog().all();
   const archive = await loadArchive();
   const insights = state.raw ? buildInsights(state, archive, { history: window }) : undefined;
-  const html = renderDashboard({ window, decisions, insights, garminDays: archive?.garminDays, costRecords: await readCostRecords() });
+  const html = renderDashboard({
+    window,
+    decisions,
+    insights,
+    garminDays: archive?.garminDays,
+    costRecords: await readCostRecords(),
+    fitSummaries: archive?.fitSummaries,
+    canFetchFit: config.garmin.enabled,
+  });
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
   const dir = join(process.cwd(), "reports");
@@ -885,7 +900,7 @@ if (!run) {
   console.log("  act        turn surfaced (gated, feedback-aware) findings into gated plan-adjustment proposals");
   console.log("  check      fire-only health watch: macOS alert ONLY if a flag / early-warning fires (no LLM)");
   console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
-  console.log("  session [date]  deep, coach-quality feedback on one session (most recent, or YYYY-MM-DD)");
+  console.log("  session [date] [--force]  deep feedback on one session (needs its raw .FIT; --force = summary-only)");
   console.log("  cost [days]   local token-cost report (per-flow breakdown + windowed totals)");
   console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
   console.log("  probe      capture live Garmin tool surface + AIE detail samples → reports/ (Phase-2 mapping)");

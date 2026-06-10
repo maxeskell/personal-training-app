@@ -17,7 +17,7 @@ import {
   type MonotonyStrain,
   type TID,
 } from "./metrics.js";
-import { estimateRunSplits, type RaceSplitPlan, type DurabilityState } from "./splits.js";
+import { estimateRunSplits, estimateTriSplits, type RaceSplitPlan, type DurabilityState, type TriRaceType, type TriPerformance } from "./splits.js";
 import { analyseRecoverySeries, sleepVsNextDayLoad, type Correlation, type Anomaly } from "./correlations.js";
 import { buildMonitoringRuleSet, monitoringFinding, type MonitoringRuleSet, type MonitoringInput } from "./monitoring.js";
 import { changePointsOf, changePointFindings, type SeriesChangePoints } from "./changepoint.js";
@@ -30,6 +30,7 @@ import { trainingStatusFinding, hrvStatusFinding, enduranceScoreFinding, powerCu
 import { garminTrendFindings } from "./garminTrends.js";
 import { analyseHeat, heatFinding } from "./heat.js";
 import { finiteNums, slope } from "./stats.js";
+import type { FitSummary } from "../archive/store.js";
 
 /** Optional historical archive to widen the metrics beyond the live 40-activity / 60-day window. */
 export interface ArchiveInput {
@@ -53,13 +54,15 @@ export interface ArchiveInput {
     bodyFatPct?: number;
     weightKg?: number;
   }>;
-  /** Per-activity .FIT summaries (from fit-sync) — per-activity EF + temperature for the heat confounder. */
-  fitSummaries?: Array<{ date: string; sport: string; avgPowerW?: number; avgHr?: number; avgTempC?: number }>;
+  /** Per-activity .FIT summaries (from fit-sync) — per-activity EF + temperature for the heat confounder;
+   *  the dashboard also reads activityId for the raw-stream auto-download. */
+  fitSummaries?: FitSummary[];
 }
 
 export interface PredictionVsGoal {
   race: string;
   date?: string;
+  eventType?: string;
   daysTo?: number;
   predictedSec?: number;
   targetSec?: number;
@@ -126,6 +129,7 @@ function predictionsVsGoals(state: AthleteState): PredictionVsGoal[] {
       return {
         race: String(g.event_name ?? "—"),
         date: String(g.event_date).slice(0, 10),
+        eventType: typeof g.event_type === "string" ? g.event_type : undefined,
         daysTo: daysTo(state.date, String(g.event_date)),
         predictedSec,
         targetSec,
@@ -174,6 +178,16 @@ function runDistanceKm(name: string): number | null {
   if (/10\s*k\b|10\s*km/.test(s)) return 10;
   if (/5\s*k\b|5\s*km/.test(s)) return 5;
   return null;
+}
+
+/** Detect a triathlon goal (name/event_type) + its format; defaults to Olympic when only "tri" is named. */
+function triTypeOf(name: string, eventType?: string): TriRaceType | null {
+  const s = `${name} ${eventType ?? ""}`.toLowerCase();
+  if (!/\btri(athlon)?\b|70\.3|iron\s?man/.test(s)) return null;
+  if (/sprint/.test(s)) return "sprint";
+  if (/70\.3|half|middle/.test(s)) return "half-iron";
+  if (/iron\s?man|\bfull\b|140\.6/.test(s)) return "ironman";
+  return "olympic";
 }
 
 /** Least-squares slope (per day) of dated values, or null if too few points. */
@@ -283,13 +297,35 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   const sessionDecays = loadSessionDecays();
 
   // Race splits, shaped by the run-durability trend (improving → negative split; else conservative).
+  // Triathlon goals get per-leg (swim/bike/run) plans from the current CSS / FTP / run-prediction numbers.
   const durChange = durability.run.recent != null && durability.run.prior != null ? durability.run.recent - durability.run.prior : null;
   const durState: DurabilityState = durChange == null ? "unknown" : durChange >= 2 ? "improving" : durChange <= -2 ? "slipping" : "unknown";
+  const thresholds = state.thresholds.value;
+  const runPredictions: TriPerformance["runPredictions"] = {};
+  for (const rp of state.racePredictions.value?.predictions ?? []) {
+    if (rp.label === "5K" || rp.label === "10K" || rp.label === "Half" || rp.label === "Marathon") runPredictions[rp.label] = rp.timeSeconds;
+  }
   const splits = predictions
-    .filter((p) => (p.daysTo ?? -1) >= 0 && p.predictedSec != null)
+    .filter((p) => (p.daysTo ?? -1) >= 0)
     .map((p) => {
+      const tri = triTypeOf(p.race, p.eventType);
+      if (tri) {
+        return estimateTriSplits(
+          p.race,
+          tri,
+          {
+            cssSecPer100: thresholds?.swimCssSecPer100,
+            ftpW: thresholds?.bikeFtpW,
+            runThresholdPaceSecPerKm: thresholds?.runThresholdPaceSecPerKm,
+            runPredictions,
+            riderWeightKg: state.weightKg.value ?? undefined,
+          },
+          durState,
+          p.date,
+        );
+      }
       const km = runDistanceKm(p.race);
-      return km ? estimateRunSplits(p.race, km, p.predictedSec!, durState, p.date) : null;
+      return km && p.predictedSec != null ? estimateRunSplits(p.race, km, p.predictedSec, durState, p.date) : null;
     })
     .filter((s): s is RaceSplitPlan => s != null);
 

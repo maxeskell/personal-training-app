@@ -80,6 +80,15 @@ detectors need ≥21 days with the new fields before they fire.
   corrected for its mislabelled °F), and the heat confounder consumes them automatically — no manual
   `.FIT` needed for the temperature signal. (Per-second decoupling/biomechanics still require a manually
   exported raw `.FIT`, since no Garmin tool exposes the per-second stream.)
+  - ✅ **Update (2026-06-10, BUILT):** upstream `Taxuspt/garmin_mcp` added `download_activity_file(
+    activity_id, format="fit", output_dir)` + `set_fit_download_dir` (commit `d31de79`, merged
+    2026-06-10 — two days AFTER the probe, and the fixed probe skips non-`get_` tools anyway, so
+    re-probing won't list it either). It downloads the ORIGINAL per-second `.FIT` (zip auto-extracted)
+    as `{activity_id}.fit`. Now wired in: `fit-sync` downloads streams into `FIT_STREAMS_DIR` alongside
+    the summaries, `/session-feedback` fetches a missing stream on demand, and the default
+    `GARMIN_MCP_ARGS` pins `@d31de79…` (the pin changes uvx's cache key, so the new build installs
+    without a manual `uvx --refresh`). A `listToolNames()` capability check degrades to the
+    manual-export path on older builds.
 - ⏳ **Transitions + per-leg splits**: shapes now confirmed (`get_activity_typed_splits` → per-leg splits;
   single-sport returns one leg). A transition (T1/T2) detector needs a past MULTISPORT activity (tri or
   brick) to build/verify the leg/transition structure — none in the recent activity list yet, so deferred

@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembleSession, buildSessionContext } from "../src/coach/session.js";
+import { assembleSession, buildSessionContext, runSessionFeedback } from "../src/coach/session.js";
 import { isLastSessionQuestion } from "../src/coach/ask.js";
 import { emptyState } from "../src/state/types.js";
 import type { SessionDecay } from "../src/insights/fit.js";
 import type { FitSummary } from "../src/archive/store.js";
+import type { CoachLLM } from "../src/llm/client.js";
 
 function stateWithRuns() {
   const s = emptyState("2026-06-09", new Date().toISOString());
@@ -53,6 +54,46 @@ test("buildSessionContext: states plainly when no .FIT stream is present (never 
   const ctx = buildSessionContext(d, stateWithRuns(), undefined);
   assert.match(ctx, /no raw \.FIT stream/);
   assert.match(ctx, /data\/fit-streams\//); // points at the real source, not fit-sync
+});
+
+test("buildSessionContext: includes the next-7-days plan so the model can adjust ahead (user ask)", () => {
+  const s = stateWithRuns();
+  s.plannedSessions = {
+    value: [
+      { date: "2026-06-11", sport: "Run", title: "Tempo 3x10", durationMin: 60 },
+      { date: "2026-06-25", sport: "Run", title: "beyond the horizon" },
+    ],
+    source: "ai-endurance",
+  };
+  const d = assembleSession(s, undefined)!; // session date 2026-06-09 → horizon 2026-06-16
+  const ctx = buildSessionContext(d, s, undefined);
+  assert.match(ctx, /UPCOMING PLAN \(next 7 days\)/);
+  assert.match(ctx, /2026-06-11 Run: Tempo 3x10 \(60min planned\)/);
+  assert.ok(!ctx.includes("beyond the horizon"), "sessions past the 7-day horizon are excluded");
+  // No planned sessions → no empty section.
+  assert.ok(!buildSessionContext(assembleSession(stateWithRuns(), undefined)!, stateWithRuns(), undefined).includes("UPCOMING PLAN"));
+});
+
+const RUN_DECAY: SessionDecay = { activityId: "a1", date: "2026-06-09", sport: "running", durationMin: 60, cadenceDropPct: -3, gctRisePct: 4, voRisePct: 2, hrDriftPct: 6, decouplingPct: 7, avgTempC: 24, avgPowerW: 300, avgHr: 150 };
+const llmStub = (): CoachLLM => ({ text: async () => ({ text: "LLM FEEDBACK", cacheRead: 0, costUsd: 0.01 }) }) as unknown as CoachLLM;
+const llmMustNotRun = (): CoachLLM =>
+  ({ text: async () => { throw new Error("LLM must not be called without the .FIT stream"); } }) as unknown as CoachLLM;
+
+test("runSessionFeedback: no raw .FIT stream → no LLM call, zero cost, explains how to unlock (user ask)", async () => {
+  const fb = (await runSessionFeedback(llmMustNotRun(), stateWithRuns(), undefined))!;
+  assert.equal(fb.skippedNoFit, true);
+  assert.equal(fb.costUsd, 0);
+  assert.match(fb.markdown, /skipped/i);
+  assert.match(fb.markdown, /Export Original/);
+});
+
+test("runSessionFeedback: --force runs without the stream; a joined stream runs normally", async () => {
+  const forced = (await runSessionFeedback(llmStub(), stateWithRuns(), undefined, { force: true }))!;
+  assert.ok(!forced.skippedNoFit);
+  assert.match(forced.markdown, /LLM FEEDBACK/);
+  const joined = (await runSessionFeedback(llmStub(), stateWithRuns(), undefined, { decays: [RUN_DECAY] }))!;
+  assert.ok(!joined.skippedNoFit);
+  assert.match(joined.markdown, /LLM FEEDBACK/);
 });
 
 test("isLastSessionQuestion: routes recency+session-noun questions, leaves general Q&A alone", () => {

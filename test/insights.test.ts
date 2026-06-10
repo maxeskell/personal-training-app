@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { analyseHeat, heatFinding, type HeatInput } from "../src/insights/heat.js";
-import { estimateRunSplits } from "../src/insights/splits.js";
+import { estimateRunSplits, estimateTriSplits } from "../src/insights/splits.js";
+import { buildInsights } from "../src/insights/engine.js";
 import { deriveZones, paceStr } from "../src/insights/zones.js";
 import { findingKey, findingScore, surfaceFindings, alertFindings, type Finding } from "../src/insights/metrics.js";
 import { trainingStatusFinding, hrvStatusFinding, enduranceScoreFinding, powerCurveFinding } from "../src/insights/garminHealth.js";
@@ -41,6 +42,48 @@ test("splits: plan totals exactly equal predicted finish; improving → negative
   assert.equal(estimateRunSplits("x", 0, 100, "unknown"), null);
 });
 
+test("tri splits: olympic plan covers swim/T1/bike/T2/run from CSS + FTP + 10K prediction", () => {
+  const plan = estimateTriSplits(
+    "Birmingham Triathlon",
+    "olympic",
+    { cssSecPer100: 110, ftpW: 250, runPredictions: { "10K": 2700 }, riderWeightKg: 75 },
+    "improving",
+    "2026-07-11",
+  )!;
+  assert.ok(plan);
+  assert.deepEqual(plan.segments.map((s) => s.label), ["Swim 1500 m", "T1", "Bike 40 km", "T2", "Run 10 km"]);
+  assert.equal(plan.segments.at(-1)!.cumulativeSec, plan.predictedSec);
+  // Bike leg plausible: 40 km at 83% of 250 W on the flat model lands 60–90 min.
+  const bikeSec = plan.segments[2].cumulativeSec - plan.segments[1].cumulativeSec;
+  assert.ok(bikeSec > 3600 && bikeSec < 5400, `bike leg ${bikeSec}s`);
+  // Run leg = 10K prediction + off-bike penalty.
+  const runSec = plan.segments[4].cumulativeSec - plan.segments[3].cumulativeSec;
+  assert.ok(runSec > 2700 && runSec < 3000, `run leg ${runSec}s`);
+  assert.match(plan.strategy, /negative-split/);
+  // Targets carry leg-appropriate units.
+  assert.match(plan.segments[0].target!, /\/100m$/);
+  assert.match(plan.segments[2].target!, /W · .*km\/h$/);
+});
+
+test("tri splits: degrade per leg — missing FTP drops the bike leg and is named; all-missing → null", () => {
+  const plan = estimateTriSplits("Local Tri", "olympic", { cssSecPer100: 110, runThresholdPaceSecPerKm: 270 }, "unknown")!;
+  assert.ok(plan);
+  assert.ok(!plan.segments.some((s) => s.label.startsWith("Bike")));
+  assert.match(plan.strategy, /no FTP/);
+  assert.equal(estimateTriSplits("Local Tri", "olympic", {}, "unknown"), null);
+});
+
+test("engine: triathlon goals produce per-leg split plans (not run-only)", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.raw = { getRaceGoalEvent: { goals: [{ event_name: "Birmingham Triathlon", event_date: "2026-07-11", event_type: "Triathlon" }] } };
+  s.thresholds = { value: { bikeFtpW: 250, swimCssSecPer100: 110, runThresholdPaceSecPerKm: 270 }, source: "garmin" };
+  const ins = buildInsights(s, undefined, {});
+  assert.equal(ins.splits.length, 1);
+  assert.match(ins.splits[0].race, /Birmingham/);
+  assert.ok(ins.splits[0].segments.some((x) => x.label.startsWith("Swim")));
+  assert.ok(ins.splits[0].segments.some((x) => x.label.startsWith("Run")));
+});
+
 // ---------- zones ----------
 test("zones: derived bands ordered correctly from thresholds", () => {
   const z = deriveZones({ bikeFtpW: 250, runThresholdHr: 170, runThresholdPaceSecPerKm: 240, runThresholdPowerW: 338 });
@@ -50,6 +93,14 @@ test("zones: derived bands ordered correctly from thresholds", () => {
   const pb = z.run!.pace!.bounds;
   assert.ok(pb.every((v, i) => i === 0 || v >= pb[i - 1]));
   assert.equal(paceStr(240), "4:00");
+});
+
+test("zones: bike HR zones use bike LTHR when set, else fall back to run LTHR", () => {
+  const fallback = deriveZones({ bikeFtpW: 250, runThresholdHr: 170 });
+  assert.ok(fallback.bike?.hr, "bike HR zones derived from run LTHR");
+  assert.equal(fallback.bike!.hr!.bounds.at(-1), Math.round(170 * 1.06));
+  const explicit = deriveZones({ bikeFtpW: 250, bikeThresholdHr: 165, runThresholdHr: 170 });
+  assert.equal(explicit.bike!.hr!.bounds.at(-1), Math.round(165 * 1.06));
 });
 
 // ---------- finding gating ----------

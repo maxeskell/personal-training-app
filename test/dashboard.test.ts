@@ -4,6 +4,7 @@ import { emptyState } from "../src/state/types.js";
 import { buildInsights } from "../src/insights/engine.js";
 import { renderDashboard } from "../src/coach/dashboard.js";
 import type { Finding } from "../src/insights/metrics.js";
+import type { SessionDecay } from "../src/insights/fit.js";
 
 const NASTY = `O'Brien "5x3'" \\ </script><b>x</b>`; // apostrophe, quote, backslash, tag, </script>
 
@@ -46,6 +47,85 @@ test("adversarial finding/goal text can't break handlers or inject markup (Spec 
   // The page still has valid scripts (this is the test that would FAIL pre-fix on the apostrophe).
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
   for (const [i, sc] of scripts.entries()) assert.doesNotThrow(() => new Function(sc), `script ${i}`);
+});
+
+test("week table uses h:mm, missing swim distance shows — , planned session joins the last-session card", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.actualActivities = {
+    value: [
+      { date: "2026-06-08", sport: "Run", durationMin: 95, distanceKm: 18.2 },
+      { date: "2026-06-07", sport: "Swim", durationMin: 45 }, // no distance — AIE swim feed gap
+    ],
+    source: "ai-endurance",
+  };
+  s.plannedSessions = { value: [{ date: "2026-06-08", sport: "Run", title: "Tempo 3x10min", type: "Run", durationMin: 90 }], source: "ai-endurance" };
+  s.raw = { getRunningActivity: { activities: [{ activity_date_local: "2026-06-08", activity_movingtime: 95 * 60, activity_avhr: 150 }] } };
+  const html = renderDashboard({ window: [s], decisions: [] });
+  assert.match(html, /1h 35m/); // 95 min in h:mm, not "95 min"
+  assert.ok(!/95 min/.test(html));
+  assert.match(html, /<tr><td>Swim<\/td><td>1<\/td><td>45m<\/td><td><span class="muted">—<\/span><\/td>/);
+  assert.match(html, /Planned: <b>Tempo 3x10min/); // what the session was meant to be
+  assert.match(html, /1h 30m planned → 1h 35m done/);
+});
+
+test("trends keep one sleep graph (score); power-curve bests carry the date they were set", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.powerCurve = {
+    value: { ftpEstimateW: 250, activitiesAnalyzed: 9, bests: [{ duration: "5min", watts: 320, date: "2026-05-19" }, { duration: "20min", watts: 255 }] },
+    source: "garmin",
+  };
+  const garminDays = Array.from({ length: 10 }, (_, i) => ({
+    date: `2026-05-${String(i + 1).padStart(2, "0")}`,
+    sleepHours: 7 + (i % 2),
+    sleepScore: 70 + i,
+  }));
+  const html = renderDashboard({ window: [s], decisions: [], garminDays });
+  assert.match(html, /<tr><td>Sleep score<\/td>/);
+  assert.ok(!html.includes("<tr><td>Sleep (h)</td>"), "duplicate sleep-hours sparkline removed");
+  assert.match(html, /<td>Set on<\/td>/);
+  assert.match(html, /2026-05-19/);
+});
+
+test("deep-feedback button shows when the .FIT stream is joined OR fetchable on demand (user ask)", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.raw = { getRunningActivity: { activities: [{ activity_date_local: "2026-06-09", activity_movingtime: 3600, activity_avhr: 150 }] } };
+  const ins = buildInsights(s, undefined, {});
+  // No stream and no auto-fetch path → unlock note instead of the button (no pointless LLM spend).
+  ins.sessionDecays = [];
+  const without = renderDashboard({ window: [s], decisions: [], insights: ins });
+  assert.ok(!without.includes('onclick="sessionFeedback()"'), "no button without the stream");
+  assert.match(without, /Export Original/);
+  // No stream, but Garmin on + the archive knows this activity's id → button (server fetches first).
+  const fetchable = renderDashboard({
+    window: [s],
+    decisions: [],
+    insights: ins,
+    canFetchFit: true,
+    fitSummaries: [{ activityId: "G1", date: "2026-06-09", sport: "Run" }],
+  });
+  assert.match(fetchable, /onclick="sessionFeedback\(\)"/);
+  assert.match(fetchable, /fetches this session's raw \.FIT/);
+  // Matching stream → button, no fetch hint.
+  const decay: SessionDecay = { activityId: "a1", date: "2026-06-09", sport: "running", durationMin: 60, cadenceDropPct: null, gctRisePct: null, voRisePct: null, hrDriftPct: null, decouplingPct: null, avgTempC: null, avgPowerW: null, avgHr: null };
+  ins.sessionDecays = [decay];
+  const withStream = renderDashboard({ window: [s], decisions: [], insights: ins });
+  assert.match(withStream, /onclick="sessionFeedback\(\)"/);
+  assert.ok(!withStream.includes("fetches this session's raw .FIT"));
+});
+
+test("mdToHtml renders the LLM markdown readably and escapes injected markup first", () => {
+  const html = render();
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).find((sc) => sc.includes("function mdToHtml"));
+  assert.ok(script, "mdToHtml is defined in the page script");
+  const { mdToHtml } = new Function(`${script}; return { mdToHtml: mdToHtml };`)() as { mdToHtml: (s: string) => string };
+  assert.equal(mdToHtml("**(1) Verdict:** strong"), "<b>(1) Verdict:</b> strong");
+  assert.equal(mdToHtml("## What went well"), '<b style="font-size:15px">What went well</b>');
+  assert.equal(mdToHtml("held it *better* than"), "held it <i>better</i> than");
+  assert.equal(mdToHtml("- bank it"), "• bank it");
+  assert.equal(mdToHtml("run `npm test`"), "run <code>npm test</code>");
+  const nasty = mdToHtml('<img onerror=x> **b** </script>');
+  assert.ok(!nasty.includes("<img"), "HTML is escaped before formatting");
+  assert.ok(nasty.includes("<b>b</b>"), "formatting still applies after escaping");
 });
 
 test("API cost card renders windowed totals + a monthly projection when records are present", () => {
