@@ -124,10 +124,14 @@ Ask box routes here automatically.
 
 **The deep dive only runs when the session's raw `.FIT` stream is present** — without it there are no
 biomechanics to read, so the LLM call is skipped (zero cost) and you get the unlock instructions instead;
-the dashboard button likewise only appears once the stream is in `data/fit-streams/`. The raw per-second
-`.FIT` can't be fetched automatically (no Garmin tool serves it — `fit-sync` only covers the thermal
-summary layer), so export it from Garmin Connect (Activity → ⚙ → *Export Original*). To analyse from
-summary data anyway: `npm run session -- --force`. Ask-box questions fall back to general Q&A instead.
+the dashboard button likewise only appears once the stream is in `data/fit-streams/`. For now, get the
+stream from Garmin Connect (Activity → ⚙ → *Export Original*) — `fit-sync` only covers the thermal
+summary layer. To analyse from summary data anyway: `npm run session -- --force`. Ask-box questions fall
+back to general Q&A instead.
+
+> **Auto-download is coming:** upstream `garmin_mcp` added `download_activity_file` (2026-06-10), which
+> serves the original per-second `.FIT`. Once wired in (see `docs/phase-2-plan.md`), Sync will fetch
+> streams into `data/fit-streams/` automatically and this manual export goes away.
 
 ## Token cost (know — and control — what you spend)
 
