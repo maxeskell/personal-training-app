@@ -38,7 +38,7 @@ npm run ping                  # unattended morning readiness: verdict + report +
 npm run dashboard             # one-off glanceable HTML, opened in your browser
 npm run deep-dive             # insight-engine analysis (load/EF/durability/ramp/goal) → report
 npm run ask -- "how were my long rides this month?"   # free-form Q&A over your data
-npm run session               # deep, coach-quality feedback on your last session (or: npm run session 2026-06-09)
+npm run session               # deep feedback on your last session — needs its raw .FIT, --force for summary-only (or: npm run session 2026-06-09)
 npm run cost                  # token-cost report by flow (today/7d/30d/all + monthly projection); npm run cost 14 for a window
 npm run probe                 # Phase-2: dump live Garmin tool surface + AIE detail samples → reports/ (for mapping)
 npm run fit-sync              # archive recent Garmin activity *summaries* (temp/effort) — also runs automatically on dashboard Sync
@@ -119,9 +119,19 @@ planned workout (title, planned vs done time), or an explicit note when nothing 
 joins your **AI Endurance metrics** (power/HR/ESS/durability) with the
 **.FIT biomechanics** (in-session cadence/GCT/vertical-osc drift, aerobic decoupling, temperature) and the
 **archive thermal summary**, then reads it against your **prior comparable sessions** and that day's **TSB**
-— so a dip in deep fatigue or heat isn't mistaken for lost fitness. When a `.FIT` stream isn't synced it
-says what it can't assess rather than guessing. "What happened in my last run?" in the Ask box routes here
-automatically.
+— so a dip in deep fatigue or heat isn't mistaken for lost fitness. "What happened in my last run?" in the
+Ask box routes here automatically.
+
+**The deep dive only runs when the session's raw `.FIT` stream is present** — without it there are no
+biomechanics to read, so the LLM call is skipped (zero cost) and you get the unlock instructions instead;
+the dashboard button likewise only appears once the stream is in `data/fit-streams/`. For now, get the
+stream from Garmin Connect (Activity → ⚙ → *Export Original*) — `fit-sync` only covers the thermal
+summary layer. To analyse from summary data anyway: `npm run session -- --force`. Ask-box questions fall
+back to general Q&A instead.
+
+> **Auto-download is coming:** upstream `garmin_mcp` added `download_activity_file` (2026-06-10), which
+> serves the original per-second `.FIT`. Once wired in (see `docs/phase-2-plan.md`), Sync will fetch
+> streams into `data/fit-streams/` automatically and this manual export goes away.
 
 ## Token cost (know — and control — what you spend)
 

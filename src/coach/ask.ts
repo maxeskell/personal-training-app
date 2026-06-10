@@ -113,12 +113,14 @@ export async function answerQuestion(llm: CoachLLM, question: string, state: Ath
   const insights = state.raw ? buildInsights(state, archive, { suppressed }) : undefined;
 
   // Route last-session questions to the deep single-session pipeline (joins .FIT biomechanics + thermal).
+  // Without the raw .FIT stream the deep route skips its LLM call (nothing extra to read), so the
+  // question falls through to general Q&A, which answers fine from summaries (user ask: no fit-less deep dive).
   if (insights && isLastSessionQuestion(question)) {
     const feedback = await runSessionFeedback(llm, state, insights, {
       decays: loadSessionDecays(),
       fitSummaries: await new ArchiveStore().loadFitSummaries(),
     });
-    if (feedback) return { answer: feedback.markdown };
+    if (feedback && !feedback.skippedNoFit) return { answer: feedback.markdown };
   }
 
   const context = insights ? buildAskContext(state, insights) : "(no assembled data available)";
