@@ -9,17 +9,11 @@ import { screenNutritionPrompt } from "../guardrails/wellbeing.js";
 import { runSessionFeedback } from "./session.js";
 import { loadSessionDecays } from "../insights/fit.js";
 import { ArchiveStore } from "../archive/store.js";
+import { classifyIntent, isLastSessionQuestion } from "./intent.js";
 
-/**
- * "What happened in my last run?" — a recency word + a session noun routes to the deep single-session
- * pipeline instead of the general Q&A. Conservative on purpose: "how were my long rides this month?"
- * has no recency word, so it stays in general Q&A.
- */
-const SESSION_RECENCY = /\b(last|latest|most[- ]recent|recent|todays?|yesterdays?|this morning'?s?)\b/i;
-const SESSION_NOUN = /\b(run|ride|bike|cycl\w*|swim|session|workout|activity|long run|long ride|brick)\b/i;
-export function isLastSessionQuestion(q: string): boolean {
-  return SESSION_RECENCY.test(q) && SESSION_NOUN.test(q);
-}
+// Re-exported for callers/tests that depend on the regex fast-path directly; the full hybrid
+// router (regex + optional local model) lives in ./intent.ts.
+export { isLastSessionQuestion };
 
 /**
  * Free-form Q&A over the athlete's data (dashboard chat box + `ask` CLI). Answers from a CURATED
@@ -113,9 +107,11 @@ export async function answerQuestion(llm: CoachLLM, question: string, state: Ath
   const insights = state.raw ? buildInsights(state, archive, { suppressed }) : undefined;
 
   // Route last-session questions to the deep single-session pipeline (joins .FIT biomechanics + thermal).
-  // Without the raw .FIT stream the deep route skips its LLM call (nothing extra to read), so the
-  // question falls through to general Q&A, which answers fine from summaries (user ask: no fit-less deep dive).
-  if (insights && isLastSessionQuestion(question)) {
+  // Only worth classifying when we actually have assembled data to route to; the regex is the fast path
+  // and the local model (if enabled) backstops it on paraphrases the regex misses. Without the raw .FIT
+  // stream the deep route skips its LLM call (nothing extra to read), so the question falls through to
+  // general Q&A, which answers fine from summaries (user ask: no fit-less deep dive).
+  if (insights && (await classifyIntent(question)).intent === "last_session") {
     const feedback = await runSessionFeedback(llm, state, insights, {
       decays: loadSessionDecays(),
       fitSummaries: await new ArchiveStore().loadFitSummaries(),
