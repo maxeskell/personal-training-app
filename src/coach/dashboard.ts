@@ -183,7 +183,7 @@ function plannedFor(window: AthleteState[], date: string, sport: string): Planne
 /** "Last session" card: the most recent activity at a glance, what it was MEANT to be, + deep LLM feedback. */
 function renderLastSession(window: AthleteState[], insights: InsightReport | undefined): string {
   const today = window[window.length - 1];
-  const d = assembleSession(today, insights);
+  const d = assembleSession(today, insights, { decays: insights?.sessionDecays });
   if (!d) return "";
   const efNorm = d.ef != null ? `EF ${d.ef.toFixed(3)}${d.comparable.efMean != null ? ` (norm ${d.comparable.efMean})` : ""}` : "";
   const bits = [
@@ -206,10 +206,15 @@ function renderLastSession(window: AthleteState[], insights: InsightReport | und
   const planLine = plan
     ? `<div style="font-size:13px;color:#666;margin-bottom:10px">📋 Planned: <b>${escapeHtml(planBits)}</b></div>`
     : `<div class="k" style="margin-bottom:10px">📋 No planned workout matched this date/sport — unscheduled, or swapped from the plan.</div>`;
+  // Deep feedback costs an LLM call and is only worth it with the raw .FIT joined in (user ask):
+  // show the button when the stream is there, else say exactly how to unlock it.
+  const deep = d.decay
+    ? `<button class="actbtn" onclick="sessionFeedback()">🔍 Deep feedback on this session</button>`
+    : `<div class="k">🔍 Deep feedback unlocks when this session's raw .FIT is in data/fit-streams/ — Garmin Connect → activity → ⚙ → Export Original. Without the per-second stream there are no biomechanics to analyse (no Garmin tool can fetch it automatically), so the LLM call is skipped.</div>`;
   return `<div class="card"><h2>Last session — ${d.date} ${d.sport}</h2>
     <div style="font-size:14px;margin-bottom:6px">${escapeHtml(bits)}</div>
     ${planLine}
-    <button class="actbtn" onclick="sessionFeedback()">🔍 Deep feedback on this session</button>
+    ${deep}
     <div id="sessionfb" style="margin-top:12px;font-size:14px;color:#333;white-space:pre-wrap"></div>
   </div>`;
 }

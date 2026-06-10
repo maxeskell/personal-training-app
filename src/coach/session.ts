@@ -14,7 +14,7 @@
 import type { CoachLLM } from "../llm/client.js";
 import type { AthleteState } from "../state/types.js";
 import type { InsightReport } from "../insights/engine.js";
-import type { SessionDecay } from "../insights/fit.js";
+import { fitStreamsDir, type SessionDecay } from "../insights/fit.js";
 import type { FitSummary } from "../archive/store.js";
 import { richActivities, type RichActivity } from "../insights/metrics.js";
 
@@ -62,6 +62,8 @@ export interface AssembleSessionOpts {
   date?: string; // YYYY-MM-DD; defaults to the most recent activity
   decays?: SessionDecay[];
   fitSummaries?: FitSummary[];
+  /** Run the LLM even without the raw .FIT stream (summary-only feedback). */
+  force?: boolean;
 }
 
 /** Pick the target activity: the named date, else the most recent; ties broken by longest moving time. */
@@ -175,6 +177,22 @@ export interface SessionFeedback {
   markdown: string;
   cacheRead: number;
   costUsd: number;
+  /** True when the LLM was skipped because the raw .FIT stream is missing (markdown = how to unlock). */
+  skippedNoFit?: boolean;
+}
+
+/** Returned in place of LLM output when the raw .FIT stream is absent — no tokens spent. */
+export function missingFitNote(d: SessionDetail): string {
+  return [
+    `# Session feedback — ${d.date} ${d.sport} (skipped)`,
+    "",
+    "Deep analysis needs this session's raw per-second .FIT — without it there are no in-session",
+    "biomechanics (cadence/GCT/decoupling) to read, so the LLM call was skipped rather than spending",
+    "tokens on a summary-only readout.",
+    "",
+    `To unlock: Garmin Connect → this activity → ⚙ → Export Original, drop the file into ${fitStreamsDir()}/.`,
+    "(Sync keeps the thermal layer current automatically; no Garmin tool serves the per-second stream.)",
+  ].join("\n");
 }
 
 export async function runSessionFeedback(
@@ -185,6 +203,12 @@ export async function runSessionFeedback(
 ): Promise<SessionFeedback | null> {
   const detail = assembleSession(state, insights, opts);
   if (!detail) return null;
+
+  // Without the raw .FIT stream the deep dive adds nothing over the summary the dashboard already
+  // shows — skip the LLM spend and say how to unlock it (user ask). `force` overrides.
+  if (!detail.decay && !opts.force) {
+    return { detail, markdown: missingFitNote(detail), cacheRead: 0, costUsd: 0, skippedNoFit: true };
+  }
 
   const prompt = [
     "Give the athlete in-depth, coach-quality feedback on this single training session, using ONLY the data below.",

@@ -4,6 +4,7 @@ import { emptyState } from "../src/state/types.js";
 import { buildInsights } from "../src/insights/engine.js";
 import { renderDashboard } from "../src/coach/dashboard.js";
 import type { Finding } from "../src/insights/metrics.js";
+import type { SessionDecay } from "../src/insights/fit.js";
 
 const NASTY = `O'Brien "5x3'" \\ </script><b>x</b>`; // apostrophe, quote, backslash, tag, </script>
 
@@ -83,6 +84,22 @@ test("trends keep one sleep graph (score); power-curve bests carry the date they
   assert.ok(!html.includes("<tr><td>Sleep (h)</td>"), "duplicate sleep-hours sparkline removed");
   assert.match(html, /<td>Set on<\/td>/);
   assert.match(html, /2026-05-19/);
+});
+
+test("deep-feedback button only shows when the last session's raw .FIT stream is joined (user ask)", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.raw = { getRunningActivity: { activities: [{ activity_date_local: "2026-06-09", activity_movingtime: 3600, activity_avhr: 150 }] } };
+  const ins = buildInsights(s, undefined, {});
+  // No stream for that date → unlock note instead of the button (no pointless LLM spend).
+  ins.sessionDecays = [];
+  const without = renderDashboard({ window: [s], decisions: [], insights: ins });
+  assert.ok(!without.includes('onclick="sessionFeedback()"'), "no button without the stream");
+  assert.match(without, /Export Original/);
+  // Matching stream → the button is back.
+  const decay: SessionDecay = { activityId: "a1", date: "2026-06-09", sport: "running", durationMin: 60, cadenceDropPct: null, gctRisePct: null, voRisePct: null, hrDriftPct: null, decouplingPct: null, avgTempC: null, avgPowerW: null, avgHr: null };
+  ins.sessionDecays = [decay];
+  const withStream = renderDashboard({ window: [s], decisions: [], insights: ins });
+  assert.match(withStream, /onclick="sessionFeedback\(\)"/);
 });
 
 test("API cost card renders windowed totals + a monthly projection when records are present", () => {
