@@ -154,7 +154,7 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
       `- Session mean temperature ${fmt(dy.avgTempC, 1)}°C`,
     );
   } else {
-    lines.push("", `IN-SESSION BIOMECHANICS: no raw .FIT stream for this session — cadence/GCT/decoupling unavailable. These need a per-second .FIT exported from Garmin Connect into data/fit-streams/ (no Garmin tool serves it, and \`fit-sync\` only covers the thermal layer, not biomechanics).`);
+    lines.push("", `IN-SESSION BIOMECHANICS: no raw .FIT stream for this session — cadence/GCT/decoupling unavailable. Sync/fit-sync auto-downloads these when the Garmin download tool is available; the fallback is a per-second .FIT exported from Garmin Connect into data/fit-streams/.`);
   }
 
   if (d.fit) {
@@ -164,6 +164,18 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
       `- Temp ${fmt(f.avgTempC, 1)}°C (range ${fmt(f.minTempC, 1)}–${fmt(f.maxTempC, 1)}, ambient ${fmt(f.weatherTempC, 1)}), HR cool-third ${fmt(f.hrCoolThirdBpm)} vs hot-third ${fmt(f.hrHotThirdBpm)}, training effect ${fmt(f.trainingEffect, 1)}`,
     );
   }
+
+  // What's coming next (user ask): the following 7 days of planned sessions, so the model can say
+  // whether this session should change anything ahead — or explicitly that nothing should.
+  const horizon = new Date(`${d.date}T00:00:00Z`);
+  horizon.setUTCDate(horizon.getUTCDate() + 7);
+  const horizonIso = horizon.toISOString().slice(0, 10);
+  const upcoming = (state.plannedSessions.value ?? [])
+    .filter((p) => p.date.slice(0, 10) > d.date && p.date.slice(0, 10) <= horizonIso)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 7)
+    .map((p) => `- ${p.date.slice(0, 10)} ${p.sport ?? "?"}: ${p.title ?? p.type ?? "session"}${p.durationMin != null ? ` (${Math.round(p.durationMin)}min planned)` : ""}`);
+  if (upcoming.length) lines.push("", `UPCOMING PLAN (next 7 days) [ai-endurance]:`, ...upcoming);
 
   if (insights) {
     const rel = relevantFindings(insights, d.sport);
@@ -191,7 +203,8 @@ export function missingFitNote(d: SessionDetail): string {
     "tokens on a summary-only readout.",
     "",
     `To unlock: Garmin Connect → this activity → ⚙ → Export Original, drop the file into ${fitStreamsDir()}/.`,
-    "(Sync keeps the thermal layer current automatically; no Garmin tool serves the per-second stream.)",
+    "(Sync normally fetches this automatically — seeing this note means the download failed or the",
+    "Garmin download tool isn't available, so the manual export is the fallback.)",
   ].join("\n");
 }
 
@@ -213,11 +226,16 @@ export async function runSessionFeedback(
   const prompt = [
     "Give the athlete in-depth, coach-quality feedback on this single training session, using ONLY the data below.",
     "Structure: (1) one-line verdict on what this session was and how it landed; (2) what went well; (3) what to",
-    "watch or change next time; (4) 2–3 concrete, actionable takeaways (pacing, fuelling, recovery, technique).",
+    "watch or change next time; (4) 2–3 concrete, actionable takeaways (pacing, fuelling, recovery, technique);",
+    "(5) if an UPCOMING PLAN section is present: what, if anything, this session should change in those sessions —",
+    "name the specific session and the adjustment, or say plainly that nothing should change. You only suggest;",
+    "plan writes happen elsewhere.",
     "Read every number against the athlete's own norm and that day's fatigue (TSB) — a dip in deep fatigue or heat is",
     "not the same as lost fitness. Honour the coaching stance: trend over single point, fuel to train, weight is a",
     "trend not a target. If the .FIT biomechanics are absent, say what you cannot assess rather than guessing. Do NOT",
     "invent numbers not present below. Be direct and specific; lead with the verdict.",
+    "Formatting: this renders in a small dashboard panel — '## ' headers for the numbered sections, bold only for",
+    "the verdict and key numbers, '- ' for lists; no tables, no nested emphasis.",
     "",
     "=== SESSION DATA ===",
     buildSessionContext(detail, state, insights),

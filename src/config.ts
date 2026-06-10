@@ -39,10 +39,13 @@ export const config = {
   /** Garmin — OPTIONAL, degradable gap-filler. Disabled unless explicitly enabled. */
   garmin: {
     enabled: process.env.GARMIN_ENABLED === "true",
-    /** Spawn command for the Taxuspt/garmin_mcp stdio server. */
+    /** Spawn command for the Taxuspt/garmin_mcp stdio server. Pinned to the commit that added
+     *  download_activity_file (raw per-second .FIT download, 2026-06-10) — the pin also makes uvx
+     *  rebuild its cached env, so the tool appears without a manual `uvx --refresh`. Bump deliberately. */
     command: process.env.GARMIN_MCP_COMMAND ?? "uvx",
     args: parseArgsList(
-      process.env.GARMIN_MCP_ARGS ?? "--python 3.12 --from git+https://github.com/Taxuspt/garmin_mcp garmin-mcp",
+      process.env.GARMIN_MCP_ARGS ??
+        "--python 3.12 --from git+https://github.com/Taxuspt/garmin_mcp@d31de7980d652289e5368637261fcd17aa2c7d90 garmin-mcp",
     ),
     /** Hard timeout (ms) for any Garmin call — never let it block the coach. Some endpoints
      *  (power-duration curve, race predictions) parse many activities server-side and are slow. */

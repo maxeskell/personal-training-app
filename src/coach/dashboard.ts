@@ -1,5 +1,6 @@
 import type { AthleteState, ActualActivity, PlannedSession, ZoneSet } from "../state/types.js";
 import type { DecisionRecord } from "../state/decisionLog.js";
+import type { FitSummary } from "../archive/store.js";
 import type { InsightReport } from "../insights/engine.js";
 import { findingKey } from "../insights/metrics.js";
 import { paceStr } from "../insights/zones.js";
@@ -70,6 +71,10 @@ export interface DashboardInput {
   }>;
   /** LLM cost-log records — drives the API-cost card. */
   costRecords?: CostRecord[];
+  /** Archived .FIT thermal summaries — carry the Garmin activity id the stream auto-download needs. */
+  fitSummaries?: FitSummary[];
+  /** Whether the server can fetch a missing raw .FIT on demand (Garmin enabled). */
+  canFetchFit?: boolean;
 }
 
 const TONE_COLOR: Record<Tone, string> = { good: "#1a8a3a", neutral: "#777", warn: "#c98a00", bad: "#c0392b" };
@@ -181,9 +186,9 @@ function plannedFor(window: AthleteState[], date: string, sport: string): Planne
 }
 
 /** "Last session" card: the most recent activity at a glance, what it was MEANT to be, + deep LLM feedback. */
-function renderLastSession(window: AthleteState[], insights: InsightReport | undefined): string {
+function renderLastSession(window: AthleteState[], insights: InsightReport | undefined, fitSummaries?: FitSummary[], canFetchFit?: boolean): string {
   const today = window[window.length - 1];
-  const d = assembleSession(today, insights, { decays: insights?.sessionDecays });
+  const d = assembleSession(today, insights, { decays: insights?.sessionDecays, fitSummaries });
   if (!d) return "";
   const efNorm = d.ef != null ? `EF ${d.ef.toFixed(3)}${d.comparable.efMean != null ? ` (norm ${d.comparable.efMean})` : ""}` : "";
   const bits = [
@@ -207,10 +212,14 @@ function renderLastSession(window: AthleteState[], insights: InsightReport | und
     ? `<div style="font-size:13px;color:#666;margin-bottom:10px">📋 Planned: <b>${escapeHtml(planBits)}</b></div>`
     : `<div class="k" style="margin-bottom:10px">📋 No planned workout matched this date/sport — unscheduled, or swapped from the plan.</div>`;
   // Deep feedback costs an LLM call and is only worth it with the raw .FIT joined in (user ask):
-  // show the button when the stream is there, else say exactly how to unlock it.
+  // show the button when the stream is local OR the server can fetch it on demand (Garmin enabled +
+  // the archive knows this activity's id); otherwise say exactly how to unlock it manually.
+  const fetchable = !!canFetchFit && !!d.fit?.activityId;
   const deep = d.decay
     ? `<button class="actbtn" onclick="sessionFeedback()">🔍 Deep feedback on this session</button>`
-    : `<div class="k">🔍 Deep feedback unlocks when this session's raw .FIT is in data/fit-streams/ — Garmin Connect → activity → ⚙ → Export Original. Without the per-second stream there are no biomechanics to analyse (no Garmin tool can fetch it automatically), so the LLM call is skipped.</div>`;
+    : fetchable
+      ? `<button class="actbtn" onclick="sessionFeedback()">🔍 Deep feedback on this session</button> <span class="k">fetches this session's raw .FIT from Garmin first (~10s)</span>`
+      : `<div class="k">🔍 Deep feedback unlocks when this session's raw .FIT is in data/fit-streams/ — it couldn't be fetched automatically (Garmin off, or no archived activity id yet — try Sync), so export it from Garmin Connect → activity → ⚙ → Export Original. Without the per-second stream there are no biomechanics to analyse and the LLM call is skipped.</div>`;
   return `<div class="card"><h2>Last session — ${d.date} ${d.sport}</h2>
     <div style="font-size:14px;margin-bottom:6px">${escapeHtml(bits)}</div>
     ${planLine}
@@ -389,7 +398,7 @@ function renderHeader(today: AthleteState, insights: InsightReport | undefined, 
   </div>`;
 }
 
-export function renderDashboard({ window, decisions, insights, garminDays, costRecords }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, garminDays, costRecords, fitSummaries, canFetchFit }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Week: load by sport. Time in h:mm (user ask); a zero distance renders "—" not a misleading 0.0 km.
@@ -473,6 +482,7 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .acts .agree:hover{background:#e6f5ea;border-color:#1a8a3a}.acts .disagree:hover{background:#fdeaea;border-color:#c0392b}
 .acts .ignore:hover{background:#f3f3f3}.reacted{font-size:11px;color:#1a8a3a;margin-left:4px}
 .actbtn{font-size:13px;padding:7px 14px;border:1px solid #c8642d;border-radius:8px;background:#fff;color:#c8642d;cursor:pointer}.actbtn:hover{background:#c8642d;color:#fff}
+code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 .proposal{border:1px solid #e7d9c6;border-radius:8px;padding:10px 12px;margin-top:10px}
 </style></head><body>
 <h1>Endurance Coach</h1>
@@ -493,7 +503,7 @@ async function sync(){
 
 ${insights ? renderHeader(today, insights, decisions, garminDays) : ""}
 ${insights ? renderInsightsBox(insights) : ""}
-${renderLastSession(window, insights)}
+${renderLastSession(window, insights, fitSummaries, canFetchFit)}
 
 <div class="card"><h2>Ask your data</h2>
   <form id="askform" onsubmit="return ask(event)">
@@ -504,15 +514,24 @@ ${renderLastSession(window, insights)}
   <div id="answer" style="margin-top:12px;font-size:14px;color:#333;white-space:pre-wrap"></div>
 </div>
 <script>
+function mdToHtml(md){
+  var h=esc(String(md));
+  h=h.replace(/^#{1,3} (.*)$/gm,'<b style="font-size:15px">$1</b>');
+  h=h.replace(/\\*\\*([^*\\n]+)\\*\\*/g,'<b>$1</b>');
+  h=h.replace(/(^|[\\s(])\\*([^*\\n]+)\\*(?=[\\s).,;:!?]|$)/g,'$1<i>$2</i>');
+  h=h.replace(/\`([^\`\\n]+)\`/g,'<code>$1</code>');
+  h=h.replace(/^- /gm,'• ');
+  return h;
+}
 async function ask(e){e.preventDefault();var q=document.getElementById('q').value.trim();if(!q)return false;
   var a=document.getElementById('answer');a.textContent='Thinking…';
   try{var r=await fetch('/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:q})});
-    var j=await r.json();a.textContent=j.answer||'(no answer)';}catch(err){a.textContent='Error: '+err;}
+    var j=await r.json();a.innerHTML=mdToHtml(j.answer||'(no answer)');}catch(err){a.textContent='Error: '+err;}
   return false;}
 async function sessionFeedback(){
-  var box=document.getElementById('sessionfb'); box.textContent='Analysing this session…';
+  var box=document.getElementById('sessionfb'); box.textContent='Analysing this session… (fetching the .FIT first if needed)';
   try{var r=await fetch('/session-feedback',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
-    var j=await r.json(); box.textContent=j.markdown||'(no feedback)';}catch(err){box.textContent='Error: '+err;}}
+    var j=await r.json(); box.innerHTML=mdToHtml(j.markdown||'(no feedback)');}catch(err){box.textContent='Error: '+err;}}
 async function feedback(btn){
   var box=btn.closest('.insight');var reaction=btn.getAttribute('data-reaction');
   var key=box.getAttribute('data-key');var summary=box.getAttribute('data-summary');
