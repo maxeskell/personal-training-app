@@ -86,20 +86,46 @@ test("trends keep one sleep graph (score); power-curve bests carry the date they
   assert.match(html, /2026-05-19/);
 });
 
-test("deep-feedback button only shows when the last session's raw .FIT stream is joined (user ask)", () => {
+test("deep-feedback button shows when the .FIT stream is joined OR fetchable on demand (user ask)", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
   s.raw = { getRunningActivity: { activities: [{ activity_date_local: "2026-06-09", activity_movingtime: 3600, activity_avhr: 150 }] } };
   const ins = buildInsights(s, undefined, {});
-  // No stream for that date → unlock note instead of the button (no pointless LLM spend).
+  // No stream and no auto-fetch path → unlock note instead of the button (no pointless LLM spend).
   ins.sessionDecays = [];
   const without = renderDashboard({ window: [s], decisions: [], insights: ins });
   assert.ok(!without.includes('onclick="sessionFeedback()"'), "no button without the stream");
   assert.match(without, /Export Original/);
-  // Matching stream → the button is back.
+  // No stream, but Garmin on + the archive knows this activity's id → button (server fetches first).
+  const fetchable = renderDashboard({
+    window: [s],
+    decisions: [],
+    insights: ins,
+    canFetchFit: true,
+    fitSummaries: [{ activityId: "G1", date: "2026-06-09", sport: "Run" }],
+  });
+  assert.match(fetchable, /onclick="sessionFeedback\(\)"/);
+  assert.match(fetchable, /fetches this session's raw \.FIT/);
+  // Matching stream → button, no fetch hint.
   const decay: SessionDecay = { activityId: "a1", date: "2026-06-09", sport: "running", durationMin: 60, cadenceDropPct: null, gctRisePct: null, voRisePct: null, hrDriftPct: null, decouplingPct: null, avgTempC: null, avgPowerW: null, avgHr: null };
   ins.sessionDecays = [decay];
   const withStream = renderDashboard({ window: [s], decisions: [], insights: ins });
   assert.match(withStream, /onclick="sessionFeedback\(\)"/);
+  assert.ok(!withStream.includes("fetches this session's raw .FIT"));
+});
+
+test("mdToHtml renders the LLM markdown readably and escapes injected markup first", () => {
+  const html = render();
+  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).find((sc) => sc.includes("function mdToHtml"));
+  assert.ok(script, "mdToHtml is defined in the page script");
+  const { mdToHtml } = new Function(`${script}; return { mdToHtml: mdToHtml };`)() as { mdToHtml: (s: string) => string };
+  assert.equal(mdToHtml("**(1) Verdict:** strong"), "<b>(1) Verdict:</b> strong");
+  assert.equal(mdToHtml("## What went well"), '<b style="font-size:15px">What went well</b>');
+  assert.equal(mdToHtml("held it *better* than"), "held it <i>better</i> than");
+  assert.equal(mdToHtml("- bank it"), "• bank it");
+  assert.equal(mdToHtml("run `npm test`"), "run <code>npm test</code>");
+  const nasty = mdToHtml('<img onerror=x> **b** </script>');
+  assert.ok(!nasty.includes("<img"), "HTML is escaped before formatting");
+  assert.ok(nasty.includes("<b>b</b>"), "formatting still applies after escaping");
 });
 
 test("API cost card renders windowed totals + a monthly projection when records are present", () => {

@@ -56,6 +56,24 @@ test("buildSessionContext: states plainly when no .FIT stream is present (never 
   assert.match(ctx, /data\/fit-streams\//); // points at the real source, not fit-sync
 });
 
+test("buildSessionContext: includes the next-7-days plan so the model can adjust ahead (user ask)", () => {
+  const s = stateWithRuns();
+  s.plannedSessions = {
+    value: [
+      { date: "2026-06-11", sport: "Run", title: "Tempo 3x10", durationMin: 60 },
+      { date: "2026-06-25", sport: "Run", title: "beyond the horizon" },
+    ],
+    source: "ai-endurance",
+  };
+  const d = assembleSession(s, undefined)!; // session date 2026-06-09 → horizon 2026-06-16
+  const ctx = buildSessionContext(d, s, undefined);
+  assert.match(ctx, /UPCOMING PLAN \(next 7 days\)/);
+  assert.match(ctx, /2026-06-11 Run: Tempo 3x10 \(60min planned\)/);
+  assert.ok(!ctx.includes("beyond the horizon"), "sessions past the 7-day horizon are excluded");
+  // No planned sessions → no empty section.
+  assert.ok(!buildSessionContext(assembleSession(stateWithRuns(), undefined)!, stateWithRuns(), undefined).includes("UPCOMING PLAN"));
+});
+
 const RUN_DECAY: SessionDecay = { activityId: "a1", date: "2026-06-09", sport: "running", durationMin: 60, cadenceDropPct: -3, gctRisePct: 4, voRisePct: 2, hrDriftPct: 6, decouplingPct: 7, avgTempC: 24, avgPowerW: 300, avgHr: 150 };
 const llmStub = (): CoachLLM => ({ text: async () => ({ text: "LLM FEEDBACK", cacheRead: 0, costUsd: 0.01 }) }) as unknown as CoachLLM;
 const llmMustNotRun = (): CoachLLM =>

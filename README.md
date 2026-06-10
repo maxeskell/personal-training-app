@@ -93,10 +93,12 @@ detector self-gates and stays silent until there's enough of your own history be
     now runs **automatically as part of dashboard Sync** (small, dedup'd) — and daily if you install the
     watch. No manual step.
   - **In-session biomechanics** (aerobic decoupling, cadence/GCT/vertical-osc decay) needs **raw
-    per-second `.FIT` files** — point `FIT_STREAMS_DIR` (default `data/fit-streams/`) at a folder of them
-    and the dependency-free parser decodes them in-process. **No Garmin MCP tool exposes the per-second
-    stream**, so this layer is populated by manually exporting the original `.FIT` from Garmin Connect
-    (Activity → ⚙ → *Export Original*) into that folder. `fit-sync` does **not** produce it. See `.env.example`.
+    per-second `.FIT` files** in `FIT_STREAMS_DIR` (default `data/fit-streams/`); the dependency-free
+    parser decodes them in-process. These now **auto-download during Sync / `fit-sync`** (and on demand
+    when you ask for deep session feedback) via `download_activity_file` — added to `garmin_mcp` on
+    2026-06-10 and pinned in the default `GARMIN_MCP_ARGS`. On older builds, or for activities outside
+    the sync window, export the original `.FIT` from Garmin Connect (Activity → ⚙ → *Export Original*)
+    into that folder. See `.env.example`.
 
 Every finding now carries a **confidence score**; only good-signal findings are surfaced, and the most
 important also feed a multiple-comparisons guard: the exploratory correlation scan is **FDR-controlled**
@@ -119,19 +121,18 @@ planned workout (title, planned vs done time), or an explicit note when nothing 
 joins your **AI Endurance metrics** (power/HR/ESS/durability) with the
 **.FIT biomechanics** (in-session cadence/GCT/vertical-osc drift, aerobic decoupling, temperature) and the
 **archive thermal summary**, then reads it against your **prior comparable sessions** and that day's **TSB**
-— so a dip in deep fatigue or heat isn't mistaken for lost fitness. "What happened in my last run?" in the
-Ask box routes here automatically.
+— so a dip in deep fatigue or heat isn't mistaken for lost fitness. It also reads your **upcoming 7 days
+of planned sessions** and says what (if anything) this session should change ahead — suggestions only;
+plan writes stay behind the gated two-step confirm. "What happened in my last run?" in the Ask box routes
+here automatically.
 
-**The deep dive only runs when the session's raw `.FIT` stream is present** — without it there are no
-biomechanics to read, so the LLM call is skipped (zero cost) and you get the unlock instructions instead;
-the dashboard button likewise only appears once the stream is in `data/fit-streams/`. For now, get the
-stream from Garmin Connect (Activity → ⚙ → *Export Original*) — `fit-sync` only covers the thermal
-summary layer. To analyse from summary data anyway: `npm run session -- --force`. Ask-box questions fall
-back to general Q&A instead.
-
-> **Auto-download is coming:** upstream `garmin_mcp` added `download_activity_file` (2026-06-10), which
-> serves the original per-second `.FIT`. Once wired in (see `docs/phase-2-plan.md`), Sync will fetch
-> streams into `data/fit-streams/` automatically and this manual export goes away.
+**The deep dive only runs with the session's raw `.FIT` stream** — without it there are no biomechanics
+to read, so the LLM call is skipped (zero cost). The stream now **auto-downloads**: Sync / `fit-sync`
+pulls recent ones into `data/fit-streams/`, and the *Deep feedback* button fetches a missing one on
+demand (~10s) before analysing. The button only disappears (replaced by unlock instructions) when no
+automatic path exists — Garmin off, an old `garmin_mcp` build, or no archived activity id — in which case
+export the original `.FIT` manually (Garmin Connect → ⚙ → *Export Original*). To analyse from summary
+data anyway: `npm run session -- --force`. Ask-box questions fall back to general Q&A instead.
 
 ## Token cost (know — and control — what you spend)
 

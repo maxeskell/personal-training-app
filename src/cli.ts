@@ -499,11 +499,11 @@ async function cmdProbe(): Promise<void> {
 }
 
 /**
- * `fit-sync [n]` — pull per-activity summaries for the most recent n Garmin run/ride/swim activities via
- * get_activity_fit_data (+ get_activity_weather) and archive them. Taxuspt parses the .FIT server-side and
- * returns a SUMMARY (session totals, temperature_stats, lap HRV) — not per-second records — so this feeds
- * the heat confounder (per-activity EF + temperature) automatically. Resumable: archived ids are skipped.
- * (Per-second decoupling/biomechanics still come from raw .FIT files in the streams dir.)
+ * `fit-sync [n]` — pull the most recent n Garmin run/ride/swim activities into BOTH .FIT layers:
+ * per-activity summaries via get_activity_fit_data (+ get_activity_weather) → archive (heat confounder,
+ * thermal block), and raw per-second streams via download_activity_file → data/fit-streams/ (decoupling /
+ * cadence / GCT). Resumable: archived ids and existing stream files are skipped. On garmin_mcp builds
+ * older than d31de79 the stream layer degrades to manual export (Garmin Connect → Export Original).
  */
 async function cmdFitSync(): Promise<void> {
   if (!config.garmin.enabled) {
@@ -521,8 +521,8 @@ async function cmdFitSync(): Promise<void> {
     console.log(`\nfit-sync: scanning ${limit} recent activities → fit-summaries archive\n`);
     const r = await syncFitSummaries(g, store, limit, (m) => console.log(m));
     console.log(`\nfit-sync: +${r.added} new summaries, ${r.skipped} already archived, ${r.failed} failed → data/archive/fit-summaries.jsonl`);
-    console.log("These feed the heat confounder + the session card's thermal block (per-activity EF vs temperature).");
-    console.log("Per-second biomechanics (decoupling/cadence) need a raw .FIT exported into data/fit-streams/ — no Garmin tool exposes that.");
+    console.log(`fit-sync: ⬇ ${r.streamsDownloaded} raw .FIT streams → data/fit-streams/ ${r.streamsSupported ? "(biomechanics layer)" : "(download tool unavailable — garmin_mcp too old; streams need a manual Export Original)"}`);
+    console.log("Summaries feed the heat confounder + the session card's thermal block; streams unlock decoupling/cadence/GCT.");
   } finally {
     await g.close();
   }
@@ -557,7 +557,15 @@ async function cmdDashboard(): Promise<void> {
   const decisions = await new DecisionLog().all();
   const archive = await loadArchive();
   const insights = state.raw ? buildInsights(state, archive, { history: window }) : undefined;
-  const html = renderDashboard({ window, decisions, insights, garminDays: archive?.garminDays, costRecords: await readCostRecords() });
+  const html = renderDashboard({
+    window,
+    decisions,
+    insights,
+    garminDays: archive?.garminDays,
+    costRecords: await readCostRecords(),
+    fitSummaries: archive?.fitSummaries,
+    canFetchFit: config.garmin.enabled,
+  });
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
   const dir = join(process.cwd(), "reports");

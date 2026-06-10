@@ -30,6 +30,7 @@ import { trainingStatusFinding, hrvStatusFinding, enduranceScoreFinding, powerCu
 import { garminTrendFindings } from "./garminTrends.js";
 import { analyseHeat, heatFinding } from "./heat.js";
 import { finiteNums, slope } from "./stats.js";
+import type { FitSummary } from "../archive/store.js";
 
 /** Optional historical archive to widen the metrics beyond the live 40-activity / 60-day window. */
 export interface ArchiveInput {
@@ -53,8 +54,9 @@ export interface ArchiveInput {
     bodyFatPct?: number;
     weightKg?: number;
   }>;
-  /** Per-activity .FIT summaries (from fit-sync) — per-activity EF + temperature for the heat confounder. */
-  fitSummaries?: Array<{ date: string; sport: string; avgPowerW?: number; avgHr?: number; avgTempC?: number }>;
+  /** Per-activity .FIT summaries (from fit-sync) — per-activity EF + temperature for the heat confounder;
+   *  the dashboard also reads activityId for the raw-stream auto-download. */
+  fitSummaries?: FitSummary[];
 }
 
 export interface PredictionVsGoal {
