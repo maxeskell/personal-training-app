@@ -14,10 +14,10 @@ import { ArchiveStore } from "./archive/store.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
 import { answerQuestion } from "./coach/ask.js";
-import { runSessionFeedback } from "./coach/session.js";
-import { loadSessionDecays } from "./insights/fit.js";
+import { runSessionFeedback, assembleSession } from "./coach/session.js";
+import { loadSessionDecays, fitStreamsDir } from "./insights/fit.js";
 import { readCostRecords } from "./llm/costLog.js";
-import { syncFitSummaries } from "./archive/fitSync.js";
+import { syncFitSummaries, downloadFitStream, hasStreamDownloadTool } from "./archive/fitSync.js";
 import { proposeAdjustments, validateProposals, buildProposerContext } from "./coach/planAdjust.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { alertFindings } from "./insights/metrics.js";
@@ -85,7 +85,15 @@ async function renderLatest(): Promise<string> {
   const suppressed = suppressedInsightKeys(await log.insightReactions());
   const archive = await loadArchive();
   const insights = latest.raw ? buildInsights(latest, archive, { suppressed, history: window }) : undefined;
-  return renderDashboard({ window, decisions, insights, garminDays: archive?.garminDays, costRecords: await readCostRecords() });
+  return renderDashboard({
+    window,
+    decisions,
+    insights,
+    garminDays: archive?.garminDays,
+    costRecords: await readCostRecords(),
+    fitSummaries: archive?.fitSummaries,
+    canFetchFit: config.garmin.enabled,
+  });
 }
 
 async function refresh(): Promise<void> {
@@ -207,11 +215,29 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       const body = JSON.parse((await readBody(req)) || "{}") as { date?: string; force?: boolean };
       const reqDate = String(body.date ?? "");
       const date = /^\d{4}-\d{2}-\d{2}$/.test(reqDate) ? reqDate : undefined;
+      let decays = loadSessionDecays();
+      const fitSummaries = await new ArchiveStore().loadFitSummaries();
+      // On-demand stream fetch (user ask): if the target session's raw .FIT isn't local but the archive
+      // knows its Garmin id, pull it now (~seconds) so the deep dive runs with biomechanics instead of
+      // skipping. Best-effort — on any failure the no-fit gate below still protects the LLM spend.
+      const probe = assembleSession(li.state, li.insights, { date, decays, fitSummaries });
+      if (probe && !probe.decay && probe.fit?.activityId && config.garmin.enabled) {
+        const g = new GarminClient();
+        if (await g.connect()) {
+          try {
+            if ((await hasStreamDownloadTool(g)) && (await downloadFitStream(g, probe.fit.activityId, fitStreamsDir()))) {
+              decays = loadSessionDecays();
+            }
+          } finally {
+            await g.close();
+          }
+        }
+      }
       const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), li.state, li.insights, {
         date,
         force: body.force === true, // escape hatch: summary-only analysis without the raw .FIT
-        decays: loadSessionDecays(),
-        fitSummaries: await new ArchiveStore().loadFitSummaries(),
+        decays,
+        fitSummaries,
       });
       return json({ markdown: feedback?.markdown ?? "No recent activity found to analyse.", skippedNoFit: feedback?.skippedNoFit === true });
     }
