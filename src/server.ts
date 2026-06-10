@@ -204,14 +204,16 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       if (!CoachLLM.hasApiKey()) return json({ markdown: "ANTHROPIC_API_KEY isn't set on the server, so I can't analyse sessions yet." });
       const li = await latestInsights();
       if (!li) return json({ markdown: "No data assembled yet — hit ↻ Sync first." });
-      const reqDate = String((JSON.parse((await readBody(req)) || "{}") as { date?: string }).date ?? "");
+      const body = JSON.parse((await readBody(req)) || "{}") as { date?: string; force?: boolean };
+      const reqDate = String(body.date ?? "");
       const date = /^\d{4}-\d{2}-\d{2}$/.test(reqDate) ? reqDate : undefined;
       const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), li.state, li.insights, {
         date,
+        force: body.force === true, // escape hatch: summary-only analysis without the raw .FIT
         decays: loadSessionDecays(),
         fitSummaries: await new ArchiveStore().loadFitSummaries(),
       });
-      return json({ markdown: feedback?.markdown ?? "No recent activity found to analyse." });
+      return json({ markdown: feedback?.markdown ?? "No recent activity found to analyse.", skippedNoFit: feedback?.skippedNoFit === true });
     }
 
     // Insight feedback (the insights box posts agree/disagree/ignore here).

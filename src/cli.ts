@@ -323,11 +323,12 @@ async function cmdAsk(): Promise<void> {
   console.log("\n" + answer + "\n");
 }
 
-/** `session [date]` — deep, coach-quality feedback on one session (the most recent, or a given date). */
+/** `session [date] [--force]` — deep, coach-quality feedback on one session (the most recent, or a given date). */
 async function cmdSession(): Promise<void> {
   if (!requireLLM()) process.exit(1);
-  const arg = process.argv[3];
-  const date = arg && /^\d{4}-\d{2}-\d{2}$/.test(arg) ? arg : undefined;
+  const args = process.argv.slice(3);
+  const force = args.includes("--force");
+  const date = args.find((a) => /^\d{4}-\d{2}-\d{2}$/.test(a));
   const { state, window } = await buildTodayState();
   if (!state.raw) {
     console.error("\nNo data assembled — cannot build session feedback.\n");
@@ -338,12 +339,18 @@ async function cmdSession(): Promise<void> {
   const insights = buildInsights(state, archive, { suppressed, history: window });
   const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), state, insights, {
     date,
+    force,
     decays: loadSessionDecays(),
     fitSummaries: await new ArchiveStore().loadFitSummaries(),
   });
   if (!feedback) {
     console.error(date ? `\nNo activity found for ${date}.\n` : "\nNo recent activity found to analyse.\n");
     process.exit(1);
+  }
+  if (feedback.skippedNoFit) {
+    console.log("\n" + feedback.markdown + "\n");
+    console.log("(no LLM call made — add --force for summary-only feedback anyway)");
+    return;
   }
   const path = await writeReport("session-feedback", feedback.detail.date, feedback.markdown);
   console.log("\n" + feedback.markdown + "\n");
@@ -885,7 +892,7 @@ if (!run) {
   console.log("  act        turn surfaced (gated, feedback-aware) findings into gated plan-adjustment proposals");
   console.log("  check      fire-only health watch: macOS alert ONLY if a flag / early-warning fires (no LLM)");
   console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
-  console.log("  session [date]  deep, coach-quality feedback on one session (most recent, or YYYY-MM-DD)");
+  console.log("  session [date] [--force]  deep feedback on one session (needs its raw .FIT; --force = summary-only)");
   console.log("  cost [days]   local token-cost report (per-flow breakdown + windowed totals)");
   console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
   console.log("  probe      capture live Garmin tool surface + AIE detail samples → reports/ (Phase-2 mapping)");
