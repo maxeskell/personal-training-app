@@ -97,6 +97,10 @@ async function renderLatest(): Promise<string> {
       weather = assessWeek(plan.sessions, fc, { ...config.weather, planAsOf: plan.asOf });
     }
   }
+  // Stale-while-revalidate (user ask: "sync when we load the page"): render instantly from the
+  // snapshot, and when it's old enough, have the page kick a background Sync and reload itself.
+  const staleMin = Math.round((Date.now() - new Date(latest.assembledAt).getTime()) / 60_000);
+  const autoSyncStaleMin = config.autoSyncMinutes > 0 && staleMin >= config.autoSyncMinutes ? staleMin : undefined;
   return renderDashboard({
     window,
     decisions,
@@ -106,7 +110,17 @@ async function renderLatest(): Promise<string> {
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,
     weather,
+    autoSyncStaleMin,
   });
+}
+
+/** Concurrent /refresh calls (e.g. two devices auto-syncing at once) share ONE assemble. */
+let refreshInFlight: Promise<void> | null = null;
+function refreshOnce(): Promise<void> {
+  refreshInFlight ??= refresh().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
 }
 
 async function refresh(): Promise<void> {
@@ -318,7 +332,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     }
 
     if (url.pathname === "/refresh") {
-      await refresh();
+      await refreshOnce();
       res.writeHead(302, { Location: "/" }).end();
       return;
     }

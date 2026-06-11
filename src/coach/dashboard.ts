@@ -78,6 +78,12 @@ export interface DashboardInput {
   canFetchFit?: boolean;
   /** Week-ahead weather joined to the upcoming plan (omitted when the forecast is unavailable). */
   weather?: WeekWeather;
+  /**
+   * Minutes since the snapshot was assembled, set ONLY when the server wants the page to kick a
+   * background Sync on load (stale-while-revalidate). Leave unset for the one-off CLI HTML file,
+   * which has no /refresh endpoint behind it.
+   */
+  autoSyncStaleMin?: number;
 }
 
 const TONE_COLOR: Record<Tone, string> = { good: "#1a8a3a", neutral: "#777", warn: "#c98a00", bad: "#c0392b" };
@@ -447,7 +453,7 @@ function renderHeader(today: AthleteState, insights: InsightReport | undefined, 
   </div>`;
 }
 
-export function renderDashboard({ window, decisions, insights, garminDays, costRecords, fitSummaries, canFetchFit, weather }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, garminDays, costRecords, fitSummaries, canFetchFit, weather, autoSyncStaleMin }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Week: load by sport. Time in h:mm (user ask); a zero distance renders "—" not a misleading 0.0 km.
@@ -541,13 +547,14 @@ code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
   <span id="syncstatus" class="syncstatus"></span>
 </div>
 <script>
-async function sync(){
+async function sync(note){
   var b=document.getElementById('syncbtn'), s=document.getElementById('syncstatus');
-  b.disabled=true; b.textContent='Syncing…'; s.textContent='Pulling latest from AI Endurance + Garmin (~10s)…';
+  b.disabled=true; b.textContent='Syncing…'; s.textContent=(note?note+' ':'')+'Pulling latest from AI Endurance + Garmin (~10s)…';
   try{ var r=await fetch('/refresh',{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status);
     s.textContent='Done — reloading.'; location.reload(); }
   catch(e){ b.disabled=false; b.textContent='🔄 Sync latest data'; s.textContent='Sync failed: '+e+' (try again)'; }
 }
+function autoSync(min){ sync('Data is '+min+' min old — auto-refreshing:'); }
 </script>
 
 ${insights ? renderHeader(today, insights, decisions, garminDays) : ""}
@@ -644,6 +651,7 @@ ${insights ? renderSplits(insights) : ""}
 </div>
 
 ${renderCost(costRecords)}
+${autoSyncStaleMin != null ? `<script>autoSync(${Math.round(autoSyncStaleMin)})</script>` : ""}
 </body></html>`;
 }
 
