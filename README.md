@@ -195,7 +195,11 @@ writes stay behind the gated propose → confirm flow.
 **Pairing (one-time per device):** open the printed `http://<host>:3000/pair?token=<token>` link — it sets
 an auth cookie, then the dashboard works normally. The token lives in `~/.endurance-coach/dashboard.token`
 (override with `COACH_TOKEN`). The Host header is allow-listed (defeats DNS-rebinding) and request bodies
-are capped. Hit **🔄 Sync latest data** to re-pull.
+are capped. Hit **🔄 Sync latest data** to re-pull — or don't: the page renders instantly from the
+last snapshot, and when that snapshot is older than `COACH_AUTOSYNC_MIN` (default 30) minutes it
+kicks a background Sync on load and reloads itself when done, so plan edits made in AI Endurance
+show up without button-pressing (set `COACH_AUTOSYNC_MIN=0` to disable). Concurrent syncs from two
+devices share one pull.
 The dashboard has an **"Ask your data"** chat box — type a question (e.g. *"am I overtraining?"*) and the
 coach answers from your assembled state + insights, with the same guardrails as every other flow.
 

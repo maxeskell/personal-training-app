@@ -128,6 +128,18 @@ test("mdToHtml renders the LLM markdown readably and escapes injected markup fir
   assert.ok(nasty.includes("<b>b</b>"), "formatting still applies after escaping");
 });
 
+test("stale snapshot triggers the on-load auto-sync; a fresh one (and the CLI file) doesn't", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  const auto = renderDashboard({ window: [s], decisions: [], autoSyncStaleMin: 95 });
+  assert.match(auto, /<script>autoSync\(95\)<\/script>/);
+  assert.match(auto, /function autoSync\(min\)/);
+  for (const [i, sc] of [...auto.matchAll(/<script>([\s\S]*?)<\/script>/g)].entries()) {
+    assert.doesNotThrow(() => new Function(sc[1]), `script block ${i} must parse`);
+  }
+  const fresh = renderDashboard({ window: [s], decisions: [] });
+  assert.ok(!fresh.includes("<script>autoSync("), "no auto-sync call without the server's staleness signal");
+});
+
 test("API cost card renders windowed totals + a monthly projection when records are present", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
   const costRecords = [
