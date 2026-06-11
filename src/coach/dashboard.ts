@@ -231,8 +231,8 @@ function renderLastSession(window: AthleteState[], insights: InsightReport | und
   </div>`;
 }
 
-const VERDICT_COLOR: Record<string, string> = { good: "#1a8a3a", marginal: "#c98a00", poor: "#c0392b" };
-const SPORT_EMOJI: Record<string, string> = { Swim: "🏊", Ride: "🚴", Run: "🏃" };
+const VERDICT_COLOR: Record<string, string> = { good: "#1a8a3a", marginal: "#c98a00", poor: "#c0392b", indoor: "#9a9a9a" };
+const SPORT_EMOJI: Record<string, string> = { Swim: "🏊", Ride: "🚴", Run: "🏃", Strength: "🏋️" };
 
 /** "Week ahead — plan vs weather": per-session verdicts + day outlook incl. estimated road dryness. */
 function renderWeather(w: WeekWeather | undefined): string {
@@ -262,12 +262,18 @@ function renderWeather(w: WeekWeather | undefined): string {
     </tr>`,
     )
     .join("");
-  const at = new Date(w.fetchedAt);
   const p2 = (n: number) => String(n).padStart(2, "0");
+  const stamp = (iso: string) => {
+    const d = new Date(iso);
+    return `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()]} ${d.getDate()}, ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  };
+  // Both timestamps are load-bearing: a deleted/edited workout keeps showing until the NEXT Sync,
+  // so the card must say how fresh its plan snapshot is.
+  const planNote = w.planAsOf ? `Plan as of ${stamp(w.planAsOf)} · ` : "";
   return `<div class="card"><h2>Week ahead — plan vs weather</h2>
     ${sessions}
     <table style="margin-top:8px"><tr class="k"><td>Day</td><td>Sky</td><td>°C</td><td>Rain</td><td>Gusts km/h</td><td>Roads</td><td>Ride window</td></tr>${rows}</table>
-    <div class="k" style="margin-top:8px">Open-Meteo forecast as of ${p2(at.getHours())}:${p2(at.getMinutes())} (Sync re-pulls it). "Roads" and ride windows are a MODEL drying estimate from rain, temperature, sun and wind — eyeball the tarmac before committing. Open-water temp has no public feed: set COACH_WATER_TEMP_C when the venue posts a reading.</div>
+    <div class="k" style="margin-top:8px">${planNote}Open-Meteo forecast as of ${stamp(w.fetchedAt)} — Sync re-pulls both. "Roads" and ride windows are a MODEL drying estimate from rain, temperature, sun and wind — eyeball the tarmac before committing. Open-water temp has no public feed: set COACH_WATER_TEMP_C when the venue posts a reading.</div>
   </div>`;
 }
 

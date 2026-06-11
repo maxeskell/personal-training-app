@@ -16,9 +16,12 @@ export interface AssessOpts {
   rideMaxRainProbPct: number;
   /** Local ISO "now" — today's hours already past are not offered as ride windows. Defaults to wall clock. */
   now?: string;
+  /** When the plan snapshot was assembled (state.assembledAt) — shown so stale plan data is visible. */
+  planAsOf?: string;
 }
 
-export type WeatherVerdict = "good" | "marginal" | "poor";
+/** "indoor" = listed for completeness (gym etc.) — weather rules don't apply. */
+export type WeatherVerdict = "good" | "marginal" | "poor" | "indoor";
 
 export interface SessionVerdict {
   date: string;
@@ -45,6 +48,8 @@ export interface DayOutlook {
 
 export interface WeekWeather {
   fetchedAt: string;
+  /** Plan-snapshot time — the sessions below are only as fresh as the last Sync. */
+  planAsOf?: string;
   days: DayOutlook[];
   sessions: SessionVerdict[];
 }
@@ -234,24 +239,42 @@ export function assessWeek(planned: PlannedSession[], fc: Forecast, opts: Assess
     if (p.sport === "Ride") sessions.push(rideVerdict(p, day, shown, road, opts, now));
     else if (p.sport === "Run") sessions.push(runVerdict(p, day));
     else if (p.sport === "Swim") sessions.push(swimVerdict(p, day, opts));
+    else
+      // Indoor/unknown sessions are listed (not silently dropped) so the card mirrors the full week.
+      sessions.push({
+        date: day.date,
+        sport: p.sport ?? "Other",
+        title: p.title,
+        verdict: "indoor",
+        reason: p.sport === "Strength" ? "indoor — weather doesn't apply" : "no weather rules for this session type",
+      });
   }
   sessions.sort((a, b) => a.date.localeCompare(b.date));
-  return { fetchedAt: fc.fetchedAt, days, sessions };
+  return { fetchedAt: fc.fetchedAt, planAsOf: opts.planAsOf, days, sessions };
+}
+
+export interface UpcomingPlan {
+  sessions: PlannedSession[];
+  /** assembledAt of the state the plan came from — surfaces how stale the snapshot is. */
+  asOf?: string;
 }
 
 /** Upcoming planned sessions from the freshest state that has any — the plan for [today, today+horizon). */
-export function upcomingPlanned(window: AthleteState[], today: string, horizonDays = 7): PlannedSession[] {
+export function upcomingPlanned(window: AthleteState[], today: string, horizonDays = 7): UpcomingPlan {
   const end = new Date(`${today}T00:00:00Z`);
   end.setUTCDate(end.getUTCDate() + horizonDays);
   const endIso = end.toISOString().slice(0, 10);
   for (let i = window.length - 1; i >= 0; i--) {
     const all = window[i].plannedSessions.value;
     if (all?.length) {
-      return all.filter((p) => {
-        const d = p.date.slice(0, 10);
-        return d >= today && d < endIso;
-      });
+      return {
+        sessions: all.filter((p) => {
+          const d = p.date.slice(0, 10);
+          return d >= today && d < endIso;
+        }),
+        asOf: window[i].assembledAt,
+      };
     }
   }
-  return [];
+  return { sessions: [] };
 }

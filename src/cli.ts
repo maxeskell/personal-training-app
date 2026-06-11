@@ -562,7 +562,10 @@ async function cmdDashboard(): Promise<void> {
   let weather: WeekWeather | undefined;
   if (config.weather.enabled) {
     const fc = await getForecast();
-    if (fc) weather = assessWeek(upcomingPlanned(window, todayIso()), fc, config.weather);
+    if (fc) {
+      const plan = upcomingPlanned(window, todayIso());
+      weather = assessWeek(plan.sessions, fc, { ...config.weather, planAsOf: plan.asOf });
+    }
   }
   const html = renderDashboard({
     window,

@@ -186,8 +186,11 @@ noted); **open-water swims** are green except in forecast thunderstorms, with th
 against your `COACH_SWIM_MIN_WATER_C` (default 13°C) floor via the manually-updated
 `COACH_WATER_TEMP_C` (no public feed exists). "Roads dry from ~HH:00" comes from an hour-by-hour
 drying MODEL (rain wets the surface; time, temperature, sun and wind dry it) — an estimate to plan
-around, not a guarantee. The forecast refreshes on **Sync** (or when older than ~3h) and the card is
-display-only: plan writes stay behind the gated propose → confirm flow.
+around, not a guarantee. Indoor sessions (gym/strength) are listed as muted weather-n/a rows so the
+card always mirrors the full week. The card shows **two timestamps**: "plan as of" (the sessions are
+a snapshot from the last Sync — edits/deletions in AI Endurance appear after the next Sync) and the
+forecast fetch time (re-pulled on Sync, or when older than ~3h). The card is display-only: plan
+writes stay behind the gated propose → confirm flow.
 
 **Pairing (one-time per device):** open the printed `http://<host>:3000/pair?token=<token>` link — it sets
 an auth cookie, then the dashboard works normally. The token lives in `~/.endurance-coach/dashboard.token`
