@@ -21,6 +21,8 @@ import { syncFitSummaries, downloadFitStream, hasStreamDownloadTool } from "./ar
 import { proposeAdjustments, validateProposals, buildProposerContext } from "./coach/planAdjust.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { alertFindings } from "./insights/metrics.js";
+import { getForecast, refreshForecast } from "./weather/store.js";
+import { assessWeek, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
 import { config } from "./config.js";
 
 /**
@@ -85,6 +87,13 @@ async function renderLatest(): Promise<string> {
   const suppressed = suppressedInsightKeys(await log.insightReactions());
   const archive = await loadArchive();
   const insights = latest.raw ? buildInsights(latest, archive, { suppressed, history: window }) : undefined;
+  // Week-ahead weather: cached (or short-timeout fetched) forecast joined to the upcoming plan.
+  // Best-effort — undefined just means the card is absent, never an error page.
+  let weather: WeekWeather | undefined;
+  if (config.weather.enabled) {
+    const fc = await getForecast();
+    if (fc) weather = assessWeek(upcomingPlanned(window, today), fc, config.weather);
+  }
   return renderDashboard({
     window,
     decisions,
@@ -93,6 +102,7 @@ async function renderLatest(): Promise<string> {
     costRecords: await readCostRecords(),
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,
+    weather,
   });
 }
 
@@ -116,6 +126,7 @@ async function refresh(): Promise<void> {
         console.warn(`fit-sync during refresh failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
       }
     }
+    if (config.weather.enabled) await refreshForecast(); // best-effort inside — never fails a refresh
   } finally {
     await aie.close();
     await garmin?.close();
