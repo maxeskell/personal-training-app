@@ -177,6 +177,18 @@ npm run serve                 # localhost only; prints a /pair?token=… link at
 COACH_LAN=1 npm run serve     # also bind the LAN for phone access
 ```
 
+**Week ahead — plan vs weather:** the dashboard joins your next 7 days of planned sessions with an
+Open-Meteo forecast (free, no key) at your base (`COACH_WEATHER_LAT/LON`, default Tamworth/Dosthill).
+Each outdoor session gets a 🟢/🟡/🔴 verdict against your rules — **rides** want dry roads and gusts
+under `COACH_RIDE_MAX_GUST_KMH`, with a best daylight ride window per day and a suggested
+alternative day when the planned one is a washout; **runs** are green in any weather (heat/ice
+noted); **open-water swims** are green except in forecast thunderstorms, with the water checked
+against your `COACH_SWIM_MIN_WATER_C` (default 13°C) floor via the manually-updated
+`COACH_WATER_TEMP_C` (no public feed exists). "Roads dry from ~HH:00" comes from an hour-by-hour
+drying MODEL (rain wets the surface; time, temperature, sun and wind dry it) — an estimate to plan
+around, not a guarantee. The forecast refreshes on **Sync** (or when older than ~3h) and the card is
+display-only: plan writes stay behind the gated propose → confirm flow.
+
 **Pairing (one-time per device):** open the printed `http://<host>:3000/pair?token=<token>` link — it sets
 an auth cookie, then the dashboard works normally. The token lives in `~/.endurance-coach/dashboard.token`
 (override with `COACH_TOKEN`). The Host header is allow-listed (defeats DNS-rebinding) and request bodies

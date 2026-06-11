@@ -21,6 +21,8 @@ import { answerQuestion } from "./coach/ask.js";
 import { runSessionFeedback } from "./coach/session.js";
 import { loadSessionDecays } from "./insights/fit.js";
 import { readCostRecords, summarizeCost } from "./llm/costLog.js";
+import { getForecast } from "./weather/store.js";
+import { assessWeek, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
 
 /** Load the local history archive (if any) as insight inputs. Undefined when empty. */
 async function loadArchive(): Promise<ArchiveInput | undefined> {
@@ -557,6 +559,11 @@ async function cmdDashboard(): Promise<void> {
   const decisions = await new DecisionLog().all();
   const archive = await loadArchive();
   const insights = state.raw ? buildInsights(state, archive, { history: window }) : undefined;
+  let weather: WeekWeather | undefined;
+  if (config.weather.enabled) {
+    const fc = await getForecast();
+    if (fc) weather = assessWeek(upcomingPlanned(window, todayIso()), fc, config.weather);
+  }
   const html = renderDashboard({
     window,
     decisions,
@@ -565,6 +572,7 @@ async function cmdDashboard(): Promise<void> {
     costRecords: await readCostRecords(),
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,
+    weather,
   });
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");

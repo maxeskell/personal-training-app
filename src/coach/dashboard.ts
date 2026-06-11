@@ -7,6 +7,7 @@ import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone } from "../insights/headline.js";
 import { assembleSession } from "./session.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
+import { weekday, type WeekWeather } from "../weather/assess.js";
 
 /**
  * Glanceable local dashboard (Path-B need #2): a single self-contained HTML file with
@@ -75,6 +76,8 @@ export interface DashboardInput {
   fitSummaries?: FitSummary[];
   /** Whether the server can fetch a missing raw .FIT on demand (Garmin enabled). */
   canFetchFit?: boolean;
+  /** Week-ahead weather joined to the upcoming plan (omitted when the forecast is unavailable). */
+  weather?: WeekWeather;
 }
 
 const TONE_COLOR: Record<Tone, string> = { good: "#1a8a3a", neutral: "#777", warn: "#c98a00", bad: "#c0392b" };
@@ -225,6 +228,46 @@ function renderLastSession(window: AthleteState[], insights: InsightReport | und
     ${planLine}
     ${deep}
     <div id="sessionfb" style="margin-top:12px;font-size:14px;color:#333;white-space:pre-wrap"></div>
+  </div>`;
+}
+
+const VERDICT_COLOR: Record<string, string> = { good: "#1a8a3a", marginal: "#c98a00", poor: "#c0392b" };
+const SPORT_EMOJI: Record<string, string> = { Swim: "🏊", Ride: "🚴", Run: "🏃" };
+
+/** "Week ahead — plan vs weather": per-session verdicts + day outlook incl. estimated road dryness. */
+function renderWeather(w: WeekWeather | undefined): string {
+  if (!w) return "";
+  const sessions = w.sessions.length
+    ? w.sessions
+        .map(
+          (s) => `<div class="finding">
+      <div><span class="badge" style="background:${VERDICT_COLOR[s.verdict] ?? "#777"}">${escapeHtml(s.verdict)}</span>
+        <b>${escapeHtml(weekday(s.date))} · ${SPORT_EMOJI[s.sport] ?? ""} ${escapeHtml(s.sport)}</b>${s.title ? ` <span class="muted">· ${escapeHtml(s.title)}</span>` : ""}</div>
+      <div class="fdetail">${escapeHtml(s.reason)}</div>
+      ${s.suggestion ? `<div class="ev">→ ${escapeHtml(s.suggestion)}</div>` : ""}
+    </div>`,
+        )
+        .join("")
+    : `<div class="k" style="margin-bottom:6px">No outdoor sessions in the visible plan window — day outlook below.</div>`;
+  const rows = w.days
+    .map(
+      (d) => `<tr>
+      <td>${escapeHtml(weekday(d.date))}</td>
+      <td>${escapeHtml(d.label)}</td>
+      <td class="num">${Math.round(d.tempMinC)}–${Math.round(d.tempMaxC)}°</td>
+      <td class="num">${d.precipSumMm ? d.precipSumMm.toFixed(1) + " mm" : "0"}${d.precipProbMaxPct != null ? ` · ${Math.round(d.precipProbMaxPct)}%` : ""}</td>
+      <td class="num">${Math.round(d.gustMaxKmh)}</td>
+      <td>${escapeHtml(d.roads)}</td>
+      <td>${d.rideWindow ? `${d.rideWindow.from.slice(11, 16)}–${d.rideWindow.to.slice(11, 16)}` : '<span class="muted">—</span>'}</td>
+    </tr>`,
+    )
+    .join("");
+  const at = new Date(w.fetchedAt);
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  return `<div class="card"><h2>Week ahead — plan vs weather</h2>
+    ${sessions}
+    <table style="margin-top:8px"><tr class="k"><td>Day</td><td>Sky</td><td>°C</td><td>Rain</td><td>Gusts km/h</td><td>Roads</td><td>Ride window</td></tr>${rows}</table>
+    <div class="k" style="margin-top:8px">Open-Meteo forecast as of ${p2(at.getHours())}:${p2(at.getMinutes())} (Sync re-pulls it). "Roads" and ride windows are a MODEL drying estimate from rain, temperature, sun and wind — eyeball the tarmac before committing. Open-water temp has no public feed: set COACH_WATER_TEMP_C when the venue posts a reading.</div>
   </div>`;
 }
 
@@ -398,7 +441,7 @@ function renderHeader(today: AthleteState, insights: InsightReport | undefined, 
   </div>`;
 }
 
-export function renderDashboard({ window, decisions, insights, garminDays, costRecords, fitSummaries, canFetchFit }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, garminDays, costRecords, fitSummaries, canFetchFit, weather }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Week: load by sport. Time in h:mm (user ask); a zero distance renders "—" not a misleading 0.0 km.
@@ -570,6 +613,8 @@ ${insights ? renderSignals(insights) : ""}
 <div class="card"><h2>This week — load by sport</h2>
   <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows || '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
 </div>
+
+${renderWeather(weather)}
 
 <div class="card"><h2>Trends (last ${gar.length || 0} days)</h2>
   ${trendRows ? `<table>${trendRows}</table>` : '<div class="muted">Backfill the Garmin daily archive to populate trends (npm run backfill).</div>'}
