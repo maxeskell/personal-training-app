@@ -101,6 +101,12 @@ export const config = {
     timeoutMs: Number(process.env.COACH_WEATHER_TIMEOUT_MS ?? 6000),
   },
 
+  /**
+   * Dashboard auto-sync: a page load whose snapshot is older than this kicks a background
+   * /refresh and reloads when done (the page itself still renders instantly). 0 disables it.
+   */
+  autoSyncMinutes: Number(process.env.COACH_AUTOSYNC_MIN ?? 30),
+
   /** Where persisted secrets/tokens live — gitignored, outside the repo by default. */
   secretsDir: process.env.COACH_SECRETS_DIR ?? join(home, ".endurance-coach"),
 
