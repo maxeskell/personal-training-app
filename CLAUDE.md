@@ -12,6 +12,13 @@
    PR if one doesn't exist. Don't leave work uncommitted in the session.
 4. **Report honestly.** If tests fail or something was skipped, say so — never present it as done.
 
+## Talking to the user
+
+- **Always give absolute paths in CLI instructions.** Any command the user is told to run must be
+  copy-pasteable from anywhere: `cd /Users/maxeskell/personal-training-app && npm run update`,
+  never a bare `npm run update` that assumes a working directory. The repo lives at
+  `/Users/maxeskell/personal-training-app` on the user's Mac.
+
 ## Project conventions (read before writing code)
 
 - **One athlete, local-first.** Plan data comes from AI Endurance (MCP, OAuth in
