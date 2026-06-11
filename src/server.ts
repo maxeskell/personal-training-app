@@ -92,7 +92,10 @@ async function renderLatest(): Promise<string> {
   let weather: WeekWeather | undefined;
   if (config.weather.enabled) {
     const fc = await getForecast();
-    if (fc) weather = assessWeek(upcomingPlanned(window, today), fc, config.weather);
+    if (fc) {
+      const plan = upcomingPlanned(window, today);
+      weather = assessWeek(plan.sessions, fc, { ...config.weather, planAsOf: plan.asOf });
+    }
   }
   return renderDashboard({
     window,

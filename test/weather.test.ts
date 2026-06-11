@@ -127,6 +127,7 @@ function stormyWeek(): Forecast {
 const PLAN: PlannedSession[] = [
   { date: "2026-06-09", sport: "Ride", title: "Endurance ride", durationMin: 120 },
   { date: "2026-06-10", sport: "Run", title: "Easy run", durationMin: 50 },
+  { date: "2026-06-10", sport: "Strength", title: "Gym", durationMin: 45 },
   { date: "2026-06-11", sport: "Swim", title: "OW swim", durationMin: 40 },
   { date: "2026-06-12", sport: "Ride", title: "Tempo ride", durationMin: 90 },
 ];
@@ -149,6 +150,15 @@ test("runs go in any weather; open water in a thunderstorm is a no-go", () => {
   const swim = w.sessions.find((s) => s.sport === "Swim")!;
   assert.equal(swim.verdict, "poor");
   assert.match(swim.reason, /thunder/i);
+});
+
+test("indoor sessions are listed as weather-n/a, never dropped or given a ride verdict", () => {
+  const w = assessWeek(PLAN, stormyWeek(), { ...OPTS, planAsOf: "2026-06-08T06:00:00Z" });
+  const gym = w.sessions.find((s) => s.sport === "Strength")!;
+  assert.equal(gym.verdict, "indoor");
+  assert.match(gym.reason, /weather doesn't apply/);
+  assert.equal(w.sessions.length, PLAN.length, "every planned session appears");
+  assert.equal(w.planAsOf, "2026-06-08T06:00:00Z");
 });
 
 test("swim water-temp rule: unknown → check the venue; below the floor → marginal with wetsuit advice", () => {
@@ -184,19 +194,25 @@ test("upcomingPlanned takes the freshest plan and clips to the 7-day horizon", (
     source: "ai-endurance",
   };
   const got = upcomingPlanned([old, fresh], "2026-06-08");
-  assert.equal(got.length, 1);
-  assert.equal(got[0].title, "current plan");
+  assert.equal(got.sessions.length, 1);
+  assert.equal(got.sessions[0].title, "current plan");
+  assert.equal(got.asOf, fresh.assembledAt, "reports which snapshot the plan came from");
 });
 
 // --- dashboard card ---
 
 test("dashboard renders the week-ahead card escaped, scripts stay valid", () => {
   const s = emptyState("2026-06-08", new Date().toISOString());
-  const nastyPlan: PlannedSession[] = [{ date: "2026-06-09", sport: "Ride", title: `O'Brien </script><b>x</b> ride` }];
-  const w = assessWeek(nastyPlan, mkForecast([mkDay("2026-06-08"), mkDay("2026-06-09")]), OPTS);
+  const nastyPlan: PlannedSession[] = [
+    { date: "2026-06-09", sport: "Ride", title: `O'Brien </script><b>x</b> ride` },
+    { date: "2026-06-09", sport: "Strength", title: "Gym" },
+  ];
+  const w = assessWeek(nastyPlan, mkForecast([mkDay("2026-06-08"), mkDay("2026-06-09")]), { ...OPTS, planAsOf: "2026-06-08T06:00:00Z" });
   const html = renderDashboard({ window: [s], decisions: [], weather: w });
   assert.match(html, /Week ahead — plan vs weather/);
   assert.match(html, new RegExp(weekday("2026-06-09")));
+  assert.match(html, /Plan as of/);
+  assert.match(html, />indoor</, "gym session renders with the muted indoor badge");
   assert.ok(!html.includes("</script><b>x</b>"), "session title is escaped");
   assert.ok(!html.includes("NaN") && !html.includes("undefined"));
   for (const [i, sc] of [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].entries()) {
