@@ -1,6 +1,7 @@
 import { mkdir, readFile, appendFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import lockfile from "proper-lockfile";
 import { config } from "../config.js";
 
 /**
@@ -41,6 +42,27 @@ export class DecisionLog {
   async append(record: DecisionRecord): Promise<void> {
     await mkdir(join(config.dataDir, "decisions"), { recursive: true });
     await appendFile(this.file, JSON.stringify(record) + "\n");
+  }
+
+  /**
+   * Run `fn` while holding an exclusive cross-process lock on the log (proper-lockfile: atomic mkdir,
+   * mtime-refreshed, stale-aware — robust on a local filesystem). Serializes a critical section across
+   * the CLI and the dashboard-server processes, so a check-then-act (e.g. WriteGate.confirm) can't
+   * interleave and double-fire. Crash-safe: a stale lock (mtime older than `stale`) is reclaimed.
+   */
+  async withLock<T>(fn: () => Promise<T>): Promise<T> {
+    await mkdir(join(config.dataDir, "decisions"), { recursive: true });
+    await appendFile(this.file, ""); // ensure the lock target exists (no-op if it already does)
+    const release = await lockfile.lock(this.file, {
+      stale: 30_000, // a confirm includes a network write; keep the lock valid well past that
+      realpath: false,
+      retries: { retries: 20, factor: 1.5, minTimeout: 100, maxTimeout: 1000 },
+    });
+    try {
+      return await fn();
+    } finally {
+      await release();
+    }
   }
 
   async all(): Promise<DecisionRecord[]> {

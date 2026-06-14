@@ -102,6 +102,19 @@ test("WriteGate: a proposal older than the TTL is refused (stale-plan protection
   assert.equal(aie.calls.length, 0, "a stale proposal fires no write");
 });
 
+test("WriteGate: concurrent confirms of the same id execute the write exactly once (lock serializes)", async () => {
+  const log = await freshLog();
+  const { WriteGate } = await import("../src/guardrails/writeGate.js");
+  const aie = fakeAie();
+  const gate = new WriteGate(aie as never, log);
+  const p = await gate.propose({ tool: "skipWorkout", args: { workoutId: "1" }, rationale: "r", tradeoff: "t" });
+  // Fire three confirms at once; the cross-process lock must serialize them so only one writes.
+  const results = await Promise.allSettled([gate.confirm(p.id), gate.confirm(p.id), gate.confirm(p.id)]);
+  assert.equal(aie.calls.length, 1, "exactly one write fired despite three concurrent confirms");
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1, "exactly one confirm succeeded");
+  assert.equal((await log.all()).filter((r) => r.id === p.id).at(-1)?.status, "executed");
+});
+
 test("WriteGate.assertNoDirectWrite blocks a write tool from any non-gated path", async () => {
   const { WriteGate } = await import("../src/guardrails/writeGate.js");
   assert.throws(() => WriteGate.assertNoDirectWrite("skipWorkout"), /must go through WriteGate/);
