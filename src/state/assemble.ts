@@ -15,6 +15,7 @@ import {
 } from "./types.js";
 import { deriveZones } from "../insights/zones.js";
 import { config } from "../config.js";
+import { extractJson, garminInner, asNumber, lastNum, lastVal, lastEl, daysAgoIso, get } from "./payload.js";
 
 /**
  * Assemble today's AthleteState from AI Endurance (spine) + optional Garmin.
@@ -24,82 +25,9 @@ import { config } from "../config.js";
  * assumptions — a tool changing shape degrades a field to null, it doesn't crash.
  */
 
-/** Pull JSON out of an MCP CallToolResult (prefers structuredContent). */
-export function extractJson(result: unknown): unknown {
-  if (result && typeof result === "object") {
-    const r = result as Record<string, unknown>;
-    if (r.structuredContent !== undefined) return r.structuredContent;
-    if (Array.isArray(r.content)) {
-      const text = r.content
-        .filter((c): c is { type: string; text: string } =>
-          Boolean(c && typeof c === "object" && (c as any).type === "text"),
-        )
-        .map((c) => c.text)
-        .join("\n");
-      try {
-        return JSON.parse(text);
-      } catch {
-        return text;
-      }
-    }
-  }
-  return result;
-}
-
-function asNumber(x: unknown): number | undefined {
-  if (typeof x === "number" && Number.isFinite(x)) return x;
-  if (typeof x === "string" && x.trim() !== "" && Number.isFinite(Number(x))) return Number(x);
-  return undefined;
-}
-
-/** Last finite element of a numeric time-series array (AIE returns 60-day series). */
-function lastNum(arr: unknown): number | undefined {
-  if (!Array.isArray(arr)) return undefined;
-  for (let i = arr.length - 1; i >= 0; i--) {
-    const n = asNumber(arr[i]);
-    if (n !== undefined) return n;
-  }
-  return undefined;
-}
-
-/** Last non-empty element of an array (e.g. the "driving_recovery" string series). */
-function lastVal(arr: unknown): unknown {
-  if (!Array.isArray(arr)) return undefined;
-  return arr.length ? arr[arr.length - 1] : undefined;
-}
-
-/** Last element of an array, else the value itself (Garmin returns arrays or scalars). */
-function lastEl(v: unknown): unknown {
-  return Array.isArray(v) ? (v.length ? v[v.length - 1] : undefined) : v;
-}
-
-/** ISO date `n` days before `date` (YYYY-MM-DD), via UTC to avoid TZ drift. */
-function daysAgoIso(date: string, n: number): string {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-
-/**
- * Garmin (Taxuspt) wraps tool output as `{result: "<json string>"}` inside the
- * MCP content. extractJson() unwraps the MCP envelope; this unwraps the inner
- * `result` JSON string. Returns null on any miss so callers degrade cleanly.
- */
-export function garminInner(toolResult: unknown): unknown {
-  if (toolResult === null || toolResult === undefined) return null;
-  const obj = extractJson(toolResult);
-  const inner = obj && typeof obj === "object" && "result" in (obj as Record<string, unknown>)
-    ? (obj as Record<string, unknown>).result
-    : obj;
-  if (typeof inner === "string") {
-    try {
-      return JSON.parse(inner);
-    } catch {
-      return inner; // e.g. "No weight measurements found for …"
-    }
-  }
-  return inner;
-}
+// The MCP/Garmin envelope unwrappers + generic accessors now live in ./payload.js (small, directly
+// tested). Re-export the two public ones so existing importers (cli, fitSync, backfill) are unaffected.
+export { extractJson, garminInner };
 
 const SPORT_FROM_ACT: Record<string, "Ride" | "Run" | "Swim" | "Strength" | "Other"> = {
   Ride: "Ride",
@@ -108,18 +36,6 @@ const SPORT_FROM_ACT: Record<string, "Ride" | "Run" | "Swim" | "Strength" | "Oth
   Bike: "Ride",
   Strength: "Strength",
 };
-
-function get(obj: unknown, ...keys: string[]): unknown {
-  let cur: unknown = obj;
-  for (const k of keys) {
-    if (cur && typeof cur === "object" && k in (cur as Record<string, unknown>)) {
-      cur = (cur as Record<string, unknown>)[k];
-    } else {
-      return undefined;
-    }
-  }
-  return cur;
-}
 
 export interface AssembleOptions {
   date: string;
