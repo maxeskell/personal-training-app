@@ -67,8 +67,12 @@ export function coachHeadline(report: InsightReport, state: AthleteState): Headl
 
   if (flags.length) {
     const lead = flags[0];
-    // Red when the body is clearly under load (overreached/fatigued) alongside the flag; else amber.
-    const fatigued = band?.tone === "bad" || ts?.acwrStatus?.toUpperCase() === "HIGH";
+    // Red requires a PATTERN, not a single point (criterion #5/COACH-2): a chronic-window ACWR HIGH is
+    // itself trend-based and reds on its own, but a lone deep-fatigue TSB band only reds when corroborated
+    // (a recovery limiter, or a second flag) — otherwise it's amber. Stops one number flipping the call.
+    const acwrHigh = ts?.acwrStatus?.toUpperCase() === "HIGH";
+    const deepFatigue = band?.tone === "bad";
+    const fatigued = acwrHigh || (deepFatigue && (!!limiter || flags.length > 1));
     return {
       severity: fatigued ? "red" : "amber",
       line: `${lead.title}${band ? ` — and your form is ${band.label}` : ""}. ${flags.length > 1 ? `(${flags.length} flags today.)` : ""}`.trim(),

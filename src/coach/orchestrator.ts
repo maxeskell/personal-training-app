@@ -10,18 +10,19 @@ import { assessHealthRisk } from "../guardrails/wellbeing.js";
 import { DecisionLog, decisionId, nowIso } from "../state/decisionLog.js";
 import { ArchiveStore } from "../archive/store.js";
 import { mapRichActivity } from "../insights/metrics.js";
+import { todayIso } from "../util/today.js";
 import type { ArchiveInput } from "../insights/engine.js";
 import type { AthleteState } from "../state/types.js";
+
+// Re-exported so existing importers (CLI, dashboard, MCP server) keep getting `todayIso` from here,
+// while the single source of truth — a timezone-aware "today" (DATA-3) — lives in util/today.
+export { todayIso };
 
 /**
  * Shared orchestration the coach's three faces (CLI, dashboard server, MCP server) all build on:
  * assembling today's state, loading the local archive, and the readiness core. Kept in one place
  * so the engine never drifts between entrypoints.
  */
-
-export function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 /** Connect an AI Endurance client, run `fn`, and always close — the read lifecycle for one flow. */
 export async function withAie<T>(fn: (aie: AieClient) => Promise<T>): Promise<T> {
@@ -85,12 +86,12 @@ export async function gatherReadiness(): Promise<{
   const risk = assessHealthRisk(window); // deterministic guardrail, runs before the model
   const llm = new CoachLLM(await loadSystemPrompt(), "readiness", "medium");
   const { verdict, cacheRead, costUsd } = await assessReadiness(llm, window);
-  await new DecisionLog().append({
-    id: decisionId(`readiness:${state.date}`),
-    timestamp: nowIso(),
-    kind: "readiness",
-    summary: `${verdict.verdict}: ${verdict.why}`,
-    status: "note",
-  });
+  // Idempotent per day (ENG-3): the readiness id is deterministic from the date, so a re-run (manual +
+  // the 06:00 ping, or a launchd wake) must not append a duplicate readiness line. First call of the day wins.
+  const log = new DecisionLog();
+  const id = decisionId(`readiness:${state.date}`);
+  if (!(await log.all()).some((r) => r.id === id)) {
+    await log.append({ id, timestamp: nowIso(), kind: "readiness", summary: `${verdict.verdict}: ${verdict.why}`, status: "note" });
+  }
   return { state, verdict, risk, cacheRead, costUsd };
 }

@@ -24,6 +24,7 @@ import { alertFindings } from "./insights/metrics.js";
 import { getForecast, refreshForecast } from "./weather/store.js";
 import { assessWeek, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
 import { config } from "./config.js";
+import { todayIso } from "./util/today.js";
 
 /**
  * Local dashboard server (N1, Path-B need #2 upgraded to "online"). Binds to the LAN so a phone on
@@ -76,7 +77,7 @@ function lanUrls(): string[] {
 
 async function renderLatest(): Promise<string> {
   const store = new StateStore();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const window = await store.recent(today, 14);
   if (!window.length) {
     return `<!doctype html><body style="font-family:sans-serif;padding:40px;max-width:600px;margin:auto">
@@ -131,7 +132,7 @@ async function refresh(): Promise<void> {
   const aie = new AieClient();
   await aie.connect();
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayIso();
     const state = await assembleState(aie, garmin, store, { date: today, assembledAt: new Date().toISOString() });
     await store.save(state);
     // Keep the thermal layer (session card + heat confounder) current, hands-free. fit-sync dedups
@@ -154,7 +155,7 @@ async function refresh(): Promise<void> {
 /** Latest state + its insights (gated, feedback-aware) — shared by /act. */
 async function latestInsights() {
   const store = new StateStore();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const window = await store.recent(today, 14);
   const state = window[window.length - 1];
   if (!state?.raw) return null;
@@ -223,7 +224,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         return;
       }
       const store = new StateStore();
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayIso();
       const window = await store.recent(today, 1);
       const state = window[window.length - 1];
       if (!state) {
@@ -363,7 +364,12 @@ if (isMain) {
   server.on("error", (e) => console.error(`Server error: ${e instanceof Error ? e.message : e}`));
   server.listen(PORT, HOST, () => {
     console.log(`Endurance Coach dashboard on:`);
-    for (const u of lanUrls()) console.log(`  ${u}/pair?token=${TOKEN}`);
+    // The pairing token is a secret. Only print it inline when stdout is an interactive TTY; under
+    // launchd/pm2 (stdout → reports/server.log) print the bare URL so the token isn't persisted in a
+    // log file (ENG-4). The token lives in ~/.endurance-coach/dashboard.token for first-time pairing.
+    const showToken = process.stdout.isTTY;
+    for (const u of lanUrls()) console.log(`  ${u}/pair${showToken ? `?token=${TOKEN}` : "?token=<see ~/.endurance-coach/dashboard.token>"}`);
+    if (!showToken) console.log("(token redacted from this log — read it from ~/.endurance-coach/dashboard.token)");
     console.log(LAN ? "(open the /pair link on your phone — same Wi-Fi; token gates all access)" : "(localhost only; set COACH_LAN=1 to allow your phone on the LAN)");
   });
 }

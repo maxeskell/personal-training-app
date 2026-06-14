@@ -605,9 +605,11 @@ async function actPlan(){
   try{var r=await fetch('/act',{method:'POST'}); var j=await r.json();
     if(!j.proposals||!j.proposals.length){box.innerHTML='<div class="k">'+esc(j.notes||'No change proposed.')+'</div>';return;}
     box.innerHTML=j.proposals.map(function(p){return '<div class="proposal" data-id="'+esc(p.id)+'"><b>'+esc(p.human||p.summary)+'</b>'
+      +'<div class="k">✓ exact change, validated against your real plan — this is what gets written</div>'
       +'<div class="fdetail">'+esc(p.summary)+'</div>'
       +'<div class="ev">trade-off: '+esc(p.tradeoff)+'</div>'
       +((p.basis&&p.basis.length)?'<div class="ev">because: '+esc(p.basis.join('; '))+'</div>':'')
+      +'<div class="ev" style="color:#bbb">the bold line is validated; the rationale above is AI-generated — read the bold line before applying</div>'
       +'<div class="acts"><button class="agree" onclick="confirmProposal(this)">✓ Apply to AI Endurance</button>'
       +'<button class="ignore" onclick="declineProposal(this)">✕ Dismiss</button><span class="reacted"></span></div></div>';}).join('');
   }catch(e){box.innerHTML='<div class="k">Error: '+esc(''+e)+'</div>';}

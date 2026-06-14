@@ -72,8 +72,11 @@ export function sleepVsNextDayLoad(
     ciHigh: c.ciHigh,
     effN: c.effN,
     significant: c.significant,
-    fdrPass: c.significant,
-    interpretation: `${strength(c.r)} (r=${c.r}, 95% CI [${c.ciLow},${c.ciHigh}], n=${c.n}${c.significant ? "" : ", CI spans 0 — tentative"}): ${c.r > 0 ? "you train more after good sleep — readiness shows up the next day." : "your training load doesn't follow sleep — but watch session quality on short-sleep days."}`,
+    // This archive correlation is computed OUTSIDE analyseRecoverySeries' Benjamini–Hochberg set, so it
+    // is NOT multiplicity-corrected — never claim FDR confirmation (it would otherwise surface at 0.8
+    // "confirmed" confidence on a single uncorrected test). CI-excludes-0 is the most it can assert.
+    fdrPass: false,
+    interpretation: `${strength(c.r)} (r=${c.r}, 95% CI [${c.ciLow},${c.ciHigh}], n=${c.n}${c.significant ? "" : ", CI spans 0 — tentative"}): ${c.r > 0 ? "you train more after good sleep — readiness shows up the next day." : "your training load doesn't follow sleep — but watch session quality on short-sleep days."} [single uncorrected test — not FDR-confirmed]`,
   };
 }
 

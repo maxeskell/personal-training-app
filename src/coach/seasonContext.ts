@@ -108,9 +108,14 @@ export function deriveSeasonShape(goals: Goal[], today: string): string[] {
         calls.push(`${name(e)} sits ${gap}d before your higher-priority ${name(l)} — treat it as a hard-capped tempo, not a race, so it doesn't disrupt ${name(l)}'s taper/prep. Surface this as the explicit trade-off.`);
     }
 
-  const runIdx = fut.findIndex((g) => classifyRace(g) === "run");
+  // Anchor the run-off-a-tri-base injury window to the marathon/ultra it's really about (the compressed
+  // long-run ramp), not merely the FIRST future run goal — which might be an earlier, shorter race.
+  const runGoals = fut.filter((g) => classifyRace(g) === "run");
+  const run =
+    runGoals.find((g) => /marathon|ultra/.test(`${g.event_type ?? ""} ${g.event_name ?? ""}`.toLowerCase())) ??
+    runGoals[0];
+  const runIdx = run ? fut.indexOf(run) : -1;
   if (runIdx >= 0 && fut.slice(0, runIdx).some((g) => classifyRace(g) === "tri")) {
-    const run = fut[runIdx];
     calls.push(`${name(run)} is a run goal built off a triathlon base — an injury window. Swim/bike volume spares the legs, so run-specific orthopedic load has been low; cap weekly run-volume jumps and watch getRecoveryModel.orthopedic.run early.`);
     calls.push(`Between the last triathlon and ${name(run)}, maintain (don't build) swim/bike — one build, not two stacked peaks.`);
   }
