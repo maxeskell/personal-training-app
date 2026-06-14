@@ -3,6 +3,7 @@ import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
 import { assembleState, extractJson, garminInner } from "./state/assemble.js";
 import { config } from "./config.js";
+import { todayIso } from "./util/today.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
 import { assessReadiness } from "./coach/readiness.js";
@@ -39,7 +40,7 @@ async function loadArchive(): Promise<ArchiveInput | undefined> {
   };
 }
 import { notify } from "./notify.js";
-import { fileChecks } from "./health.js";
+import { fileChecks, redactSecrets } from "./health.js";
 import open from "open";
 import { assessHealthRisk } from "./guardrails/wellbeing.js";
 import { WriteGate } from "./guardrails/writeGate.js";
@@ -85,8 +86,26 @@ function costNote(costUsd: number, cacheRead: number): string {
   return `cost $${costUsd.toFixed(4)}; cache read ${cacheRead} tokens`;
 }
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+/** reports/ marker recording that the morning ping last SUCCEEDED — drives ping idempotency + the
+ *  doctor heartbeat (so a silently-failed 06:00 ping is detectable). */
+async function pingMarkerPath(): Promise<string> {
+  const { join } = await import("node:path");
+  return join(process.cwd(), "reports", "last-ping.json");
+}
+async function lastPingOk(): Promise<{ date: string; ts: string } | null> {
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const j = JSON.parse(await readFile(await pingMarkerPath(), "utf8"));
+    return j && typeof j.date === "string" && typeof j.ts === "string" ? j : null;
+  } catch {
+    return null;
+  }
+}
+async function recordPingSuccess(date: string): Promise<void> {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  await mkdir(join(process.cwd(), "reports"), { recursive: true });
+  await writeFile(await pingMarkerPath(), JSON.stringify({ date, ts: new Date().toISOString() }));
 }
 
 async function withAie<T>(fn: (aie: AieClient) => Promise<T>): Promise<T> {
@@ -207,13 +226,13 @@ async function gatherReadiness(): Promise<{
   const risk = assessHealthRisk(window); // deterministic guardrail, runs before the model
   const llm = new CoachLLM(await loadSystemPrompt(), "readiness", "medium");
   const { verdict, cacheRead, costUsd } = await assessReadiness(llm, window);
-  await new DecisionLog().append({
-    id: decisionId(`readiness:${state.date}`),
-    timestamp: nowIso(),
-    kind: "readiness",
-    summary: `${verdict.verdict}: ${verdict.why}`,
-    status: "note",
-  });
+  // Idempotent per day (ENG-3): the readiness id is deterministic from the date, so a re-run (manual +
+  // the 06:00 ping, or a launchd wake) must not append a duplicate readiness line. First call of the day wins.
+  const log = new DecisionLog();
+  const id = decisionId(`readiness:${state.date}`);
+  if (!(await log.all()).some((r) => r.id === id)) {
+    await log.append({ id, timestamp: nowIso(), kind: "readiness", summary: `${verdict.verdict}: ${verdict.why}`, status: "note" });
+  }
   return { state, verdict, risk, cacheRead, costUsd };
 }
 
@@ -241,25 +260,42 @@ async function cmdReadiness(): Promise<void> {
 /** `ping` — unattended morning readiness: verdict + report + desktop notification. */
 async function cmdPing(): Promise<void> {
   if (!requireLLM()) process.exit(1);
-  const { state, verdict, risk } = await gatherReadiness();
+  const force = process.argv.includes("--force");
+  // Idempotent (ENG-3): a launchd wake or accidental double-fire must not re-notify or re-spend.
+  const prior = await lastPingOk();
+  if (!force && prior && prior.date === todayIso()) {
+    console.log(`\nMorning ping already ran today (${prior.date}). Use --force to re-run.`);
+    return;
+  }
 
-  const lines = [
-    `# Morning readiness — ${state.date}`,
-    "",
-    `**${verdict.verdict.toUpperCase()}** — ${verdict.why}`,
-    "",
-    risk.level !== "none" ? `> ⚠ Wellbeing (${risk.level}): ${risk.message}\n` : "",
-    "## Drivers",
-    ...verdict.drivers.map((d) => `- **${d.signal}**: ${d.reading} _[${d.source}]_`),
-    verdict.cautions.length ? "\n## Cautions\n" + verdict.cautions.map((c) => `- ${c}`).join("\n") : "",
-  ];
-  const md = lines.filter((l) => l !== "").join("\n");
-  await writeReport("morning-readiness", state.date, md);
+  try {
+    const { state, verdict, risk } = await gatherReadiness();
 
-  printReadiness(verdict, risk);
-  const note = verdict.why.length > 180 ? verdict.why.slice(0, 177) + "…" : verdict.why;
-  await notify(`Readiness: ${verdict.verdict.toUpperCase()}`, note);
-  console.log(`\n(report written; desktop notification sent if on macOS)`);
+    const lines = [
+      `# Morning readiness — ${state.date}`,
+      "",
+      `**${verdict.verdict.toUpperCase()}** — ${verdict.why}`,
+      "",
+      risk.level !== "none" ? `> ⚠ Wellbeing (${risk.level}): ${risk.message}\n` : "",
+      "## Drivers",
+      ...verdict.drivers.map((d) => `- **${d.signal}**: ${d.reading} _[${d.source}]_`),
+      verdict.cautions.length ? "\n## Cautions\n" + verdict.cautions.map((c) => `- ${c}`).join("\n") : "",
+    ];
+    const md = lines.filter((l) => l !== "").join("\n");
+    await writeReport("morning-readiness", state.date, md);
+
+    printReadiness(verdict, risk);
+    const note = verdict.why.length > 180 ? verdict.why.slice(0, 177) + "…" : verdict.why;
+    await notify(`Readiness: ${verdict.verdict.toUpperCase()}`, note);
+    await recordPingSuccess(state.date); // heartbeat for the doctor check
+    console.log(`\n(report written; desktop notification sent if on macOS)`);
+  } catch (err) {
+    // PROD-2: an unattended failure is otherwise invisible — the athlete just gets no readiness and no
+    // signal it broke. Notify with a redacted reason, then re-throw to keep the non-zero exit + log line.
+    const reason = redactSecrets(err instanceof Error ? err.message : String(err));
+    await notify("Readiness unavailable", reason.slice(0, 180)).catch(() => {});
+    throw err;
+  }
 }
 
 /** `deep-dive` — compute insight metrics, synthesise a coach-style analysis, write a report. */
@@ -877,6 +913,19 @@ async function cmdDoctor(): Promise<void> {
     });
   } catch (e) {
     checks.push({ name: "AIE connection", status: "warn", detail: `could not reach AI Endurance: ${e instanceof Error ? e.message : String(e)}` });
+  }
+
+  // Morning-ping heartbeat (PROD-2): surface a silently-failing 06:00 ping.
+  const prior = await lastPingOk();
+  if (!prior) {
+    checks.push({ name: "Morning ping", status: "info", detail: "no successful ping recorded yet (runs after the first `npm run ping`)" });
+  } else {
+    const ageH = (Date.now() - new Date(prior.ts).getTime()) / 3_600_000;
+    checks.push(
+      ageH > 25
+        ? { name: "Morning ping", status: "warn", detail: `last success ${ageH.toFixed(0)}h ago (${prior.date}) — the scheduled ping may be silently failing` }
+        : { name: "Morning ping", status: "ok", detail: `last success ${prior.date} (${ageH.toFixed(0)}h ago)` },
+    );
   }
 
   const icon = (s: string) => (s === "ok" ? "✓" : s === "warn" ? "⚠" : s === "fail" ? "✗" : "·");

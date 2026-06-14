@@ -10,14 +10,36 @@ import type { AthleteState } from "../state/types.js";
  *     professional — NEVER diagnose (no RED-S labelling), never treat weight loss as a win.
  */
 
+// Intent-matching, not exact-phrase matching. The earlier patterns were brittle adjacency regexes that
+// any intervening word ("a few", "some", a number) or the natural word "racing" defeated — so "shed a few
+// kilos", "drop a couple of kg", "get to racing weight", "put me on a cut" all leaked to the model. These
+// allow a short, bounded run of words between the verb and the body-mass object, and cover the common
+// weight-target / cut / slim-down phrasings. The aim is to REDIRECT (not refuse) restriction intent, so
+// erring toward catching it is correct; legitimate fuelling questions (carbs/protein/what to eat) never
+// contain a weight-loss verb + a body-mass object, so they pass.
 const RESTRICTION_PATTERNS: Array<{ rx: RegExp; label: string }> = [
-  { rx: /\b(calorie|caloric)\s+(deficit|restrict)/i, label: "calorie deficit" },
+  { rx: /\b(calorie|caloric)s?\s+(deficit|restrict)/i, label: "calorie deficit" },
   { rx: /\bdeficit\b/i, label: "deficit" },
-  { rx: /\b(cut|cutting|drop|lose|losing|shed)\s+(weight|kg|kilos|pounds|lbs|fat)/i, label: "weight loss" },
-  { rx: /\brace\s*weight\b/i, label: "race weight" },
+  // verb + (a short bounded gap) + body-mass object — catches "lose weight", "shed a few kilos",
+  // "drop a couple of kg", "trim some body fat", "cut weight", "lose fat".
+  {
+    rx: /\b(lose|losing|lost|drop|dropping|cut|cutting|shed|shedding|trim|trimming|burn|burning|shift|shifting)\b[\w\s'’,-]{0,18}?\b(weight|kgs?|kilos?|kilograms?|pounds?|lbs?|body\s?fat|fat)\b/i,
+    label: "weight loss",
+  },
+  { rx: /\b(race|racing)\s?weight\b/i, label: "race weight" },
   { rx: /\b(restrict|restricting|under-?eat|undereat)/i, label: "restriction" },
-  { rx: /\b(lean(er)?\s+for\s+race|get\s+leaner)\b/i, label: "leaning out" },
-  { rx: /\bhow\s+(do\s+i|to)\s+(lose|drop)\b/i, label: "weight loss" },
+  // leaning-out intent: "lean out", "leaning out", "get leaner", "leaner for race".
+  { rx: /\b(get(ting)?\s+lean(er)?|lean(er)?\s+(for|before|out)|lean\s+out|leaning\s+out)\b/i, label: "leaning out" },
+  // slim/trim down, getting lighter for an event, eating below maintenance, being "on a cut".
+  { rx: /\b(slim|trim)\w*\s+(down|up)\b/i, label: "slimming down" },
+  { rx: /\blighter\s+(for|before|to)\b/i, label: "getting lighter" },
+  { rx: /\b(under|below)\s+maintenance\b/i, label: "eating under maintenance" },
+  { rx: /\b(on|do|doing|start|starting)\s+a\s+cut\b/i, label: "a cut" },
+  // weight-as-a-target intent: "what bodyweight should I be at", "target/goal/ideal race weight".
+  { rx: /\bbody\s?weight\s+should\s+i\b/i, label: "weight target" },
+  { rx: /\b(target|goal|ideal|optimal|racing|race)\s+(body\s?)?weight\b/i, label: "weight target" },
+  { rx: /\bweight\s+should\s+i\s+(be|race|aim|target|get)\b/i, label: "weight target" },
+  { rx: /\bhow\s+(do\s+i|to|can\s+i|should\s+i)\s+(lose|drop|shed|cut)\b/i, label: "weight loss" },
   { rx: /\b(low[-\s]?carb|keto)\s+to\s+(lose|lean|cut)/i, label: "restrictive diet for weight loss" },
 ];
 
@@ -123,6 +145,21 @@ export function assessHealthRisk(window: AthleteState[]): HealthRiskAssessment {
         "Two signals worth keeping an eye on: " +
         signals.join("; ") +
         ". Not alarming on its own — make sure you're fuelling and sleeping well, and we'll watch the trend.",
+    };
+  }
+  // A rapid/unexplained weight drop is a health concern on its OWN — it must never be gated behind a
+  // second co-occurring signal (criterion #6: flag rapid weight loss as a concern, not a win). A single
+  // non-weight signal (one poor night) stays "none" — that's the trend-over-point stance.
+  const hasWeightLoss = signals.some((s) => /weight trend down/.test(s));
+  if (hasWeightLoss) {
+    return {
+      level: "watch",
+      signals,
+      message:
+        signals.join("; ") +
+        ". A rapid weight drop is a health signal, not a win — make sure you're fully fuelling. If it " +
+        "continues or you can't explain it, check in with a doctor or sports dietitian. Weight is a " +
+        "long-term trend, never a target.",
     };
   }
   return { level: "none", signals };

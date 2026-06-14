@@ -401,13 +401,20 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   }
 
   // 3. Efficiency / durability trends (good news is worth saying).
+  // Heat is a confounder of EF that we only model when per-activity .FIT temperature exists; without it,
+  // a hot spell can masquerade as lost efficiency, so an EF-slipping call must say heat can't be ruled out.
+  const hasThermal = [...sessionDecays, ...(archive?.fitSummaries ?? [])].some(
+    (r) => typeof (r as { avgTempC?: unknown }).avgTempC === "number",
+  );
   const efRun = ef.run;
   if (efRun.deltaPct != null && efRun.n >= 6) {
+    const slipping = efRun.deltaPct < 0;
+    const heatCaveat = slipping && !hasThermal ? " No per-activity temperature on these runs, so a hot spell can't be ruled out as the cause — confirm against pace-at-HR before reading it as lost fitness." : "";
     findings.push({
       family: "Aerobic efficiency",
-      title: efRun.deltaPct >= 0 ? "Run efficiency improving" : "Run efficiency slipping",
+      title: slipping ? "Run efficiency slipping" : "Run efficiency improving",
       severity: efRun.deltaPct < -5 ? "watch" : "info",
-      detail: `Run EF (power÷HR) ${efRun.deltaPct >= 0 ? "up" : "down"} ${Math.abs(efRun.deltaPct)}% recent vs prior — ${efRun.deltaPct >= 0 ? "the aerobic work is paying off" : "worth watching alongside fatigue/heat"}.`,
+      detail: `Run EF (power÷HR) ${slipping ? "down" : "up"} ${Math.abs(efRun.deltaPct)}% recent vs prior — ${slipping ? "worth watching alongside fatigue/heat" : "the aerobic work is paying off"}.${heatCaveat}`,
       evidence: `EF ${efRun.recent} vs ${efRun.prior} (steady runs ≥40min) [derived]`,
     });
   }

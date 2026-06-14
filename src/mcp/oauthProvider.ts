@@ -135,7 +135,9 @@ export class FileOAuthClientProvider implements OAuthClientProvider {
         res.end("<h3>Authorized ✓</h3><p>You can close this tab and return to the terminal.</p>");
         this.codeResolve?.(code);
       } else {
-        res.end(`<h3>Authorization failed</h3><p>${error ?? "no code returned"}</p>`);
+        // Escape the reflected error param — it's attacker-influenceable in the redirect, and even on a
+        // transient loopback server an unescaped reflection is reflected XSS.
+        res.end(`<h3>Authorization failed</h3><p>${escapeHtml(error ?? "no code returned")}</p>`);
         this.codeReject?.(new Error(`OAuth redirect error: ${error ?? "no code"}`));
       }
       this.closeCallbackServer();
@@ -152,6 +154,10 @@ export class FileOAuthClientProvider implements OAuthClientProvider {
   private async ensureDir(): Promise<void> {
     await mkdir(this.dir, { recursive: true, mode: 0o700 });
   }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
 async function readJson<T>(path: string): Promise<T | undefined> {

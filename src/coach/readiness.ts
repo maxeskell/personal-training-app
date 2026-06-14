@@ -55,6 +55,9 @@ export function summarizeForReadiness(window: AthleteState[]): string {
     sleep
       ? `- Sleep: score ${fmt(sleep.score)}, ${fmt(sleep.hours, 1)} h, overnight HRV ${fmt(sleep.overnightHrvMs)} ms [${today.sleep.source}]`
       : `- Sleep: unavailable (Garmin absent)`,
+    today.weightKg.value != null
+      ? `- Weight: ${fmt(today.weightKg.value, 1)} kg (trend only — never a target; flag a rapid/unexplained drop as a health concern) [${today.weightKg.source}]`
+      : `- Weight: unavailable`,
     "",
     "AI ENDURANCE RECOVERY MODEL [ai-endurance]:",
     r
@@ -77,9 +80,65 @@ export function summarizeForReadiness(window: AthleteState[]): string {
     `- Sleep (h):       ${trend((s) => s.sleep.value?.hours, 1)}`,
     `- Cardio recovery: ${trend((s) => s.recovery.value?.cardioRecovery)}`,
     `- Run orthopedic:  ${trend((s) => s.recovery.value?.orthopedic?.run)}`,
+    `- Weight (kg):     ${trend((s) => s.weightKg.value, 1)} [trend only]`,
     "",
     today.syncGaps.length ? `SYNC GAPS: ${today.syncGaps.map((g) => g.detail).join("; ")}` : "SYNC GAPS: none",
   ].join("\n");
+}
+
+/**
+ * Deterministic count of interpretable signals materially out of line TODAY, plus whether there's a
+ * multi-day deterioration. Used by the trend floor so the "a red needs a pattern" rule (criterion #5) is
+ * enforced in code, not just hoped for in the prompt. Counts HRV/RHR/sleep AND the AI Endurance recovery
+ * model (cardio + per-sport orthopedic), so a model-driven red stays red.
+ */
+export function adverseSignalCount(window: AthleteState[]): { count: number; multiDay: boolean } {
+  const today = window[window.length - 1];
+  let count = 0;
+  const hrv = today.hrvOvernight.value, hrvBase = today.hrv7dBaseline.value;
+  if (hrv != null && hrvBase != null && hrvBase > 0 && hrv < hrvBase * 0.9) count++;
+  const rhr = today.restingHr.value, rhrBase = today.restingHr7dBaseline.value;
+  if (rhr != null && rhrBase != null && rhrBase > 0 && rhr > rhrBase + 5) count++;
+  const sleepH = today.sleep.value?.hours;
+  if (sleepH != null && sleepH < 6.5) count++;
+  const cardio = today.recovery.value?.cardioRecovery;
+  if (cardio != null && cardio < 50) count++;
+  const orth = today.recovery.value?.orthopedic;
+  if (orth && [orth.run, orth.bike, orth.swim].some((v) => v != null && v < 50)) count++;
+
+  // Multi-day deterioration: ≥2 of the last 3 days were themselves adverse (HRV suppressed or RHR elevated
+  // vs that day's own baseline). Counting sustained adverse DAYS — not a 2-point slope, which a single
+  // off night would trip — is what distinguishes a real pattern from a one-day blip.
+  let adverseDays = 0;
+  for (const s of window.slice(-3)) {
+    const h = s.hrvOvernight.value, hb = s.hrv7dBaseline.value;
+    const r = s.restingHr.value, rb = s.restingHr7dBaseline.value;
+    const hOff = h != null && hb != null && hb > 0 && h < hb * 0.9;
+    const rOff = r != null && rb != null && rb > 0 && r > rb + 5;
+    if (hOff || rOff) adverseDays++;
+  }
+  return { count, multiDay: adverseDays >= 2 };
+}
+
+/**
+ * Trend floor (criterion #5): a RED verdict requires a PATTERN. If the model returns red but only one
+ * interpretable signal is out of line and there's no multi-day deterioration, downgrade to amber. Never
+ * upgrades, never touches amber/green — a deterministic backstop against the LLM overreacting to a single
+ * off night.
+ */
+export function applyTrendFloor(verdict: ReadinessVerdict, window: AthleteState[]): ReadinessVerdict {
+  if (verdict.verdict !== "red") return verdict;
+  const { count, multiDay } = adverseSignalCount(window);
+  if (count >= 2 || multiDay) return verdict; // a real pattern — leave it red
+  return {
+    ...verdict,
+    verdict: "amber",
+    cautions: [
+      ...verdict.cautions,
+      "Auto-adjusted red→amber: only one interpretable signal is out of line and there's no multi-day " +
+        "deterioration, so a single off-reading shouldn't read red (trend over point). Re-check tomorrow.",
+    ],
+  };
 }
 
 export async function assessReadiness(
@@ -92,5 +151,7 @@ export async function assessReadiness(
     "Remember: trend beats single point, one metric out of line is not red, Garmin scores are tiebreak only.\n\n" +
     summary;
   const { value, cacheRead, costUsd } = await llm.structured<ReadinessVerdict>(prompt, READINESS_SCHEMA);
-  return { verdict: value, cacheRead, costUsd };
+  // Deterministic backstop so the trend-over-point rule can't be drifted from by the model.
+  const verdict = applyTrendFloor(value, window);
+  return { verdict, cacheRead, costUsd };
 }

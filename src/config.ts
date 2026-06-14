@@ -116,6 +116,9 @@ export const config = {
   athlete: {
     equipment: process.env.COACH_EQUIPMENT ?? "Garmin Forerunner 970, Edge 1040, Index scale",
     units: process.env.COACH_UNITS ?? "metric, UK",
+    /** IANA timezone used to decide which calendar day "today" is (UK athlete → Europe/London).
+     *  Avoids a UTC "today" mis-dating a late-night (BST) session or readiness window. */
+    timezone: process.env.COACH_TZ ?? "Europe/London",
   },
 
   /** Where persisted secrets/tokens live — gitignored, outside the repo by default. */

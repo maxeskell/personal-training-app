@@ -89,6 +89,17 @@ npm run watch:uninstall
 The four flows (readiness / weekly / propose+confirm / race) are the product. Every write goes
 through the gate: `propose` only logs proposals + trade-offs; nothing changes until you `confirm`.
 
+**Deterministic safety guardrails (not just prompt instructions):**
+- **Fuel to train.** Restriction / deficit / "race weight" / "cut" / weight-target phrasings are screened
+  in code *before* the model and redirected to adequate-fuelling targets. A **rapid or unexplained weight
+  drop is flagged as a health concern on its own** (never gated behind other signals, never framed as a win).
+- **Trend over single point.** The green/amber/red call applies a code-level floor: a `red` is downgraded
+  to `amber` unless **two** interpretable signals are out of line *or* there's a multi-day deterioration —
+  so one bad night can't flip the call. The morning snapshot also carries your weight as a trend-only line.
+- **Observable unattended ping.** `ping` is idempotent per day (a re-fire won't double-notify or double-spend),
+  records a success heartbeat, and **notifies you if it fails** instead of failing silently; `doctor` warns
+  if the scheduled ping hasn't succeeded in over a day.
+
 Garmin is **optional** — leave `GARMIN_ENABLED=false` and the coach runs on AI Endurance alone.
 To enable it, run the one-time `garmin-mcp-auth` (see `.env.example`) then set `GARMIN_ENABLED=true`.
 
@@ -116,7 +127,9 @@ detector self-gates and stays silent until there's enough of your own history be
 - **Brick decoupling (Q4):** run efficiency off the bike vs fresh — the triathlon-specific signal.
 - **Taper target (Q6):** the race-day form (TSB) band that accompanied your best past races.
 - **Economy vs fitness (Q5):** run EF residualised on CTL — separates real economy gains from "just fitness".
-- **Fuelling red flag (Q7):** fires when weight *and* skeletal-muscle-mass trend down together.
+- **Fuelling red flag (Q7):** fires when weight *and* skeletal-muscle-mass trend down together (a
+  under-fuelling stop-signal). A rapid weight drop on its own is separately flagged by the wellbeing
+  guardrail above, even without muscle-mass data.
 - **Stream-level (.FIT) analysis (§1)** — two layers, two sources:
   - **Thermal / effort** (per-activity temperature for the heat confounder, hot/cool-third HR, training
     effect) comes from `fit-sync`, which pulls Garmin's *parsed summary* (`get_activity_fit_data`). This
@@ -266,7 +279,7 @@ can't clobber anything. Day-to-day you never touch git — and the dashboard's *
 ## Health & security
 
 ```bash
-npm run doctor      # creds, Garmin token age (~6mo expiry), API key, AIE tool-drift
+npm run doctor      # creds, Garmin token age (~6mo expiry), API key, AIE tool-drift, morning-ping heartbeat
 ```
 
 Secrets stay local and out of git: AI Endurance OAuth tokens live in `~/.endurance-coach` (0700),
