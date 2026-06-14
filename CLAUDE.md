@@ -45,6 +45,6 @@
 ## Athlete preferences already encoded (don't re-ask)
 
 - Rides want **dry roads + low wind** (gust/rain-prob thresholds in `config.weather`); runs go in
-  any weather; open-water swims go in any weather except thunderstorms, ideally with Dosthill
-  Quarry above **13°C** (`COACH_WATER_TEMP_C` is updated manually — no public feed exists).
+  any weather; open-water swims go in any weather except thunderstorms, ideally with the local
+  open-water venue above **13°C** (`COACH_WATER_TEMP_C` is updated manually — no public feed exists).
 - Weekly totals display as h:mm; missing data renders "—", never a misleading zero.

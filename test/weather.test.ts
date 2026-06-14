@@ -33,7 +33,7 @@ function mkDay(date: string, hourOver: (h: number) => Partial<HourForecast> = ()
   };
 }
 
-const mkForecast = (days: DayForecast[]): Forecast => ({ fetchedAt: "2026-06-08T05:00:00Z", latitude: 52.6, longitude: -1.69, days });
+const mkForecast = (days: DayForecast[]): Forecast => ({ fetchedAt: "2026-06-08T05:00:00Z", latitude: 51.5, longitude: -0.13, days });
 
 // --- drying model ---
 
@@ -73,8 +73,8 @@ test("roads: dry day stays dry; morning rain dries in daytime conditions; evenin
 
 test("mapOpenMeteo groups hourly into per-day forecasts with nullable rain probability", () => {
   const json = {
-    latitude: 52.6,
-    longitude: -1.7,
+    latitude: 51.5,
+    longitude: -0.13,
     hourly: {
       time: ["2026-06-08T00:00", "2026-06-08T01:00", "2026-06-09T00:00"],
       temperature_2m: [10, 11, 12],

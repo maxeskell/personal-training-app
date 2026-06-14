@@ -86,13 +86,14 @@ export const config = {
 
   /**
    * Week-ahead weather (dashboard "Week ahead — plan vs weather" card). Open-Meteo, free, no key.
-   * Coordinates default to the Tamworth/Dosthill ride-run-swim base; thresholds encode the athlete's
-   * stated preferences (rides want dry + low wind; swims want the quarry above 13°C).
+   * Coordinates default to a neutral location (London) — set COACH_WEATHER_LAT/LON to your own base.
+   * Thresholds encode the athlete's stated preferences (rides want dry + low wind; open-water swims
+   * want the venue above a comfort floor, default 13°C).
    */
   weather: {
     enabled: process.env.COACH_WEATHER_ENABLED !== "false",
-    lat: Number(process.env.COACH_WEATHER_LAT ?? 52.6056),
-    lon: Number(process.env.COACH_WEATHER_LON ?? -1.6907),
+    lat: Number(process.env.COACH_WEATHER_LAT ?? 51.5074),
+    lon: Number(process.env.COACH_WEATHER_LON ?? -0.1278),
     /** Latest manually-entered open-water temp (°C) — the venue has no public live feed. */
     waterTempC: process.env.COACH_WATER_TEMP_C ? Number(process.env.COACH_WATER_TEMP_C) : undefined,
     swimMinWaterC: Number(process.env.COACH_SWIM_MIN_WATER_C ?? 13),

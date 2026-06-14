@@ -42,7 +42,7 @@ function stubLlm(): { llm: CoachLLM; prompts: string[] } {
 test("classifyRace + priorityRank read type/name and priority", () => {
   assert.equal(classifyRace(GOALS[0]), "tri");
   assert.equal(classifyRace(GOALS[2]), "run");
-  assert.equal(classifyRace({ event_name: "Dosthill OW Swim", event_type: "Open Water" }), "swim");
+  assert.equal(classifyRace({ event_name: "Lakeside OW Swim", event_type: "Open Water" }), "swim");
   assert.equal(classifyRace({ event_name: "Mystery", event_type: "" }), "other");
   assert.equal(priorityRank("A"), 0);
   assert.equal(priorityRank("B"), 1);
