@@ -1,5 +1,6 @@
 import type { CoachLLM } from "../llm/client.js";
 import type { AthleteState, ActualActivity } from "../state/types.js";
+import { liveCoachingContext } from "./seasonContext.js";
 
 /** Activities within the trailing `days` of `asOf` (YYYY-MM-DD), from the latest state's list. */
 function recentActivities(today: AthleteState, asOf: string, days: number): ActualActivity[] {
@@ -74,9 +75,10 @@ export async function runWeeklyReview(
     "Write this week's training review as markdown. LEAD WITH THE TAKEAWAY (one bold sentence first),",
     "then: load by sport, adherence by zone (planned vs actual), standout sessions, recovery + weight",
     "TREND (not single points), and a short 'Focus for next week'. Be concise and cite the data.",
-    "Remember the season shape: tri build to Birmingham (11 Jul), then a run-focused block to Loch Ness",
-    "(27 Sep) with run-load caution; maintain (don't build) swim/bike Aug–Sep. Fuel to train; weight is",
-    "a trend, never a target.",
+    "Honour the athlete's LIVE race calendar and the season shape derived from it below — let the",
+    "next-week focus serve the nearest goal. Fuel to train; weight is a trend, never a target.",
+    "",
+    liveCoachingContext(window[window.length - 1]),
     "",
     summary,
   ].join("\n");

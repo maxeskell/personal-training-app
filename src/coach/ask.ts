@@ -4,6 +4,7 @@ import { buildInsights, type InsightReport, type ArchiveInput } from "../insight
 import { richActivities } from "../insights/metrics.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline } from "../insights/headline.js";
+import { deriveSeasonShape, liveGoals } from "./seasonContext.js";
 import { DecisionLog, suppressedInsightKeys } from "../state/decisionLog.js";
 import { screenNutritionPrompt } from "../guardrails/wellbeing.js";
 import { runSessionFeedback } from "./session.js";
@@ -79,6 +80,10 @@ export function buildAskContext(state: AthleteState, insights: InsightReport): s
     `- Regime shifts: ${ins.changePoints.flatMap((s) => s.points.slice(-1).map((p) => (p.date ? `${s.metric} ${p.before}→${p.after}@${p.date}` : null))).filter(Boolean).join("; ") || "none"}`,
     `- Brick decoupling: ${ins.brick.decouplingPct != null ? `${ins.brick.decouplingPct}% off-bike (${ins.brick.brickDays}d)` : "n/a"}; taper target TSB ${ins.taper.recommendedTsbLow ?? "?"}..${ins.taper.recommendedTsbHigh ?? "?"}`,
     `- Races: ${ins.predictions.map((p) => `${p.race} T-${p.daysTo}d`).join("; ") || "none"}`,
+    (() => {
+      const shape = deriveSeasonShape(liveGoals(state), state.date);
+      return shape.length ? `- Season shape [derived from live goals]: ${shape.join(" ")}` : "";
+    })(),
     thresholdLine(state),
     ins.splits.length ? `- Race split plans: ${ins.splits.map((p) => `${p.race} ${p.strategy}`).join(" | ")}` : "",
     ins.topFindings.length ? `- Top surfaced insights (good signal, not dismissed): ${ins.topFindings.slice(0, 5).map((f) => `[${f.severity}] ${f.title}`).join("; ")}` : "",

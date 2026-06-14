@@ -17,7 +17,7 @@ unrecovered, not chasing a daily score. **Apply:** gate intensity by *trend*, no
 ## 3. Durability / physiological resilience
 Performance depends on how little fresh numbers decay over hours; trainable by low- and high-intensity
 work and accumulated volume. **Apply:** quality late in long sessions / off the bike; value long-term
-volume — central to both Birmingham and Loch Ness.
+volume — it underpins both triathlon and marathon performance.
 
 ## 4. Carbohydrate fuelling
 ~90 g/h baseline for long sessions; up to ~120 g/h for trained athletes with gut training
@@ -30,24 +30,26 @@ fatigued-state performance; manage concurrent-training interference. **Apply:** 
 through the build; **don't cut first** when volume rises.
 
 ## 6. Tapering
-~2 weeks pre-A-race cut volume substantially (~40–60%), hold intensity and frequency.
-Alderford: **no full taper** (it's a capped tempo day, see periodisation). Loch Ness: short marathon taper.
+~2 weeks pre-A-race cut volume substantially (~40–60%), hold intensity and frequency. A marathon
+takes a shorter taper than a long-course tri. A B-race that's a capped tempo (see periodisation) gets
+**no full taper** — don't bleed the goal race's prep for it.
 
 ## 7. Periodisation guardrail
 One tri build → one run block; **never two stacked peaks**; maintain (don't build) swim/bike Aug–Sep.
 
 ---
 
-## Athlete-specific calls (this season)
-- **Both A and B races are Olympic-distance triathlons** (Birmingham 11 Jul; Alderford 6 Sep) plus the
-  **Loch Ness road marathon** (27 Sep).
-- **Alderford (6 Sep) = capped tempo, not a race.** It sits 3 weeks before the goal marathon; racing it
-  hard compromises taper/prep. Default: hard-capped tempo effort / drop intensity.
-- **Marathon off a triathlon base = injury window.** Swim/bike volume spares the legs, so running-
-  specific orthopedic load has been low. Ramping long runs in ~11 weeks concentrates that load fast.
+## Season-structure priors (apply to the LIVE calendar, never a fixed one)
+The athlete's races come live from `getRaceGoalEvent`; the app derives and supplies a SEASON SHAPE
+block. These are the priors behind that derivation — apply them to whatever the current calendar is:
+- **A lower-priority race a few weeks before a higher-priority one = capped tempo, not a race.** Racing
+  it hard that close compromises the goal race's taper/prep. Default: hard-capped tempo / drop intensity.
+- **A run goal built off a triathlon base = injury window.** Swim/bike volume spares the legs, so
+  running-specific orthopedic load has been low; ramping run volume concentrates that load fast.
   **Cap weekly run-volume increases, watch niggles early** — monitor `getRecoveryModel.orthopedic.run`.
-- **Heat (Birmingham, July): probably irrelevant.** UK July is usually mild — only consider heat prep if
-  the forecast shows a genuine heatwave near race day. Don't prescribe acclimation by default.
+- **Don't stack two peaks.** One build per peak; if two A-races sit close, peak for one and carry fitness.
+- **Heat:** UK summer is usually mild — only consider heat prep if the forecast shows a genuine heatwave
+  near race day. Don't prescribe acclimation by default.
 
 ## Wellbeing (hard limits — enforced in code at M3, not just prose)
 Fuel to train; use AIE nutrition *ranges*. **Never** recommend deficits/restriction/"race weight."

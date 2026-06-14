@@ -3,6 +3,10 @@ import type { AthleteState, PlannedSession } from "../state/types.js";
 import type { InsightReport } from "../insights/engine.js";
 import { coachHeadline, tsbBand, rampBand } from "../insights/headline.js";
 import { PROPOSABLE_WRITE_TOOLS, validateWrite } from "../guardrails/writeValidators.js";
+import { raceContext, deriveSeasonShape, liveGoals } from "./seasonContext.js";
+
+// Re-exported so the live race calendar has a single source of truth (see seasonContext).
+export { raceContext };
 
 /**
  * Plan-adjustment proposals (Build Spec §5.3): the model proposes concrete changes with
@@ -97,19 +101,6 @@ export async function proposeAdjustments(
   return { result: value, cacheRead, costUsd };
 }
 
-/** Upcoming races + countdown, sourced LIVE from AI Endurance goals (no hard-coded dates that go stale). */
-export function raceContext(state: AthleteState): string {
-  const goals = (state.raw?.getRaceGoalEvent as { goals?: Array<{ event_name?: string; event_date?: string; priority?: unknown }> } | undefined)?.goals ?? [];
-  const today = new Date(`${state.date}T00:00:00Z`).getTime();
-  const rows = goals
-    .filter((g) => g.event_date)
-    .map((g) => ({ ...g, dt: Math.round((new Date(`${String(g.event_date).slice(0, 10)}T00:00:00Z`).getTime() - today) / 86_400_000) }))
-    .filter((g) => g.dt >= 0)
-    .sort((a, b) => a.dt - b.dt)
-    .map((g) => `- ${g.event_name ?? "race"} in ${g.dt}d (${String(g.event_date).slice(0, 10)}${g.priority ? `, priority ${g.priority}` : ""})`);
-  return rows.length ? rows.join("\n") : "(no upcoming races)";
-}
-
 /**
  * The full picture for the proposer (Spec 6): headline + load/form bands + acute:chronic/HRV/limiter +
  * the relevant detector findings (durability, heat, EF, fuelling, illness) + predictions-vs-goal + taper
@@ -134,6 +125,8 @@ export function buildProposerContext(state: AthleteState, ins: InsightReport): s
     lines.push(`Prediction ${p.race}: ${p.predictedSec ?? "?"}s vs target ${p.targetSec ?? "?"}s (T-${p.daysTo}d${p.gapSec != null ? `, gap ${Math.round(p.gapSec / 60)}min` : ""})`);
   }
   if (ins.taper.recommendedTsbLow != null) lines.push(`Taper target: race-day TSB ~${ins.taper.recommendedTsbLow}..${ins.taper.recommendedTsbHigh}`);
+  const shape = deriveSeasonShape(liveGoals(state), state.date);
+  if (shape.length) lines.push(`Season-shape calls [derived from live goals]: ${shape.join(" ")}`);
   return lines.join("\n");
 }
 
