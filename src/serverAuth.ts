@@ -30,6 +30,41 @@ export function loadDashboardToken(): string {
   return tok;
 }
 
+/** Bearer token for the MCP HTTP surface: COACH_MCP_TOKEN env, else a random token persisted 0600. */
+export function loadMcpToken(): string {
+  if (process.env.COACH_MCP_TOKEN) return process.env.COACH_MCP_TOKEN;
+  const path = join(config.secretsDir, "mcp.token");
+  try {
+    const t = readFileSync(path, "utf8").trim();
+    if (t) return t;
+  } catch {
+    /* create below */
+  }
+  const tok = randomBytes(24).toString("hex");
+  try {
+    mkdirSync(config.secretsDir, { recursive: true });
+    writeFileSync(path, tok, { mode: 0o600 });
+  } catch {
+    /* fall back to in-memory token for this process */
+  }
+  return tok;
+}
+
+/** Pull the token out of an `Authorization: Bearer <token>` header. Undefined when absent/malformed. */
+export function bearerToken(headers: { authorization?: string | string[] }): string | undefined {
+  const h = headers.authorization;
+  const v = Array.isArray(h) ? h[0] : h;
+  if (!v) return undefined;
+  const m = /^Bearer\s+(.+)$/i.exec(v.trim());
+  return m ? m[1].trim() : undefined;
+}
+
+/** True iff the request carries the expected bearer token (constant-time compare). */
+export function bearerAuthorized(headers: { authorization?: string | string[] }, token: string): boolean {
+  const p = bearerToken(headers);
+  return p != null && timingSafeEqualStr(p, token);
+}
+
 export function parseCookies(header: string | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   for (const part of (header ?? "").split(";")) {

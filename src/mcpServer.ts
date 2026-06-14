@@ -150,8 +150,12 @@ export function formatReadiness(
 
 // ---- server -----------------------------------------------------------------------------------
 
-/** Build the MCP server with every tool registered (no transport — so tests can introspect it). */
-export function buildServer(): McpServer {
+/**
+ * Build the MCP server with every tool registered (no transport — so tests can introspect it).
+ * `includeWrites` (default true) gates the propose/confirm/decline tools — set false for a read-only
+ * surface, e.g. an internet-exposed HTTP/Cowork endpoint (COACH_MCP_READONLY=true).
+ */
+export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
   const server = new McpServer({ name: "endurance-coach", version: "0.1.0" });
 
   // ---- deterministic reads (no LLM, no token cost) ----
@@ -319,6 +323,14 @@ export function buildServer(): McpServer {
   );
 
   // ---- gated write path (propose → confirm) — the ONLY way to mutate AI Endurance ----
+  // Omitted entirely when includeWrites is false (e.g. a read-only HTTP/Cowork surface).
+  if (opts.includeWrites !== false) registerWriteTools(server);
+
+  return server;
+}
+
+/** Register the gated write tools. The ONLY path that can mutate AI Endurance (propose → confirm). */
+function registerWriteTools(server: McpServer): void {
   server.tool(
     "propose_adjustment",
     "Propose plan adjustments for a request (e.g. 'move my long run off race week'). NOTHING is written — each proposal is logged with its trade-off and an id. Apply with `confirm`, dismiss with `decline`.",
@@ -380,8 +392,6 @@ export function buildServer(): McpServer {
       }
     },
   );
-
-  return server;
 }
 
 async function main(): Promise<void> {

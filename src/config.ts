@@ -109,6 +109,20 @@ export const config = {
   autoSyncMinutes: Number(process.env.COACH_AUTOSYNC_MIN ?? 30),
 
   /**
+   * MCP server (`npm run mcp` stdio · `npm run mcp:http`). HTTP mode exists for clients that can only
+   * reach a remote URL — notably Claude Cowork, whose sandboxed cloud VM can't spawn a local stdio
+   * server: run HTTP mode locally and expose it through an AUTHENTICATED HTTPS tunnel (see
+   * docs/mcp-server.md). Bound to localhost; every HTTP request needs the bearer token
+   * (COACH_MCP_TOKEN, else a random one persisted to <secretsDir>/mcp.token, 0600). Set
+   * COACH_MCP_READONLY=true to drop the gated write tools (propose/confirm/decline) from the HTTP surface.
+   */
+  mcp: {
+    httpHost: process.env.COACH_MCP_HOST ?? "127.0.0.1",
+    httpPort: Number(process.env.COACH_MCP_PORT ?? 8787),
+    readOnly: process.env.COACH_MCP_READONLY === "true",
+  },
+
+  /**
    * Athlete identity that AI Endurance's getUser does NOT expose (device kit, unit preference). Name,
    * age, sex and thresholds come live from getUser; this is only the residue that isn't on the platform.
    * Configurable so it isn't frozen in the coaching prompt — clear COACH_EQUIPMENT to drop it entirely.
