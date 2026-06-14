@@ -23,6 +23,7 @@
     "decline": "tsx src/cli.ts decline",
     "ping": "tsx src/cli.ts ping",
     "dashboard": "tsx src/cli.ts dashboard",
+    "demo": "tsx src/cli.ts demo",
     "decisions": "tsx src/cli.ts decisions",
     "schedule:install": "bash scripts/install-schedule.sh",
     "schedule:uninstall": "bash scripts/uninstall-schedule.sh",

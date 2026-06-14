@@ -7,6 +7,16 @@ about the calendar is hard-coded: change your goals in AI Endurance and the coac
 Sync — the season shape (taper windows, don't-stack-peaks, a B-race that should be a capped tempo, the
 injury window when a run goal sits off a triathlon base) is **derived from whatever races are set**.
 
+## Try it first (no account needed)
+
+```bash
+npm install && npm run demo
+```
+
+`npm run demo` renders the glanceable dashboard from **built-in sample data** — a fictional athlete,
+**no AI Endurance account, no Garmin, no API key, no network**. It's the fastest way to see what the
+coach produces (readiness, trends, zones, race calendar) before wiring up your own accounts.
+
 ## Run your own instance
 
 Want this set up for yourself? **Point your AI coding assistant (Claude Code or similar) at this repo

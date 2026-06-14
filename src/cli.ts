@@ -13,6 +13,7 @@ import { proposeAdjustments, validateProposals, buildProposerContext } from "./c
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
+import { buildDemoWindow } from "./demo/sampleData.js";
 import { buildInsights } from "./insights/engine.js";
 import { alertFindings } from "./insights/metrics.js";
 import { ArchiveStore } from "./archive/store.js";
@@ -531,6 +532,24 @@ async function cmdDashboard(): Promise<void> {
   await open(htmlPath).catch(() => console.log("(open it manually in a browser)"));
 }
 
+/** `demo` — render the dashboard from built-in SAMPLE data: no AI Endurance account, no Garmin, no API
+ *  key, no network. Lets anyone see the coach working before setting up their own accounts. */
+async function cmdDemo(): Promise<void> {
+  const window = buildDemoWindow(todayIso(), 21);
+  const state = window[window.length - 1];
+  const insights = state.raw ? buildInsights(state, undefined, { history: window }) : undefined;
+  const html = renderDashboard({ window, decisions: [], insights, costRecords: [], canFetchFit: false });
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const dir = join(process.cwd(), "reports");
+  await mkdir(dir, { recursive: true });
+  const htmlPath = join(dir, "demo-dashboard.html");
+  await writeFile(htmlPath, html);
+  console.log(`\nDemo dashboard (built-in sample data — no account / Garmin / API key) → ${htmlPath}`);
+  console.log("Everything shown is fictional sample data, not real training.");
+  await open(htmlPath).catch(() => console.log("(open it manually in a browser)"));
+}
+
 /** `decisions [retro <id> "<note>"]` — view the decision log, or add a retrospective. */
 async function cmdDecisions(): Promise<void> {
   const log = new DecisionLog();
@@ -837,6 +856,7 @@ const commands: Record<string, () => Promise<void>> = {
   confirm: cmdConfirm,
   decline: cmdDecline,
   dashboard: cmdDashboard,
+  demo: cmdDemo,
   "deep-dive": cmdDeepDive,
   act: cmdAct,
   check: cmdCheck,
@@ -865,6 +885,7 @@ if (!run) {
   console.log('  propose "<request>"  gated plan-adjustment proposals');
   console.log("  confirm <id> / decline <id>   apply or dismiss a proposal");
   console.log("  dashboard  generate + open the glanceable Today/Week/Trends/Race view");
+  console.log("  demo       render the dashboard from built-in SAMPLE data (no account/Garmin/key needed)");
   console.log("  deep-dive  insight-engine analysis (load/EF/durability/ramp/goal) → report");
   console.log("  act        turn surfaced (gated, feedback-aware) findings into gated plan-adjustment proposals");
   console.log("  check      fire-only health watch: macOS alert ONLY if a flag / early-warning fires (no LLM)");
