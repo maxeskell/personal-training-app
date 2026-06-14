@@ -298,7 +298,9 @@ cd /Users/maxeskell/personal-training-app && npm run mcp:http   # HTTP  — Clau
   public URL — `COACH_MCP_AUTH=oauth COACH_MCP_PUBLIC_URL=https://<tunnel> COACH_MCP_READONLY=true npm run mcp:http`.
   Add `https://<tunnel>/mcp` as a custom connector (it self-registers via dynamic client registration);
   Claude opens a consent page where you paste your **coach token** once to authorize. **Never** run HTTP
-  mode without auth + a tunnel you control.
+  mode without auth + a tunnel you control. For a hands-off setup — auto-start at login + a stable URL so
+  you never touch a terminal — use `npm run mcp:install -- <https-url>` with a Tailscale Funnel
+  (`tailscale funnel --bg 8787`); see [docs/mcp-server.md](docs/mcp-server.md) → *Always-on*.
 
 Full step-by-step for both (incl. the macOS `npm`-on-PATH gotcha and tunnel commands) is in
 **[docs/mcp-server.md](docs/mcp-server.md)**.
