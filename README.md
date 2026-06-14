@@ -42,6 +42,9 @@ npm run session               # deep feedback on your last session — needs its
 npm run cost                  # token-cost report by flow (today/7d/30d/all + monthly projection); npm run cost 14 for a window
 npm run probe                 # Phase-2: dump live Garmin tool surface + AIE detail samples → reports/ (for mapping)
 npm run fit-sync              # archive recent Garmin activity *summaries* (temp/effort) — also runs automatically on dashboard Sync
+npm run backfill              # archive full history (AIE + Garmin activities/daily) → data/archive/ (resumable)
+npm run backfill:status       # archived counts + date ranges (distinct records, one per date/id)
+npm run backfill:compact      # de-duplicate the archive files in place (housekeeping; safe to re-run)
 npm run decisions             # view the decision log (audit trail)
 npm run decisions -- retro <id> "how it held up"   # add a retrospective to a decision
 npm test                      # unit tests for the insight/stat modules (node:test, no extra deps)

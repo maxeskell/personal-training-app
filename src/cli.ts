@@ -553,6 +553,24 @@ async function cmdArchiveStatus(): Promise<void> {
   await printArchiveStatus(new ArchiveStore());
 }
 
+/**
+ * `archive-compact` — physically de-duplicate the archive files (one record per date/id). The loaders
+ * already dedup on read, so this is housekeeping: it shrinks the on-disk JSONL and realigns the raw
+ * line counts with the distinct counts. Safe to re-run; a no-op when there's nothing to remove.
+ */
+async function cmdArchiveCompact(): Promise<void> {
+  const store = new ArchiveStore();
+  const report = await store.compact();
+  const total = report.reduce((n, r) => n + r.removed, 0);
+  console.log(`\nCompacting ${config.dataDir}/archive/ …\n`);
+  for (const r of report) {
+    const note = r.removed ? `−${r.removed} dup(s) → ${r.after}` : "no dups";
+    console.log(`  ${r.file.padEnd(24)} ${String(r.before).padStart(6)} → ${String(r.after).padStart(6)}  (${note})`);
+  }
+  console.log(total ? `\nRemoved ${total} duplicate record(s).` : "\nNothing to compact — archive already clean.");
+  await printArchiveStatus(store);
+}
+
 /** `dashboard` — generate the glanceable Today/Week/Trends/Race HTML and open it. */
 async function cmdDashboard(): Promise<void> {
   const { window, state } = await buildTodayState();
@@ -888,6 +906,7 @@ const commands: Record<string, () => Promise<void>> = {
   cost: cmdCost,
   backfill: cmdBackfill,
   "archive-status": cmdArchiveStatus,
+  "archive-compact": cmdArchiveCompact,
   probe: cmdProbe,
   "fit-sync": cmdFitSync,
   decisions: cmdDecisions,
@@ -914,6 +933,8 @@ if (!run) {
   console.log("  session [date] [--force]  deep feedback on one session (needs its raw .FIT; --force = summary-only)");
   console.log("  cost [days]   local token-cost report (per-flow breakdown + windowed totals)");
   console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
+  console.log("  archive-status  show archived counts + date ranges (distinct records)");
+  console.log("  archive-compact  de-duplicate the archive files in place (one record per date/id)");
   console.log("  probe      capture live Garmin tool surface + AIE detail samples → reports/ (Phase-2 mapping)");
   console.log("  fit-sync [n]  download recent Garmin run/ride .FIT files (get_activity_fit_data) → streams dir");
   console.log('  decisions [pending | retro <id> "<note>"]   view log / pending / add retrospective');

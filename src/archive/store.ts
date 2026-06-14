@@ -1,10 +1,23 @@
-import { mkdir, readFile, appendFile, stat } from "node:fs/promises";
+import { mkdir, readFile, appendFile, writeFile, rename, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "../config.js";
 
 /** Parsed-JSONL cache keyed by path, invalidated by file mtime+size — avoids re-parsing the (large,
  *  decade-deep) archive on every dashboard request. Appends bump mtime, so the cache self-invalidates. */
 const jsonlCache = new Map<string, { mtimeMs: number; size: number; data: unknown[] }>();
+
+/**
+ * Collapse to one record per key, LAST occurrence wins (the freshest backfill of that date/id),
+ * preserving first-seen order. The append-only files can accrue duplicates: the backfill's
+ * dedup-on-read is not atomic, so two overlapping runs (e.g. a manual `backfill` while the scheduled
+ * `--daily-only` grind fires) each see a date as "missing" and both append it. Deduping at the read
+ * boundary keeps the insight engine — which consumes the raw series — from double-weighting days.
+ */
+function dedupByKey<T>(items: T[], key: (t: T) => string): T[] {
+  const byKey = new Map<string, T>();
+  for (const it of items) byKey.set(key(it), it);
+  return [...byKey.values()];
+}
 
 /**
  * Local historical archive (append-only JSONL). The backfill writes here; the insight engine reads
@@ -116,7 +129,7 @@ export class ArchiveStore {
   }
 
   async loadActivities(): Promise<ArchivedActivity[]> {
-    return this.readJsonl<ArchivedActivity>(this.actPath);
+    return dedupByKey(await this.readJsonl<ArchivedActivity>(this.actPath), (a) => a.key);
   }
   async activityKeys(): Promise<Set<string>> {
     return new Set((await this.loadActivities()).map((a) => a.key));
@@ -128,7 +141,7 @@ export class ArchiveStore {
   }
 
   async loadGarminDays(): Promise<GarminDay[]> {
-    return this.readJsonl<GarminDay>(this.garPath);
+    return dedupByKey(await this.readJsonl<GarminDay>(this.garPath), (d) => d.date);
   }
   async garminDates(): Promise<Set<string>> {
     return new Set((await this.loadGarminDays()).map((d) => d.date));
@@ -140,7 +153,7 @@ export class ArchiveStore {
   }
 
   async loadGarminActivities(): Promise<GarminActivity[]> {
-    return this.readJsonl<GarminActivity>(this.garActPath);
+    return dedupByKey(await this.readJsonl<GarminActivity>(this.garActPath), (a) => a.id);
   }
   async garminActivityIds(): Promise<Set<string>> {
     return new Set((await this.loadGarminActivities()).map((a) => a.id));
@@ -152,7 +165,7 @@ export class ArchiveStore {
   }
 
   async loadFitSummaries(): Promise<FitSummary[]> {
-    return this.readJsonl<FitSummary>(this.fitSumPath);
+    return dedupByKey(await this.readJsonl<FitSummary>(this.fitSumPath), (s) => String(s.activityId));
   }
   async fitSummaryIds(): Promise<Set<string>> {
     return new Set((await this.loadFitSummaries()).map((s) => String(s.activityId)));
@@ -163,6 +176,36 @@ export class ArchiveStore {
     await appendFile(this.fitSumPath, items.map((i) => JSON.stringify(i)).join("\n") + "\n");
   }
 
+  /**
+   * Physically de-duplicate every archive file in place (one record per date/id, last write wins).
+   * The loaders already dedup on read, so this is a housekeeping pass that shrinks the on-disk files
+   * and makes the raw line counts match the distinct counts. Atomic per file (tmp + rename), and a
+   * no-op for files with no duplicates. Returns before/after line counts per file.
+   */
+  async compact(): Promise<Array<{ file: string; before: number; after: number; removed: number }>> {
+    const specs: Array<{ path: string; name: string; key: (x: Record<string, unknown>) => string }> = [
+      { path: this.actPath, name: "activities.jsonl", key: (a) => String(a.key) },
+      { path: this.garPath, name: "garmin-daily.jsonl", key: (d) => String(d.date) },
+      { path: this.garActPath, name: "garmin-activities.jsonl", key: (a) => String(a.id) },
+      { path: this.fitSumPath, name: "fit-summaries.jsonl", key: (s) => String(s.activityId) },
+    ];
+    const out: Array<{ file: string; before: number; after: number; removed: number }> = [];
+    for (const { path, name, key } of specs) {
+      const raw = await this.readJsonl<Record<string, unknown>>(path);
+      const deduped = dedupByKey(raw, key);
+      if (deduped.length !== raw.length) {
+        await this.ensure();
+        const tmp = `${path}.tmp`;
+        await writeFile(tmp, deduped.map((d) => JSON.stringify(d)).join("\n") + "\n");
+        await rename(tmp, path); // atomic on POSIX — never leaves a half-written archive
+        jsonlCache.delete(path);
+      }
+      out.push({ file: name, before: raw.length, after: deduped.length, removed: raw.length - deduped.length });
+    }
+    return out;
+  }
+
+  /** Distinct counts/ranges — the loaders dedup on read, so these reflect one record per date/id. */
   async summary(): Promise<{ activities: number; actRange: string; garminDays: number; garRange: string; garminActivities: number; garActRange: string }> {
     const acts = await this.loadActivities();
     const gar = await this.loadGarminDays();
