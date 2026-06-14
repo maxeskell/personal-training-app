@@ -274,6 +274,8 @@ and token dirs are gitignored; token-shaped strings are redacted from logs and n
 
 ## Specs (source of truth)
 
+- [Product one-pager](docs/PRODUCT.md) — what it is, who it's for, data/privacy posture, risk register.
+- [Setup guide](SETUP.md) · [Handover](HANDOVER.md) — stand up your own instance · operate/maintain it.
 - [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) — decision gate + engineering plan (authoritative).
 - [Project Instructions](docs/specs/AI_Triathlon_Coach_Project_Instructions.md) — the coach persona / system prompt.
 - [Integration Spec](docs/specs/Endurance_Coach_Integration_Spec.md) — data-integration detail.
