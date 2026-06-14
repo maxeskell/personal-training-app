@@ -212,6 +212,10 @@ fire-only health check), `npm run backfill:install` (history grind).
 
 ## 9. Known issues, gotchas & roadmap
 
+- **Setup must run on the host machine.** `npm run auth:aie` opens a browser and waits for the AI
+  Endurance OAuth redirect on `http://localhost:8765`, and the dashboard binds `localhost` — so a
+  remote / headless / cloud agent cannot complete onboarding. Drive setup with a local assistant (or by
+  hand) on the machine that will host the coach; see [SETUP.md](./SETUP.md).
 - **Garmin is an unofficial client.** It scrapes Garmin Connect via a pinned community MCP, is
   rate-limited and occasionally fragile, and its tokens expire ~6-monthly. It is optional by design —
   treat any Garmin breakage as "degrade to AI Endurance," not an outage.

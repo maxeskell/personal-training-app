@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "Personal AI endurance coach — local-first orchestrator (Path B, M1+M2)",
+  "description": "Personal AI endurance coach — local-first orchestrator",
   "type": "module",
   "engines": {
     "node": ">=20"

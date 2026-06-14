@@ -41,7 +41,7 @@ Per the [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) Â
 > The shell examples below that start a service use `/path/to/personal-training-app` â€” substitute the
 > directory where you cloned the repo.
 
-## Running the code (M1 + M2)
+## Running the code
 
 ```bash
 npm install

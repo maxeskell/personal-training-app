@@ -65,6 +65,7 @@ async function loadArchive(): Promise<ArchiveInput | undefined> {
 
 function lanUrls(): string[] {
   const out: string[] = [`http://localhost:${PORT}`];
+  if (!LAN) return out; // localhost-only: the LAN addresses aren't bound, so don't advertise them
   for (const ifs of Object.values(networkInterfaces())) {
     for (const i of ifs ?? []) {
       if (i.family === "IPv4" && !i.internal) out.push(`http://${i.address}:${PORT}`);
