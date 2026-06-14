@@ -1,4 +1,5 @@
 import { mkdir, readFile, appendFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { config } from "../config.js";
 
@@ -74,7 +75,7 @@ export class DecisionLog {
   /** Record an agree/disagree/ignore reaction to a surfaced insight. */
   async recordInsightFeedback(insightKey: string, reaction: InsightReaction, summary: string): Promise<void> {
     await this.append({
-      id: decisionId(`${insightKey}:${reaction}:${nowIso()}`),
+      id: randomUUID(), // collision-free (was a 32-bit second-granularity hash that could collide)
       timestamp: nowIso(),
       kind: "insight-feedback",
       summary,

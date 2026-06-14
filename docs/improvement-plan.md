@@ -1,5 +1,10 @@
 # Endurance Coach — Improvement Plan
 
+> **Status (2026-06-14): mostly delivered — retained for context, not the open work list.** The
+> release-gate and Spec 1–3 items here have shipped (gated + arg-validated writes, localhost+token
+> dashboard, escaped HTML, grounded proposer, idempotent ping). See `SUMMARY.md` / `FINDINGS.md` for
+> what's current.
+
 Sequenced roadmap from the staff review (`docs/engineering-review.md`). Each initiative has a full
 PRD + engineering spec in `docs/specs/improvements/`. Ordering is by **risk-reduction per unit effort**,
 with the release gate first.

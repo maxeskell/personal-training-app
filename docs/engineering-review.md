@@ -1,5 +1,11 @@
 # Endurance Coach — Staff Engineering Review & Hard Challenge
 
+> **Status (2026-06-14): largely superseded — historical baseline, not the present condition.** The
+> release-gate P0s this audit raised (unauthenticated dashboard server, unvalidated write args, the
+> `escapeHtml` apostrophe gap, thin proposer context) have since landed in code. See `SUMMARY.md` /
+> `FINDINGS.md` for the current state, plus the MCP/OAuth surface and its hardening added afterwards
+> (`docs/mcp-server.md`).
+
 _Independent line-by-line audit of `src/**` (three reviewers, 2026-06). Analysis only — no code changed by this document._
 
 ## 1. Executive summary
