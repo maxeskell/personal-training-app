@@ -65,7 +65,8 @@ npm run ping                  # unattended morning readiness: verdict + report +
 npm run dashboard             # one-off glanceable HTML, opened in your browser
 npm run deep-dive             # insight-engine analysis (load/EF/durability/ramp/goal) → report
 npm run ask -- "how were my long rides this month?"   # free-form Q&A over your data
-npm run mcp                   # expose the coach over MCP (stdio) for Claude Cowork / Claude Desktop — see docs/mcp-server.md
+npm run mcp                   # expose the coach over MCP (stdio) for Claude Desktop / Claude Code — see docs/mcp-server.md
+npm run mcp:http              # …or over HTTP (localhost + auth) for Claude Cowork via an HTTPS tunnel — see docs/mcp-server.md
 npm run session               # deep feedback on your last session — needs its raw .FIT, --force for summary-only (or: npm run session 2026-06-09)
 npm run cost                  # token-cost report by flow (today/7d/30d/all + monthly projection); npm run cost 14 for a window
 npm run probe                 # Phase-2: dump live Garmin tool surface + AIE detail samples → reports/ (for mapping)
@@ -279,22 +280,26 @@ can't clobber anything. Day-to-day you never touch git — and the dashboard's *
 
 ## Interrogate your data from Claude (MCP server)
 
-`npm run mcp` exposes the coach as a **local MCP server over stdio**, so a desktop agent — **Claude
-Cowork** or **Claude Desktop** — can interrogate your data in natural language. It's the *same
-engine* the CLI and dashboard use (assembled AthleteState, the n=1 insight engine, the coaching
-flows and the gated write path), surfaced as tools. Because it runs locally, your AI Endurance
-tokens, Garmin creds and archive **never leave the Mac** — Claude talks to a process on your
-machine, not a cloud connector, so it also sees the Garmin/archive/insight data a remote connector
-can't.
+The coach is exposed as MCP tools — the *same engine* the CLI and dashboard use (assembled
+AthleteState, the n=1 insight engine, the coaching flows and the gated write path). The computation
+runs on your Mac, so it also sees the Garmin/archive/insight data a remote AI Endurance connector
+can't. There are **two transports**, because clients differ:
 
 ```bash
-cd /Users/maxeskell/personal-training-app && npm run mcp     # foreground; speaks MCP on stdio (Ctrl-C to stop)
+cd /Users/maxeskell/personal-training-app && npm run mcp        # stdio — Claude Desktop / Claude Code (local, no port)
+cd /Users/maxeskell/personal-training-app && npm run mcp:http   # HTTP  — Claude Cowork (needs a remote URL; bind localhost + tunnel)
 ```
 
-You don't usually run it by hand — point your agent at that command. In **Claude Cowork / Claude
-Desktop → Customize → Connectors → Add local/custom MCP server**, give it:
+- **Claude Desktop / Code (stdio, recommended):** add it to `claude_desktop_config.json` as
+  `command: npm`, `args: ["run","mcp"]`, `cwd: /Users/maxeskell/personal-training-app`. No port, no exposure.
+- **Claude Cowork (HTTP):** Cowork's sandboxed cloud VM can't reach a local process, so it needs a
+  **remote HTTPS URL**. Run `npm run mcp:http` (binds `127.0.0.1:8787`, requires a bearer token), expose
+  it with an **authenticated HTTPS tunnel** (cloudflared / Tailscale Funnel), and add that URL as a
+  custom connector with an `Authorization: Bearer <token>` header. Use `COACH_MCP_READONLY=true` to drop
+  the write tools from that internet-reachable surface. **Never** run HTTP mode without the token + tunnel.
 
-- **command:** `npm`  ·  **args:** `run mcp`  ·  **working directory:** `/Users/maxeskell/personal-training-app`
+Full step-by-step for both (incl. the macOS `npm`-on-PATH gotcha and tunnel commands) is in
+**[docs/mcp-server.md](docs/mcp-server.md)**.
 
 **Tools exposed** (read-first; the write path stays gated):
 
