@@ -108,6 +108,33 @@ To stop exposing it, `Ctrl-C` the tunnel and the server — when they're down th
 Rotate the token by deleting `~/.endurance-coach/mcp.token` (a new one is generated next start) or
 setting a new `COACH_MCP_TOKEN`; issued access tokens are in-memory and also clear on restart.
 
+### C. Always-on (no terminals to babysit)
+
+The quick-tunnel + manual `mcp:http` works, but you have to restart both each session and the
+quick-tunnel URL rotates. For a permanent, hands-off setup: a **stable tunnel URL** + the server as a
+**launchd service**.
+
+**1. Stable URL via Tailscale Funnel** (free, no domain needed):
+```bash
+brew install --cask tailscale     # then open Tailscale and sign in
+tailscale funnel --bg 8787        # serves localhost:8787 publicly, in the background, across reboots
+tailscale funnel status           # shows your stable URL: https://<your-mac>.<tailnet>.ts.net
+```
+(If Tailscale says Funnel isn't enabled, follow its link to toggle it on for your tailnet once.)
+Cloudflare named tunnels work too if you own a domain — same idea, stable hostname.
+
+**2. Auto-start the server** at login (and restart on crash) pointed at that URL — stop any manual
+`mcp:http` first (it holds port 8787):
+```bash
+cd /Users/maxeskell/personal-training-app && npm run mcp:install -- https://<your-mac>.<tailnet>.ts.net
+# read-only by default; append --allow-writes to also expose the gated write tools
+npm run mcp:logs        # tail the service log
+npm run mcp:uninstall   # stop auto-starting
+```
+It prints the Cowork connector URL (`…/mcp`) and your coach token. After a `git pull` the service
+auto-restarts onto the new code. Now both the tunnel and the server survive reboots with no terminal
+open — point Cowork at the stable `…/mcp` URL once and it keeps working.
+
 ## Tools
 
 Read/analysis tools are deterministic and make **no LLM call**. LLM tools need `ANTHROPIC_API_KEY`
