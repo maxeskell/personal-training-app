@@ -65,6 +65,7 @@ npm run ping                  # unattended morning readiness: verdict + report +
 npm run dashboard             # one-off glanceable HTML, opened in your browser
 npm run deep-dive             # insight-engine analysis (load/EF/durability/ramp/goal) → report
 npm run ask -- "how were my long rides this month?"   # free-form Q&A over your data
+npm run mcp                   # expose the coach over MCP (stdio) for Claude Cowork / Claude Desktop — see docs/mcp-server.md
 npm run session               # deep feedback on your last session — needs its raw .FIT, --force for summary-only (or: npm run session 2026-06-09)
 npm run cost                  # token-cost report by flow (today/7d/30d/all + monthly projection); npm run cost 14 for a window
 npm run probe                 # Phase-2: dump live Garmin tool surface + AIE detail samples → reports/ (for mapping)
@@ -262,6 +263,43 @@ can't clobber anything. Day-to-day you never touch git — and the dashboard's *
 > Note: on the LAN the dashboard is gated only by the per-install pairing token (there is no separate
 > per-user login) — fine on a trusted home network. Don't expose port 3000 to the public internet; for
 > remote access use a private tunnel (Tailscale/cloudflared), not port-forwarding.
+
+## Interrogate your data from Claude (MCP server)
+
+`npm run mcp` exposes the coach as a **local MCP server over stdio**, so a desktop agent — **Claude
+Cowork** or **Claude Desktop** — can interrogate your data in natural language. It's the *same
+engine* the CLI and dashboard use (assembled AthleteState, the n=1 insight engine, the coaching
+flows and the gated write path), surfaced as tools. Because it runs locally, your AI Endurance
+tokens, Garmin creds and archive **never leave the Mac** — Claude talks to a process on your
+machine, not a cloud connector, so it also sees the Garmin/archive/insight data a remote connector
+can't.
+
+```bash
+cd /Users/maxeskell/personal-training-app && npm run mcp     # foreground; speaks MCP on stdio (Ctrl-C to stop)
+```
+
+You don't usually run it by hand — point your agent at that command. In **Claude Cowork / Claude
+Desktop → Customize → Connectors → Add local/custom MCP server**, give it:
+
+- **command:** `npm`  ·  **args:** `run mcp`  ·  **working directory:** `/Users/maxeskell/personal-training-app`
+
+**Tools exposed** (read-first; the write path stays gated):
+
+| Tool | What it does | Cost |
+| --- | --- | --- |
+| `sync` / `get_state` | assemble (or read) today's AthleteState — plan, recovery, HRV/RHR, weight, thresholds, zones | none |
+| `insights` | run the n=1 insight engine: CTL/ATL/TSB & ramp, EF, durability, correlations, change-points, taper target, validated monitoring rules | none |
+| `list_reports` / `read_report` | list and read the dated markdown reports under `reports/` | none |
+| `decisions` | the decision-log audit trail (`filter=pending` for proposals awaiting a call) | none |
+| `cost` | local token-cost report (today / 7d / 30d / all-time + monthly projection) | none |
+| `ask` | free-form Q&A over your assembled state + insights | LLM (logged) |
+| `readiness` / `weekly` / `race_prep` / `deep_dive` / `session_feedback` | the coaching flows, each also writing its dated report | LLM (logged) |
+| `propose_adjustment` → `confirm` / `decline` | **the only write path** — `propose_adjustment` logs proposals + trade-offs and writes nothing; `confirm <id>` is the sole tool that mutates AI Endurance; `decline <id>` dismisses | gated write |
+
+The LLM tools need `ANTHROPIC_API_KEY` in `.env` (the deterministic tools don't) and every call is
+cost-logged like any other flow. Writes stay behind the same `propose → confirm` gate as the CLI:
+no tool can silently change your plan — `confirm` requires an explicit, un-consumed proposal id.
+Full wiring details and a privacy note are in **[docs/mcp-server.md](docs/mcp-server.md)**.
 
 ## Health & security
 
