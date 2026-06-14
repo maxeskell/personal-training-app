@@ -65,6 +65,13 @@ export class WriteGate {
    * Throws otherwise. The confirmation is single-use.
    */
   async confirm(id: string): Promise<unknown> {
+    // Hold an exclusive cross-process lock for the whole check-then-act, so two confirms (CLI + server,
+    // or two devices) can't interleave and double-fire. The log-status guards below then run as a
+    // consistent read-modify-write under mutual exclusion.
+    return this.log.withLock(() => this.confirmLocked(id));
+  }
+
+  private async confirmLocked(id: string): Promise<unknown> {
     let tool: string | undefined;
     let args: Record<string, unknown> | undefined;
 
