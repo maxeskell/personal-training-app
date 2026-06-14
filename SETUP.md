@@ -16,6 +16,23 @@ the assistant must stop and ask, never guess. Steps marked **▶ RUN** are comma
 
 ---
 
+## Where to run this (important)
+
+Run setup **on the machine that will host the coach** (e.g. your Mac), driven by a **local** assistant
+(Claude Code running on that machine) or by hand — **not** a cloud / remote agent. Two steps are bound
+to the local machine and a browser:
+
+- **AI Endurance login** (`npm run auth:aie`) opens a **browser** and waits for the OAuth redirect on
+  `http://localhost:8765`. A remote / sandboxed agent has no browser and cannot receive that callback.
+- The **dashboard** binds `localhost` (LAN access is opt-in), so it is reached from the same machine.
+
+So an assistant running this **must pause at the browser logins (Steps 4 and 5a) and hand off to you** —
+it cannot click through OAuth itself.
+
+**Network access:** the machine needs outbound HTTPS to `aiendurance.com` and `api.anthropic.com` (plus
+Garmin if you enable it). On a locked-down network or inside a sandbox, allow-list those hosts first — a
+`Host not in allowlist` / connection error from `npm run doctor` means egress is being blocked.
+
 ## What you'll end up with
 
 A working local AI endurance coach: a CLI plus a local web dashboard you can open on your phone, fed
@@ -141,6 +158,8 @@ npm run doctor     # checks creds, Garmin token age, API key, AI Endurance tool 
 
 **Common issues**
 - *Reads fail / 401* → re-run `npm run auth:aie` (token expired or first-time).
+- *`Host not in allowlist` / can't reach AI Endurance or Anthropic* → your network or sandbox is
+  blocking outbound access; allow `aiendurance.com` and `api.anthropic.com`.
 - *LLM flows error "ANTHROPIC_API_KEY is not set"* → export it or put it in `.env`.
 - *Garmin returns nothing* → check `npm run doctor` for token age; re-run `garmin-mcp-auth`.
 - *Weather card missing* → set `COACH_WEATHER_LAT/LON`, or it's just disabled.
