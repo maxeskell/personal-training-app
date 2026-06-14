@@ -107,6 +107,16 @@ export const config = {
    */
   autoSyncMinutes: Number(process.env.COACH_AUTOSYNC_MIN ?? 30),
 
+  /**
+   * Athlete identity that AI Endurance's getUser does NOT expose (device kit, unit preference). Name,
+   * age, sex and thresholds come live from getUser; this is only the residue that isn't on the platform.
+   * Configurable so it isn't frozen in the coaching prompt — clear COACH_EQUIPMENT to drop it entirely.
+   */
+  athlete: {
+    equipment: process.env.COACH_EQUIPMENT ?? "Garmin Forerunner 970, Edge 1040, Index scale",
+    units: process.env.COACH_UNITS ?? "metric, UK",
+  },
+
   /** Where persisted secrets/tokens live — gitignored, outside the repo by default. */
   secretsDir: process.env.COACH_SECRETS_DIR ?? join(home, ".endurance-coach"),
 

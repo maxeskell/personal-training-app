@@ -17,6 +17,7 @@ import type { InsightReport } from "../insights/engine.js";
 import { fitStreamsDir, type SessionDecay } from "../insights/fit.js";
 import type { FitSummary } from "../archive/store.js";
 import { richActivities, type RichActivity } from "../insights/metrics.js";
+import { raceCalendarLines, liveGoals } from "./seasonContext.js";
 
 function mean(xs: number[]): number | null {
   const v = xs.filter((x) => Number.isFinite(x));
@@ -176,6 +177,10 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
     .slice(0, 7)
     .map((p) => `- ${p.date.slice(0, 10)} ${p.sport ?? "?"}: ${p.title ?? p.type ?? "session"}${p.durationMin != null ? ` (${Math.round(p.durationMin)}min planned)` : ""}`);
   if (upcoming.length) lines.push("", `UPCOMING PLAN (next 7 days) [ai-endurance]:`, ...upcoming);
+
+  // Live race calendar (not frozen) so "should this change anything ahead?" is anchored to real goals.
+  const cal = raceCalendarLines(liveGoals(state), state.date);
+  if (cal.length) lines.push("", `RACE CALENDAR [live from AI Endurance goals]:`, ...cal);
 
   if (insights) {
     const rel = relevantFindings(insights, d.sport);

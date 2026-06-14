@@ -163,6 +163,7 @@ export async function assembleState(
   mapRecovery(state, raw.getRecoveryModel);
   mapNutrition(state, raw.getNutritionModel, opts.date);
   mapUser(state, raw.getUser);
+  mapAthleteProfile(state, raw.getUser);
   mapZonesThresholds(state, raw.getUser);
   mapAdherence(state, raw.getPlanProgress);
   state.prediction = { value: raw.getPrediction ?? null, source: "ai-endurance" };
@@ -362,6 +363,39 @@ function firstNum(obj: unknown, keys: string[]): number | undefined {
     if (v != null) return v;
   }
   return undefined;
+}
+
+/** First non-empty string value across candidate keys. */
+function firstStr(obj: unknown, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = get(obj, k);
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
+/**
+ * Athlete identity from getUser (name/age/sex) — so the coach's notion of WHO it's coaching follows
+ * the platform instead of being frozen in the persona. Field shapes vary, so probe candidates and gate
+ * to absent; age accepts a direct age or is computed from a birth year/date. Best-effort, never throws.
+ */
+function mapAthleteProfile(state: AthleteState, payload: unknown): void {
+  const first = firstStr(payload, ["first_name", "firstname", "given_name"]);
+  const last = firstStr(payload, ["last_name", "lastname", "family_name", "surname"]);
+  const name = firstStr(payload, ["name", "full_name", "display_name", "username"]) ?? ([first, last].filter(Boolean).join(" ") || undefined);
+
+  let age = firstNum(payload, ["age", "athlete_age"]);
+  if (age == null) {
+    const birthYear = firstNum(payload, ["birth_year", "year_of_birth"]);
+    const birth = firstStr(payload, ["birth_date", "date_of_birth", "dob", "birthday"]);
+    const y = birthYear ?? (birth ? new Date(birth).getUTCFullYear() : undefined);
+    if (y && y > 1900 && y < 2100) age = new Date(`${state.date}T00:00:00Z`).getUTCFullYear() - y;
+  }
+  const sexRaw = firstStr(payload, ["sex", "gender"]);
+  const sex = sexRaw ? (/^m/i.test(sexRaw) ? "male" : /^f/i.test(sexRaw) ? "female" : sexRaw) : undefined;
+
+  if (name == null && age == null && sex == null) return; // platform exposed nothing → leave absent
+  state.athleteProfile = { value: { name, age: age != null && age > 0 && age < 120 ? age : undefined, sex }, source: "ai-endurance" };
 }
 
 /**

@@ -23,6 +23,7 @@ import { loadSessionDecays } from "./insights/fit.js";
 import { readCostRecords, summarizeCost } from "./llm/costLog.js";
 import { getForecast } from "./weather/store.js";
 import { assessWeek, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
+import { liveCoachingContext } from "./coach/seasonContext.js";
 
 /** Load the local history archive (if any) as insight inputs. Undefined when empty. */
 async function loadArchive(): Promise<ArchiveInput | undefined> {
@@ -300,7 +301,9 @@ async function cmdDeepDive(): Promise<void> {
     "metrics over time. LEAD with the single most important finding. Group by theme (load & form,",
     "efficiency & durability, injury risk, goal tracking). Be specific, cite the numbers, distinguish",
     "trend from noise (call out where n is small). Where relevant, note ACWR is intentionally not used.",
-    "Honour the season shape and the marathon-off-tri run-load caution. End with 2–4 concrete actions.",
+    "Honour the athlete's LIVE race calendar and the season shape derived from it below. End with 2–4 concrete actions.",
+    "",
+    liveCoachingContext(state),
     "",
     summary,
   ].join("\n");

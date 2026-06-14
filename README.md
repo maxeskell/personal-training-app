@@ -1,9 +1,11 @@
 # personal-training-app — Endurance Coach
 
-A personal AI endurance coach for one athlete building to **Birmingham Triathlon** (A, 11 Jul 2026),
-then a run-focused block to **Loch Ness Marathon** (B, 27 Sep 2026), with **Alderford** (B, 6 Sep 2026)
-handled deliberately. It reads the plan from **AI Endurance** and (optionally) device data from
-**Garmin**, interprets rather than re-plots, and gives evidence-based, individualised coaching.
+A personal AI endurance coach for one triathlete/runner. It reads the plan, **race goals and season
+calendar live from AI Endurance** (`getRaceGoalEvent`/`getUser`) and (optionally) device data from
+**Garmin**, interprets rather than re-plots, and gives evidence-based, individualised coaching. Nothing
+about the calendar is hard-coded: change your goals in AI Endurance and the coaching follows on the next
+Sync — the season shape (taper windows, don't-stack-peaks, a B-race that should be a capped tempo, the
+injury window when a run goal sits off a triathlon base) is **derived from whatever races are set**.
 
 ## Approach
 
@@ -28,7 +30,7 @@ export ANTHROPIC_API_KEY=sk-ant-...   # for the LLM coaching flows (M3+M4)
 npm run readiness             # green/amber/red verdict with cited drivers + wellbeing check
 npm run weekly                # weekly review (takeaway-led) → dated report in reports/
 npm run race                  # race-specific prep for the next race → dated report
-npm run race -- "Loch Ness"   # …or a named race
+npm run race -- "<race name>"  # …or target a named race from your live AI Endurance goals
 npm run propose -- "move my long run off race week"   # gated plan-adjustment proposals
 npm run act                   # surfaced (gated, feedback-aware) findings → grounded gated proposals
 npm run confirm -- <id>       # apply a proposal (the ONLY path that writes to AI Endurance)
