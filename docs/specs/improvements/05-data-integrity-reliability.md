@@ -29,6 +29,14 @@ numbers" premise can least afford, plus reliability/perf gaps on the live `/refr
    records so future migrations are detectable rather than inferred.
 9. **Unit-conversion consistency**: centralize `gramsToKg` / pace / °F→°C / the lactate ×10 normalisation in one
    `util/units.ts`; `assemble` guesses while `backfill` assumes — same metric can be stored in different units by path.
+10. **Duplicate archive records** (`archive/backfill.ts:139`, `archive/store.ts`): `backfillGarmin` reads the set of
+    already-archived dates *once* at the start, then appends — not atomic. Two overlapping runs (a manual `backfill`
+    while the scheduled `--daily-only` grind fires, or a re-run after a partial append) each see a date as "missing"
+    and both write it, so `garmin-daily.jsonl` accrues duplicate dates. Consumers (`engine.ts`, `correlations.ts`,
+    `garminTrends.ts`) read the raw series with no dedup, so a duplicated day is double-weighted in rolling baselines /
+    z-scores. **Fix (done):** dedup-by-key on read in `ArchiveStore` (last write wins — one record per date/id), an
+    `archive-compact` command (`npm run backfill:compact`) that physically rewrites each file (tmp + `rename`), and
+    `summary()` now reports distinct counts so `backfill:status` no longer reads as more days than the calendar holds.
 
 ## Acceptance criteria
 - A `GET /` issued during a `save()` always returns a fully-rendered page (never "No data yet" due to a torn read).
@@ -36,10 +44,14 @@ numbers" premise can least afford, plus reliability/perf gaps on the live `/refr
 - Nutrition targets are never shown for a non-matching date.
 - `GARMIN_MCP_ARGS` with a quoted path spawns correctly.
 - `/refresh` returns within the configured Garmin budget even if one tool is slow.
+- A `garmin-daily.jsonl` with duplicate dates loads as one record per date (last write wins); `archive-compact`
+  rewrites it to the deduped set and is a no-op on a clean file.
 
 ## Test plan
 - `store`: write/replace under simulated concurrent read (read returns last complete content, never partial).
 - `decisionLog`/`archive`: inject a partial line → `all()` returns the good records; round-trip append ordering.
+- `archive`: duplicate dates/ids → loaders return one record per key (last write wins); `compact()` shrinks the file
+  and is idempotent on a second run.
 - `assemble`: nutrition date-miss → absent; unit conversions table-driven (grams/kg, m/s/pace, °F/°C, ×10).
 - units util: property tests for idempotence/ranges.
 
