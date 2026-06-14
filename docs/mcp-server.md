@@ -61,40 +61,52 @@ Fully quit and reopen Desktop. If the tools don't appear, it's almost always PAT
 find `npm` — run `which npm` and put the absolute path (e.g. `/opt/homebrew/bin/npm`) in `command`.
 For Claude Code: `claude mcp add endurance-coach -- npm --prefix /Users/maxeskell/personal-training-app run mcp`.
 
-### B. Claude Cowork (HTTP over an authenticated HTTPS tunnel)
+### B. Claude Cowork (HTTP + OAuth over an authenticated HTTPS tunnel)
 
 Cowork runs your session in a **sandboxed cloud VM**, so it cannot spawn or reach a local stdio
-server — a custom connector makes Anthropic's cloud call **out to a remote HTTPS URL**. So the coach
-has to be served over HTTP and exposed on a public, *authenticated* HTTPS endpoint. Keep it private
-with the built-in **bearer token** plus a tunnel that points at localhost (the data stays on the Mac).
+server — a custom connector makes Anthropic's cloud call **out to a remote HTTPS URL**. And those
+connectors authenticate via **OAuth, not a static token** — so `mcp:http` has an `oauth` mode that
+runs a single-user OAuth 2.1 server (dynamic client registration + PKCE) whose **authorize step is
+gated by your coach token**: Claude opens a consent page in your browser, you paste the token once,
+and only then is access granted. The server still runs locally; a tunnel just gives Anthropic a
+public HTTPS URL to reach it.
 
 > ⚠️ This opens an internet-reachable path to your health data — and, unless you set
-> `COACH_MCP_READONLY=true`, to the gated write tools. **Never** run `mcp:http` without the token and
-> a tunnel you control. Read-only is the safer default for a remote surface.
+> `COACH_MCP_READONLY=true`, to the gated write tools. **Never** run the HTTP server without auth and
+> a tunnel you control. Read-only is the recommended default for this remote surface.
 
-**1. Start the HTTP server (read-only is recommended for the remote surface):**
+**1. Open a tunnel first, so you know your public URL** (OAuth needs the issuer URL up front):
 ```bash
-cd /Users/maxeskell/personal-training-app && COACH_MCP_READONLY=true npm run mcp:http
+cloudflared tunnel --url http://127.0.0.1:8787      # → prints https://<random>.trycloudflare.com
 ```
-On first run it prints the bearer token's location: `~/.endurance-coach/mcp.token` (or set
-`COACH_MCP_TOKEN=...` yourself). It binds to `127.0.0.1:8787` (override with `COACH_MCP_PORT` / `COACH_MCP_HOST`).
+(Tailscale alternative: `tailscale funnel 8787`. The free cloudflared "quick tunnel" URL is temporary
+— it changes on restart; for a permanent setup use a **named tunnel** on your own domain so the URL,
+and therefore the OAuth issuer, is stable.)
 
-**2. Open an HTTPS tunnel to it.** Either:
-- **cloudflared:** `cloudflared tunnel --url http://127.0.0.1:8787` → prints a `https://<random>.trycloudflare.com` URL. (For a stable URL, set up a named tunnel on your own domain.)
-- **Tailscale Funnel:** `tailscale funnel 8787` → a `https://<machine>.<tailnet>.ts.net` URL.
+**2. Start the server in OAuth mode, pointing it at that public URL** (read-only recommended):
+```bash
+cd /Users/maxeskell/personal-training-app && \
+  COACH_MCP_AUTH=oauth \
+  COACH_MCP_PUBLIC_URL=https://<your-tunnel>.trycloudflare.com \
+  COACH_MCP_READONLY=true \
+  npm run mcp:http
+```
+It prints the connector URL to use (`https://<your-tunnel>/mcp`) and your coach-token file location
+(`~/.endurance-coach/mcp.token`, or set `COACH_MCP_TOKEN=...`).
 
 **3. Add the connector in Cowork** → **Customize → Connectors → Add custom connector**:
-- **URL:** the tunnel's HTTPS URL from step 2.
-- **Auth:** set the request header `Authorization: Bearer <token>` (the token from step 1) in the connector's advanced/header settings.
+- **URL:** `https://<your-tunnel>.trycloudflare.com/mcp` (from step 2).
+- **Auth:** leave it to do OAuth automatically (no client ID needed — the server supports dynamic
+  registration). Click **Connect**.
 
-**4. Verify:** ask Cowork *"what coach tools do you have?"* then *"what's my readiness today?"*
+**4. Approve:** Claude opens a small **"Authorize Endurance Coach"** page — paste your coach token and
+submit. Cowork finishes the handshake and the tools appear.
 
-To stop exposing it, `Ctrl-C` the tunnel and the `mcp:http` process — when they're down there's no
-remote access. Rotate the token by deleting `~/.endurance-coach/mcp.token` (a new one is generated on
-next start) or setting a new `COACH_MCP_TOKEN`.
+**5. Verify:** ask Cowork *"what coach tools do you have?"* then *"what's my readiness today?"*
 
-Then ask in plain language: *"what does my endurance coach say about my readiness today?"*,
-*"how were my long rides this month?"*, *"run a deep dive."*
+To stop exposing it, `Ctrl-C` the tunnel and the server — when they're down there's no remote access.
+Rotate the token by deleting `~/.endurance-coach/mcp.token` (a new one is generated next start) or
+setting a new `COACH_MCP_TOKEN`; issued access tokens are in-memory and also clear on restart.
 
 ## Tools
 
@@ -146,9 +158,11 @@ optional Garmin, `ANTHROPIC_API_KEY` for the LLM tools). **HTTP** mode adds a fe
 
 | Var | Default | Meaning |
 | --- | --- | --- |
+| `COACH_MCP_AUTH` | `token` | `token` (bearer header) · `oauth` (for Cowork) · `none` (tunnel-only) |
+| `COACH_MCP_PUBLIC_URL` | — | **required for `oauth`**: the public HTTPS tunnel URL (the OAuth issuer) |
 | `COACH_MCP_HOST` | `127.0.0.1` | interface to bind (keep localhost; the tunnel reaches it) |
 | `COACH_MCP_PORT` | `8787` | local port for the HTTP listener |
-| `COACH_MCP_TOKEN` | _(generated)_ | bearer token; if unset, a random one is written to `<secretsDir>/mcp.token` (0600) |
+| `COACH_MCP_TOKEN` | _(generated)_ | the secret; `token` mode → bearer header, `oauth` mode → typed into the consent page. If unset, a random one is written to `<secretsDir>/mcp.token` (0600) |
 | `COACH_MCP_READONLY` | `false` | `true` drops the gated write tools from the HTTP surface |
 
 The same `npm run doctor` health check covers the rest.

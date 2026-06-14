@@ -120,6 +120,15 @@ export const config = {
     httpHost: process.env.COACH_MCP_HOST ?? "127.0.0.1",
     httpPort: Number(process.env.COACH_MCP_PORT ?? 8787),
     readOnly: process.env.COACH_MCP_READONLY === "true",
+    /**
+     * HTTP auth mode. "token" (default): a static bearer token — good for scripts and a self-hosted
+     * Desktop-over-HTTP. "oauth": full OAuth 2.1 (DCR + PKCE + a coach-token-gated consent) — required
+     * by Claude Cowork's custom connectors. "none": no auth (only behind a private tunnel you trust).
+     */
+    auth: (process.env.COACH_MCP_AUTH ?? "token") as "token" | "oauth" | "none",
+    /** Public HTTPS base URL the server is reached at (the tunnel URL). REQUIRED for auth=oauth — the
+     *  OAuth metadata/redirects must advertise a publicly-reachable issuer, not localhost. */
+    publicUrl: process.env.COACH_MCP_PUBLIC_URL,
   },
 
   /**
