@@ -27,6 +27,7 @@
     "schedule:install": "bash scripts/install-schedule.sh",
     "schedule:uninstall": "bash scripts/uninstall-schedule.sh",
     "serve": "tsx src/server.ts",
+    "mcp": "tsx src/mcpServer.ts",
     "serve:install": "bash scripts/install-server.sh",
     "serve:uninstall": "bash scripts/uninstall-server.sh",
     "serve:logs": "tail -n 40 -f reports/server.log",

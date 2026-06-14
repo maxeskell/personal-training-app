@@ -3,18 +3,18 @@ import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
 import { assembleState, extractJson, garminInner } from "./state/assemble.js";
 import { config } from "./config.js";
-import { todayIso } from "./util/today.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
-import { assessReadiness } from "./coach/readiness.js";
 import { runWeeklyReview } from "./coach/weekly.js";
 import { runRacePrep } from "./coach/racePrep.js";
+import { runDeepDive } from "./coach/deepDive.js";
+import { buildTodayState, gatherReadiness, loadArchive, todayIso, withAie } from "./coach/orchestrator.js";
 import { proposeAdjustments, validateProposals, buildProposerContext } from "./coach/planAdjust.js";
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
-import { buildInsights, type ArchiveInput } from "./insights/engine.js";
-import { mapRichActivity, alertFindings } from "./insights/metrics.js";
+import { buildInsights } from "./insights/engine.js";
+import { alertFindings } from "./insights/metrics.js";
 import { ArchiveStore } from "./archive/store.js";
 import { syncFitSummaries } from "./archive/fitSync.js";
 import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate } from "./archive/backfill.js";
@@ -24,53 +24,14 @@ import { loadSessionDecays } from "./insights/fit.js";
 import { readCostRecords, summarizeCost } from "./llm/costLog.js";
 import { getForecast } from "./weather/store.js";
 import { assessWeek, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
-import { liveCoachingContext } from "./coach/seasonContext.js";
 
-/** Load the local history archive (if any) as insight inputs. Undefined when empty. */
-async function loadArchive(): Promise<ArchiveInput | undefined> {
-  const store = new ArchiveStore();
-  const acts = await store.loadActivities();
-  const gar = await store.loadGarminDays();
-  const fitSummaries = await store.loadFitSummaries();
-  if (!acts.length && !gar.length && !fitSummaries.length) return undefined;
-  return {
-    activities: acts.map((a) => mapRichActivity(a.raw, a.sport)),
-    garminDays: gar, // GarminDay already carries every field ArchiveInput needs (incl. slice-1b series)
-    fitSummaries,
-  };
-}
 import { notify } from "./notify.js";
 import { fileChecks, redactSecrets } from "./health.js";
 import open from "open";
 import { assessHealthRisk } from "./guardrails/wellbeing.js";
 import { WriteGate } from "./guardrails/writeGate.js";
-import { DecisionLog, decisionId, nowIso, suppressedInsightKeys } from "./state/decisionLog.js";
+import { DecisionLog, suppressedInsightKeys } from "./state/decisionLog.js";
 import type { AthleteState } from "./state/types.js";
-
-/** Assemble (and persist) today's state + trailing window. Handles Garmin lifecycle. */
-async function buildTodayState(): Promise<{ state: AthleteState; window: AthleteState[] }> {
-  const store = new StateStore();
-  const garmin = config.garmin.enabled ? new GarminClient() : undefined;
-  if (garmin) await garmin.connect();
-  const today = todayIso();
-  const state = await withAie((aie) =>
-    assembleState(aie, garmin, store, { date: today, assembledAt: new Date().toISOString() }),
-  );
-  await garmin?.close();
-  await store.save(state);
-
-  // AIE tool-change tolerance: a read that errored degrades its field to null rather than
-  // crashing — but surface it so silent API drift doesn't pass unnoticed (Integration Spec §2.1).
-  const failed = Object.entries(state.raw ?? {})
-    .filter(([, v]) => v && typeof v === "object" && "error" in (v as Record<string, unknown>))
-    .map(([tool]) => tool);
-  if (failed.length) {
-    console.warn(`⚠ AI Endurance reads returned errors (continuing on partial data): ${failed.join(", ")}`);
-  }
-
-  const window = await store.recent(today, 7);
-  return { state, window };
-}
 
 function requireLLM(): boolean {
   if (CoachLLM.hasApiKey()) return true;
@@ -107,17 +68,6 @@ async function recordPingSuccess(date: string): Promise<void> {
   await mkdir(join(process.cwd(), "reports"), { recursive: true });
   await writeFile(await pingMarkerPath(), JSON.stringify({ date, ts: new Date().toISOString() }));
 }
-
-async function withAie<T>(fn: (aie: AieClient) => Promise<T>): Promise<T> {
-  const aie = new AieClient();
-  await aie.connect();
-  try {
-    return await fn(aie);
-  } finally {
-    await aie.close();
-  }
-}
-
 /** `auth` — run the OAuth flow (interactive first time) and confirm the connection. */
 async function cmdAuth(): Promise<void> {
   await withAie(async (aie) => {
@@ -214,28 +164,6 @@ async function cmdState(): Promise<void> {
   console.log(`\nSaved to ${config.dataDir}/state/${state.date}.json`);
 }
 
-/** Shared readiness core: assemble → wellbeing → verdict → log. Used by `readiness` and `ping`. */
-async function gatherReadiness(): Promise<{
-  state: AthleteState;
-  verdict: Awaited<ReturnType<typeof assessReadiness>>["verdict"];
-  risk: ReturnType<typeof assessHealthRisk>;
-  cacheRead: number;
-  costUsd: number;
-}> {
-  const { state, window } = await buildTodayState();
-  const risk = assessHealthRisk(window); // deterministic guardrail, runs before the model
-  const llm = new CoachLLM(await loadSystemPrompt(), "readiness", "medium");
-  const { verdict, cacheRead, costUsd } = await assessReadiness(llm, window);
-  // Idempotent per day (ENG-3): the readiness id is deterministic from the date, so a re-run (manual +
-  // the 06:00 ping, or a launchd wake) must not append a duplicate readiness line. First call of the day wins.
-  const log = new DecisionLog();
-  const id = decisionId(`readiness:${state.date}`);
-  if (!(await log.all()).some((r) => r.id === id)) {
-    await log.append({ id, timestamp: nowIso(), kind: "readiness", summary: `${verdict.verdict}: ${verdict.why}`, status: "note" });
-  }
-  return { state, verdict, risk, cacheRead, costUsd };
-}
-
 function printReadiness(v: { verdict: string; why: string; drivers: Array<{ signal: string; reading: string; source: string }>; cautions: string[] }, risk: ReturnType<typeof assessHealthRisk>): void {
   if (risk.level !== "none") console.log(`\n⚠ Wellbeing (${risk.level}): ${risk.message}\n`);
   const dot = v.verdict === "green" ? "🟢" : v.verdict === "amber" ? "🟡" : "🔴";
@@ -304,50 +232,9 @@ async function cmdDeepDive(): Promise<void> {
   const { state, window } = await buildTodayState();
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
   const ins = buildInsights(state, await loadArchive(), { suppressed, history: window });
-
-  const ev = (t: { recent: number | null; prior: number | null; deltaPct: number | null; n: number }) =>
-    `recent ${t.recent ?? "—"} vs prior ${t.prior ?? "—"} (Δ ${t.deltaPct ?? "—"}%, n=${t.n})`;
-  const summary = [
-    `INSIGHT METRICS for ${ins.date} (computed locally; cite these):`,
-    ins.load ? `- Load: CTL ${ins.load.ctl} / ATL ${ins.load.atl} / TSB ${ins.load.tsb}, ΔCTL/wk ${ins.load.rampPerWeek} [derived from daily ESS]` : "- Load: insufficient ESS history",
-    `- Run-load ramp: this week ${ins.runRamp.thisWeekEss} ESS vs baseline ${ins.runRamp.baselineEss} (jump ${ins.runRamp.jumpPct ?? "—"}%) [ai-endurance]`,
-    `- Run EF: ${ev(ins.ef.run)} | Ride EF: ${ev(ins.ef.ride)} [derived, steady ≥40min]`,
-    `- Run durability %: ${ev(ins.durability.run)} [ai-endurance DFA-α1]`,
-    `- Run aerobic threshold HR: ${ev(ins.threshold.run)} [ai-endurance DFA-α1, artifact-filtered]`,
-    `- Predictions vs goals: ${ins.predictions.map((p) => `${p.race} T-${p.daysTo}d pred ${p.predictedSec ?? "?"}s vs target ${p.targetSec ?? "?"}s`).join("; ") || "none"}`,
-    `- Monotony ${ins.monotony.monotony ?? "—"} (strain ${ins.monotony.strain ?? "—"}); intensity split easy/tempo/hard ${ins.tid.easyPct ?? "—"}/${ins.tid.tempoPct ?? "—"}/${ins.tid.hardPct ?? "—"}%`,
-    `- n=1 patterns (lagged, autocorr-aware CIs): ${ins.correlations.map((c) => `${c.label} r=${c.r} [${c.ciLow},${c.ciHigh}] lag ${c.lagDays}d, effN ${c.effN}${c.significant ? "" : " (CI spans 0)"}`).join("; ") || "none strong enough yet"}`,
-    `- Anomalies today: ${ins.anomalies.map((a) => a.detail).join("; ") || "none"}`,
-    `- Monitoring rule (n=1, ${ins.monitoring.validated ? "validated out-of-sample" : "exploratory"}; outcome ${ins.monitoring.outcomeName}${ins.monitoring.outcomeIndependent ? "" : ", dependent"}): ${ins.monitoring.best ? `${ins.monitoring.best.name} → lead ${ins.monitoring.best.lead}d, hit ${Math.round(ins.monitoring.best.hitRate * 100)}% / false-alarm ${Math.round(ins.monitoring.best.falseAlarmRate * 100)}%${ins.monitoring.best.pValue != null ? `, perm p=${ins.monitoring.best.pValue}` : ""} (${ins.monitoring.method}, ${ins.monitoring.days}d)` : `none validated yet (${ins.monitoring.days}d history)`}`,
-    `- Regime shifts (change-points): ${ins.changePoints.flatMap((s) => s.points.slice(-1).map((p) => p.date ? `${s.metric} ${p.before}→${p.after} @ ${p.date}` : null)).filter(Boolean).join("; ") || "none dated"}`,
-    `- Brick decoupling (Q4): ${ins.brick.decouplingPct != null ? `run EF off-bike ${ins.brick.decouplingPct}% vs fresh (${ins.brick.brickDays} brick days)` : "insufficient power-equipped runs"}`,
-    `- Taper target (Q6): ${ins.taper.recommendedTsbLow != null ? `race-day TSB ~${ins.taper.recommendedTsbLow}..${ins.taper.recommendedTsbHigh} (${ins.taper.basis})` : "no past race-day TSB yet"}`,
-    `- Economy vs fitness (Q5): ${ins.efficiency.residualSlopePer30d != null ? `fitness-removed EF residual ${ins.efficiency.residualSlopePer30d}/30d (${ins.efficiency.fitnessExplains ? "gains are fitness, not economy" : "independent economy gain"})` : "insufficient steady runs"}`,
-    `- Race split plans: ${ins.splits.map((p) => `${p.race} ${Math.round(p.predictedSec / 60)}min over ${p.distanceKm}km — ${p.strategy}`).join(" | ") || "no upcoming races with enough data for a plan"}`,
-    "",
-    `TOP SURFACED INSIGHTS (good-signal, ranked; suppressed/dismissed removed):`,
-    ...ins.topFindings.slice(0, 5).map((f) => `- [${f.severity}, ${Math.round((f.confidence ?? 0.6) * 100)}%] ${f.title}: ${f.detail} (${f.evidence})`),
-    "",
-    `ALL DETECTOR FINDINGS (triaged by severity):`,
-    ...ins.findings.map((f) => `- [${f.severity}] ${f.title}: ${f.detail} (${f.evidence})`),
-  ].join("\n");
-
-  const prompt = [
-    "Write a deep-dive analysis as markdown — the trends/issues a sharp coach would pull out of these",
-    "metrics over time. LEAD with the single most important finding. Group by theme (load & form,",
-    "efficiency & durability, injury risk, goal tracking). Be specific, cite the numbers, distinguish",
-    "trend from noise (call out where n is small). Where relevant, note ACWR is intentionally not used.",
-    "Honour the athlete's LIVE race calendar and the season shape derived from it below. End with 2–4 concrete actions.",
-    "",
-    liveCoachingContext(state),
-    "",
-    summary,
-  ].join("\n");
-
-  const { text, cacheRead, costUsd } = await new CoachLLM(await loadSystemPrompt(), "deep-dive").text(prompt);
-  const md = `# Deep dive — ${ins.date}\n\n${text}`;
-  console.log("\n" + md + "\n");
-  const path = await writeReport("deep-dive", todayIso(), md);
+  const { markdown, cacheRead, costUsd } = await runDeepDive(new CoachLLM(await loadSystemPrompt(), "deep-dive"), state, ins);
+  console.log("\n" + markdown + "\n");
+  const path = await writeReport("deep-dive", todayIso(), markdown);
   console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
 }
 
