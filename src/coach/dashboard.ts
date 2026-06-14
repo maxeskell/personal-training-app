@@ -332,12 +332,29 @@ function renderZones(today: AthleteState): string {
   </div>`;
 }
 
+/**
+ * Reconcile the power-duration-curve FTP estimate against the configured bike FTP so the dashboard's
+ * two FTP figures don't read as an unexplained conflict. The MMP curve only sees power-equipped rides
+ * and revises up only on hard, sustained power efforts, so with sparse power-meter riding the estimate
+ * sits below the real/configured FTP — directional, not a downgrade (same root cause as the
+ * `bikeFtpNote` Garmin-auto-detect gap). Returns null when there's nothing to explain: no configured
+ * FTP, the estimate is at/above it, or the gap is within ~5% noise.
+ */
+export function ftpEstimateGapNote(configuredFtpW: number | undefined, estimateW: number | undefined): string | null {
+  if (!configuredFtpW || configuredFtpW <= 0 || !estimateW || estimateW <= 0) return null;
+  if (estimateW >= configuredFtpW) return null;
+  const pct = Math.round((1 - estimateW / configuredFtpW) * 100);
+  if (pct < 5) return null;
+  return `${pct}% under your configured ${configuredFtpW} W FTP — the curve only sees power-equipped rides and revises up on hard sustained efforts, so read it as a floor, not a downgrade. Zones use the ${configuredFtpW} W figure.`;
+}
+
 /** Garmin model scores: endurance score, hill score, and the power-duration curve (MMP). */
 function renderScores(today: AthleteState): string {
   const e = today.enduranceScore.value;
   const h = today.hillScore.value;
   const p = today.powerCurve.value;
   if (!e && !h && !p) return "";
+  const ftpGap = ftpEstimateGapNote(today.thresholds.value?.bikeFtpW, p?.ftpEstimateW);
   const mmpRows = p?.bests?.length
     ? `<table style="margin-top:8px"><tr class="k"><td>Duration</td><td>Best</td><td>Set on</td></tr>${p.bests
         .map((b) => `<tr><td>${escapeHtml(b.duration)}</td><td class="num">${b.watts} W</td><td class="muted">${b.date ? escapeHtml(String(b.date).slice(0, 10)) : "—"}</td></tr>`)
@@ -350,6 +367,7 @@ function renderScores(today: AthleteState): string {
       ${p?.ftpEstimateW != null ? `<div><div class="k">FTP estimate</div><div class="v">${p.ftpEstimateW} W</div><div class="k">${p.activitiesAnalyzed ?? "?"} activities</div></div>` : ""}
     </div>
     ${mmpRows}
+    ${ftpGap ? `<div style="font-size:12px;color:#b45309;margin-top:8px">⚠ FTP estimate is ${ftpGap}</div>` : ""}
     <div class="k" style="margin-top:8px">Endurance/hill/MMP are Garmin MODEL estimates — read the trend. Power curve sharpens as fit-sync pulls power-equipped sessions.</div>
   </div>`;
 }

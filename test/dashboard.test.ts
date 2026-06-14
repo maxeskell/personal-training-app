@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyState } from "../src/state/types.js";
 import { buildInsights } from "../src/insights/engine.js";
-import { renderDashboard } from "../src/coach/dashboard.js";
+import { renderDashboard, ftpEstimateGapNote } from "../src/coach/dashboard.js";
 import type { Finding } from "../src/insights/metrics.js";
 import type { SessionDecay } from "../src/insights/fit.js";
 
@@ -138,6 +138,27 @@ test("stale snapshot triggers the on-load auto-sync; a fresh one (and the CLI fi
   }
   const fresh = renderDashboard({ window: [s], decisions: [] });
   assert.ok(!fresh.includes("<script>autoSync("), "no auto-sync call without the server's staleness signal");
+});
+
+test("a power-curve FTP estimate well below the configured FTP is reconciled on the dashboard, not left as a bare conflict", () => {
+  // The real-world report: Garmin's configured cycling FTP is 223 W, but the MMP power-duration
+  // curve estimates 183 W (it only sees power-equipped rides) — two FTP numbers on one page.
+  const note = ftpEstimateGapNote(223, 183);
+  assert.ok(note && /18% under your configured 223 W FTP/.test(note), "names the gap and the configured FTP");
+  assert.ok(note && /Zones use the 223 W figure/.test(note), "tells the reader which figure drives zones");
+  // No nagging: estimate at/above the configured FTP, within ~5% noise, or missing inputs → no note.
+  assert.equal(ftpEstimateGapNote(223, 223), null);
+  assert.equal(ftpEstimateGapNote(223, 250), null);
+  assert.equal(ftpEstimateGapNote(223, 215), null, "4% gap is within noise");
+  assert.equal(ftpEstimateGapNote(undefined, 183), null);
+  assert.equal(ftpEstimateGapNote(223, undefined), null);
+
+  // And it actually renders in the Garmin scores card when both numbers are present.
+  const s = emptyState("2026-06-14", new Date().toISOString());
+  s.thresholds = { value: { bikeFtpW: 223, bikeFtpWkg: 3.19 }, source: "garmin" };
+  s.powerCurve = { value: { ftpEstimateW: 183, activitiesAnalyzed: 7, bests: [] }, source: "garmin" };
+  const html = renderDashboard({ window: [s], decisions: [] });
+  assert.match(html, /FTP estimate is 18% under your configured 223 W FTP/);
 });
 
 test("API cost card renders windowed totals + a monthly projection when records are present", () => {

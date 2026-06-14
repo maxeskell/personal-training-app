@@ -198,6 +198,10 @@ projection, and the dashboard carries an **API cost** card. To keep it down, the
   only thresholds are exposed, zones are derived with standard models (Coggan power, %-LTHR, %-threshold
   pace). **Bike HR zones** use your bike LTHR when the profile exposes one, else fall back to run LTHR
   with a visible note (bike LTHR typically sits a few bpm lower — treat zone tops conservatively).
+  When Garmin's **power-duration FTP *estimate*** (in the Garmin scores card) sits materially below your
+  configured bike FTP, the card flags the gap rather than leaving two conflicting numbers on the page:
+  the MMP curve only sees power-equipped rides and revises up only on hard, sustained power efforts, so a
+  low estimate is a floor, not a downgrade — your **configured FTP** is what drives the zones.
 - **Estimated race splits** for every upcoming race:
   - **Run races**: AI Endurance's predicted finish broken into a per-segment pacing plan, shaped by your
     **durability trend** — improving durability earns a gentle negative split; weak/unknown durability gets
