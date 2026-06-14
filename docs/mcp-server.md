@@ -193,3 +193,23 @@ optional Garmin, `ANTHROPIC_API_KEY` for the LLM tools). **HTTP** mode adds a fe
 | `COACH_MCP_READONLY` | `false` | `true` drops the gated write tools from the HTTP surface |
 
 The same `npm run doctor` health check covers the rest.
+
+## Hardening (the OAuth/HTTP surface)
+
+Because OAuth mode is internet-reachable, the surface is defended in depth:
+
+- **The consent endpoint is rate-limited** (10 attempts / 15 min / IP) and logs rejected attempts —
+  the coach token can't be brute-forced unobserved. Set a long `COACH_MCP_TOKEN` (or let it
+  auto-generate 48 hex chars); the server **refuses to start** with a token under 16 chars.
+- **Issued tokens are audience-bound** to this server's `/mcp` resource and **must carry the `coach`
+  scope** — a token can't be replayed against a different resource, and `/mcp` rejects scope-less tokens.
+- **Dynamic client registration refuses non-HTTPS / non-loopback redirect URIs**, narrowing the
+  phishing surface. The in-memory client/code/token stores are **bounded and swept** (codes expire in
+  5 min, access tokens 1 h, refresh tokens 30 days), so a long-running service can't be grown without
+  limit. Everything clears on restart.
+- **`auth=none` refuses to bind a non-loopback host** — it can only ever serve on `127.0.0.1`, so a
+  misconfiguration can't silently expose the tools unauthenticated.
+
+To turn the surface off entirely, stop the tunnel and the server (`npm run mcp:uninstall` if you
+installed the service). The local **stdio** mode (Desktop/Code) has none of this exposure and is the
+recommended default when Cowork isn't required.

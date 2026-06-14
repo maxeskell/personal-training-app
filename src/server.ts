@@ -8,8 +8,8 @@ import { StateStore } from "./state/store.js";
 import { assembleState } from "./state/assemble.js";
 import { DecisionLog, suppressedInsightKeys, type InsightReaction } from "./state/decisionLog.js";
 import { renderDashboard } from "./coach/dashboard.js";
-import { buildInsights, type ArchiveInput } from "./insights/engine.js";
-import { mapRichActivity } from "./insights/metrics.js";
+import { buildInsights } from "./insights/engine.js";
+import { loadArchive } from "./coach/orchestrator.js";
 import { ArchiveStore } from "./archive/store.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
@@ -50,19 +50,6 @@ function lanIps(): string[] {
   return out;
 }
 const ALLOWED_HOSTS = LAN ? lanIps() : [];
-
-async function loadArchive(): Promise<ArchiveInput | undefined> {
-  const store = new ArchiveStore();
-  const acts = await store.loadActivities();
-  const gar = await store.loadGarminDays();
-  const fitSummaries = await store.loadFitSummaries();
-  if (!acts.length && !gar.length && !fitSummaries.length) return undefined;
-  return {
-    activities: acts.map((a) => mapRichActivity(a.raw, a.sport)),
-    garminDays: gar, // GarminDay already carries every field ArchiveInput needs (incl. slice-1b series)
-    fitSummaries,
-  };
-}
 
 function lanUrls(): string[] {
   const out: string[] = [`http://localhost:${PORT}`];

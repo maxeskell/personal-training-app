@@ -90,6 +90,18 @@ test("WriteGate: cross-process — a fresh gate reconstructs the proposal from t
   assert.equal(aieA.calls.length, 0, "the proposing process never wrote");
 });
 
+test("WriteGate: a proposal older than the TTL is refused (stale-plan protection), no write fires", async () => {
+  const log = await freshLog();
+  const { WriteGate } = await import("../src/guardrails/writeGate.js");
+  const aie = fakeAie();
+  const gate = new WriteGate(aie as never, log);
+  const id = "stale-1";
+  const eightDaysAgo = new Date(Date.now() - 8 * 86_400_000).toISOString();
+  await log.append({ id, timestamp: eightDaysAgo, kind: "plan-adjust", summary: "old", tradeoff: "t", write: { tool: "skipWorkout", args: { workoutId: "1" } }, status: "proposed" });
+  await assert.rejects(() => gate.confirm(id), /expired/i);
+  assert.equal(aie.calls.length, 0, "a stale proposal fires no write");
+});
+
 test("WriteGate.assertNoDirectWrite blocks a write tool from any non-gated path", async () => {
   const { WriteGate } = await import("../src/guardrails/writeGate.js");
   assert.throws(() => WriteGate.assertNoDirectWrite("skipWorkout"), /must go through WriteGate/);

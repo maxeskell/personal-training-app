@@ -23,6 +23,11 @@ export interface Proposal {
 
 const WRITE_SET = new Set<string>(AIE_WRITE_TOOLS);
 
+/** A proposal that has sat un-confirmed longer than this is refused: the plan it targeted may have
+ *  changed since, so a stale workoutId could fire the wrong write. Re-propose to get a fresh one. */
+const PROPOSAL_TTL_DAYS = 7;
+const PROPOSAL_TTL_MS = PROPOSAL_TTL_DAYS * 24 * 60 * 60_000;
+
 export class WriteGate {
   private pending = new Map<string, Proposal>();
 
@@ -76,6 +81,14 @@ export class WriteGate {
         throw new Error(
           `Refusing to write: proposal ${id} is not in a confirmable state ` +
             `(${latest ? latest.status : "unknown"}). Writes require an explicit, un-consumed proposal.`,
+        );
+      }
+      // Expire stale proposals: a confirm against a since-changed plan must not fire on an old workoutId.
+      const ageMs = Date.now() - Date.parse(latest.timestamp);
+      if (Number.isFinite(ageMs) && ageMs > PROPOSAL_TTL_MS) {
+        throw new Error(
+          `Refusing to write: proposal ${id} has expired (${Math.round(ageMs / 86_400_000)}d old > ${PROPOSAL_TTL_DAYS}d). ` +
+            `Re-run propose to get a fresh, re-validated proposal.`,
         );
       }
       tool = latest.write.tool;

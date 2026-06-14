@@ -15,13 +15,37 @@ import { timingSafeEqualStr } from "../serverAuth.js";
  * token: Claude opens the authorize URL in your browser, you paste the token to approve, and only then
  * is a code issued — so possessing the token is what grants access. Codes/tokens are in-memory and
  * cleared on restart (Claude transparently re-authorizes).
+ *
+ * Hardening (defense-in-depth for an internet-reachable surface):
+ *  - issued tokens carry the `coach` scope and (when the client requested one) a resource that is
+ *    checked against THIS server on every verify — a token isn't a bearer-for-anything;
+ *  - dynamic registration rejects non-HTTPS / non-loopback redirect URIs (anti-phishing);
+ *  - all in-memory stores are bounded and expired entries are swept, so a long-running always-on
+ *    service can't be grown without limit (DoS).
  */
 
 const CODE_TTL_MS = 5 * 60_000; // authorization codes: 5 minutes
 const ACCESS_TTL_S = 60 * 60; // access tokens: 1 hour
+const REFRESH_TTL_MS = 30 * 24 * 60 * 60_000; // refresh tokens: 30 days
+const MAX_CLIENTS = 100; // registered clients kept (oldest evicted past this)
+const MAX_CODES = 500; // outstanding auth codes
+const MAX_TOKENS = 1000; // outstanding access/refresh tokens
 
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
+}
+
+/** A redirect URI is allowed only if it's HTTPS or a loopback http URL (the standard OAuth exceptions). */
+export function isAllowedRedirectUri(uri: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(uri);
+  } catch {
+    return false;
+  }
+  if (u.protocol === "https:") return true;
+  if (u.protocol === "http:" && (u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "::1" || u.hostname === "[::1]")) return true;
+  return false;
 }
 
 interface CodeRecord {
@@ -33,6 +57,12 @@ interface CodeRecord {
   expiresAt: number;
 }
 interface TokenRecord {
+  clientId: string;
+  scopes: string[];
+  resource?: string;
+  expiresAt: number;
+}
+interface RefreshRecord {
   clientId: string;
   scopes: string[];
   resource?: string;
@@ -55,6 +85,15 @@ export interface ApproveResult {
   status?: number;
 }
 
+/** Drop the oldest entries from a Map until it's at most `max` long (insertion order = oldest first). */
+function capMap<K, V>(m: Map<K, V>, max: number): void {
+  while (m.size > max) {
+    const oldest = m.keys().next().value as K | undefined;
+    if (oldest === undefined) break;
+    m.delete(oldest);
+  }
+}
+
 /** In-memory client registry. The SDK register handler sets the client_id before calling registerClient. */
 class InMemoryClients implements OAuthRegisteredClientsStore {
   private readonly clients = new Map<string, OAuthClientInformationFull>();
@@ -63,7 +102,14 @@ class InMemoryClients implements OAuthRegisteredClientsStore {
   }
   registerClient(client: Omit<OAuthClientInformationFull, "client_id" | "client_id_issued_at">): OAuthClientInformationFull {
     const full = client as OAuthClientInformationFull; // register handler has already assigned client_id
+    // Reject clients whose redirect URIs aren't HTTPS/loopback — narrows the phishing/redirect surface.
+    for (const uri of full.redirect_uris ?? []) {
+      if (!isAllowedRedirectUri(uri)) {
+        throw new Error(`invalid redirect_uri: ${uri} (must be https:// or loopback http://)`);
+      }
+    }
     this.clients.set(full.client_id, full);
+    capMap(this.clients, MAX_CLIENTS); // bound growth on an always-on, openly-registrable server
     return full;
   }
 }
@@ -72,9 +118,13 @@ export class CoachOAuthProvider implements OAuthServerProvider {
   readonly clientsStore = new InMemoryClients();
   private readonly codes = new Map<string, CodeRecord>();
   private readonly tokens = new Map<string, TokenRecord>();
-  private readonly refreshTokens = new Map<string, { clientId: string; scopes: string[]; resource?: string }>();
+  private readonly refreshTokens = new Map<string, RefreshRecord>();
 
-  constructor(private readonly coachToken: string) {}
+  /** @param resourceUrl this server's canonical resource URL (e.g. https://host/mcp) for audience binding. */
+  constructor(
+    private readonly coachToken: string,
+    private readonly resourceUrl?: string,
+  ) {}
 
   /** authorize handler entry — render the coach-token-gated consent page (no code issued yet). */
   async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res: Response): Promise<void> {
@@ -119,15 +169,20 @@ export class CoachOAuthProvider implements OAuthServerProvider {
       return { ok: false, status: 400, html: this.renderConsent(f, "Redirect URL is not registered for this client.") };
     }
 
+    // Always grant the `coach` scope (single-scope server) so the token is consistently labelled.
+    const scopes = f.scope ? f.scope.split(" ").filter(Boolean) : [];
+    if (!scopes.includes("coach")) scopes.push("coach");
+
     const code = randomBytes(24).toString("hex");
     this.codes.set(code, {
       clientId: f.clientId,
       challenge: f.codeChallenge,
       redirectUri: f.redirectUri,
-      scopes: f.scope ? f.scope.split(" ").filter(Boolean) : [],
+      scopes,
       resource: f.resource || undefined,
       expiresAt: Date.now() + CODE_TTL_MS,
     });
+    this.prune();
     const url = new URL(f.redirectUri);
     url.searchParams.set("code", code);
     if (f.state) url.searchParams.set("state", f.state);
@@ -158,6 +213,7 @@ export class CoachOAuthProvider implements OAuthServerProvider {
     const rec = this.refreshTokens.get(refreshToken);
     if (!rec || rec.clientId !== client.client_id) throw new Error("invalid_grant: unknown refresh token");
     this.refreshTokens.delete(refreshToken); // rotate on use
+    if (Date.now() > rec.expiresAt) throw new Error("invalid_grant: refresh token expired");
     const granted = scopes && scopes.length ? scopes.filter((s) => rec.scopes.includes(s)) : rec.scopes;
     return this.issue(client.client_id, granted, rec.resource);
   }
@@ -168,6 +224,11 @@ export class CoachOAuthProvider implements OAuthServerProvider {
     if (Date.now() > rec.expiresAt) {
       this.tokens.delete(token);
       throw new Error("invalid_token: expired");
+    }
+    // Audience binding (RFC 8707): a token scoped to a different resource must not be accepted here.
+    // Lenient when the client never sent a resource (token unbound) — strict only on an actual mismatch.
+    if (rec.resource && this.resourceUrl && rec.resource !== this.resourceUrl) {
+      throw new Error("invalid_token: wrong resource (audience mismatch)");
     }
     return {
       token,
@@ -182,7 +243,8 @@ export class CoachOAuthProvider implements OAuthServerProvider {
     const access = randomBytes(32).toString("hex");
     const refresh = randomBytes(32).toString("hex");
     this.tokens.set(access, { clientId, scopes, resource, expiresAt: Date.now() + ACCESS_TTL_S * 1000 });
-    this.refreshTokens.set(refresh, { clientId, scopes, resource });
+    this.refreshTokens.set(refresh, { clientId, scopes, resource, expiresAt: Date.now() + REFRESH_TTL_MS });
+    this.prune();
     return {
       access_token: access,
       token_type: "bearer",
@@ -190,6 +252,17 @@ export class CoachOAuthProvider implements OAuthServerProvider {
       refresh_token: refresh,
       scope: scopes.join(" ") || undefined,
     };
+  }
+
+  /** Sweep expired entries and bound each store — keeps an always-on server from growing without limit. */
+  private prune(): void {
+    const now = Date.now();
+    for (const [k, v] of this.codes) if (now > v.expiresAt) this.codes.delete(k);
+    for (const [k, v] of this.tokens) if (now > v.expiresAt) this.tokens.delete(k);
+    for (const [k, v] of this.refreshTokens) if (now > v.expiresAt) this.refreshTokens.delete(k);
+    capMap(this.codes, MAX_CODES);
+    capMap(this.tokens, MAX_TOKENS);
+    capMap(this.refreshTokens, MAX_TOKENS);
   }
 
   private renderConsent(f: ConsentFields, error: string | null): string {
@@ -204,6 +277,7 @@ button{margin-top:1rem;width:100%;padding:.7rem;font-size:1rem;border:0;border-r
 <body><div class="card"><h1>Authorize <strong>${esc(f.clientLabel)}</strong></h1>
 <p>A Claude client wants to connect to your Endurance Coach. Paste your coach token to approve — only you have it.</p>
 ${error ? `<p class="err">${esc(error)}</p>` : ""}
+<p class="muted">It will redirect to: <code>${esc(f.redirectUri)}</code></p>
 <form method="POST" action="/coach/approve">
 ${hid("client_id", f.clientId)}${hid("redirect_uri", f.redirectUri)}${hid("state", f.state)}${hid("code_challenge", f.codeChallenge)}${hid("scope", f.scope)}${hid("resource", f.resource)}
 <label>Coach token<br><input type="password" name="coach_token" autocomplete="off" autofocus></label>
