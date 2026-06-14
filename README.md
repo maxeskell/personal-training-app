@@ -208,7 +208,7 @@ COACH_LAN=1 npm run serve     # also bind the LAN for phone access
 ```
 
 **Week ahead — plan vs weather:** the dashboard joins your next 7 days of planned sessions with an
-Open-Meteo forecast (free, no key) at your base (`COACH_WEATHER_LAT/LON`, default Tamworth/Dosthill).
+Open-Meteo forecast (free, no key) at your base (`COACH_WEATHER_LAT/LON` — a neutral default you override).
 Each outdoor session gets a 🟢/🟡/🔴 verdict against your rules — **rides** want dry roads and gusts
 under `COACH_RIDE_MAX_GUST_KMH`, with a best daylight ride window per day and a suggested
 alternative day when the planned one is a washout; **runs** are green in any weather (heat/ice
@@ -259,8 +259,9 @@ It's safe: **fast-forward only**, and it skips the pull entirely if you have unc
 can't clobber anything. Day-to-day you never touch git — and the dashboard's **🔄 Sync** button is unrelated
 (it re-pulls your *training data*, not code).
 
-> Note: the LAN dashboard has no login — fine on a trusted home network. Don't expose port 3000 to the
-> public internet; for remote access use a private tunnel (Tailscale/cloudflared), not port-forwarding.
+> Note: on the LAN the dashboard is gated only by the per-install pairing token (there is no separate
+> per-user login) — fine on a trusted home network. Don't expose port 3000 to the public internet; for
+> remote access use a private tunnel (Tailscale/cloudflared), not port-forwarding.
 
 ## Health & security
 

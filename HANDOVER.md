@@ -159,7 +159,7 @@ All in `.env` (see `.env.example` for the full, commented set). The ones you wil
 | `GARMIN_ENABLED` | `false` | Turn on the optional Garmin gap-filler |
 | `GARMIN_MCP_ARGS` | pinned `garmin_mcp` commit | Keep the pin ≥ `d31de79` or raw `.FIT` auto-download degrades to manual export |
 | `COACH_LOCAL_INTENT` | `false` | Use the local LLM for `ask` intent routing |
-| `COACH_WEATHER_LAT` / `LON` | `52.6056` / `-1.6907` | Weather base (Tamworth/Dosthill default) |
+| `COACH_WEATHER_LAT` / `LON` | `51.5074` / `-0.1278` | Weather base (neutral default — set your own) |
 | `COACH_WATER_TEMP_C` | _(unset)_ | Latest posted open-water temp (no public feed — update by hand) |
 | `COACH_HOST` / `COACH_PORT` | `127.0.0.1` / `3000` | Dashboard bind address/port |
 | `COACH_LAN` | _(unset)_ | `=1` binds `0.0.0.0` for phone access on the LAN (token still required) |
