@@ -7,6 +7,13 @@ about the calendar is hard-coded: change your goals in AI Endurance and the coac
 Sync — the season shape (taper windows, don't-stack-peaks, a B-race that should be a capped tempo, the
 injury window when a run goal sits off a triathlon base) is **derived from whatever races are set**.
 
+## Run your own instance
+
+Want this set up for yourself? **Point your AI coding assistant (Claude Code or similar) at this repo
+and tell it to "follow [SETUP.md](./SETUP.md)"** — a step-by-step playbook it can execute end-to-end,
+stopping to ask you for your own accounts, units and training base. Doing it by hand works too: SETUP.md
+and the [Prerequisites](#prerequisites) below are written for both.
+
 ## Approach
 
 Per the [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) §1 decision gate:
@@ -15,6 +22,24 @@ Per the [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) �
   value, zero code. See **[docs/setup-path-a.md](docs/setup-path-a.md)**.
 - **Path B (queued):** a small local-first orchestrator, justified because all three §1 needs apply
   (scheduling, dashboard, decision log). See **[docs/path-b-plan.md](docs/path-b-plan.md)**.
+
+## Prerequisites
+
+- **Node.js ≥ 20** (`node --version`).
+- **An AI Endurance account** — the required data spine. The coach reads your plan, races and metrics
+  from it over MCP/OAuth; without it there is no state to coach on. (See https://aiendurance.com.)
+- **An Anthropic API key** (`ANTHROPIC_API_KEY`) — required for the LLM coaching flows (readiness,
+  weekly, race, propose, deep-dive, ask, session). The deterministic flows (verify, doctor, state,
+  check, dashboard cards, weather) make no LLM calls and need no key.
+- **Optional, all degradable:** Garmin (device data — see `.env.example`), a local LLM server (cheap
+  intent routing — see the `local-llm-server` repo), Open-Meteo weather (free, no key). Each is
+  best-effort: if it is absent or slow the matching card/field is simply omitted, never an error.
+- **Platform:** developed on macOS; the CLI and dashboard run on Linux too. Only the desktop
+  notifications and the `*:install` scheduler helpers are macOS-specific — they print a cron/systemd
+  equivalent and no-op elsewhere.
+
+> The shell examples below that start a service use `/path/to/personal-training-app` — substitute the
+> directory where you cloned the repo.
 
 ## Running the code (M1 + M2)
 
@@ -72,7 +97,7 @@ baselines, sync-gaps), `knowledge/sports-science.md` (priors for the M3 LLM laye
 
 ## n=1 analytics layer (data-scientist brief Q1–Q7)
 
-The insight engine answers the pre-registered questions from `data-scientist-brief.md` with HONEST
+The insight engine answers a set of pre-registered analytical questions (Q1–Q7, summarised below) with HONEST
 uncertainty — autocorrelation-aware, effect-sizes-with-CIs, and every MODEL caveat attached. Each
 detector self-gates and stays silent until there's enough of your own history behind it. Surfaced in
 `deep-dive`, `ask`, and the dashboard Signals panel:
@@ -211,12 +236,12 @@ coach answers from your assembled state + insights, with the same guardrails as 
 **Start it automatically when you turn the Mac on** (recommended — launchd, no extra install):
 
 ```bash
-cd /Users/maxeskell/personal-training-app && npm run serve:install     # starts at login + restarts if it stops
-cd /Users/maxeskell/personal-training-app && npm run serve:logs        # tail /Users/maxeskell/personal-training-app/reports/server.log
-cd /Users/maxeskell/personal-training-app && npm run serve:uninstall   # stop auto-starting
+cd /path/to/personal-training-app && npm run serve:install     # starts at login + restarts if it stops
+cd /path/to/personal-training-app && npm run serve:logs        # tail /path/to/personal-training-app/reports/server.log
+cd /path/to/personal-training-app && npm run serve:uninstall   # stop auto-starting
 ```
 
-Manual start (foreground, for dev): `cd /Users/maxeskell/personal-training-app && npm run serve`
+Manual start (foreground, for dev): `cd /path/to/personal-training-app && npm run serve`
 
 Alternative process manager (pm2): `npm i -g pm2 && npm run pm2:start && pm2 startup && pm2 save`.
 
@@ -224,8 +249,8 @@ Alternative process manager (pm2): `npm i -g pm2 && npm run pm2:start && pm2 sta
 the dashboard on their own — you just use the app.
 
 ```bash
-cd /Users/maxeskell/personal-training-app && npm run autoupdate:install     # pulls every 15 min + at login, then restarts
-cd /Users/maxeskell/personal-training-app && npm run autoupdate:install -- 3600   # …or a custom interval (seconds)
+cd /path/to/personal-training-app && npm run autoupdate:install     # pulls every 15 min + at login, then restarts
+cd /path/to/personal-training-app && npm run autoupdate:install -- 3600   # …or a custom interval (seconds)
 npm run update                                                              # pull + restart right now, on demand
 npm run autoupdate:uninstall                                                # turn it off
 ```
@@ -249,6 +274,8 @@ and token dirs are gitignored; token-shaped strings are redacted from logs and n
 
 ## Specs (source of truth)
 
+- [Product one-pager](docs/PRODUCT.md) — what it is, who it's for, data/privacy posture, risk register.
+- [Setup guide](SETUP.md) · [Handover](HANDOVER.md) — stand up your own instance · operate/maintain it.
 - [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) — decision gate + engineering plan (authoritative).
 - [Project Instructions](docs/specs/AI_Triathlon_Coach_Project_Instructions.md) — the coach persona / system prompt.
 - [Integration Spec](docs/specs/Endurance_Coach_Integration_Spec.md) — data-integration detail.

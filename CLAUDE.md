@@ -1,5 +1,11 @@
 # CLAUDE.md — standing instructions for this repo
 
+> **Setting this repo up for a NEW user?** Follow [SETUP.md](./SETUP.md) instead of applying the
+> specifics below. The machine path (`/Users/maxeskell/...`) and the "athlete preferences already
+> encoded" section are the **original author's** — a fresh setup must gather the new user's own units,
+> training location and preferences (SETUP.md Step 3), never reuse these. The conventions in this file
+> (definition of done, gated writes, degrade-don't-crash, escaping) DO apply to all code changes.
+
 ## Definition of done (apply to EVERY change, without being asked)
 
 1. **Code + docs move together.** Any behaviour, command, config or card change updates the
