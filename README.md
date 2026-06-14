@@ -292,11 +292,13 @@ cd /Users/maxeskell/personal-training-app && npm run mcp:http   # HTTP  — Clau
 
 - **Claude Desktop / Code (stdio, recommended):** add it to `claude_desktop_config.json` as
   `command: npm`, `args: ["run","mcp"]`, `cwd: /Users/maxeskell/personal-training-app`. No port, no exposure.
-- **Claude Cowork (HTTP):** Cowork's sandboxed cloud VM can't reach a local process, so it needs a
-  **remote HTTPS URL**. Run `npm run mcp:http` (binds `127.0.0.1:8787`, requires a bearer token), expose
-  it with an **authenticated HTTPS tunnel** (cloudflared / Tailscale Funnel), and add that URL as a
-  custom connector with an `Authorization: Bearer <token>` header. Use `COACH_MCP_READONLY=true` to drop
-  the write tools from that internet-reachable surface. **Never** run HTTP mode without the token + tunnel.
+- **Claude Cowork (HTTP + OAuth):** Cowork's sandboxed cloud VM can't reach a local process and
+  authenticates connectors via **OAuth, not a static token**. Open an **authenticated HTTPS tunnel**
+  (cloudflared / Tailscale Funnel) to `127.0.0.1:8787`, then run the server in OAuth mode pointed at the
+  public URL — `COACH_MCP_AUTH=oauth COACH_MCP_PUBLIC_URL=https://<tunnel> COACH_MCP_READONLY=true npm run mcp:http`.
+  Add `https://<tunnel>/mcp` as a custom connector (it self-registers via dynamic client registration);
+  Claude opens a consent page where you paste your **coach token** once to authorize. **Never** run HTTP
+  mode without auth + a tunnel you control.
 
 Full step-by-step for both (incl. the macOS `npm`-on-PATH gotcha and tunnel commands) is in
 **[docs/mcp-server.md](docs/mcp-server.md)**.
