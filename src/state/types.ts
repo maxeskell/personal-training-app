@@ -162,6 +162,13 @@ export interface DisciplineThresholds {
   bikeFtpNote?: string; // set when Garmin's auto-detected FTP conflicts with a higher test-based value
 }
 
+/** Athlete identity from getUser — every field optional; only what the platform actually exposes. */
+export interface AthleteProfile {
+  name?: string;
+  age?: number;
+  sex?: string;
+}
+
 export interface SyncGap {
   kind: "missing-in-garmin" | "missing-in-aie" | "duration-mismatch" | "garmin-stale";
   date: string;
@@ -223,6 +230,9 @@ export interface AthleteState {
   vo2max: Provenanced<number>;
   nutritionTargets: Provenanced<NutritionTargets>;
 
+  // Athlete identity from getUser (name/age/sex) — whatever the platform exposes; degrades to absent.
+  athleteProfile: Provenanced<AthleteProfile>;
+
   // Training zones + threshold markers per discipline (from getUser, or derived from thresholds).
   zones: Provenanced<DisciplineZones>;
   thresholds: Provenanced<DisciplineThresholds>;
@@ -272,6 +282,7 @@ export function emptyState(date: string, assembledAt: string): AthleteState {
     weight7dTrend: absent<number>("derived"),
     vo2max: absent<number>("garmin"),
     nutritionTargets: absent<NutritionTargets>(),
+    athleteProfile: absent<AthleteProfile>(),
     zones: absent<DisciplineZones>(),
     thresholds: absent<DisciplineThresholds>(),
     syncGaps: [],
