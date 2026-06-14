@@ -7,6 +7,13 @@ about the calendar is hard-coded: change your goals in AI Endurance and the coac
 Sync — the season shape (taper windows, don't-stack-peaks, a B-race that should be a capped tempo, the
 injury window when a run goal sits off a triathlon base) is **derived from whatever races are set**.
 
+## Run your own instance
+
+Want this set up for yourself? **Point your AI coding assistant (Claude Code or similar) at this repo
+and tell it to "follow [SETUP.md](./SETUP.md)"** — a step-by-step playbook it can execute end-to-end,
+stopping to ask you for your own accounts, units and training base. Doing it by hand works too: SETUP.md
+and the [Prerequisites](#prerequisites) below are written for both.
+
 ## Approach
 
 Per the [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) §1 decision gate:
