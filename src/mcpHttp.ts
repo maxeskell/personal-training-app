@@ -157,8 +157,9 @@ async function runHttpOAuth(): Promise<void> {
   }
   const issuer = new URL(publicUrl);
   const resourceServerUrl = new URL(MCP_PATH, issuer); // <public>/mcp
-  // Bind issued tokens to this resource (audience) so a token can't be replayed at another server.
-  const provider = new CoachOAuthProvider(loadMcpToken(), resourceServerUrl.href);
+  // Bind issued tokens to this resource (audience) so a token can't be replayed at another server, and
+  // persist clients + tokens to disk so a Claude connection survives a restart (no re-authorization).
+  const provider = new CoachOAuthProvider(loadMcpToken(), resourceServerUrl.href, { persist: true });
   const includeWrites = !config.mcp.readOnly;
 
   const app = express();

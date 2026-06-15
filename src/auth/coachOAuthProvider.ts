@@ -1,4 +1,7 @@
 import { randomBytes } from "node:crypto";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { config } from "../config.js";
 import type { Response } from "express";
 import type { OAuthServerProvider, AuthorizationParams } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/server/auth/clients.js";
@@ -97,6 +100,7 @@ function capMap<K, V>(m: Map<K, V>, max: number): void {
 /** In-memory client registry. The SDK register handler sets the client_id before calling registerClient. */
 class InMemoryClients implements OAuthRegisteredClientsStore {
   private readonly clients = new Map<string, OAuthClientInformationFull>();
+  constructor(private readonly onChange?: () => void) {}
   getClient(clientId: string): OAuthClientInformationFull | undefined {
     return this.clients.get(clientId);
   }
@@ -110,21 +114,70 @@ class InMemoryClients implements OAuthRegisteredClientsStore {
     }
     this.clients.set(full.client_id, full);
     capMap(this.clients, MAX_CLIENTS); // bound growth on an always-on, openly-registrable server
+    this.onChange?.(); // persist the registration so a client survives a restart
     return full;
+  }
+  all(): OAuthClientInformationFull[] {
+    return [...this.clients.values()];
+  }
+  restore(list: OAuthClientInformationFull[]): void {
+    for (const c of list) this.clients.set(c.client_id, c);
   }
 }
 
 export class CoachOAuthProvider implements OAuthServerProvider {
-  readonly clientsStore = new InMemoryClients();
+  readonly clientsStore: InMemoryClients;
   private readonly codes = new Map<string, CodeRecord>();
   private readonly tokens = new Map<string, TokenRecord>();
   private readonly refreshTokens = new Map<string, RefreshRecord>();
+  private readonly persistent: boolean;
 
-  /** @param resourceUrl this server's canonical resource URL (e.g. https://host/mcp) for audience binding. */
+  /**
+   * @param resourceUrl this server's canonical resource URL (e.g. https://host/mcp) for audience binding.
+   * @param opts.persist when true, registered clients + issued tokens are written to
+   *   `<secretsDir>/mcp-oauth.json` (0600) and reloaded on construct, so a Claude connection survives a
+   *   server restart with no re-authorization. Short-lived auth codes are never persisted.
+   */
   constructor(
     private readonly coachToken: string,
     private readonly resourceUrl?: string,
-  ) {}
+    opts?: { persist?: boolean },
+  ) {
+    this.persistent = opts?.persist ?? false;
+    this.clientsStore = new InMemoryClients(() => this.persist());
+    if (this.persistent) this.load();
+  }
+
+  private storePath(): string {
+    return join(config.secretsDir, "mcp-oauth.json");
+  }
+
+  private load(): void {
+    try {
+      const raw = JSON.parse(readFileSync(this.storePath(), "utf8")) as {
+        clients?: OAuthClientInformationFull[];
+        tokens?: Array<[string, TokenRecord]>;
+        refreshTokens?: Array<[string, RefreshRecord]>;
+      };
+      const now = Date.now();
+      this.clientsStore.restore(raw.clients ?? []);
+      for (const [k, v] of raw.tokens ?? []) if (v.expiresAt > now) this.tokens.set(k, v);
+      for (const [k, v] of raw.refreshTokens ?? []) if (v.expiresAt > now) this.refreshTokens.set(k, v);
+    } catch {
+      /* no store yet, or unreadable — start empty */
+    }
+  }
+
+  private persist(): void {
+    if (!this.persistent) return;
+    try {
+      mkdirSync(config.secretsDir, { recursive: true });
+      const data = { clients: this.clientsStore.all(), tokens: [...this.tokens], refreshTokens: [...this.refreshTokens] };
+      writeFileSync(this.storePath(), JSON.stringify(data), { mode: 0o600 });
+    } catch {
+      /* best-effort: a failed persist must never break the auth flow */
+    }
+  }
 
   /** authorize handler entry — render the coach-token-gated consent page (no code issued yet). */
   async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res: Response): Promise<void> {
@@ -223,6 +276,7 @@ export class CoachOAuthProvider implements OAuthServerProvider {
     if (!rec) throw new Error("invalid_token");
     if (Date.now() > rec.expiresAt) {
       this.tokens.delete(token);
+      this.persist();
       throw new Error("invalid_token: expired");
     }
     // Audience binding (RFC 8707): a token scoped to a different resource must not be accepted here.
@@ -263,6 +317,7 @@ export class CoachOAuthProvider implements OAuthServerProvider {
     capMap(this.codes, MAX_CODES);
     capMap(this.tokens, MAX_TOKENS);
     capMap(this.refreshTokens, MAX_TOKENS);
+    this.persist(); // issue()/approve() both prune, so this captures every token/code mutation to disk
   }
 
   private renderConsent(f: ConsentFields, error: string | null): string {

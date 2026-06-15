@@ -106,7 +106,13 @@ submit. Cowork finishes the handshake and the tools appear.
 
 To stop exposing it, `Ctrl-C` the tunnel and the server — when they're down there's no remote access.
 Rotate the token by deleting `~/.endurance-coach/mcp.token` (a new one is generated next start) or
-setting a new `COACH_MCP_TOKEN`; issued access tokens are in-memory and also clear on restart.
+setting a new `COACH_MCP_TOKEN`.
+
+**Tokens persist across restarts.** In OAuth mode, the registered client + issued access/refresh
+tokens are saved to `~/.endurance-coach/mcp-oauth.json` (0600) and reloaded on start, so a restart
+(reboot, code update, `mcp:install` kickstart) does **not** force Cowork to re-authorize — your
+connection just keeps working. Short-lived authorization codes are never persisted. To force a full
+re-authorization, delete that file (and the access tokens it holds) and reconnect in Cowork.
 
 ### C. Always-on (no terminals to babysit)
 
@@ -204,9 +210,9 @@ Because OAuth mode is internet-reachable, the surface is defended in depth:
 - **Issued tokens are audience-bound** to this server's `/mcp` resource and **must carry the `coach`
   scope** — a token can't be replayed against a different resource, and `/mcp` rejects scope-less tokens.
 - **Dynamic client registration refuses non-HTTPS / non-loopback redirect URIs**, narrowing the
-  phishing surface. The in-memory client/code/token stores are **bounded and swept** (codes expire in
-  5 min, access tokens 1 h, refresh tokens 30 days), so a long-running service can't be grown without
-  limit. Everything clears on restart.
+  phishing surface. The client/token stores are **bounded and swept** (codes expire in 5 min, access
+  tokens 1 h, refresh tokens 30 days), so a long-running service can't be grown without limit. Clients
+  + tokens are persisted (0600) so a connection survives a restart; auth codes are never persisted.
 - **`auth=none` refuses to bind a non-loopback host** — it can only ever serve on `127.0.0.1`, so a
   misconfiguration can't silently expose the tools unauthenticated.
 
