@@ -9,6 +9,7 @@ import { config } from "./config.js";
 import { buildServer } from "./mcpServer.js";
 import { loadMcpToken, bearerAuthorized } from "./serverAuth.js";
 import { CoachOAuthProvider } from "./auth/coachOAuthProvider.js";
+import { baseHealth, aieHealthProbe } from "./health.js";
 
 /**
  * HTTP (Streamable HTTP) transport for the coach MCP server. For clients that can only reach a remote
@@ -60,6 +61,16 @@ function rpcError(code: number, message: string): string {
   return JSON.stringify({ jsonrpc: "2.0", error: { code, message }, id: null });
 }
 
+/** Build the `/health` body. `?deep=1` additionally probes the AI Endurance spine (bounded, no auth). */
+async function healthBody(deep: boolean): Promise<string> {
+  const info = baseHealth();
+  if (deep) {
+    info.aie = await aieHealthProbe();
+    if (info.aie !== "ok") info.status = "degraded";
+  }
+  return JSON.stringify(info);
+}
+
 /** Minimum length for a usable bearer/consent secret (the auto-generated token is 48 hex chars). */
 const MIN_TOKEN_LEN = 16;
 
@@ -100,6 +111,12 @@ async function runHttpRaw(): Promise<void> {
       try {
         if (req.method === "OPTIONS") {
           res.writeHead(204).end();
+          return;
+        }
+        // Unauthenticated liveness probe — info-only, no secrets — so a tunnel/server check is one curl.
+        if (req.method === "GET" && (req.url ?? "").split("?")[0] === "/health") {
+          const deep = new URL(req.url ?? "/", "http://localhost").searchParams.get("deep") === "1";
+          res.writeHead(200, { "content-type": "application/json" }).end(await healthBody(deep));
           return;
         }
         if (requireToken && !bearerAuthorized(req.headers, token)) {
@@ -165,6 +182,11 @@ async function runHttpOAuth(): Promise<void> {
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", 1); // behind a tunnel (cloudflared/Tailscale) — trust one proxy hop for req.ip
+  // Unauthenticated liveness probe (before the auth router so it's reachable through the tunnel without a
+  // token) — info-only, no secrets. `?deep=1` also reports the AI Endurance spine's reachability.
+  app.get("/health", async (req, res) => {
+    res.type("application/json").send(await healthBody(req.query.deep === "1"));
+  });
   // Discovery, dynamic client registration, authorize + token endpoints.
   app.use(mcpAuthRouter({ provider, issuerUrl: issuer, resourceServerUrl, scopesSupported: ["coach"], resourceName: "Endurance Coach" }));
   // Brute-force guard on the coach-token consent endpoint (mcpAuthRouter rate-limits its own routes,

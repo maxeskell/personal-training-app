@@ -26,7 +26,7 @@ import { getForecast } from "./weather/store.js";
 import { assessWeek, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
 
 import { notify } from "./notify.js";
-import { fileChecks, redactSecrets } from "./health.js";
+import { fileChecks, redactSecrets, checkRemoteHealth } from "./health.js";
 import open from "open";
 import { assessHealthRisk } from "./guardrails/wellbeing.js";
 import { WriteGate } from "./guardrails/writeGate.js";
@@ -68,7 +68,8 @@ async function recordPingSuccess(date: string): Promise<void> {
   await mkdir(join(process.cwd(), "reports"), { recursive: true });
   await writeFile(await pingMarkerPath(), JSON.stringify({ date, ts: new Date().toISOString() }));
 }
-/** `auth` — run the OAuth flow (interactive first time) and confirm the connection. */
+/** `auth` — run the OAuth flow (interactive first time) and confirm the connection. The ONLY flow that
+ *  opts into the browser dance; every other context fails fast with a re-auth error instead of hanging. */
 async function cmdAuth(): Promise<void> {
   await withAie(async (aie) => {
     const tools = await aie.listToolNames();
@@ -80,7 +81,24 @@ async function cmdAuth(): Promise<void> {
     if (extra.length) console.log(`  new/unknown tools: ${extra.join(", ")}`);
     if (!missing.length && !extra.length) console.log("  tool set matches the expected 20. ✓");
     console.log(`\nTokens cached in ${config.secretsDir} — future runs are non-interactive until expiry.`);
-  });
+  }, { interactive: true });
+}
+
+/** `health-remote` — hit the PUBLIC tunnel `/health?deep=1` and alert (macOS) if the connector is down
+ *  or needs re-auth. Run on a schedule (scripts/install-healthcheck.sh) so trouble is caught before
+ *  Cowork notices. Exits non-zero on failure so the launchd log shows it. */
+async function cmdHealthRemote(): Promise<void> {
+  const base = config.mcp.publicUrl;
+  if (!base) {
+    console.error("COACH_MCP_PUBLIC_URL is not set — nothing to check (set it to your public tunnel URL).");
+    process.exit(1);
+  }
+  const result = await checkRemoteHealth(base);
+  console.log(`${result.ok ? "✓" : "✗"} remote health (${base}): ${result.detail}`);
+  if (!result.ok) {
+    await notify("Endurance Coach connector", redactSecrets(result.detail)).catch(() => {});
+    process.exit(2);
+  }
 }
 
 /** `verify` — exercise every read tool and report per-tool status. */
@@ -634,6 +652,7 @@ const commands: Record<string, () => Promise<void>> = {
   auth: cmdAuth,
   verify: cmdVerify,
   doctor: cmdDoctor,
+  "health-remote": cmdHealthRemote,
   state: cmdState,
   readiness: cmdReadiness,
   ping: cmdPing,
@@ -664,6 +683,7 @@ if (!run) {
   console.log("  auth       run OAuth + confirm the AI Endurance connection");
   console.log("  verify     exercise every read tool, confirm the write-gate");
   console.log("  doctor     health check: creds, Garmin token age, key, AIE tool drift");
+  console.log("  health-remote  ping the PUBLIC tunnel /health and alert if the connector is down/needs re-auth");
   console.log("  state      assemble + persist + summarise today's AthleteState");
   console.log("  readiness  green/amber/red verdict with cited drivers");
   console.log("  ping       unattended morning readiness: verdict + report + desktop notification");

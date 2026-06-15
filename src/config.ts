@@ -31,6 +31,10 @@ export const config = {
     scopes: ["read", "write"] as const,
     /** Loopback port the local redirect server listens on during OAuth. */
     redirectPort: Number(process.env.AIE_OAUTH_PORT ?? 8765),
+    /** Hard timeout (ms) for a connect/reconnect to AI Endurance — the required spine must never block a
+     *  headless flow on a hung network connect (like Garmin's own cap). The interactive human re-auth wait
+     *  in the CLI `auth` flow is intentionally NOT bounded by this. */
+    timeoutMs: Number(process.env.AIE_TIMEOUT_MS ?? 20000),
     get redirectUrl() {
       return `http://localhost:${this.redirectPort}/callback`;
     },

@@ -19,7 +19,8 @@ fi
 
 PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NPM_BIN="$(command -v npm)"
-NODE_DIR="$(dirname "$(command -v node)")"
+NODE_BIN="$(command -v node)"
+NODE_DIR="$(dirname "$NODE_BIN")"
 # The server may spawn the Garmin MCP via `uvx`, so the agent's PATH must include uv's bin dir.
 UVX_BIN="$(command -v uvx 2>/dev/null || true)"
 UV_DIR="$([ -n "$UVX_BIN" ] && dirname "$UVX_BIN" || echo "$HOME/.local/bin")"
@@ -42,10 +43,14 @@ cat > "$PLIST" <<PLIST_EOF
 <dict>
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
+  <!-- Run node directly with tsx's in-process loader, NOT 'npm run mcp:http': launchd's KeepAlive must
+       supervise the ACTUAL server process. Going through npm makes launchd watch the npm wrapper, so a
+       crashed node child can linger un-restarted. 'node --import tsx' is a single process (tsx >= 4.7). -->
   <array>
-    <string>$NPM_BIN</string>
-    <string>run</string>
-    <string>mcp:http</string>
+    <string>$NODE_BIN</string>
+    <string>--import</string>
+    <string>tsx</string>
+    <string>src/mcpHttp.ts</string>
   </array>
   <key>WorkingDirectory</key><string>$PROJECT</string>
   <key>EnvironmentVariables</key>

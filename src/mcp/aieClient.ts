@@ -2,7 +2,21 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import { config } from "../config.js";
-import { FileOAuthClientProvider } from "./oauthProvider.js";
+import { FileOAuthClientProvider, ReauthRequiredError } from "./oauthProvider.js";
+
+export { ReauthRequiredError };
+
+export interface AieClientOptions {
+  /**
+   * Open a browser + loopback to interactively re-authorize when the token is missing/expired.
+   * ONLY the explicit `auth` CLI flow sets this true; every other context (MCP/dashboard server, cron,
+   * Cowork) leaves it false and fails fast with a ReauthRequiredError instead of blocking on a browser
+   * that can never appear. Default: false.
+   */
+  interactive?: boolean;
+  /** Hard timeout (ms) for connect/reconnect. Defaults to config.aie.timeoutMs. */
+  timeoutMs?: number;
+}
 
 /** The 20 AI Endurance tools, split by side-effect. Writes are gated (M3). */
 export const AIE_READ_TOOLS = [
@@ -48,9 +62,17 @@ const WRITE_SET = new Set<string>(AIE_WRITE_TOOLS);
 export class AieClient {
   private client?: Client;
   private transport?: StreamableHTTPClientTransport;
-  private readonly auth = new FileOAuthClientProvider();
+  private readonly interactive: boolean;
+  private readonly timeoutMs: number;
+  private readonly auth: FileOAuthClientProvider;
 
-  /** Connect, running the interactive OAuth dance only if needed. */
+  constructor(opts: AieClientOptions = {}) {
+    this.interactive = opts.interactive ?? false;
+    this.timeoutMs = opts.timeoutMs ?? config.aie.timeoutMs;
+    this.auth = new FileOAuthClientProvider({ interactive: this.interactive });
+  }
+
+  /** Connect, running the interactive OAuth dance only when explicitly allowed (the `auth` flow). */
   async connect(): Promise<void> {
     this.client = new Client(
       { name: "endurance-coach", version: "0.1.0" },
@@ -61,18 +83,34 @@ export class AieClient {
     });
 
     try {
-      await this.client.connect(this.transport);
+      await this.withTimeout(this.client.connect(this.transport), "connect");
     } catch (err) {
+      // Non-interactive provider already refused the browser dance — surface it as-is (fast + clean).
+      if (err instanceof ReauthRequiredError) throw err;
       if (!(err instanceof UnauthorizedError)) throw err;
-      // First run (or expired): provider has opened the browser + loopback server.
+      // Token missing/expired. A headless context must never wait on a browser that can't appear.
+      if (!this.interactive) throw new ReauthRequiredError();
+      // Interactive CLI (`auth`): the provider opened the browser + loopback. Wait for the human — that
+      // 5-minute wait is intentional and NOT bounded by timeoutMs — then reconnect with the fresh token.
       const code = await this.auth.waitForCode();
       await this.transport.finishAuth(code);
-      // Reconnect with the freshly minted token.
       this.transport = new StreamableHTTPClientTransport(new URL(config.aie.serverUrl), {
         authProvider: this.auth,
       });
-      await this.client.connect(this.transport);
+      await this.withTimeout(this.client.connect(this.transport), "reconnect");
     }
+  }
+
+  /** Bound a connect attempt so a hung network call can't stall a flow (mirrors GarminClient). */
+  private withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout>;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`AI Endurance ${label} timed out after ${this.timeoutMs}ms`)),
+        this.timeoutMs,
+      );
+    });
+    return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
   }
 
   /** List the tools the server actually exposes — used to detect API drift. */
