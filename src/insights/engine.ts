@@ -248,6 +248,179 @@ export interface BuildOptions {
 }
 
 /** Build the full insight report + detector findings from today's state (+ optional history archive). */
+// ---- finding detectors, extracted from buildInsights so each reads/tests on its own (no behaviour
+// change — buildInsights just spreads their results into `findings`). ----
+
+function runLoadRampFindings(runRamp: ReturnType<typeof runLoadRamp>): Finding[] {
+  const out: Finding[] = [];
+  // 1. Run-load ramp guard — the marathon-off-tri injury window (priority detector).
+  if (runRamp.jumpPct != null && runRamp.weeks.length >= 3) {
+    if (runRamp.jumpPct > 50) {
+      out.push({
+        family: "Injury risk",
+        title: "Run load spiked this week",
+        severity: "flag",
+        detail: `Run stress is up ${runRamp.jumpPct}% on your recent baseline — the kind of jump that precedes running injuries, and you're in the marathon-off-tri window.`,
+        evidence: `this week ${runRamp.thisWeekEss} ESS vs baseline ${runRamp.baselineEss} [ai-endurance]`,
+        recommendation: "Cap the increase — pull back run volume/intensity toward baseline this week; ramp gradually.",
+      });
+    } else if (runRamp.jumpPct > 25) {
+      out.push({
+        family: "Injury risk",
+        title: "Run load climbing",
+        severity: "watch",
+        detail: `Run stress up ${runRamp.jumpPct}% on baseline — fine if deliberate, but watch it given the marathon build.`,
+        evidence: `this week ${runRamp.thisWeekEss} ESS vs baseline ${runRamp.baselineEss} [ai-endurance]`,
+      });
+    }
+  }
+  return out;
+}
+
+function formAndIntensityFindings(
+  load: ReturnType<typeof loadModel>,
+  monotony: ReturnType<typeof monotonyStrain>,
+  tid: ReturnType<typeof intensityDistribution>,
+): Finding[] {
+  const out: Finding[] = [];
+  // 2. Form (TSB) + ramp rate.
+  if (load) {
+    if (load.tsb < -25) {
+      out.push({
+        family: "Load & form",
+        title: "Deep fatigue (low form)",
+        severity: "watch",
+        detail: `Form (TSB) is ${load.tsb} — heavily fatigued. Fine inside a build block, but not where you want to be near a race.`,
+        evidence: `CTL ${load.ctl} / ATL ${load.atl} / TSB ${load.tsb} from daily ESS [derived]`,
+      });
+    }
+    if (load.rampPerWeek > 7) {
+      out.push({
+        family: "Load & form",
+        title: "Fitness ramping fast",
+        severity: "watch",
+        detail: `Fitness (CTL) is rising ${load.rampPerWeek}/week — above the ~5–7 comfort zone; sustainable briefly, risky if held.`,
+        evidence: `ΔCTL/wk ${load.rampPerWeek} [derived]`,
+      });
+    }
+  }
+  // 2b. Training monotony (Foster) — too-samey load raises illness/overtraining risk.
+  if (monotony.monotony != null && monotony.monotony > 2 && monotony.weeklyLoad > 0) {
+    out.push({
+      family: "Load & form",
+      title: "High training monotony",
+      severity: "watch",
+      detail: `Last week's load is very uniform (monotony ${monotony.monotony}) — too little hard/easy variation raises illness/overtraining risk. Make easy days easier and hard days harder.`,
+      evidence: `monotony ${monotony.monotony}, strain ${monotony.strain} [derived from daily ESS]`,
+    });
+  }
+  // 2c. Intensity distribution — grey-zone creep (too little genuinely-easy volume).
+  if (tid.easyPct != null && tid.totalH > 2 && tid.easyPct < 75) {
+    out.push({
+      family: "Intensity distribution",
+      title: "Grey-zone creep",
+      severity: "watch",
+      detail: `Only ${tid.easyPct}% of training is easy (tempo ${tid.tempoPct}%, hard ${tid.hardPct}%). Successful endurance work is ~80% easy — protect easy-easy/hard-hard separation.`,
+      evidence: `zone split easy/tempo/hard = ${tid.easyPct}/${tid.tempoPct}/${tid.hardPct}% over ${tid.totalH}h [ai-endurance]`,
+      recommendation: "Slow the easy sessions down; keep intensity concentrated in fewer, genuinely-hard sessions.",
+    });
+  }
+  return out;
+}
+
+function efficiencyDurabilityFindings(
+  efRun: ReturnType<typeof efTrend>,
+  durRun: ReturnType<typeof durabilityTrend>,
+  hasThermal: boolean,
+): Finding[] {
+  const out: Finding[] = [];
+  // 3. Efficiency / durability trends (good news is worth saying). Heat confounds EF, so an EF-slipping
+  // call without per-activity .FIT temperature must say a hot spell can't be ruled out.
+  if (efRun.deltaPct != null && efRun.n >= 6) {
+    const slipping = efRun.deltaPct < 0;
+    const heatCaveat = slipping && !hasThermal ? " No per-activity temperature on these runs, so a hot spell can't be ruled out as the cause — confirm against pace-at-HR before reading it as lost fitness." : "";
+    out.push({
+      family: "Aerobic efficiency",
+      title: slipping ? "Run efficiency slipping" : "Run efficiency improving",
+      severity: efRun.deltaPct < -5 ? "watch" : "info",
+      detail: `Run EF (power÷HR) ${slipping ? "down" : "up"} ${Math.abs(efRun.deltaPct)}% recent vs prior — ${slipping ? "worth watching alongside fatigue/heat" : "the aerobic work is paying off"}.${heatCaveat}`,
+      evidence: `EF ${efRun.recent} vs ${efRun.prior} (steady runs ≥40min) [derived]`,
+    });
+  }
+  // Durability is a DECAY-style index (negative = late decay; closer to 0 = more durable): recent > prior == improving.
+  if (durRun.recent != null && durRun.prior != null && durRun.n >= 6) {
+    const change = +(durRun.recent - durRun.prior).toFixed(1);
+    if (change <= -2) {
+      out.push({
+        family: "Durability",
+        title: "Run durability slipping",
+        severity: "watch",
+        detail: `DFA-α1 run durability shows more late-session decay than before (${durRun.prior} → ${durRun.recent}) — fatigue resistance holds marathon pace late, so worth watching.`,
+        evidence: `durability index ${durRun.recent} vs ${durRun.prior} (closer to 0 = more durable) [ai-endurance]`,
+      });
+    } else if (change >= 2) {
+      out.push({
+        family: "Durability",
+        title: "Run durability improving",
+        severity: "info",
+        detail: `Less late-session decay than before (${durRun.prior} → ${durRun.recent}) — fatigue resistance trending up, encouraging for the marathon.`,
+        evidence: `durability index ${durRun.recent} vs ${durRun.prior} (closer to 0 = more durable) [ai-endurance]`,
+      });
+    }
+  }
+  return out;
+}
+
+function anomalyCorrelationFindings(
+  anomalies: ReturnType<typeof analyseRecoverySeries>["anomalies"],
+  correlations: ReturnType<typeof analyseRecoverySeries>["correlations"],
+): Finding[] {
+  const out: Finding[] = [];
+  // 3b. Anomalies (today is a statistical outlier vs the athlete's own 60-day baseline).
+  for (const a of anomalies) {
+    out.push({
+      family: "Anomaly",
+      title: `${a.metric} outlier today`,
+      severity: "watch",
+      detail: a.detail + " One day isn't a trend, but worth noting alongside how you feel.",
+      evidence: `z=${a.z} vs 60-day baseline [ai-endurance]`,
+    });
+  }
+  // 3c. A strong n=1 pattern worth knowing (info, not an alarm). Confidence keys off FDR survival.
+  const topCorr = correlations.find((c) => Math.abs(c.r) >= 0.5);
+  if (topCorr) {
+    out.push({
+      family: "Your patterns (n=1)",
+      title: topCorr.label,
+      severity: "info",
+      detail: topCorr.interpretation,
+      evidence: `r=${topCorr.r}, n=${topCorr.n} days, FDR ${topCorr.fdrPass ? "confirmed" : "not confirmed"} [ai-endurance]`,
+      confidence: topCorr.fdrPass ? 0.8 : 0.35,
+    });
+  }
+  return out;
+}
+
+function predictionFindings(predictions: ReturnType<typeof predictionsVsGoals>): Finding[] {
+  const out: Finding[] = [];
+  // 4. Prediction vs goal for the next race.
+  const next = predictions[0];
+  if (next && next.gapSec != null) {
+    const behind = next.gapSec > 0;
+    out.push({
+      family: "Goal tracking",
+      title: `${next.race}: ${behind ? "behind" : "on/ahead of"} target`,
+      severity: behind ? "watch" : "info",
+      detail: `Predicted ${hhmm(next.predictedSec)} vs target ${hhmm(next.targetSec)} (${behind ? "+" : ""}${Math.round(next.gapSec / 60)} min) with ${next.daysTo} days to go.`,
+      evidence: `getPrediction vs getRaceGoalEvent [ai-endurance]`,
+    });
+  }
+  return out;
+}
+
+// Exported so the detectors can be unit-tested directly (they were inline + untestable before).
+export { runLoadRampFindings, formAndIntensityFindings, efficiencyDurabilityFindings, anomalyCorrelationFindings, predictionFindings };
+
 export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?: BuildOptions): InsightReport {
   const raw = state.raw ?? {};
   const live = richActivities(raw);
@@ -331,154 +504,20 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
 
   const findings: Finding[] = [];
 
-  // 1. Run-load ramp guard — the marathon-off-tri injury window (priority detector).
-  if (runRamp.jumpPct != null && runRamp.weeks.length >= 3) {
-    if (runRamp.jumpPct > 50) {
-      findings.push({
-        family: "Injury risk",
-        title: "Run load spiked this week",
-        severity: "flag",
-        detail: `Run stress is up ${runRamp.jumpPct}% on your recent baseline — the kind of jump that precedes running injuries, and you're in the marathon-off-tri window.`,
-        evidence: `this week ${runRamp.thisWeekEss} ESS vs baseline ${runRamp.baselineEss} [ai-endurance]`,
-        recommendation: "Cap the increase — pull back run volume/intensity toward baseline this week; ramp gradually.",
-      });
-    } else if (runRamp.jumpPct > 25) {
-      findings.push({
-        family: "Injury risk",
-        title: "Run load climbing",
-        severity: "watch",
-        detail: `Run stress up ${runRamp.jumpPct}% on baseline — fine if deliberate, but watch it given the marathon build.`,
-        evidence: `this week ${runRamp.thisWeekEss} ESS vs baseline ${runRamp.baselineEss} [ai-endurance]`,
-      });
-    }
-  }
+  // 1. Run-load ramp guard. 2/2b/2c. Form (TSB) + ramp + monotony + intensity distribution.
+  findings.push(...runLoadRampFindings(runRamp));
+  findings.push(...formAndIntensityFindings(load, monotony, tid));
 
-  // 2. Form (TSB) + ramp rate.
-  if (load) {
-    if (load.tsb < -25) {
-      findings.push({
-        family: "Load & form",
-        title: "Deep fatigue (low form)",
-        severity: "watch",
-        detail: `Form (TSB) is ${load.tsb} — heavily fatigued. Fine inside a build block, but not where you want to be near a race.`,
-        evidence: `CTL ${load.ctl} / ATL ${load.atl} / TSB ${load.tsb} from daily ESS [derived]`,
-      });
-    }
-    if (load.rampPerWeek > 7) {
-      findings.push({
-        family: "Load & form",
-        title: "Fitness ramping fast",
-        severity: "watch",
-        detail: `Fitness (CTL) is rising ${load.rampPerWeek}/week — above the ~5–7 comfort zone; sustainable briefly, risky if held.`,
-        evidence: `ΔCTL/wk ${load.rampPerWeek} [derived]`,
-      });
-    }
-  }
-
-  // 2b. Training monotony (Foster) — too-samey load raises illness/overtraining risk.
-  if (monotony.monotony != null && monotony.monotony > 2 && monotony.weeklyLoad > 0) {
-    findings.push({
-      family: "Load & form",
-      title: "High training monotony",
-      severity: "watch",
-      detail: `Last week's load is very uniform (monotony ${monotony.monotony}) — too little hard/easy variation raises illness/overtraining risk. Make easy days easier and hard days harder.`,
-      evidence: `monotony ${monotony.monotony}, strain ${monotony.strain} [derived from daily ESS]`,
-    });
-  }
-
-  // 2c. Intensity distribution — grey-zone creep (too little genuinely-easy volume).
-  if (tid.easyPct != null && tid.totalH > 2) {
-    if (tid.easyPct < 75) {
-      findings.push({
-        family: "Intensity distribution",
-        title: "Grey-zone creep",
-        severity: "watch",
-        detail: `Only ${tid.easyPct}% of training is easy (tempo ${tid.tempoPct}%, hard ${tid.hardPct}%). Successful endurance work is ~80% easy — protect easy-easy/hard-hard separation.`,
-        evidence: `zone split easy/tempo/hard = ${tid.easyPct}/${tid.tempoPct}/${tid.hardPct}% over ${tid.totalH}h [ai-endurance]`,
-        recommendation: "Slow the easy sessions down; keep intensity concentrated in fewer, genuinely-hard sessions.",
-      });
-    }
-  }
-
-  // 3. Efficiency / durability trends (good news is worth saying).
-  // Heat is a confounder of EF that we only model when per-activity .FIT temperature exists; without it,
-  // a hot spell can masquerade as lost efficiency, so an EF-slipping call must say heat can't be ruled out.
+  // 3. Efficiency / durability trends. Heat confounds EF and is only known when per-activity .FIT
+  // temperature exists, so an EF-slipping call without it must say a hot spell can't be ruled out.
   const hasThermal = [...sessionDecays, ...(archive?.fitSummaries ?? [])].some(
     (r) => typeof (r as { avgTempC?: unknown }).avgTempC === "number",
   );
-  const efRun = ef.run;
-  if (efRun.deltaPct != null && efRun.n >= 6) {
-    const slipping = efRun.deltaPct < 0;
-    const heatCaveat = slipping && !hasThermal ? " No per-activity temperature on these runs, so a hot spell can't be ruled out as the cause — confirm against pace-at-HR before reading it as lost fitness." : "";
-    findings.push({
-      family: "Aerobic efficiency",
-      title: slipping ? "Run efficiency slipping" : "Run efficiency improving",
-      severity: efRun.deltaPct < -5 ? "watch" : "info",
-      detail: `Run EF (power÷HR) ${slipping ? "down" : "up"} ${Math.abs(efRun.deltaPct)}% recent vs prior — ${slipping ? "worth watching alongside fatigue/heat" : "the aerobic work is paying off"}.${heatCaveat}`,
-      evidence: `EF ${efRun.recent} vs ${efRun.prior} (steady runs ≥40min) [derived]`,
-    });
-  }
-  // Durability is a DECAY-style index (negative = late-session decay; closer to 0 = more durable).
-  // So recent > prior == LESS decay == improving. Avoid the % delta (meaningless over a negative base).
-  const durRun = durability.run;
-  if (durRun.recent != null && durRun.prior != null && durRun.n >= 6) {
-    const change = +(durRun.recent - durRun.prior).toFixed(1);
-    if (change <= -2) {
-      findings.push({
-        family: "Durability",
-        title: "Run durability slipping",
-        severity: "watch",
-        detail: `DFA-α1 run durability shows more late-session decay than before (${durRun.prior} → ${durRun.recent}) — fatigue resistance holds marathon pace late, so worth watching.`,
-        evidence: `durability index ${durRun.recent} vs ${durRun.prior} (closer to 0 = more durable) [ai-endurance]`,
-      });
-    } else if (change >= 2) {
-      findings.push({
-        family: "Durability",
-        title: "Run durability improving",
-        severity: "info",
-        detail: `Less late-session decay than before (${durRun.prior} → ${durRun.recent}) — fatigue resistance trending up, encouraging for the marathon.`,
-        evidence: `durability index ${durRun.recent} vs ${durRun.prior} (closer to 0 = more durable) [ai-endurance]`,
-      });
-    }
-  }
+  findings.push(...efficiencyDurabilityFindings(ef.run, durability.run, hasThermal));
 
-  // 3b. Anomalies (today is a statistical outlier vs the athlete's own 60-day baseline).
-  for (const a of anomalies) {
-    findings.push({
-      family: "Anomaly",
-      title: `${a.metric} outlier today`,
-      severity: "watch",
-      detail: a.detail + " One day isn't a trend, but worth noting alongside how you feel.",
-      evidence: `z=${a.z} vs 60-day baseline [ai-endurance]`,
-    });
-  }
-
-  // 3c. A strong n=1 pattern worth knowing (surfaced as info — it's insight, not an alarm).
-  // Confidence keys off FDR survival: a confirmed pattern is trustworthy; an exploratory one is gated low.
-  const topCorr = correlations.find((c) => Math.abs(c.r) >= 0.5);
-  if (topCorr) {
-    findings.push({
-      family: "Your patterns (n=1)",
-      title: topCorr.label,
-      severity: "info",
-      detail: topCorr.interpretation,
-      evidence: `r=${topCorr.r}, n=${topCorr.n} days, FDR ${topCorr.fdrPass ? "confirmed" : "not confirmed"} [ai-endurance]`,
-      confidence: topCorr.fdrPass ? 0.8 : 0.35,
-    });
-  }
-
-  // 4. Prediction vs goal for the next race.
-  const next = predictions[0];
-  if (next && next.gapSec != null) {
-    const behind = next.gapSec > 0;
-    findings.push({
-      family: "Goal tracking",
-      title: `${next.race}: ${behind ? "behind" : "on/ahead of"} target`,
-      severity: behind ? "watch" : "info",
-      detail: `Predicted ${hhmm(next.predictedSec)} vs target ${hhmm(next.targetSec)} (${behind ? "+" : ""}${Math.round(next.gapSec / 60)} min) with ${next.daysTo} days to go.`,
-      evidence: `getPrediction vs getRaceGoalEvent [ai-endurance]`,
-    });
-  }
+  // 3b/3c. Anomalies + a strong n=1 correlation. 4. Prediction vs goal for the next race.
+  findings.push(...anomalyCorrelationFindings(anomalies, correlations));
+  findings.push(...predictionFindings(predictions));
 
   // 5. New detectors (Q1–Q7 + stream-level). Each self-gates and stays silent without enough data.
   const mf = monitoringFinding(monitoring);
