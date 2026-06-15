@@ -319,6 +319,29 @@ cd /Users/maxeskell/personal-training-app && npm run mcp:http   # HTTP  — Clau
 Full step-by-step for both (incl. the macOS `npm`-on-PATH gotcha and tunnel commands) is in
 **[docs/mcp-server.md](docs/mcp-server.md)**.
 
+**Is the connector up? (`/health`)** The HTTP server answers an **unauthenticated** `GET /health`
+(info-only — status/version/read-only flag, no secrets) so checking it is one curl through the tunnel:
+
+```bash
+curl https://<tunnel>/health            # server + tunnel reachable?  (no network, instant)
+curl https://<tunnel>/health?deep=1     # also probes AI Endurance →  "aie":"ok" | "reauth_needed" | "unreachable"
+```
+
+That `aie` field is the tell: it separates *the tunnel/server being down* from *AI Endurance needing
+re-auth* — the exact ambiguity that otherwise looks like "the whole connector died." To catch trouble
+**before** Claude does, schedule the check so it alerts you (macOS notification) on a down tunnel or an
+expired token:
+
+```bash
+cd /Users/maxeskell/personal-training-app && npm run health-remote                       # one-shot probe of COACH_MCP_PUBLIC_URL
+cd /Users/maxeskell/personal-training-app && npm run healthcheck:install -- https://<tunnel>   # run it every 20 min at login
+```
+
+**Re-auth is now explicit and never hangs.** Only `npm run auth:aie` opens the browser to (re)authorize
+AI Endurance. Every other context — the MCP/dashboard server, cron, Cowork — runs **non-interactively**:
+a missing/expired token fails *fast* with `run npm run auth:aie`, instead of opening a browser nobody can
+see and blocking for minutes (which used to surface in Cowork as a mystery timeout).
+
 **Tools exposed** (read-first; the write path stays gated):
 
 | Tool | What it does | Cost |
@@ -340,8 +363,13 @@ Full wiring details and a privacy note are in **[docs/mcp-server.md](docs/mcp-se
 ## Health & security
 
 ```bash
-npm run doctor      # creds, Garmin token age (~6mo expiry), API key, AIE tool-drift, morning-ping heartbeat
+npm run doctor          # creds, Garmin token age (~6mo expiry), API key, AIE tool-drift, morning-ping heartbeat
+npm run health-remote   # probe the live connector through its public tunnel (server up? tunnel up? AIE re-auth?)
 ```
+
+`doctor` runs **locally** (it talks straight to AI Endurance, bypassing the tunnel), so it answers
+"are my creds + the upstream OK?". `health-remote` runs the path **Cowork** uses (tunnel → server →
+AIE), so it answers "is the connector reachable from outside?". Together they pinpoint which hop broke.
 
 Secrets stay local and out of git: AI Endurance OAuth tokens live in `~/.endurance-coach` (0700),
 Garmin tokens in `~/.garminconnect`, your `ANTHROPIC_API_KEY` in `.env`. `data/`, `reports/`, `*.log`,

@@ -11,12 +11,30 @@ import type {
 import { config } from "../config.js";
 
 /**
+ * Thrown when AI Endurance needs an interactive (re)authorization that the current context can't do.
+ *
+ * Only the explicit CLI `auth` flow runs the browser dance; every other context (the MCP/dashboard
+ * server, cron, Cowork) runs NON-interactively and gets this instead — so a missing/expired token fails
+ * fast with an actionable message rather than opening a browser nobody can see and blocking for minutes.
+ */
+export class ReauthRequiredError extends Error {
+  readonly code = "AIE_REAUTH_REQUIRED";
+  constructor(
+    message = "AI Endurance authorization is missing or expired — run `npm run auth:aie` on the host to re-authorize.",
+  ) {
+    super(message);
+    this.name = "ReauthRequiredError";
+  }
+}
+
+/**
  * File-backed OAuth client provider for a single-user CLI.
  *
  * - Persists dynamic client registration, PKCE verifier and tokens under the
  *   secrets dir (gitignored, outside the repo by default).
  * - On `redirectToAuthorization` it opens the system browser and runs a tiny
  *   loopback server to capture the `?code=...` redirect, resolving `waitForCode()`.
+ *   In NON-interactive mode it throws `ReauthRequiredError` instead — no browser, no held port.
  *
  * The SDK drives token refresh automatically once tokens are saved here.
  */
@@ -26,10 +44,18 @@ export class FileOAuthClientProvider implements OAuthClientProvider {
   private readonly clientPath = join(this.dir, "aie-client.json");
   private readonly verifierPath = join(this.dir, "aie-verifier.txt");
 
+  /** Whether this context may run the interactive browser + loopback dance. Servers/cron set false. */
+  private readonly interactive: boolean;
+
   private codePromise?: Promise<string>;
   private codeResolve?: (code: string) => void;
   private codeReject?: (err: Error) => void;
   private callbackServer?: Server;
+
+  constructor(opts: { interactive?: boolean } = {}) {
+    // Default true keeps the original CLI behaviour for any direct user; AieClient passes an explicit value.
+    this.interactive = opts.interactive ?? true;
+  }
 
   get redirectUrl(): string {
     return config.aie.redirectUrl;
@@ -90,6 +116,11 @@ export class FileOAuthClientProvider implements OAuthClientProvider {
 
   /** Opens the browser and starts the loopback listener to capture the code. */
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
+    if (!this.interactive) {
+      // Headless context (server/dashboard/cron/Cowork): never open a browser or hold the loopback port
+      // for a human who isn't there. Fail fast so the caller surfaces a clean re-auth error.
+      throw new ReauthRequiredError();
+    }
     this.startCallbackServer();
     console.log("\nOpening your browser to authorize AI Endurance…");
     console.log(`If it doesn't open, visit:\n  ${authorizationUrl.toString()}\n`);

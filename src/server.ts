@@ -117,7 +117,15 @@ async function refresh(): Promise<void> {
   const garmin = config.garmin.enabled ? new GarminClient() : undefined;
   if (garmin) await garmin.connect();
   const aie = new AieClient();
-  await aie.connect();
+  try {
+    await aie.connect();
+  } catch (err) {
+    // Degrade, don't crash: a missing/expired token or unreachable spine leaves the last good state in
+    // place rather than tearing down the refresh loop (which serves the dashboard hands-free).
+    await garmin?.close();
+    console.warn(`refresh skipped — AI Endurance unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
   try {
     const today = todayIso();
     const state = await assembleState(aie, garmin, store, { date: today, assembledAt: new Date().toISOString() });

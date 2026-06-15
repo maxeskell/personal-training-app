@@ -1,4 +1,4 @@
-import { AieClient } from "../mcp/aieClient.js";
+import { AieClient, type AieClientOptions } from "../mcp/aieClient.js";
 import { GarminClient } from "../mcp/garminClient.js";
 import { StateStore } from "../state/store.js";
 import { assembleState } from "../state/assemble.js";
@@ -24,9 +24,10 @@ export { todayIso };
  * so the engine never drifts between entrypoints.
  */
 
-/** Connect an AI Endurance client, run `fn`, and always close — the read lifecycle for one flow. */
-export async function withAie<T>(fn: (aie: AieClient) => Promise<T>): Promise<T> {
-  const aie = new AieClient();
+/** Connect an AI Endurance client, run `fn`, and always close — the read lifecycle for one flow.
+ *  `opts` is non-interactive by default; only the explicit `auth` flow passes { interactive: true }. */
+export async function withAie<T>(fn: (aie: AieClient) => Promise<T>, opts?: AieClientOptions): Promise<T> {
+  const aie = new AieClient(opts);
   await aie.connect();
   try {
     return await fn(aie);

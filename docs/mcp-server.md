@@ -141,6 +141,34 @@ It prints the Cowork connector URL (`…/mcp`) and your coach token. After a `gi
 auto-restarts onto the new code. Now both the tunnel and the server survive reboots with no terminal
 open — point Cowork at the stable `…/mcp` URL once and it keeps working.
 
+> The launchd job runs the server as a **single node process** (`node --import tsx src/mcpHttp.ts`),
+> not `npm run mcp:http`. That matters: launchd's `KeepAlive` must supervise the *actual* server, not an
+> `npm` wrapper — otherwise a crashed server can linger un-restarted while `npm` is still "alive".
+
+**3. Watch it from outside** so a down tunnel or an expired token pages *you*, not Cowork. The server
+answers an **unauthenticated** `GET /health` (info-only — no secrets):
+
+| Request | Answers | Touches AI Endurance? |
+| --- | --- | --- |
+| `GET /health` | server + tunnel reachable? `{status, version, readOnly, authMode}` | no (instant) |
+| `GET /health?deep=1` | adds `"aie": "ok" \| "reauth_needed" \| "unreachable"` | yes (bounded by `AIE_TIMEOUT_MS`) |
+
+```bash
+curl https://<your-mac>.<tailnet>.ts.net/health?deep=1     # one curl tells you which hop is broken
+cd /Users/maxeskell/personal-training-app && npm run health-remote                          # same probe + a macOS alert on trouble
+cd /Users/maxeskell/personal-training-app && npm run healthcheck:install -- https://<your-mac>.<tailnet>.ts.net   # every 20 min
+npm run healthcheck:uninstall   # stop watching
+```
+
+`health-remote` reads `COACH_MCP_PUBLIC_URL` (the installer bakes it into the launchd job). It exercises
+the **same path Cowork uses** (tunnel → server → AIE), so it catches what local `doctor` can't: a dropped
+Funnel or a wedged server. The `aie` field separates *"the connector is unreachable"* from *"AI Endurance
+just needs re-auth"* — the distinction that otherwise looks like the whole connector died.
+
+> **Re-auth never hangs.** Only `npm run auth:aie` opens a browser. The server/cron/Cowork run
+> non-interactively: an expired token returns a fast, clean `run npm run auth:aie` error (and `/health`
+> reports `aie: reauth_needed`) instead of blocking on a browser that can't appear.
+
 ## Tools
 
 Read/analysis tools are deterministic and make **no LLM call**. LLM tools need `ANTHROPIC_API_KEY`
