@@ -165,6 +165,16 @@ goes and the practical rate/token cost of bulk detail pulls.
 - Optional weekly auto-run (reuse the launchd scheduler), feeding the weekly review.
 - `npm run insights pending` → flags that haven't been actioned.
 
+**Surfaced-insight history + engagement model (added 2026-06-17).** Whenever findings are surfaced
+(dashboard Top-insights card, MCP `insights` tool) the full surfaced set is appended to
+`data/insights/log.jsonl` (`state/insightLog.ts`) — de-duplicated so an unchanged surface isn't re-logged
+on every render. This is the "what was I shown" record that the decision log's 👍/👎/✕ feedback is read
+against. `npm run listening` / the MCP `listening` tool (`coach/listening.ts`) joins the two into a
+deterministic engagement model: per-family act-on-vs-dismiss rates, gated-proposal accept/decline, what's
+currently suppressed, and **findings dismissed that later recurred**. Per the §5 guardrails it is
+**descriptive, not causal** — engagement + recurrence only, form numbers labelled MODEL; no claim that a
+dismissed finding *caused* a downstream result.
+
 ---
 
 ## 5. Guardrails (carried forward — non-negotiable)

@@ -108,14 +108,25 @@ export class DecisionLog {
 
   /** Latest reaction per insight key (most recent wins). */
   async insightReactions(): Promise<Map<string, { reaction: InsightReaction; timestamp: string }>> {
-    const out = new Map<string, { reaction: InsightReaction; timestamp: string }>();
-    for (const r of await this.all()) {
-      if (r.kind !== "insight-feedback" || !r.insightKey) continue;
-      const reaction: InsightReaction = r.status === "accepted" ? "agree" : r.status === "declined" ? "disagree" : "ignore";
-      out.set(r.insightKey, { reaction, timestamp: r.timestamp });
-    }
-    return out;
+    return latestInsightReactions(await this.all());
   }
+}
+
+/** Map a stored insight-feedback status back to the athlete's reaction. */
+export function reactionOf(status: DecisionStatus): InsightReaction {
+  return status === "accepted" ? "agree" : status === "declined" ? "disagree" : "ignore";
+}
+
+/** Latest reaction per insight key from a set of decision records (most recent wins). Pure — testable. */
+export function latestInsightReactions(
+  records: DecisionRecord[],
+): Map<string, { reaction: InsightReaction; timestamp: string }> {
+  const out = new Map<string, { reaction: InsightReaction; timestamp: string }>();
+  for (const r of records) {
+    if (r.kind !== "insight-feedback" || !r.insightKey) continue;
+    out.set(r.insightKey, { reaction: reactionOf(r.status), timestamp: r.timestamp });
+  }
+  return out;
 }
 
 /**

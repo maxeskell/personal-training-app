@@ -7,6 +7,7 @@ import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
 import { assembleState } from "./state/assemble.js";
 import { DecisionLog, suppressedInsightKeys, type InsightReaction } from "./state/decisionLog.js";
+import { InsightLog } from "./state/insightLog.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { buildInsights } from "./insights/engine.js";
 import { loadArchive } from "./coach/orchestrator.js";
@@ -76,6 +77,9 @@ async function renderLatest(): Promise<string> {
   const suppressed = suppressedInsightKeys(await log.insightReactions());
   const archive = await loadArchive();
   const insights = latest.raw ? buildInsights(latest, archive, { suppressed, history: window }) : undefined;
+  // Record the full surfaced set (not just what gets a reaction) so the "what I listen to" model
+  // (npm run listening) can read feedback against everything shown. Best-effort, de-duped, never blocks.
+  if (insights) await new InsightLog().recordSurfaced(insights.topFindings, "dashboard");
   // Week-ahead weather: cached (or short-timeout fetched) forecast joined to the upcoming plan.
   // Best-effort — undefined just means the card is absent, never an error page.
   let weather: WeekWeather | undefined;

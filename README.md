@@ -86,6 +86,7 @@ npm run backfill:status       # archived counts + date ranges (distinct records,
 npm run backfill:compact      # de-duplicate the archive files in place (housekeeping; safe to re-run)
 npm run decisions             # view the decision log (audit trail)
 npm run decisions -- retro <id> "how it held up"   # add a retrospective to a decision
+npm run listening             # your engagement model: what you act on vs dismiss (+ dismissed-but-recurred) → report
 npm test                      # unit tests for the insight/stat modules (node:test, no extra deps)
 npm run check                 # fire-only health watch: macOS alert ONLY if a flag/early-warning fires
 
@@ -167,6 +168,21 @@ signal strength, each with **👍 Agree / 👎 Disagree / ✕ Ignore**. Every re
 log. **Disagree or Ignore hides that insight for ~2 weeks** and the coach (readiness/weekly/ask) reads your
 feedback so it stops re-raising calls you've rejected; **Agree** keeps it active. Feedback posts to the
 server's `/insight-feedback` endpoint — credentials never leave the Mac.
+
+### What you listen to — your engagement model
+
+Every time the engine surfaces findings (the dashboard card, the MCP `insights` tool) it appends the
+**full surfaced set** to `data/insights/log.jsonl` — not just the ones you react to — so there's a complete
+record of *what you were shown* alongside *what you acted on*. The log is de-duplicated (an unchanged
+surface isn't re-written on every page load) and gitignored like all personal data.
+
+`npm run listening` (or the MCP `listening` tool) joins that history to your decision log and prints — and
+saves as a dated report — your engagement model: **which insight families you act on vs wave away** (a 👍/👎/✕
+breakdown per family), your overall reaction rate, gated-proposal accept/decline counts, what's **currently
+hidden** inside the cool-off, and the honest one — **findings you dismissed that the engine surfaced again
+anyway** ("dismissed, but came back"). It's deterministic (no LLM, no cost) and **descriptive, not causal**:
+it tracks engagement and recurrence and labels the form numbers a MODEL; it does not claim a finding you
+ignored *caused* a later result.
 
 ## Deep session feedback
 
@@ -350,6 +366,7 @@ see and blocking for minutes (which used to surface in Cowork as a mystery timeo
 | `insights` | run the n=1 insight engine: CTL/ATL/TSB & ramp, EF, durability, correlations, change-points, taper target, validated monitoring rules | none |
 | `list_reports` / `read_report` | list and read the dated markdown reports under `reports/` | none |
 | `decisions` | the decision-log audit trail (`filter=pending` for proposals awaiting a call) | none |
+| `listening` | your engagement model — which insight families you act on vs dismiss, proposal accept/decline, and findings that recurred after you dismissed them | none |
 | `cost` | local token-cost report (today / 7d / 30d / all-time + monthly projection) | none |
 | `ask` | free-form Q&A over your assembled state + insights | LLM (logged) |
 | `readiness` / `weekly` / `race_prep` / `deep_dive` / `session_feedback` | the coaching flows, each also writing its dated report | LLM (logged) |

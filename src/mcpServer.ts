@@ -9,6 +9,9 @@ import { buildTodayState, gatherReadiness, loadArchive, todayIso, withAie } from
 import { StateStore } from "./state/store.js";
 import { buildInsights } from "./insights/engine.js";
 import { DecisionLog, suppressedInsightKeys, type DecisionRecord } from "./state/decisionLog.js";
+import { InsightLog } from "./state/insightLog.js";
+import { analyseListening, formatListening } from "./coach/listening.js";
+import { loadModel } from "./insights/metrics.js";
 import { ArchiveStore } from "./archive/store.js";
 import { answerQuestion } from "./coach/ask.js";
 import { runWeeklyReview } from "./coach/weekly.js";
@@ -186,6 +189,7 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
       if (!state.raw) return fail("No data assembled — nothing to analyse.");
       const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
       const ins = buildInsights(state, await loadArchive(), { suppressed, history: window });
+      await new InsightLog().recordSurfaced(ins.topFindings, "mcp-insights");
       return ok([insightMetricsSummary(ins), "", insightFindings(ins)].join("\n"));
     },
   );
@@ -219,6 +223,20 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
     "View the decision log (audit trail of readiness calls, insight feedback and gated plan proposals). filter='pending' shows only proposals awaiting confirm/decline.",
     { filter: z.enum(["all", "pending"]).optional() },
     async ({ filter }) => ok(formatDecisions(await new DecisionLog().all(), filter ?? "all")),
+  );
+
+  server.tool(
+    "listening",
+    "Your engagement model: which insight families you act on vs dismiss, agree/disagree/ignore and gated-proposal accept/decline rates, what's currently hidden, and findings that recurred AFTER you dismissed them. Deterministic — no LLM cost. Descriptive, not causal.",
+    {},
+    async () => {
+      const snapshots = await new InsightLog().all();
+      const decisions = await new DecisionLog().all();
+      const state = (await new StateStore().recent(todayIso(), 1))[0];
+      const recData = (state?.raw?.getRecoveryModel as { data?: Parameters<typeof loadModel>[0] } | undefined)?.data;
+      const model = analyseListening({ snapshots, decisions, load: loadModel(recData) });
+      return ok(formatListening(model, todayIso()));
+    },
   );
 
   server.tool(
@@ -404,7 +422,7 @@ async function main(): Promise<void> {
   await server.connect(new StdioServerTransport());
   console.error(
     "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/insights/list_reports/" +
-      "read_report/decisions/cost · LLM tools: ask/readiness/weekly/race_prep/deep_dive/session_feedback · " +
+      "read_report/decisions/listening/cost · LLM tools: ask/readiness/weekly/race_prep/deep_dive/session_feedback · " +
       "gated writes: propose_adjustment/confirm/decline.",
   );
 }
