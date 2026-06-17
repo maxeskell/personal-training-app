@@ -590,9 +590,10 @@ async function cmdCost(): Promise<void> {
 async function cmdListening(): Promise<void> {
   const snapshots = await new InsightLog().all();
   const decisions = await new DecisionLog().all();
-  const state = (await new StateStore().recent(todayIso(), 1))[0];
-  const recData = (state?.raw?.getRecoveryModel as { data?: Parameters<typeof loadModel>[0] } | undefined)?.data;
-  const model = analyseListening({ snapshots, decisions, load: loadModel(recData) });
+  const states = await new StateStore().recent(todayIso(), 90);
+  const latest = states[states.length - 1];
+  const recData = (latest?.raw?.getRecoveryModel as { data?: Parameters<typeof loadModel>[0] } | undefined)?.data;
+  const model = analyseListening({ snapshots, decisions, states, load: loadModel(recData) });
   const markdown = formatListening(model, todayIso());
   console.log("\n" + markdown);
   const path = await writeReport("listening-model", todayIso(), markdown);
@@ -719,7 +720,7 @@ if (!run) {
   console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
   console.log("  session [date] [--force]  deep feedback on one session (needs its raw .FIT; --force = summary-only)");
   console.log("  cost [days]   local token-cost report (per-flow breakdown + windowed totals)");
-  console.log("  listening  your engagement model: what you act on vs dismiss, + dismissed-but-recurred → report");
+  console.log("  listening  engagement model: act-on-vs-dismiss, plan adherence + plan changes, dismissed-but-recurred → report");
   console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
   console.log("  archive-status  show archived counts + date ranges (distinct records)");
   console.log("  archive-compact  de-duplicate the archive files in place (one record per date/id)");

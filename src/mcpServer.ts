@@ -227,14 +227,15 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
 
   server.tool(
     "listening",
-    "Your engagement model: which insight families you act on vs dismiss, agree/disagree/ignore and gated-proposal accept/decline rates, what's currently hidden, and findings that recurred AFTER you dismissed them. Deterministic — no LLM cost. Descriptive, not causal.",
+    "Your engagement model: which insight families you act on vs dismiss, gated-proposal accept/decline, findings that recurred after you dismissed them, your plan ADHERENCE (AI Endurance plan progress — done vs planned hours, and its trend), and PLAN CHANGES detected from daily snapshots (added/moved/dropped sessions). Deterministic — no LLM cost. Descriptive, not causal.",
     {},
     async () => {
       const snapshots = await new InsightLog().all();
       const decisions = await new DecisionLog().all();
-      const state = (await new StateStore().recent(todayIso(), 1))[0];
-      const recData = (state?.raw?.getRecoveryModel as { data?: Parameters<typeof loadModel>[0] } | undefined)?.data;
-      const model = analyseListening({ snapshots, decisions, load: loadModel(recData) });
+      const states = await new StateStore().recent(todayIso(), 90);
+      const latest = states[states.length - 1];
+      const recData = (latest?.raw?.getRecoveryModel as { data?: Parameters<typeof loadModel>[0] } | undefined)?.data;
+      const model = analyseListening({ snapshots, decisions, states, load: loadModel(recData) });
       return ok(formatListening(model, todayIso()));
     },
   );

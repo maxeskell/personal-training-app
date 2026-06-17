@@ -3,6 +3,17 @@ import assert from "node:assert/strict";
 import { analyseListening, formatListening } from "../src/coach/listening.js";
 import { snapshotSignature, toSurfaced, type InsightSnapshot, type SurfacedFinding } from "../src/state/insightLog.js";
 import type { DecisionRecord } from "../src/state/decisionLog.js";
+import { emptyState, type AthleteState, type PlannedSession } from "../src/state/types.js";
+
+function stateWith(
+  date: string,
+  opts: { adherence?: Record<string, { actualH: number; prescribedH: number }>; planned?: PlannedSession[] },
+): AthleteState {
+  const s = emptyState(date, `${date}T06:00:00.000Z`);
+  if (opts.adherence) s.adherenceByZone = { value: opts.adherence, source: "ai-endurance" };
+  if (opts.planned) s.plannedSessions = { value: opts.planned, source: "ai-endurance" };
+  return s;
+}
 
 function sf(key: string, family: string, title: string, detail = "d"): SurfacedFinding {
   return { key, family, title, severity: "watch", detail, evidence: "e" };
@@ -73,6 +84,45 @@ test("analyseListening: engagement, family breakdown, proposals, suppression, re
   assert.deepEqual(m.suppressedNow.map((s) => s.key), ["B"]);
   assert.equal(m.suppressedNow[0].family, "Durability");
   assert.equal(m.suppressedNow[0].daysAgo, 7);
+});
+
+test("analyseListening: adherence defers to plan progress (latest snapshot) and trends vs ~1wk earlier", () => {
+  const states = [
+    stateWith("2026-06-01", { adherence: { Endurance: { actualH: 5, prescribedH: 8 }, Threshold: { actualH: 1, prescribedH: 2 } } }),
+    stateWith("2026-06-10", { adherence: { Endurance: { actualH: 7, prescribedH: 8 }, Threshold: { actualH: 2, prescribedH: 2 } } }),
+  ];
+  const m = analyseListening({ snapshots: [], decisions: [], states });
+  assert.ok(m.adherence);
+  assert.equal(m.adherence!.asOf, "2026-06-10");
+  assert.equal(m.adherence!.totalPlannedH, 10);
+  assert.equal(m.adherence!.totalActualH, 9);
+  assert.equal(m.adherence!.pct, 0.9);
+  assert.deepEqual(m.adherence!.trend, { priorPct: 0.6, deltaPts: 30 }); // 90% now vs 60% a week ago
+  const endurance = m.adherence!.byZone.find((z) => z.zone === "Endurance")!;
+  assert.equal(endurance.pct, 0.875);
+});
+
+test("analyseListening: plan-change diff classifies added / moved / dropped, guarding window churn", () => {
+  const states = [
+    stateWith("2026-06-08", { planned: [{ workoutId: "w1", date: "2026-06-15", title: "Long run" }, { workoutId: "w2", date: "2026-06-16", title: "VO2 intervals" }] }),
+    stateWith("2026-06-09", { planned: [{ workoutId: "w1", date: "2026-06-17", title: "Long run" }] }), // w1 moved; w2 (upcoming) dropped
+    stateWith("2026-06-10", { planned: [{ workoutId: "w1", date: "2026-06-17", title: "Long run" }, { workoutId: "w3", date: "2026-06-20", title: "Tempo" }] }), // w3 added
+  ];
+  const m = analyseListening({ snapshots: [], decisions: [], states });
+  assert.deepEqual({ added: m.planChanges.added, removed: m.planChanges.removed, retimed: m.planChanges.retimed }, { added: 1, removed: 1, retimed: 1 });
+  assert.equal(m.planChanges.events[0].at, "2026-06-10"); // most recent first
+  assert.equal(m.planChanges.events[0].kind, "added");
+  const moved = m.planChanges.events.find((e) => e.kind === "retimed")!;
+  assert.equal(moved.detail, "2026-06-15 → 2026-06-17");
+});
+
+test("analyseListening: a planned workout that simply passed is NOT counted as dropped", () => {
+  const states = [
+    stateWith("2026-06-08", { planned: [{ workoutId: "w1", date: "2026-06-08", title: "Easy run" }] }), // due that day
+    stateWith("2026-06-09", { planned: [] }), // gone — but it had already passed, so not a deletion
+  ];
+  const m = analyseListening({ snapshots: [], decisions: [], states });
+  assert.equal(m.planChanges.removed, 0);
 });
 
 test("analyseListening: empty input is well-formed, and the formatter degrades gracefully", () => {

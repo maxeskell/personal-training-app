@@ -86,7 +86,7 @@ npm run backfill:status       # archived counts + date ranges (distinct records,
 npm run backfill:compact      # de-duplicate the archive files in place (housekeeping; safe to re-run)
 npm run decisions             # view the decision log (audit trail)
 npm run decisions -- retro <id> "how it held up"   # add a retrospective to a decision
-npm run listening             # your engagement model: what you act on vs dismiss (+ dismissed-but-recurred) → report
+npm run listening             # engagement model: act-on-vs-dismiss + plan adherence + plan changes (+ dismissed-but-recurred) → report
 npm test                      # unit tests for the insight/stat modules (node:test, no extra deps)
 npm run check                 # fire-only health watch: macOS alert ONLY if a flag/early-warning fires
 
@@ -177,12 +177,23 @@ record of *what you were shown* alongside *what you acted on*. The log is de-dup
 surface isn't re-written on every page load) and gitignored like all personal data.
 
 `npm run listening` (or the MCP `listening` tool) joins that history to your decision log and prints — and
-saves as a dated report — your engagement model: **which insight families you act on vs wave away** (a 👍/👎/✕
-breakdown per family), your overall reaction rate, gated-proposal accept/decline counts, what's **currently
-hidden** inside the cool-off, and the honest one — **findings you dismissed that the engine surfaced again
-anyway** ("dismissed, but came back"). It's deterministic (no LLM, no cost) and **descriptive, not causal**:
-it tracks engagement and recurrence and labels the form numbers a MODEL; it does not claim a finding you
-ignored *caused* a later result.
+saves as a dated report — your engagement model:
+- **which insight families you act on vs wave away** (a 👍/👎/✕ breakdown per family), your overall reaction
+  rate, and gated-proposal accept/decline counts;
+- **plan adherence** — done vs planned hours overall and per zone, with a "is it slipping?" trend. This
+  **defers to AI Endurance's own `getPlanProgress`** (the platform's authoritative planned-vs-done
+  reconciliation) and trends its numbers rather than re-deriving a competing match;
+- **plan changes** — sessions **added / moved / dropped**, detected by diffing your daily `plannedSessions`
+  snapshots (guarded so a workout that simply passed isn't mistaken for a deletion; approximate, and
+  workouts without a stable id are skipped). This is something the platform doesn't expose, so it's
+  computed here;
+- what's **currently hidden** inside the cool-off, and the honest one — **findings you dismissed that the
+  engine surfaced again anyway** ("dismissed, but came back").
+
+It's deterministic (no LLM, no cost) and **descriptive, not causal**: it tracks engagement, adherence and
+recurrence and labels the form numbers a MODEL; it does not claim a finding you ignored *caused* a later
+result. Note plan edits you make **directly in AI Endurance** are caught by the snapshot diff; there is no
+separate edit feed — the daily snapshots are the record.
 
 ## Deep session feedback
 
@@ -366,7 +377,7 @@ see and blocking for minutes (which used to surface in Cowork as a mystery timeo
 | `insights` | run the n=1 insight engine: CTL/ATL/TSB & ramp, EF, durability, correlations, change-points, taper target, validated monitoring rules | none |
 | `list_reports` / `read_report` | list and read the dated markdown reports under `reports/` | none |
 | `decisions` | the decision-log audit trail (`filter=pending` for proposals awaiting a call) | none |
-| `listening` | your engagement model — which insight families you act on vs dismiss, proposal accept/decline, and findings that recurred after you dismissed them | none |
+| `listening` | your engagement model — insight families you act on vs dismiss, proposal accept/decline, dismissed-but-recurred findings, plan **adherence** (done vs planned, deferring to AI Endurance) and **plan changes** (added/moved/dropped, diffed from daily snapshots) | none |
 | `cost` | local token-cost report (today / 7d / 30d / all-time + monthly projection) | none |
 | `ask` | free-form Q&A over your assembled state + insights | LLM (logged) |
 | `readiness` / `weekly` / `race_prep` / `deep_dive` / `session_feedback` | the coaching flows, each also writing its dated report | LLM (logged) |

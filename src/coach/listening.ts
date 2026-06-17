@@ -6,14 +6,20 @@ import {
 } from "../state/decisionLog.js";
 import type { InsightSnapshot } from "../state/insightLog.js";
 import type { LoadModel } from "../insights/metrics.js";
+import type { AthleteState, PlannedSession } from "../state/types.js";
 
 /**
  * "What do I listen to vs ignore" — your engagement model. DETERMINISTIC, pure (no LLM, no network):
- * joins the full surfaced-insight history (state/insightLog) to your agree/disagree/ignore feedback
- * and gated-proposal decisions (state/decisionLog), then surfaces engagement and RECURRENCE patterns.
+ * joins the full surfaced-insight history (state/insightLog) to your agree/disagree/ignore feedback and
+ * gated-proposal decisions (state/decisionLog), plus your daily AthleteStates for plan ADHERENCE and
+ * PLAN CHANGES. Surfaces engagement, recurrence, whether you actually do the planned work, and edits.
  *
- * Honest by design: it reports what you were shown, how you reacted, and which dismissed findings came
- * back anyway — it does NOT claim a causal link to performance. The form numbers are the load MODEL.
+ * Adherence DEFERS to AI Endurance's own getPlanProgress (done vs planned hours) — we trend its numbers,
+ * never re-derive a competing planned-vs-actual match. Plan changes are something the platform doesn't
+ * surface, so those we DO compute, by diffing consecutive daily plannedSessions snapshots.
+ *
+ * Honest by design: it reports what you were shown, how you reacted, which dismissed findings came back,
+ * and how closely you followed the plan — it does NOT claim a causal link to performance. Form = MODEL.
  */
 
 const UNATTRIBUTED = "(shown before logging)";
@@ -45,6 +51,41 @@ export interface SuppressedNow {
   daysAgo: number;
 }
 
+/**
+ * Plan adherence — DEFERRED to AI Endurance's own plan progress (getPlanProgress done_sec/plan_sec),
+ * never re-derived from a competing planned-vs-actual match. This is the authoritative "are you doing
+ * the planned work" signal: a low % means skipped or shortened sessions.
+ */
+export interface ZoneAdherence {
+  zone: string;
+  plannedH: number;
+  actualH: number;
+  pct: number | null; // actualH / plannedH (null when nothing was planned in the zone)
+}
+export interface AdherenceSummary {
+  asOf: string; // date of the latest snapshot carrying plan progress
+  totalPlannedH: number;
+  totalActualH: number;
+  pct: number | null; // overall done / planned (0–1+; can exceed 1 if you did more than planned)
+  byZone: ZoneAdherence[];
+  /** Same metric ~a week earlier, for "is adherence slipping?" — null when there's no earlier snapshot. */
+  trend: { priorPct: number | null; deltaPts: number | null } | null;
+}
+
+/** A change to the plan, detected by diffing consecutive daily plannedSessions snapshots (approximate). */
+export interface PlanChangeEvent {
+  at: string; // the date we first saw the change (the later snapshot's state date)
+  kind: "added" | "removed" | "retimed";
+  title: string;
+  detail: string;
+}
+export interface PlanChangeSummary {
+  added: number;
+  removed: number; // an upcoming workout that dropped out of the plan (not one that simply passed)
+  retimed: number; // same workout id, moved to a different date
+  events: PlanChangeEvent[]; // most-recent-first, capped
+}
+
 export interface ListeningModel {
   window: { from: string; to: string } | null; // first/last snapshot date
   snapshots: number;
@@ -57,6 +98,8 @@ export interface ListeningModel {
   proposals: { accepted: number; declined: number; pending: number; deferred: number };
   suppressedNow: SuppressedNow[];
   recurredAfterDismissal: DismissedRecurrence[];
+  adherence: AdherenceSummary | null; // plan progress (deferred to AI Endurance)
+  planChanges: PlanChangeSummary; // plan edits diffed from daily snapshots
   form: { ctl: number; atl: number; tsb: number; rampPerWeek: number } | null;
 }
 
@@ -74,11 +117,104 @@ function daysBetween(aIso: string, bIso: string): number {
 export interface ListeningInput {
   snapshots: InsightSnapshot[];
   decisions: DecisionRecord[];
+  /** Trailing daily AthleteStates (any order) — for plan adherence + plan-change detection. */
+  states?: AthleteState[];
   load?: LoadModel | null;
   now?: Date;
 }
 
-export function analyseListening({ snapshots, decisions, load, now = new Date() }: ListeningInput): ListeningModel {
+/** Overall done/planned from one snapshot's per-zone plan progress. */
+function adherenceOf(byZone: Record<string, { actualH: number; prescribedH: number }>): {
+  totalPlannedH: number;
+  totalActualH: number;
+  pct: number | null;
+} {
+  let totalPlannedH = 0;
+  let totalActualH = 0;
+  for (const z of Object.values(byZone)) {
+    totalPlannedH += z.prescribedH;
+    totalActualH += z.actualH;
+  }
+  return {
+    totalPlannedH: +totalPlannedH.toFixed(2),
+    totalActualH: +totalActualH.toFixed(2),
+    pct: totalPlannedH > 0 ? +(totalActualH / totalPlannedH).toFixed(3) : null,
+  };
+}
+
+/** Plan adherence from the daily states, deferring to AI Endurance's getPlanProgress numbers. */
+function buildAdherence(states: AthleteState[]): AdherenceSummary | null {
+  const withProgress = states
+    .filter((s) => s.adherenceByZone?.value && Object.keys(s.adherenceByZone.value).length)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (!withProgress.length) return null;
+  const latest = withProgress[withProgress.length - 1];
+  const byZoneRaw = latest.adherenceByZone.value!;
+  const overall = adherenceOf(byZoneRaw);
+  const byZone: ZoneAdherence[] = Object.entries(byZoneRaw).map(([zone, v]) => ({
+    zone,
+    plannedH: +v.prescribedH.toFixed(2),
+    actualH: +v.actualH.toFixed(2),
+    pct: v.prescribedH > 0 ? +(v.actualH / v.prescribedH).toFixed(3) : null,
+  }));
+
+  // Trend: the latest snapshot at least 5 days before `latest` (so it's a different plan-progress point).
+  let trend: AdherenceSummary["trend"] = null;
+  const prior = withProgress.filter((s) => daysBetween(s.date, latest.date) >= 5).pop();
+  if (prior) {
+    const priorPct = adherenceOf(prior.adherenceByZone.value!).pct;
+    trend = {
+      priorPct,
+      deltaPts: overall.pct != null && priorPct != null ? Math.round((overall.pct - priorPct) * 100) : null,
+    };
+  }
+  return { asOf: latest.date, ...overall, byZone, trend };
+}
+
+/** Index a state's planned sessions by their stable workout id (skipping entries without one). */
+function plannedById(state: AthleteState): Map<string, PlannedSession> {
+  const out = new Map<string, PlannedSession>();
+  for (const w of state.plannedSessions?.value ?? []) if (w.workoutId) out.set(w.workoutId, w);
+  return out;
+}
+
+/**
+ * Detect plan edits by diffing consecutive daily plannedSessions snapshots, keyed on workout id.
+ * Guards against window churn: a "removed" only counts when the workout was still UPCOMING as of the
+ * later snapshot (so a session that simply passed / completed isn't mistaken for a deletion), and an
+ * "added" only counts for a future-dated workout. Approximate — workouts without a stable id are skipped.
+ */
+function buildPlanChanges(states: AthleteState[]): PlanChangeSummary {
+  const ordered = states
+    .filter((s) => s.plannedSessions?.value != null)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const events: PlanChangeEvent[] = [];
+  for (let i = 1; i < ordered.length; i++) {
+    const prev = plannedById(ordered[i - 1]);
+    const cur = plannedById(ordered[i]);
+    const stateDate = ordered[i].date; // "today" as of the later snapshot
+    for (const [id, w] of cur) {
+      const before = prev.get(id);
+      if (!before) {
+        if (w.date >= stateDate) events.push({ at: stateDate, kind: "added", title: w.title ?? id, detail: `added for ${w.date}` });
+      } else if (before.date !== w.date) {
+        events.push({ at: stateDate, kind: "retimed", title: w.title ?? id, detail: `${before.date} → ${w.date}` });
+      }
+    }
+    for (const [id, w] of prev) {
+      if (!cur.has(id) && w.date >= stateDate) events.push({ at: stateDate, kind: "removed", title: w.title ?? id, detail: `was ${w.date}` });
+    }
+  }
+  events.sort((a, b) => b.at.localeCompare(a.at));
+  return {
+    added: events.filter((e) => e.kind === "added").length,
+    removed: events.filter((e) => e.kind === "removed").length,
+    retimed: events.filter((e) => e.kind === "retimed").length,
+    events: events.slice(0, 12),
+  };
+}
+
+export function analyseListening({ snapshots, decisions, states = [], load, now = new Date() }: ListeningInput): ListeningModel {
   // 1. Per-key surfacing history from the insight log (family/title from the most recent occurrence).
   const sorted = [...snapshots].sort((a, b) => a.ts.localeCompare(b.ts));
   const keyMeta = new Map<string, KeyMeta>();
@@ -176,12 +312,48 @@ export function analyseListening({ snapshots, decisions, load, now = new Date() 
     proposals,
     suppressedNow,
     recurredAfterDismissal,
+    adherence: buildAdherence(states),
+    planChanges: buildPlanChanges(states),
     form: load ? { ctl: load.ctl, atl: load.atl, tsb: load.tsb, rampPerWeek: load.rampPerWeek } : null,
   };
 }
 
 function pct(x: number | null): string {
   return x == null ? "—" : `${Math.round(x * 100)}%`;
+}
+
+/** Hours as H:MM (repo convention: durations display h:mm, never a bare decimal). */
+function hm(hours: number): string {
+  const totalMin = Math.round(hours * 60);
+  return `${Math.floor(totalMin / 60)}:${String(totalMin % 60).padStart(2, "0")}`;
+}
+
+function adherenceSection(a: AdherenceSummary): string[] {
+  const lines: string[] = [`## Adherence to the plan (AI Endurance plan progress, as of ${a.asOf})`, ""];
+  let head = `Overall: **${hm(a.totalActualH)}** done of **${hm(a.totalPlannedH)}** planned (**${pct(a.pct)}**)`;
+  if (a.trend?.deltaPts != null) {
+    const arrow = a.trend.deltaPts > 0 ? "▲" : a.trend.deltaPts < 0 ? "▼" : "→";
+    head += ` · vs ~1wk earlier ${pct(a.trend.priorPct)} (${arrow} ${Math.abs(a.trend.deltaPts)} pts)`;
+  }
+  lines.push(head, "");
+  lines.push("| Zone | planned | done | % |", "| --- | --: | --: | --: |");
+  for (const z of a.byZone) lines.push(`| ${z.zone} | ${hm(z.plannedH)} | ${hm(z.actualH)} | ${pct(z.pct)} |`);
+  lines.push("");
+  return lines;
+}
+
+function planChangeSection(p: PlanChangeSummary): string[] {
+  const lines = ["## Plan changes (detected from daily plan snapshots — approximate)", ""];
+  const total = p.added + p.removed + p.retimed;
+  if (!total) {
+    lines.push("No plan changes detected in the logged window.", "");
+    return lines;
+  }
+  lines.push(`${total} detected: ${p.added} added · ${p.retimed} moved · ${p.removed} dropped (still-upcoming)`, "");
+  const verb = { added: "added", removed: "dropped", retimed: "moved" } as const;
+  for (const e of p.events) lines.push(`- ${e.at} ${verb[e.kind]}: **${e.title}** (${e.detail})`);
+  lines.push("");
+  return lines;
 }
 
 /** Render the engagement model as a markdown report (CLI prints it; also written to reports/). */
@@ -196,37 +368,46 @@ export function formatListening(m: ListeningModel, date: string): string {
   );
   lines.push("");
 
-  if (!m.snapshots) {
+  if (m.snapshots) {
+    lines.push(`Window: ${m.window!.from} → ${m.window!.to} · ${m.snapshots} snapshot(s) logged`);
     lines.push(
-      "No surfaced insights have been logged yet. Open the dashboard (or run the MCP `insights` tool) so " +
-        "the engine starts recording what it puts in front of you — then this model fills in.",
+      `Insights shown: **${m.surfacedKeys}** distinct · reacted to **${m.reactedKeys}** (${pct(m.reactionRate)}) · ` +
+        `${m.surfacedKeys - m.reactedKeys} never got a call`,
     );
-    return lines.join("\n") + "\n";
+    lines.push(`Reactions: 👍 ${m.reactions.agree} agree · 👎 ${m.reactions.disagree} disagree · ✕ ${m.reactions.ignore} ignore`);
+  } else {
+    lines.push(
+      "No surfaced insights have been logged yet — the engagement breakdown fills in once the engine surfaces " +
+        "findings (open the dashboard or run the MCP `insights` tool). Adherence and plan changes below still " +
+        "come from your daily data.",
+    );
   }
-
-  lines.push(`Window: ${m.window!.from} → ${m.window!.to} · ${m.snapshots} snapshot(s) logged`);
-  lines.push(
-    `Insights shown: **${m.surfacedKeys}** distinct · reacted to **${m.reactedKeys}** (${pct(m.reactionRate)}) · ` +
-      `${m.surfacedKeys - m.reactedKeys} never got a call`,
-  );
-  lines.push(`Reactions: 👍 ${m.reactions.agree} agree · 👎 ${m.reactions.disagree} disagree · ✕ ${m.reactions.ignore} ignore`);
-  lines.push(
-    `Plan proposals: ${m.proposals.accepted} accepted · ${m.proposals.declined} declined · ` +
-      `${m.proposals.pending} pending${m.proposals.deferred ? ` · ${m.proposals.deferred} deferred` : ""}`,
-  );
+  const propTotal = m.proposals.accepted + m.proposals.declined + m.proposals.pending + m.proposals.deferred;
+  if (propTotal) {
+    lines.push(
+      `Plan proposals: ${m.proposals.accepted} accepted · ${m.proposals.declined} declined · ` +
+        `${m.proposals.pending} pending${m.proposals.deferred ? ` · ${m.proposals.deferred} deferred` : ""}`,
+    );
+  }
   if (m.feedbackBeforeLogging) {
     lines.push(`_(plus ${m.feedbackBeforeLogging} older reaction(s) from before insight-history logging began — not attributed below)_`);
   }
   lines.push("");
 
-  lines.push("## By family — what you act on vs wave away");
-  lines.push("");
-  lines.push("| Family | shown | 👍 | 👎 | ✕ | no call |");
-  lines.push("| --- | --: | --: | --: | --: | --: |");
-  for (const f of m.byFamily) {
-    lines.push(`| ${f.family} | ${f.surfaced} | ${f.agreed} | ${f.disagreed} | ${f.ignored} | ${f.noReaction} |`);
+  if (m.adherence) lines.push(...adherenceSection(m.adherence));
+  else lines.push("## Adherence to the plan", "", "_No AI Endurance plan-progress data in the logged window._", "");
+  lines.push(...planChangeSection(m.planChanges));
+
+  if (m.byFamily.length) {
+    lines.push("## By family — what you act on vs wave away");
+    lines.push("");
+    lines.push("| Family | shown | 👍 | 👎 | ✕ | no call |");
+    lines.push("| --- | --: | --: | --: | --: | --: |");
+    for (const f of m.byFamily) {
+      lines.push(`| ${f.family} | ${f.surfaced} | ${f.agreed} | ${f.disagreed} | ${f.ignored} | ${f.noReaction} |`);
+    }
+    lines.push("");
   }
-  lines.push("");
 
   if (m.recurredAfterDismissal.length) {
     lines.push(`## Dismissed, but came back (${m.recurredAfterDismissal.length})`);

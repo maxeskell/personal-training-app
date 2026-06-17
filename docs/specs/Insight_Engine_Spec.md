@@ -171,9 +171,19 @@ goes and the practical rate/token cost of bulk detail pulls.
 on every render. This is the "what was I shown" record that the decision log's 👍/👎/✕ feedback is read
 against. `npm run listening` / the MCP `listening` tool (`coach/listening.ts`) joins the two into a
 deterministic engagement model: per-family act-on-vs-dismiss rates, gated-proposal accept/decline, what's
-currently suppressed, and **findings dismissed that later recurred**. Per the §5 guardrails it is
-**descriptive, not causal** — engagement + recurrence only, form numbers labelled MODEL; no claim that a
-dismissed finding *caused* a downstream result.
+currently suppressed, and **findings dismissed that later recurred**. It also reads the trailing daily
+AthleteStates for two more dimensions:
+
+- **Plan adherence** — done vs planned hours, overall and per zone, with a trend. This **defers to AI
+  Endurance's `getPlanProgress`** (the §4 principle: trend the platform's own numbers, never run a
+  competing planned-vs-actual match that could disagree with it).
+- **Plan changes** — sessions added / moved / dropped, diffed from consecutive daily `plannedSessions`
+  snapshots (keyed on workout id; a workout that merely passed isn't counted as a deletion). The platform
+  doesn't expose an edit history, so this one *is* computed here. Approximate.
+
+Per the §5 guardrails the whole model is **descriptive, not causal** — engagement, adherence and recurrence
+only, form numbers labelled MODEL; no claim that a dismissed finding or a skipped session *caused* a
+downstream result.
 
 ---
 
