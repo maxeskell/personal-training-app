@@ -40,7 +40,7 @@ export function engagementFindings(ctx: EngagementContext | undefined): Finding[
       family: FOLLOW_THROUGH,
       title: `Recurring signal you've set aside: ${r.title}`,
       severity: "watch",
-      detail: `You ${r.reaction === "ignore" ? "ignored" : "disagreed with"} this, but it's resurfaced ${r.times}× since — the data keeps raising it.`,
+      detail: `You snoozed this, but it's resurfaced ${r.times}× since — the data keeps raising it.`,
       evidence: "your insight feedback vs surfaced history",
       recommendation: "Take a fresh look — if it still doesn't fit, dismiss it again; otherwise act on it.",
       confidence: 0.6,

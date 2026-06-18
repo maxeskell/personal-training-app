@@ -1,5 +1,5 @@
 import type { AthleteState, ActualActivity, PlannedSession, ZoneSet } from "../state/types.js";
-import type { DecisionRecord } from "../state/decisionLog.js";
+import type { DecisionRecord, InsightReaction } from "../state/decisionLog.js";
 import type { FitSummary } from "../archive/store.js";
 import type { InsightReport } from "../insights/engine.js";
 import { findingKey } from "../insights/metrics.js";
@@ -59,6 +59,10 @@ export interface DashboardInput {
   window: AthleteState[];
   decisions: DecisionRecord[];
   insights?: InsightReport;
+  /** Saved like/dislike per finding key (latest wins) — renders the buttons in their persisted state. */
+  reactions?: Map<string, InsightReaction>;
+  /** First time each finding key was surfaced (insight-history log) — drives the age line + NEW badge. */
+  firstSeen?: Map<string, string>;
   /** Backfilled Garmin daily series — drives the multi-week Trends + health strip (not the 1-day state store). */
   garminDays?: Array<{
     date: string;
@@ -146,32 +150,62 @@ function renderAnalytics(ins: InsightReport): string {
   </table>`;
 }
 
-/** Top-5 insights box with agree / disagree / ignore actions (posts to /insight-feedback). */
-function renderInsightsBox(ins: InsightReport): string {
+/** Age of an insight in whole days from its first-seen timestamp (or null if never logged before). */
+function ageDays(firstSeenIso: string | undefined, now: number): number | null {
+  if (!firstSeenIso) return null;
+  return Math.floor((now - new Date(firstSeenIso).getTime()) / 86_400_000);
+}
+
+/** "first seen" line + a NEW badge for findings ≤1 day old (or first surfaced this very render). */
+function ageLabel(firstSeenIso: string | undefined, now: number): { badge: string; line: string } {
+  const days = ageDays(firstSeenIso, now);
+  const isNew = days == null || days < 1;
+  const badge = isNew ? `<span class="newbadge">NEW</span>` : "";
+  // firstSeenIso is null only for a finding the log hasn't recorded yet (i.e. brand new this render).
+  const line = !firstSeenIso
+    ? `first seen just now`
+    : `first seen ${escapeHtml(firstSeenIso.slice(0, 10))} · ${days === 0 ? "today" : `${days}d`}`;
+  return { badge, line: `${line} · (age since logging began)` };
+}
+
+/**
+ * Top-5 insights box. Each finding shows its SAVED like/dislike (👍/👎 toggle, click again to clear) plus a
+ * Snooze that hides it for ~2 weeks; dislike stays visible (just down-ranked). A NEW badge + "first seen"
+ * line flag freshness so a new signal isn't missed. Posts to /insight-feedback.
+ */
+function renderInsightsBox(ins: InsightReport, reactions?: Map<string, InsightReaction>, firstSeen?: Map<string, string>): string {
   const sevColor = (s: string) => (s === "flag" ? "#c0392b" : s === "watch" ? "#c98a00" : "#1a8a3a");
+  const now = Date.now();
   const top = ins.topFindings.slice(0, 5);
+  const newCount = top.filter((f) => (ageDays(firstSeen?.get(findingKey(f)), now) ?? 0) < 1).length;
   if (!top.length) return `<div class="card"><h2>Top insights</h2><div class="muted">No strong signals right now — nothing worth your attention today.</div></div>`;
   const rows = top
     .map((f) => {
       const key = findingKey(f);
       const conf = Math.round((f.confidence ?? 0.6) * 100);
-      return `<div class="insight sev-${f.severity}" data-key="${escapeHtml(key)}" data-summary="${escapeHtml(f.title)}">
-        <div><span class="badge" style="background:${sevColor(f.severity)}">${f.severity}</span>
+      const saved = reactions?.get(key); // "agree" | "disagree" (snoozed items are suppressed, never here)
+      const state = saved === "agree" ? "like" : saved === "disagree" ? "dislike" : "";
+      const on = (which: string) => (state === which ? " on" : "");
+      const { badge, line } = ageLabel(firstSeen?.get(key), now);
+      return `<div class="insight sev-${f.severity}" data-key="${escapeHtml(key)}" data-summary="${escapeHtml(f.title)}" data-reaction-state="${state}">
+        <div><span class="badge" style="background:${sevColor(f.severity)}">${f.severity}</span>${badge}
           <b style="${f.severity === "flag" ? "font-size:15px" : ""}">${escapeHtml(f.title)}</b> <span class="muted">· ${conf}% conf · ${escapeHtml(f.family)}</span></div>
         <div class="fdetail">${escapeHtml(f.detail)}</div>
         ${f.recommendation ? `<div class="ev">→ ${escapeHtml(f.recommendation)}</div>` : ""}
         <div class="ev">${escapeHtml(f.evidence)}</div>
+        <div class="age">${line}</div>
         <div class="acts">
-          <button class="agree" data-reaction="agree" onclick="feedback(this)">👍 Agree</button>
-          <button class="disagree" data-reaction="disagree" onclick="feedback(this)">👎 Disagree</button>
-          <button class="ignore" data-reaction="ignore" onclick="feedback(this)">✕ Ignore</button>
-          <span class="reacted"></span>
+          <button class="agree${on("like")}" data-reaction="like" onclick="feedback(this)">👍 Like</button>
+          <button class="disagree${on("dislike")}" data-reaction="dislike" onclick="feedback(this)">👎 Dislike</button>
+          <button class="ignore" data-reaction="snooze" onclick="feedback(this)">💤 Snooze</button>
+          <span class="reacted">${state === "like" ? "👍 liked" : state === "dislike" ? "👎 disliked (still shown)" : ""}</span>
         </div>
       </div>`;
     })
     .join("");
+  const newNote = newCount ? ` · <b>${newCount} new</b>` : " · nothing new";
   return `<div class="card insights"><h2>Top insights — your call</h2>
-    <div class="k" style="margin-bottom:8px">Ranked by signal strength. Disagree/ignore hides that insight for ~2 weeks and tells the coach to stop raising it.</div>
+    <div class="k" style="margin-bottom:8px">Ranked by signal strength${newNote}. Like/dislike is saved and reversible (dislike stays visible, just down-ranked); Snooze hides it for ~2 weeks.</div>
     ${rows}
   </div>`;
 }
@@ -471,7 +505,7 @@ function renderHeader(today: AthleteState, insights: InsightReport | undefined, 
   </div>`;
 }
 
-export function renderDashboard({ window, decisions, insights, garminDays, costRecords, fitSummaries, canFetchFit, weather, autoSyncStaleMin }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, autoSyncStaleMin }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Week: load by sport. Time in h:mm (user ask); a zero distance renders "—" not a misleading 0.0 km.
@@ -554,6 +588,9 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .acts button:disabled{opacity:.4;cursor:default}
 .acts .agree:hover{background:#e6f5ea;border-color:#1a8a3a}.acts .disagree:hover{background:#fdeaea;border-color:#c0392b}
 .acts .ignore:hover{background:#f3f3f3}.reacted{font-size:11px;color:#1a8a3a;margin-left:4px}
+.acts .agree.on{background:#e6f5ea;border-color:#1a8a3a;font-weight:600}.acts .disagree.on{background:#fdeaea;border-color:#c0392b;font-weight:600}
+.newbadge{background:#1558d6;color:#fff;font-size:9px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:9px;margin-right:6px;vertical-align:middle}
+.age{font-size:11px;color:#bbb;margin-top:4px}
 .actbtn{font-size:13px;padding:7px 14px;border:1px solid #c8642d;border-radius:8px;background:#fff;color:#c8642d;cursor:pointer}.actbtn:hover{background:#c8642d;color:#fff}
 code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 .proposal{border:1px solid #e7d9c6;border-radius:8px;padding:10px 12px;margin-top:10px}
@@ -576,7 +613,7 @@ function autoSync(min){ sync('Data is '+min+' min old — auto-refreshing:'); }
 </script>
 
 ${insights ? renderHeader(today, insights, decisions, garminDays) : ""}
-${insights ? renderInsightsBox(insights) : ""}
+${insights ? renderInsightsBox(insights, reactions, firstSeen) : ""}
 ${renderLastSession(window, insights, fitSummaries, canFetchFit)}
 
 <div class="card"><h2>Ask your data</h2>
@@ -606,15 +643,23 @@ async function sessionFeedback(){
   var box=document.getElementById('sessionfb'); box.textContent='Analysing this session… (fetching the .FIT first if needed)';
   try{var r=await fetch('/session-feedback',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
     var j=await r.json(); box.innerHTML=mdToHtml(j.markdown||'(no feedback)');}catch(err){box.textContent='Error: '+err;}}
+function setReactionState(box,state){
+  box.setAttribute('data-reaction-state',state);
+  var like=box.querySelector('.agree');var dislike=box.querySelector('.disagree');
+  like.classList.toggle('on',state==='like');dislike.classList.toggle('on',state==='dislike');
+}
 async function feedback(btn){
-  var box=btn.closest('.insight');var reaction=btn.getAttribute('data-reaction');
+  var box=btn.closest('.insight');var want=btn.getAttribute('data-reaction'); // like|dislike|snooze
+  var cur=box.getAttribute('data-reaction-state')||'';
+  // Clicking the active like/dislike again clears it (back to neutral); snooze is always a hide action.
+  var send=(want!=='snooze'&&cur===want)?'clear':want;
   var key=box.getAttribute('data-key');var summary=box.getAttribute('data-summary');
   var span=box.querySelector('.reacted');span.textContent='…';
   try{await fetch('/insight-feedback',{method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({key:key,reaction:reaction,summary:summary})});
-    box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
-    span.textContent=reaction==='agree'?'✓ agreed':reaction==='disagree'?'✓ disagreed — hidden ~2wk':'✓ ignored — hidden ~2wk';
-    if(reaction!=='agree'){box.style.opacity=0.5;}
+    body:JSON.stringify({key:key,reaction:send,summary:summary})});
+    if(send==='snooze'){box.querySelectorAll('button').forEach(function(b){b.disabled=true;});box.style.opacity=0.5;span.textContent='💤 snoozed — hidden ~2wk';return;}
+    if(send==='clear'){setReactionState(box,'');span.textContent='cleared';return;}
+    setReactionState(box,send);span.textContent=send==='like'?'👍 liked':'👎 disliked (still shown)';
   }catch(err){span.textContent='error';}
 }
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}

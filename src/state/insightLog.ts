@@ -62,8 +62,25 @@ export function snapshotSignature(findings: SurfacedFinding[]): string {
   return findings.map((f) => `${f.key}|${f.severity}|${f.detail}`).join("\n");
 }
 
+/** Earliest surfacing timestamp per finding key, across all snapshots. Pure — testable. */
+export function firstSeenFrom(snapshots: InsightSnapshot[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const snap of snapshots) {
+    for (const f of snap.findings) {
+      const prior = out.get(f.key);
+      if (prior == null || snap.ts < prior) out.set(f.key, snap.ts);
+    }
+  }
+  return out;
+}
+
 export class InsightLog {
   private readonly file = join(config.dataDir, "insights", "log.jsonl");
+
+  /** Earliest timestamp each finding key was surfaced — the insight's "age" / first-seen. */
+  async firstSeenByKey(): Promise<Map<string, string>> {
+    return firstSeenFrom(await this.all());
+  }
 
   async all(): Promise<InsightSnapshot[]> {
     let text: string;

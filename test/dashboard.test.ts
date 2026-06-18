@@ -5,6 +5,7 @@ import { buildInsights } from "../src/insights/engine.js";
 import { renderDashboard, ftpEstimateGapNote } from "../src/coach/dashboard.js";
 import type { Finding } from "../src/insights/metrics.js";
 import type { SessionDecay } from "../src/insights/fit.js";
+import type { InsightReaction } from "../src/state/decisionLog.js";
 
 const NASTY = `O'Brien "5x3'" \\ </script><b>x</b>`; // apostrophe, quote, backslash, tag, </script>
 
@@ -42,11 +43,37 @@ test("adversarial finding/goal text can't break handlers or inject markup (Spec 
   // No raw </script> that would end the script context early.
   assert.ok(!html.includes("</script><b>x</b>"), "no unescaped injected tag");
   // Feedback buttons carry data-* not quoted JS-string args.
-  assert.match(html, /data-reaction="agree" onclick="feedback\(this\)"/);
+  assert.match(html, /data-reaction="like" onclick="feedback\(this\)"/);
   assert.match(html, /data-summary="/);
   // The page still has valid scripts (this is the test that would FAIL pre-fix on the apostrophe).
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
   for (const [i, sc] of scripts.entries()) assert.doesNotThrow(() => new Function(sc), `script ${i}`);
+});
+
+test("insights box: a saved like is highlighted + reversible, snooze is separate, NEW/age flag freshness", () => {
+  const s = emptyState("2026-06-08", new Date().toISOString());
+  const ins = buildInsights(s, undefined, {});
+  ins.topFindings = [
+    { family: "Durability", title: "Run durability slipping", severity: "watch", detail: "d", evidence: "e", confidence: 0.7, key: "dur" } as Finding,
+    { family: "Load & form", title: "TSB negative", severity: "watch", detail: "d", evidence: "e", confidence: 0.7, key: "tsb" } as Finding,
+  ];
+  const reactions = new Map<string, InsightReaction>([["dur", "agree"]]); // liked
+  const firstSeen = new Map<string, string>([["dur", new Date(Date.now() - 6 * 86_400_000).toISOString()]]); // tsb absent → brand new
+  const html = renderDashboard({ window: [s], decisions: [], insights: ins, reactions, firstSeen });
+
+  // Liked → the Like button carries the 'on' state and the saved label; dislike stays available (not hidden).
+  assert.match(html, /class="agree on" data-reaction="like"/);
+  assert.match(html, /👍 liked/);
+  assert.match(html, /data-reaction="dislike"/);
+  // Snooze is a separate hide action.
+  assert.match(html, /💤 Snooze/);
+  assert.match(html, /data-reaction="snooze"/);
+  // dur is 6 days old → an age line, no NEW; tsb has no first-seen → a NEW badge, and the header counts it.
+  assert.match(html, /first seen .* · 6d/);
+  assert.match(html, /class="newbadge">NEW</);
+  assert.match(html, /1 new/);
+  // The page still parses (the rewritten feedback() handler included).
+  for (const [i, sc] of [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].entries()) assert.doesNotThrow(() => new Function(sc[1]), `script ${i}`);
 });
 
 test("week table uses h:mm, missing swim distance shows — , planned session joins the last-session card", () => {

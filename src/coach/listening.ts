@@ -285,7 +285,7 @@ export function analyseListening({ snapshots, decisions, states = [], load, now 
   // i.e. the signal persisted despite your call. The honest "did ignoring it cost me?" prompt (no claim).
   const recurredAfterDismissal: DismissedRecurrence[] = [];
   for (const [key, { reaction, timestamp }] of reactions) {
-    if (reaction === "agree") continue;
+    if (reaction !== "ignore") continue; // only snoozed items can "come back"; dislike stays visible
     const meta = keyMeta.get(key);
     if (!meta) continue;
     const afterOccurrences = meta.occurrences.filter((ts) => ts > timestamp);
@@ -456,19 +456,19 @@ export function formatListening(m: ListeningModel, date: string): string {
   if (m.recurredAfterDismissal.length) {
     lines.push(`## Dismissed, but came back (${m.recurredAfterDismissal.length})`);
     lines.push("");
-    lines.push("_Findings you disagreed with or ignored that the engine surfaced again afterwards — the signal persisted. Worth a second look._");
+    lines.push("_Findings you snoozed that the engine surfaced again after the cool-off — the signal persisted. Worth a second look._");
     lines.push("");
     for (const r of m.recurredAfterDismissal) {
-      lines.push(`- **${r.family} / ${r.title}** — ${r.reaction === "ignore" ? "ignored" : "disagreed"} ${r.reactedAt.slice(0, 10)}, resurfaced ${r.daysLater}d later (${r.recurredAt.slice(0, 10)})`);
+      lines.push(`- **${r.family} / ${r.title}** — snoozed ${r.reactedAt.slice(0, 10)}, resurfaced ${r.daysLater}d later (${r.recurredAt.slice(0, 10)})`);
     }
     lines.push("");
   }
 
   if (m.suppressedNow.length) {
-    lines.push("## Currently hidden — your call (~2-week cool-off)");
+    lines.push("## Snoozed — hidden until the cool-off ends (~2 weeks)");
     lines.push("");
     for (const s of m.suppressedNow) {
-      lines.push(`- **${s.family} / ${s.title}** — ${s.reaction === "ignore" ? "ignored" : "disagreed"} ${s.daysAgo}d ago`);
+      lines.push(`- **${s.family} / ${s.title}** — snoozed ${s.daysAgo}d ago`);
     }
     lines.push("");
   }
