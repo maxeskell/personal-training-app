@@ -1,5 +1,7 @@
 # Sports-science priors — living knowledge layer
 
+> Last verified: 2026-06-18
+
 > **Priors, not laws.** Population research = small samples, modest effects, big individual
 > variation. For n=1, this athlete's own response data and the AI Endurance model are the authority.
 > Where they disagree with a prior, **the prior yields.** Re-verify periodically (refs at bottom).
@@ -56,6 +58,14 @@ Fuel to train; use AIE nutrition *ranges*. **Never** recommend deficits/restrict
 Weight is a **trend**, secondary, never a daily target. **No clinical-syndrome detection** — if multiple
 risk signals co-occur (rapid/unexplained weight loss, suppressed HRV + poor sleep, rising RHR, low
 energy), raise gently and refer to a professional; don't label RED-S, don't treat loss as a win.
+
+## How this file is maintained
+This is loaded into **every** coaching prompt, so edits here update the coach everywhere. Refresh cadence
+is tracked by the `Last verified:` marker above (`npm run knowledge` flags it stale after ~35 days). To
+refresh: `npm run research` drafts a **web-grounded digest** of recent developments into
+`knowledge/pending/` — a *proposal you review*, never auto-applied. After reading it,
+`npm run knowledge -- approve <file>` folds it in under a dated section and bumps the verified date. The
+review step is deliberate: priors still yield to this athlete's n=1 data, and nothing here is a hard rule.
 
 ## References (verify periodically)
 - Stöggl & Sperlich 2015; Sperlich et al. 2023; Silva Oliveira et al. 2024 (POL not clearly superior).

@@ -74,6 +74,9 @@ npm run decline -- <id>       # dismiss a proposal
 npm run ping                  # unattended morning readiness: verdict + report + desktop notification
 npm run dashboard             # one-off glanceable HTML, opened in your browser
 npm run deep-dive             # insight-engine analysis (load/EF/durability/ramp/goal) → report
+npm run tune                  # weekly marginal gains: the smaller, easy-to-action tweaks (not "train more") → report
+npm run research              # monthly web-grounded digest of new training/gear thinking → review proposal (gated)
+npm run knowledge             # knowledge-layer freshness + pending digests (npm run knowledge -- approve <file>)
 npm run ask -- "how were my long rides this month?"   # free-form Q&A over your data
 npm run mcp                   # expose the coach over MCP (stdio) for Claude Desktop / Claude Code — see docs/mcp-server.md
 npm run mcp:http              # …or over HTTP (localhost + auth) for Claude Cowork via an HTTPS tunnel — see docs/mcp-server.md
@@ -252,6 +255,30 @@ demand (~10s) before analysing. The button only disappears (replaced by unlock i
 automatic path exists — Garmin off, an old `garmin_mcp` build, or no archived activity id — in which case
 export the original `.FIT` manually (Garmin Connect → ⚙ → *Export Original*). To analyse from summary
 data anyway: `npm run session -- --force`. Ask-box questions fall back to general Q&A instead.
+
+## Marginal gains + keeping the knowledge current
+
+Two flows answer "what small thing can I improve?" and "is the coach's thinking up to date?" — on a
+weekly/monthly rhythm.
+
+**`npm run tune` (weekly) — marginal gains.** The Top-insights card and `deep-dive` lead on the big calls
+(load, ramp, injury). The tune-up does the opposite: it deliberately surfaces the **smaller, low-effort,
+specific** findings that carry a concrete recommendation — efficiency, durability, fuelling, pacing,
+biomechanics — and turns the strongest few into 2–4 tweaks you can apply this week. Deterministic selection
+(excludes flags and the macro load/injury families) + one cheap LLM phrasing pass.
+
+**`npm run research` (monthly) — refresh the knowledge layer.** The coach's priors live in
+`knowledge/sports-science.md`, loaded into *every* prompt — so they're only as current as that file. This
+flow **web-searches recent training / triathlon / gear thinking** (e.g. the wider-tyre shift, fuelling g/h
+creep, heat protocols) against the current priors and **drafts a proposed update** into
+`knowledge/pending/`. It is **review-gated**: nothing is applied until you read it and run
+`npm run knowledge -- approve <file>`, which folds it in under a dated section and bumps the verified date.
+`npm run knowledge` shows freshness (flagged **stale after ~35 days**) and any digests awaiting review.
+
+This is the one flow that reaches the public web (via the model's web search — best-effort and cost-logged;
+a failure leaves the priors untouched). The guardrails hold throughout: **priors are hypotheses that yield
+to your own n=1 data**, no clinical claims, fuel-to-train. All three are also MCP tools (`tune`, `research`,
+`knowledge`) for Cowork — though `approve` stays a deliberate CLI action, never an agent's call.
 
 ## Token cost (know — and control — what you spend)
 

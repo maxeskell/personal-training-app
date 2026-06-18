@@ -205,6 +205,14 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
   decision log).
 - **`weekly`** / **`race_prep`** `{ race? }` / **`deep_dive`** — the review flows; each also writes
   its dated report under `reports/`.
+- **`tune`** — weekly marginal gains: the smaller, easy-to-action tweaks (efficiency, durability,
+  fuelling, pacing, biomechanics), not "train more". Also writes a dated report.
+- **`research`** — monthly web-grounded digest: searches recent training/triathlon/gear thinking against
+  your knowledge layer and **drafts** a proposed prior update into `knowledge/pending/`. Review-gated —
+  nothing is applied until you approve it from the CLI (`npm run knowledge -- approve <file>`). Uses the
+  model's web search (best-effort, cost-logged).
+- **`knowledge`** *(read)* — knowledge-layer freshness (last-verified + stale flag) and digests awaiting
+  review. Approving is a deliberate CLI action, never the agent's.
 - **`session_feedback`** `{ date?, force? }` — deep feedback on one session. Needs the raw `.FIT` for
   biomechanics; `force=true` gives summary-only feedback.
 

@@ -8,6 +8,9 @@ import { loadSystemPrompt } from "./coach/persona.js";
 import { runWeeklyReview } from "./coach/weekly.js";
 import { runRacePrep } from "./coach/racePrep.js";
 import { runDeepDive } from "./coach/deepDive.js";
+import { runTuneUp } from "./coach/tuneUp.js";
+import { runResearchDigest } from "./coach/research.js";
+import { readKnowledge, writePendingDigest, pendingName, approvePending, knowledgeFreshness, listPending } from "./knowledge/store.js";
 import { buildTodayState, gatherReadiness, loadArchive, todayIso, withAie } from "./coach/orchestrator.js";
 import { proposeAdjustments, validateProposals, buildProposerContext } from "./coach/planAdjust.js";
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
@@ -258,6 +261,63 @@ async function cmdDeepDive(): Promise<void> {
   console.log("\n" + markdown + "\n");
   const path = await writeReport("deep-dive", todayIso(), markdown);
   console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
+}
+
+/** `tune` — the smaller, easy-to-action marginal gains (not "train more"), as a weekly report. */
+async function cmdTune(): Promise<void> {
+  if (!requireLLM()) process.exit(1);
+  const { state, window } = await buildTodayState();
+  const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
+  const engagement = await loadEngagementContext(window);
+  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
+  const { markdown, gains, cacheRead, costUsd } = await runTuneUp(new CoachLLM(await loadSystemPrompt(), "tune", "medium"), state, ins);
+  console.log("\n" + markdown + "\n");
+  if (gains.length) {
+    const path = await writeReport("tune-up", todayIso(), markdown);
+    console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
+  }
+}
+
+/** `research` — monthly web-grounded digest of new training/gear thinking → a review proposal (gated). */
+async function cmdResearch(): Promise<void> {
+  if (!requireLLM()) process.exit(1);
+  const today = todayIso();
+  try {
+    const { markdown, costUsd } = await runResearchDigest(new CoachLLM(await loadSystemPrompt(), "research", "high"), await readKnowledge(), today);
+    const path = await writePendingDigest(today, markdown);
+    console.log(`\nDrafted a research digest for review → ${path}`);
+    console.log(`Read it, then apply with:  cd ${process.cwd()} && npm run knowledge -- approve ${pendingName(today)}`);
+    console.log(`(${costNote(costUsd, 0)})\n`);
+  } catch (e) {
+    // Degrade, don't crash: no key / web search unavailable / network leaves the priors untouched.
+    console.error(`\nResearch digest unavailable (degraded, priors untouched): ${e instanceof Error ? e.message : String(e)}\n`);
+    process.exit(1);
+  }
+}
+
+/** `knowledge [approve <file>]` — show knowledge-layer freshness + pending digests, or approve one. */
+async function cmdKnowledge(): Promise<void> {
+  if (process.argv[3] === "approve") {
+    const name = process.argv[4];
+    if (!name) {
+      console.error('\nUsage: npm run knowledge -- approve <file>   (file from `npm run knowledge`)\n');
+      process.exit(1);
+    }
+    await approvePending(name);
+    console.log(`\nApproved ${name} → folded into knowledge/sports-science.md and the verified date bumped.`);
+    console.log(`The coach now reads it in every flow. Commit the change to keep it.\n`);
+    return;
+  }
+  const f = knowledgeFreshness(await readKnowledge());
+  console.log(`\nKnowledge layer — last verified ${f.lastVerified ?? "never"}${f.ageDays != null ? ` (${f.ageDays}d ago)` : ""}: ${f.stale ? "STALE — due a refresh (npm run research)" : "fresh"}`);
+  const pending = await listPending();
+  if (pending.length) {
+    console.log(`\nPending digests awaiting your review (${pending.length}):`);
+    for (const p of pending) console.log(`  ${p.name} (${p.bytes} bytes)  →  npm run knowledge -- approve ${p.name}`);
+  } else {
+    console.log(`\nNo pending digests. Draft one with:  npm run research`);
+  }
+  console.log();
 }
 
 /** `ask "<question>"` — free-form Q&A over your data (same engine as the dashboard chat box). */
@@ -686,6 +746,9 @@ const commands: Record<string, () => Promise<void>> = {
   dashboard: cmdDashboard,
   demo: cmdDemo,
   "deep-dive": cmdDeepDive,
+  tune: cmdTune,
+  research: cmdResearch,
+  knowledge: cmdKnowledge,
   act: cmdAct,
   check: cmdCheck,
   ask: cmdAsk,
@@ -717,6 +780,9 @@ if (!run) {
   console.log("  dashboard  generate + open the glanceable Today/Week/Trends/Race view");
   console.log("  demo       render the dashboard from built-in SAMPLE data (no account/Garmin/key needed)");
   console.log("  deep-dive  insight-engine analysis (load/EF/durability/ramp/goal) → report");
+  console.log("  tune       weekly marginal-gains: the smaller, easy-to-action tweaks (not 'train more') → report");
+  console.log("  research   monthly web-grounded digest of new training/gear thinking → review proposal (gated)");
+  console.log('  knowledge [approve <file>]   knowledge-layer freshness + pending digests / approve one');
   console.log("  act        turn surfaced (gated, feedback-aware) findings into gated plan-adjustment proposals");
   console.log("  check      fire-only health watch: macOS alert ONLY if a flag / early-warning fires (no LLM)");
   console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
