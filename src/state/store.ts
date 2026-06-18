@@ -85,4 +85,21 @@ export class StateStore {
     const states = await Promise.all(dates.map((d) => this.load(d)));
     return states.filter((s): s is AthleteState => Boolean(s));
   }
+
+  /**
+   * Lightweight history read for trend slopes: the `n` most recent snapshots (≤ `date`) reduced to
+   * `{ date, v }` via `valueOf`. Parsed one at a time (not `Promise.all`) so peak memory stays at a
+   * single full state — snapshots embed raw API payloads, so retaining hundreds would be wasteful when
+   * a slope only needs one scalar per day. Points where `valueOf` is undefined/non-finite are dropped.
+   */
+  async series(date: string, n: number, valueOf: (s: AthleteState) => number | undefined): Promise<Array<{ date: string; v: number }>> {
+    const dates = (await this.dates()).filter((d) => d <= date).slice(-n);
+    const out: Array<{ date: string; v: number }> = [];
+    for (const d of dates) {
+      const s = await this.load(d);
+      const v = s ? valueOf(s) : undefined;
+      if (v != null && Number.isFinite(v)) out.push({ date: d, v });
+    }
+    return out;
+  }
 }

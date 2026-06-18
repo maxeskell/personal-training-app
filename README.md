@@ -208,11 +208,20 @@ projection, and the dashboard carries an **API cost** card. To keep it down, the
   low estimate is a floor, not a downgrade — your **configured FTP** is what drives the zones.
 - **Estimated race splits** for every upcoming race — shown as a **finish-time range**, not a single number:
   - **The range** is *race-day best → race-it-today*. The worst case is your current prediction (racing at
-    today's fitness); the best case carries **your own recent rate of improvement** out to race day (capped),
-    assuming you complete the planned build, stay healthy, adapt well and taper. Both ends are labelled a
-    MODEL with the assumptions stated, and the range collapses to your current level when there's no
-    improving trend to project — never an empty promise. Times are rounded to the minute (a projection isn't
-    second-accurate); each card leads with the race **date + countdown** and carries a plain-English glossary.
+    today's fitness). The best case is **predicted from the training between now and the race**, by two
+    bases in order of preference: (1) *PRIMARY* — your current **fitness (CTL) ramp** projected forward to
+    race day (with diminishing returns, since builds plateau and end in a taper) and mapped to a faster
+    finish; (2) *FALLBACK*, when you're not building — **your own recent rate of improvement** in race
+    predictions, extrapolated out to race day but only when that trend is statistically reliable. Both are
+    capped (~7%) and assume you hold the build, stay healthy, adapt well and taper. Both ends are labelled a
+    MODEL with the assumptions stated, and the range collapses to your current level when there's no build
+    or improving trend to project — never an empty promise. **Both estimates are always shown** (race-day
+    best and race-it-today, side by side), even when they currently match. Because each race is a different
+    distance out, the best case differs per race even at identical current fitness. Times are rounded to the
+    minute (a projection isn't second-accurate); each card leads with the race **date + countdown** and a glossary.
+  - **The per-segment table** shows both the **Split** (time for that segment alone) and the **Cumulative**
+    (running total), so you can pace each leg/kilometre as well as see the overall clock. Splits sum exactly
+    to the finish.
   - **Run races**: AI Endurance's predicted finish broken into a per-segment pacing plan, shaped by your
     **durability trend** — improving durability earns a gentle negative split; weak/unknown durability gets
     a conservative start that protects against the late fade.

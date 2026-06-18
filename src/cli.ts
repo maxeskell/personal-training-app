@@ -11,7 +11,7 @@ import { runDeepDive } from "./coach/deepDive.js";
 import { runTuneUp } from "./coach/tuneUp.js";
 import { runResearchDigest } from "./coach/research.js";
 import { readKnowledge, writePendingDigest, pendingName, approvePending, knowledgeFreshness, listPending } from "./knowledge/store.js";
-import { buildTodayState, gatherReadiness, loadArchive, todayIso, withAie } from "./coach/orchestrator.js";
+import { buildTodayState, gatherReadiness, loadArchive, loadPredictionTrajectory, todayIso, withAie } from "./coach/orchestrator.js";
 import { proposeAdjustments, validateProposals, buildProposerContext, writeContextFor } from "./coach/planAdjust.js";
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport } from "./coach/reports.js";
@@ -389,7 +389,8 @@ async function cmdDashboard(): Promise<void> {
   const { window, state } = await buildTodayState();
   const decisions = await new DecisionLog().all();
   const archive = await loadArchive();
-  const insights = state.raw ? buildInsights(state, archive, { history: window }) : undefined;
+  const predictionTrajectory = state.raw ? await loadPredictionTrajectory(state) : undefined;
+  const insights = state.raw ? buildInsights(state, archive, { history: window, predictionTrajectory }) : undefined;
   let weather: WeekWeather | undefined;
   if (config.weather.enabled) {
     const fc = await getForecast();
