@@ -1,5 +1,6 @@
 import type { AthleteState } from "../state/types.js";
 import { config } from "../config.js";
+import { renderProfileContext } from "../profile/context.js";
 
 /**
  * Live coaching context, derived from AI Endurance — NOT hard-coded.
@@ -152,7 +153,10 @@ export function athleteContext(state: AthleteState): string {
         .join(", ")}.`
     : "";
   const kit = config.athlete.equipment ? `Kit: ${config.athlete.equipment}. Units: ${config.athlete.units}.` : "";
-  return [profile, thr, kit].filter(Boolean).join("\n");
+  // Stable profile context (medical/biomechanics/availability/fuelling/race targets) from
+  // profile.local.yaml, when attached — no live numbers, those are elsewhere in the prompt.
+  const profileBlock = state.profile ? renderProfileContext(state.profile, state.date) : "";
+  return [profile, thr, kit, profileBlock].filter(Boolean).join("\n");
 }
 
 /**

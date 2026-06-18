@@ -29,6 +29,8 @@ import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { AieClient } from "./mcp/aieClient.js";
 import { readCostRecords, summarizeCost, type CostRecord } from "./llm/costLog.js";
+import { loadProfile } from "./profile/load.js";
+import { formatProfileForTool } from "./profile/context.js";
 import type { AthleteState } from "./state/types.js";
 
 /**
@@ -181,6 +183,19 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
       const state = fresh ? (await buildTodayState()).state : (await new StateStore().recent(todayIso(), 1))[0];
       if (!state) return fail("No state assembled yet — call the `sync` tool (or get_state with fresh=true) first.");
       return ok(summarizeState(state));
+    },
+  );
+
+  server.tool(
+    "get_profile",
+    "Return the validated athlete profile — STABLE context (identity, biomechanics, health/medication, availability, equipment, fuelling, race targets) that AI Endurance/Garmin don't hold — plus a computed `dose_cycle` (days_since_dose, in_gi_trough) when a medication cycle is set. NO live numbers: FTP, weight, paces, swim CSS, HRV and training load come from `get_state`. Reads profile.local.yaml, else profile.example.yaml. Deterministic — no LLM cost.",
+    {},
+    async () => {
+      try {
+        return ok(formatProfileForTool(await loadProfile(), todayIso()));
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
     },
   );
 
@@ -507,7 +522,7 @@ async function main(): Promise<void> {
   const server = buildServer();
   await server.connect(new StdioServerTransport());
   console.error(
-    "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/insights/react_to_insight/list_reports/" +
+    "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/get_profile/insights/react_to_insight/list_reports/" +
       "read_report/decisions/listening/knowledge/cost · LLM tools: ask/readiness/weekly/race_prep/deep_dive/tune/research/session_feedback · " +
       "gated writes: propose_adjustment/confirm/decline.",
   );

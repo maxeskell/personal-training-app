@@ -184,6 +184,11 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
   persist it. Returns a provenance-tagged summary + any sync gaps.
 - **`get_state`** `{ fresh?: boolean }` — return today's state. Reads the last persisted snapshot by
   default; `fresh=true` re-syncs first.
+- **`get_profile`** — the validated athlete profile (stable context: identity, biomechanics,
+  health/medication, availability, equipment, fuelling, race targets) plus a computed `dose_cycle`
+  (`days_since_dose`, `in_gi_trough`) when a medication cycle is set. **No live numbers** — FTP, weight,
+  paces, swim CSS, HRV and load come from `get_state`. Reads `profile.local.yaml`, else the committed
+  `profile.example.yaml`. Deterministic — no LLM cost. See [docs/profile.md](profile.md).
 - **`insights`** — run the insight engine over your history (CTL/ATL/TSB & ramp, EF, durability,
   run-load, autocorr-aware correlations, change-points, taper target, validated monitoring rules)
   and return the computed metrics + top surfaced findings. Each top finding is annotated with its

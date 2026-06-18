@@ -38,6 +38,10 @@ data/
 .garminconnect/
 .endurance-coach/
 
+# Personal athlete data, never commit (profile.example.yaml is the committed blank template)
+profile.local.yaml
+profile.local.*
+
 # Drafted research digests awaiting review (transient; approved content lands in sports-science.md)
 knowledge/pending/
 

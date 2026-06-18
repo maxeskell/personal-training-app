@@ -17,7 +17,8 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 | Command | What it does |
 |---|---|
 | `npm install` | install dependencies |
-| `npm run setup` | **guided wizard** — asks for key/units/location/Garmin and writes `.env` for you (the one-command version of editing `.env` by hand) |
+| `npm run setup` | **guided wizard** — asks for key/units/location/Garmin and writes `.env` for you (the one-command version of editing `.env` by hand); also offers the profile intake |
+| `npm run profile:init` | copy `profile.example.yaml` → `profile.local.yaml` (gitignored) and walk the required profile fields ([docs/profile.md](profile.md)) |
 | `npm run auth:aie` | one-time AI Endurance OAuth (opens a browser); tokens cached in `~/.endurance-coach` |
 | `npm run verify:reads` | exercise every read tool and confirm the write-gate is closed |
 | `npm run state:today` | assemble + persist + summarise today's AthleteState |

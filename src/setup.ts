@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { initProfile } from "./profile/setup.js";
 
 /**
  * `npm run setup` — a one-command interactive wizard that replaces the SETUP.md Step-3 checklist:
@@ -96,6 +97,13 @@ export async function runSetup(): Promise<void> {
     const next = upsertEnv(await baseEnv(), answersToEnv(answers));
     await writeFile(envPath(), next.endsWith("\n") ? next : next + "\n");
     console.log(`\n✓ Wrote ${envPath()}`);
+
+    // Offer the athlete-profile intake (stable context — body, kit, medical, availability, races).
+    // It's a separate file (profile.local.yaml, gitignored), so it's optional and skippable here.
+    if (/^y/i.test(await ask("\n5) Set up your athlete profile now (body, kit, medical, availability, races)? [Y/n]: ", "y"))) {
+      rl.close();
+      await initProfile();
+    }
 
     console.log("\nNext steps:");
     console.log("  1. Connect AI Endurance (one-time browser login):  npm run auth:aie");
