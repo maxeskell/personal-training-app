@@ -270,7 +270,10 @@ npm run autoupdate:uninstall                                                # tu
 ```
 
 It's safe: **fast-forward only**, and it skips the pull if you have uncommitted edits, so it can't clobber
-anything. The dashboard's **🔄 Sync** button is unrelated — it re-pulls your *training data*, not code.
+anything. It tracks a fixed **deploy branch** (`COACH_DEPLOY_BRANCH`, default `main`) rather than whatever
+branch you happen to be on — so if you ever end up parked on an old feature branch, the next update
+switches you back to `main` and pulls (on a clean tree) instead of silently sitting on stale code. The
+dashboard's **🔄 Sync** button is unrelated — it re-pulls your *training data*, not code.
 
 > Note: on the LAN the dashboard is gated only by the per-install pairing token (there is no separate
 > per-user login) — fine on a trusted home network. Don't expose port 3000 to the public internet; for
