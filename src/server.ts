@@ -6,7 +6,7 @@ import { AieClient } from "./mcp/aieClient.js";
 import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
 import { assembleState } from "./state/assemble.js";
-import { DecisionLog, suppressedInsightKeys, type InsightReaction } from "./state/decisionLog.js";
+import { DecisionLog, suppressedInsightKeys, reactionFromLabel } from "./state/decisionLog.js";
 import { InsightLog } from "./state/insightLog.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard } from "./coach/dashboard.js";
@@ -286,11 +286,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     // (hides ~2wk), clear→neutral. Canonical names are still accepted for back-compat.
     if (url.pathname === "/insight-feedback" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)) || "{}") as { key?: string; reaction?: string; summary?: string };
-      const ALIAS: Record<string, InsightReaction> = {
-        like: "agree", dislike: "disagree", snooze: "ignore", clear: "clear",
-        agree: "agree", disagree: "disagree", ignore: "ignore",
-      };
-      const reaction = ALIAS[String(body.reaction)];
+      const reaction = reactionFromLabel(String(body.reaction));
       if (!body.key || !reaction) {
         res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "need key + reaction" }));
         return;

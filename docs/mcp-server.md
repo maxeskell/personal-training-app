@@ -181,7 +181,16 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
   default; `fresh=true` re-syncs first.
 - **`insights`** — run the insight engine over your history (CTL/ATL/TSB & ramp, EF, durability,
   run-load, autocorr-aware correlations, change-points, taper target, validated monitoring rules)
-  and return the computed metrics + top surfaced findings.
+  and return the computed metrics + top surfaced findings. Each top finding is annotated with its
+  **`key`, age (NEW / Nd old) and your saved reaction**, so you know what's fresh and can react by key.
+- **`react_to_insight`** `{ key, reaction: like|dislike|snooze|clear, summary? }` — record your reaction
+  to a surfaced insight, full parity with the dashboard buttons (like/dislike persist and are reversible,
+  dislike stays visible but down-ranks, snooze hides ~2 weeks, clear removes a prior opinion). It writes
+  only to the **local decision log** — not AI Endurance — so it stays available even on the **read-only
+  Cowork surface**.
+- **`listening`** — your engagement model: which insight families you act on vs dismiss, gated-proposal
+  accept/decline, what's snoozed, findings that recurred after a snooze, plan **adherence** (done vs
+  planned, deferring to AI Endurance) and **plan changes** (added/moved/dropped). Deterministic, no LLM.
 - **`list_reports`** / **`read_report`** `{ name }` — list and read the dated markdown reports under
   `reports/`. `read_report` only accepts a bare `*.md` file name (path-traversal guarded).
 - **`decisions`** `{ filter?: "all" | "pending" }` — the decision-log audit trail; `pending` shows
