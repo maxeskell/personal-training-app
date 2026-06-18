@@ -7,6 +7,11 @@ hard-coded: change your goals and the coaching follows on the next sync, with th
 windows, don't-stack-peaks, a B-race that should be a capped tempo, the injury window when a run goal sits
 off a triathlon base) **derived from whatever races you've set**.
 
+> **Not medical advice.** This is a personal training tool, not a medical professional. Anything estimated
+> is labelled a MODEL. For pain, injury, illness or any acute symptom (chest pain, breathlessness,
+> dizziness, fainting, numbness, bleeding) the answer is to stop and see a qualified professional. It will
+> never help with under-fuelling or weight-loss targets — fuel to train.
+
 ## See it in 30 seconds — no account, no key
 
 ```bash
@@ -26,14 +31,14 @@ anything of your own.
 | | |
 |---|---|
 | **Node.js 20+** | `node --version` (from https://nodejs.org). |
-| **A data source** | the spine the coach reads your plan, races and metrics from. **AI Endurance** is the default and most capable (https://aiendurance.com); **intervals.icu** is also supported (experimental, a thinner coach) — set `COACH_SOURCE=intervals`, see [docs/data-sources.md](docs/data-sources.md). |
+| **A data source** | the spine the coach reads your plan, races and metrics from. **AI Endurance** is the default and most capable (https://aiendurance.com, a **paid** platform); **intervals.icu** is also supported (experimental, a thinner coach) — set `COACH_SOURCE=intervals`, see [docs/data-sources.md](docs/data-sources.md). **TrainingPeaks** has no personal API, but it syncs into intervals.icu, so TP users go via the intervals source. |
 | **An Anthropic API key** | only for the **AI write-ups** (readiness / weekly / race / ask / …). The **dashboard, zones and health checks run with no key.** Pay-as-you-go and usually pennies a day — `npm run cost` shows your spend. https://console.anthropic.com |
 | **Optional, all degradable** | Garmin device data, free Open-Meteo weather, a local LLM for cheap routing. Each is best-effort: if it's absent the matching card is simply omitted, never an error. |
 
 **Setting it up:** the easy path is to point an AI assistant (Claude Code or similar) at the repo and say
 *"follow SETUP.md"* — it runs the steps and stops to ask you for your accounts, units and training base.
-By hand works too — [SETUP.md](./SETUP.md) is written for both. *(A one-command `npm run setup` wizard is
-on the roadmap.)* Developed on macOS; the CLI + dashboard also run on Linux (only desktop notifications and
+By hand works too — [SETUP.md](./SETUP.md) is written for both, and `npm run setup` is a guided wizard
+that writes your `.env`. Developed on macOS; the CLI + dashboard also run on Linux (only desktop notifications and
 the auto-start installers are macOS-specific, and they no-op elsewhere).
 
 ## Everyday commands
@@ -59,9 +64,13 @@ gated**: `propose` only logs a change + its trade-off; nothing is written to AI 
 explicitly `confirm`.
 
 **Deterministic safety guardrails (not just prompt instructions):**
-- **Fuel to train.** Restriction / deficit / "race weight" / "cut" / weight-target phrasings are screened
-  in code *before* the model and redirected to adequate-fuelling targets. A **rapid or unexplained weight
-  drop is flagged as a health concern on its own** (never gated behind other signals, never framed as a win).
+- **Pre-LLM safety screen.** Free-text questions are screened in code *before* the model, in three classes:
+  **acute medical symptoms** (chest pain, breathlessness, fainting, numbness, bleeding → stop and see a
+  professional), **disordered-eating cues** (purging, skipping meals, food guilt → a non-judgmental support
+  referral), and **restriction / "race weight" / deficit / weight-target** phrasings (→ adequate-fuelling
+  targets). A standing clinical-boundary clause backs this inside every LLM prompt. A **rapid or unexplained
+  weight drop is flagged as a health concern on its own** (never gated behind other signals, never a win),
+  and that wellbeing escalation now shows on the **dashboard**, not just the CLI/MCP output.
 - **Trend over single point.** The green/amber/red call applies a code-level floor: a `red` is downgraded
   to `amber` unless **two** interpretable signals are out of line *or* there's a multi-day deterioration —
   so one bad night can't flip the call. The morning snapshot also carries your weight as a trend-only line.
@@ -358,12 +367,12 @@ runs on your Mac, so it also sees the Garmin/archive/insight data a remote AI En
 can't. There are **two transports**, because clients differ:
 
 ```bash
-cd /Users/maxeskell/personal-training-app && npm run mcp        # stdio — Claude Desktop / Claude Code (local, no port)
-cd /Users/maxeskell/personal-training-app && npm run mcp:http   # HTTP  — Claude Cowork (needs a remote URL; bind localhost + tunnel)
+cd /path/to/personal-training-app && npm run mcp        # stdio — Claude Desktop / Claude Code (local, no port)
+cd /path/to/personal-training-app && npm run mcp:http   # HTTP  — Claude Cowork (needs a remote URL; bind localhost + tunnel)
 ```
 
 - **Claude Desktop / Code (stdio, recommended):** add it to `claude_desktop_config.json` as
-  `command: npm`, `args: ["run","mcp"]`, `cwd: /Users/maxeskell/personal-training-app`. No port, no exposure.
+  `command: npm`, `args: ["run","mcp"]`, `cwd: /path/to/personal-training-app`. No port, no exposure.
 - **Claude Cowork (HTTP + OAuth):** Cowork's sandboxed cloud VM can't reach a local process and
   authenticates connectors via **OAuth, not a static token**. Open an **authenticated HTTPS tunnel**
   (cloudflared / Tailscale Funnel) to `127.0.0.1:8787`, then run the server in OAuth mode pointed at the
@@ -391,8 +400,8 @@ re-auth* — the exact ambiguity that otherwise looks like "the whole connector 
 expired token:
 
 ```bash
-cd /Users/maxeskell/personal-training-app && npm run health-remote                       # one-shot probe of COACH_MCP_PUBLIC_URL
-cd /Users/maxeskell/personal-training-app && npm run healthcheck:install -- https://<tunnel>   # run it every 20 min at login
+cd /path/to/personal-training-app && npm run health-remote                       # one-shot probe of COACH_MCP_PUBLIC_URL
+cd /path/to/personal-training-app && npm run healthcheck:install -- https://<tunnel>   # run it every 20 min at login
 ```
 
 **Re-auth is now explicit and never hangs.** Only `npm run auth:aie` opens the browser to (re)authorize

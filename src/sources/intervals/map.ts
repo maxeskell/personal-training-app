@@ -69,15 +69,12 @@ export function mapIntervals(data: IntervalsRaw, opts: { date: string; assembled
   const wellness = [...(data.wellness ?? [])].sort((a, b) => dateOf(a, "id", "date").localeCompare(dateOf(b, "id", "date")));
   const events = data.events ?? [];
 
-  // ---- Activities → AIE-shaped raw (per sport) + typed actualActivities + a daily load map ----
+  // ---- Activities → AIE-shaped raw (per sport) + typed actualActivities ----
   const bySport: Record<Sport, Rec[]> = { Run: [], Ride: [], Swim: [] };
   const actual: ActualActivity[] = [];
-  const loadByDate = new Map<string, number>();
   for (const a of activities) {
     const sport = sportOf(str(pick(a, "type", "sport")));
     const date = dateOf(a, "start_date_local", "start_date", "date");
-    const load = num(pick(a, "icu_training_load", "training_load", "trainingLoad")) ?? 0;
-    if (date) loadByDate.set(date, (loadByDate.get(date) ?? 0) + load);
     if (!sport || !date) continue;
     bySport[sport].push(toAieActivity(a));
     const movingSec = num(pick(a, "moving_time", "movingTime", "elapsed_time"));
@@ -95,13 +92,17 @@ export function mapIntervals(data: IntervalsRaw, opts: { date: string; assembled
   raw.getSwimmingActivity = { activities: bySport.Swim };
   state.actualActivities = { value: actual.sort((a, b) => b.date.localeCompare(a.date)), source: SRC };
 
-  // ---- Wellness → getRecoveryModel.data series (date/ESS/rMSSD/RHR) + typed recovery/hrv/rhr/weight/sleep/vo2max ----
+  // ---- Wellness → getRecoveryModel.data series (date/rMSSD/RHR) + typed recovery/hrv/rhr/weight/sleep/vo2max ----
   if (wellness.length) {
     const dates = wellness.map((w) => dateOf(w, "id", "date"));
+    // GATED: deliberately NO external_stress_score series. intervals.icu's icu_training_load is a
+    // different load metric than AI Endurance's ESS, and the per-day activity↔wellness alignment is
+    // unverified against the live API (a day with activities but no load field would silently look like
+    // rest, dragging CTL down). Feeding it through the EWMA would emit a plausible-but-wrong CTL/ATL/TSB,
+    // so the load model degrades to "—" on this source until verified against real data. (Honest models.)
     raw.getRecoveryModel = {
       data: {
         date: dates,
-        external_stress_score: dates.map((d) => +(loadByDate.get(d) ?? 0)),
         rMSSD: wellness.map((w) => num(pick(w, "hrv", "rMSSD", "hrvRMSSD")) ?? null),
         resting_heart_rate: wellness.map((w) => num(pick(w, "restingHR", "resting_hr", "restingHeartRate")) ?? null),
       },
@@ -119,11 +120,16 @@ export function mapIntervals(data: IntervalsRaw, opts: { date: string; assembled
     if (weight != null) state.weightKg = { value: weight, source: SRC, note: "wellness weight (trend only, not a daily target)" };
     if (sleepSecs != null || sleepScore != null) state.sleep = { value: { hours: sleepSecs != null ? +(sleepSecs / 3600).toFixed(1) : undefined, score: sleepScore }, source: SRC };
     if (vo2 != null) state.vo2max = { value: vo2, source: SRC, note: "intervals.icu estimate" };
-
-    // FTP, if intervals carried it on the latest activity (athlete-settings endpoint not pulled here).
-    const ftp = num(pick(activities[0] ?? {}, "icu_ftp", "ftp"));
-    if (ftp != null) state.thresholds = { value: { bikeFtpW: ftp }, source: SRC, note: "FTP from intervals.icu" };
   }
+
+  // FTP from the MOST RECENT activity carrying it (athlete-settings endpoint not pulled here). Sorted by
+  // date desc and read outside the wellness block, so a stale/old ride can't set power zones and FTP is
+  // still found when there are activities but no wellness rows.
+  const ftp = [...activities]
+    .sort((a, b) => dateOf(b, "start_date_local", "start_date", "date").localeCompare(dateOf(a, "start_date_local", "start_date", "date")))
+    .map((a) => num(pick(a, "icu_ftp", "ftp")))
+    .find((v) => v != null);
+  if (ftp != null) state.thresholds = { value: { bikeFtpW: ftp }, source: SRC, note: "FTP from intervals.icu (latest activity carrying it)" };
 
   // ---- Events → planned workouts (getPlannedWorkouts + typed) and races (getRaceGoalEvent) ----
   const planned: PlannedSession[] = [];
@@ -138,7 +144,10 @@ export function mapIntervals(data: IntervalsRaw, opts: { date: string; assembled
       continue;
     }
     if (category.includes("NOTE")) continue;
-    const durSec = num(pick(e, "moving_time", "icu_training_load_target", "duration"));
+    // Only read fields that are unambiguously SECONDS. NEVER fall back to icu_training_load_target —
+    // that's a load score (TSS-like), not time; dividing it by 60 would render a confidently-wrong
+    // duration (e.g. a load target of 90 → "1 min"). Absent → leave undefined and degrade.
+    const durSec = num(pick(e, "moving_time", "duration"));
     planned.push({
       workoutId: String(pick(e, "id") ?? ""),
       date,

@@ -12,6 +12,8 @@
  * target plan (MODEL — trend over absolute), not a guarantee.
  */
 
+import { corrWithCi, slope } from "./stats.js";
+
 export type DurabilityState = "improving" | "slipping" | "unknown";
 
 export interface Segment {
@@ -64,12 +66,37 @@ export function projectRaceDayRange(
           : "No improving trend to project yet, so best case = your current level. The range opens up once your race predictions start trending faster.",
     };
   }
-  const projectedFrac = Math.max(fracImprovePerDay * daysToRace, -MAX_PROJECTED_GAIN); // negative; capped
+  // Diminishing returns: fitness gains are concave and a build ends in a taper, so a recent sec/day rate
+  // can't be carried LINEARLY to race day (the textbook over-promise). Saturate toward the cap instead —
+  // ≈ linear for small gains, asymptotic to (never reaching) MAX_PROJECTED_GAIN for long horizons.
+  const linearFrac = Math.abs(fracImprovePerDay) * daysToRace; // ≥0, the naive "rate holds" gain
+  const projectedFrac = MAX_PROJECTED_GAIN * (1 - Math.exp(-linearFrac / MAX_PROJECTED_GAIN));
   return {
     worstSec,
-    bestSec: Math.round(predictedSec * (1 + projectedFrac)),
-    rangeBasis: `Best case carries your recent rate of improvement out to race day (capped at ${Math.round(MAX_PROJECTED_GAIN * 100)}%), assuming you complete the planned build, stay healthy, adapt well and taper. Worst case is racing at today's fitness.`,
+    bestSec: Math.round(predictedSec * (1 - projectedFrac)),
+    rangeBasis: `Best case carries your recent rate of improvement toward race day with diminishing returns (gains are concave and a build ends in a taper), capped near ${Math.round(MAX_PROJECTED_GAIN * 100)}%, and only when that trend is statistically reliable. It assumes you complete the planned build, stay healthy, adapt well and taper. Worst case is racing at today's fitness.`,
   };
+}
+
+/**
+ * Reliability-gated improvement rate (fraction of finish-time per day; negative = getting faster) from the
+ * athlete's own dated race-prediction history. Returns null UNLESS the downward trend is statistically
+ * distinguishable from noise — an autocorrelation-aware Fisher-z CI (corrWithCi) that excludes 0 — so we
+ * never project a best-case upside off a handful of noisy points. `nearestPredicted` scales the OLS slope
+ * (sec/day) into the fraction projectRaceDayRange consumes.
+ */
+export function reliableImprovementPerDay(
+  trajectory: Array<{ date: string; v: number }>,
+  nearestPredicted: number | undefined,
+): number | null {
+  if (!nearestPredicted || trajectory.length < 6) return null;
+  const epoch = new Date(`${trajectory[0].date}T00:00:00Z`).getTime();
+  const xs = trajectory.map((p) => (new Date(`${p.date}T00:00:00Z`).getTime() - epoch) / 86_400_000);
+  const ys = trajectory.map((p) => p.v);
+  const c = corrWithCi(xs, ys);
+  if (!c || !c.significant || c.r >= 0) return null; // need a RELIABLE, decreasing (faster) trend
+  const b = slope(xs, ys); // sec/day
+  return b == null ? null : b / nearestPredicted;
 }
 
 function paceClock(secPerKm: number): string {

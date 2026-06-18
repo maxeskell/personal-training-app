@@ -54,7 +54,8 @@ LLM coaching narratives → CLI / dashboard`. The statistical layer runs without
 - **Requires an AI Endurance account** (the data spine) and an Anthropic API key for coaching flows.
 - **Single athlete**; no multi-user or hosted offering.
 - **Garmin is an unofficial client** — degradable and occasionally fragile; tokens expire ~6-monthly.
-- **No demo/no-account mode** today (intended use is your own accounts).
+- **Live flows need your own accounts** (AI Endurance/Garmin); a no-account **demo** mode
+  (`npm run demo`) renders the dashboard on bundled sample data for evaluation.
 - **macOS-oriented extras** (desktop notifications, auto-start installers); the core CLI + dashboard
   run on Linux, with printed cron/systemd equivalents.
 
@@ -67,10 +68,10 @@ LLM coaching narratives → CLI / dashboard`. The statistical layer runs without
 | Garmin client breaks / rate-limits | Medium | Low | Optional + degradable; timeouts + wall-clock budget; coach falls back to AI Endurance |
 | AI Endurance API/schema drift | Low | High | Provenanced fields degrade to `null` not crash; `doctor` flags tool drift |
 | Runaway LLM spend | Low | Medium | Per-flow effort tuning, prompt caching, local cost log + projection |
-| Thin test coverage on parser/server/write-gate | Medium | Medium | Tracked in `improvement-plan.md`; standing "invert the test pyramid" priority |
+| Thin test coverage on parser/server/write-gate | Medium | Medium | Standing "invert the test pyramid" priority — fix coverage before adding surface area there |
 
 ## Roadmap
 
-Sequenced technical priorities live in [`improvement-plan.md`](./improvement-plan.md) (test inversion
-first); the deeper analytics direction is in [`specs/Insight_Engine_Spec.md`](./specs/Insight_Engine_Spec.md).
-The known engineering gaps are catalogued honestly in [`engineering-review.md`](./engineering-review.md).
+The deeper analytics direction is in [`specs/Insight_Engine_Spec.md`](./specs/Insight_Engine_Spec.md).
+The standing engineering priority is inverting the test pyramid (thicker coverage on the `.FIT`
+parser, `server.ts` routes and the full `WriteGate` path) before widening surface area there.

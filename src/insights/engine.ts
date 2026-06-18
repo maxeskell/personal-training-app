@@ -17,7 +17,7 @@ import {
   type MonotonyStrain,
   type TID,
 } from "./metrics.js";
-import { estimateRunSplits, estimateTriSplits, projectRaceDayRange, type RaceSplitPlan, type DurabilityState, type TriRaceType, type TriPerformance } from "./splits.js";
+import { estimateRunSplits, estimateTriSplits, projectRaceDayRange, reliableImprovementPerDay, type RaceSplitPlan, type DurabilityState, type TriRaceType, type TriPerformance } from "./splits.js";
 import { analyseRecoverySeries, sleepVsNextDayLoad, type Correlation, type Anomaly } from "./correlations.js";
 import { buildMonitoringRuleSet, monitoringFinding, type MonitoringRuleSet, type MonitoringInput } from "./monitoring.js";
 import { changePointsOf, changePointFindings, type SeriesChangePoints } from "./changepoint.js";
@@ -512,9 +512,10 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
     .map((s) => ({ date: s.date, p: predictionsVsGoals(s)[0] }))
     .filter((x): x is { date: string; p: PredictionVsGoal } => x.p?.predictedSec != null)
     .map((x) => ({ date: x.date, v: x.p.predictedSec! }));
-  const predSlope = slopePerDay(predTrajectory); // sec/day for the nearest race (negative = getting faster)
   const nearestPredicted = predictions.find((p) => p.predictedSec != null)?.predictedSec;
-  const fracImprovePerDay = predSlope != null && nearestPredicted ? predSlope / nearestPredicted : null;
+  // Reliability-gated: only project an upside when the prediction trajectory is trending faster with a
+  // statistically distinguishable (autocorrelation-aware) signal — never off a few noisy points.
+  const fracImprovePerDay = reliableImprovementPerDay(predTrajectory, nearestPredicted);
   for (const plan of splits) {
     const dTo = plan.date ? daysTo(state.date, plan.date) : 0;
     const r = projectRaceDayRange(plan.predictedSec, dTo, fracImprovePerDay);

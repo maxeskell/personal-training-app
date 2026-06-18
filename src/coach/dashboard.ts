@@ -8,6 +8,7 @@ import { coachHeadline, tsbBand, rampBand, type Tone } from "../insights/headlin
 import { assembleSession } from "./session.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
 import { weekday, type WeekWeather } from "../weather/assess.js";
+import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
 
 /**
  * Glanceable local dashboard (Path-B need #2): a single self-contained HTML file with
@@ -505,6 +506,23 @@ function chip(label: string, value: string, tone: Tone = "neutral"): string {
 }
 
 /**
+ * Wellbeing escalation banner (#P1-3): the deterministic assessHealthRisk() verdict surfaced on the
+ * dashboard — the daily surface — not just in the CLI/MCP readiness output. Shown when ≥2 risk signals
+ * co-occur (or a standalone rapid weight drop). Suppressed in Share mode (it carries personal health
+ * detail). Renders nothing when level === "none".
+ */
+function renderHealthBanner(risk: HealthRiskAssessment | null): string {
+  if (!risk || risk.level === "none" || !risk.message) return "";
+  const tone = risk.level === "raise" ? "bad" : "warn";
+  const title = risk.level === "raise" ? "Health check — worth easing off" : "Health signals worth watching";
+  return `<div class="card" style="border-left:5px solid ${TONE_COLOR[tone]};background:#fbf6f0">
+    <h2 style="margin-top:0">⚠️ ${escapeHtml(title)}</h2>
+    <p style="font-size:14px;color:#333;margin:6px 0">${escapeHtml(risk.message)}</p>
+    <p class="k" style="font-size:12px;margin:4px 0 0">Not a diagnosis — a deterministic check on your own recent data. For anything persistent or worrying, see a doctor or sports physician.</p>
+  </div>`;
+}
+
+/**
  * The "Today" decision header (#1) — leads with one synthesised call + the single action, corroborating
  * drivers, an always-visible health strip (#8), the LLM readiness narrative, and the key metrics.
  */
@@ -548,6 +566,69 @@ function renderHeader(today: AthleteState, insights: InsightReport | undefined, 
       <div><div class="k">Cardio rec.</div><div class="v">${fmt(r?.cardioRecovery)}</div></div>
     </div>
   </div>`;
+}
+
+/** Weekday/month labels for the readable "last updated" line. */
+const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "Wed 18 Jun 2026, 14:03" (withTime) or "Wed 18 Jun 2026" (date only). Echoes the input if unparseable. */
+function fmtWhen(iso: string, withTime: boolean): string {
+  const d = new Date(iso.length <= 10 ? `${iso}T00:00:00` : iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  const date = `${WD[d.getDay()]} ${d.getDate()} ${MO[d.getMonth()]} ${d.getFullYear()}`;
+  return withTime ? `${date}, ${p2(d.getHours())}:${p2(d.getMinutes())}` : date;
+}
+
+/** Human "time since": "2d 3h ago" / "3h 41m ago" / "4m ago" / "just now". `suffix` lets callers reword. */
+function fmtSince(ms: number, suffix = " ago"): string {
+  if (ms < 0) return "in the future";
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return `just now`;
+  const h = Math.floor(min / 60);
+  const d = Math.floor(h / 24);
+  if (d >= 1) return `${d}d ${h % 24}h${suffix}`;
+  if (h >= 1) return `${h}h ${min % 60}m${suffix}`;
+  return `${min}m${suffix}`;
+}
+
+/**
+ * The most recent fully-ingested workout: prefer a raw activity timestamp (may carry a start time),
+ * else fall back to the typed actualActivities date. Returns the datetime/date string + whether it
+ * carried a time (AI Endurance exposes date only; Garmin/.FIT can carry a time).
+ */
+function latestWorkout(today: AthleteState): { iso: string; hasTime: boolean } | null {
+  const raw = today.raw ?? {};
+  const candidates: string[] = [];
+  for (const key of ["getRunningActivity", "getCyclingActivity", "getSwimmingActivity"]) {
+    const arr = (raw[key] as { activities?: Record<string, unknown>[] } | undefined)?.activities ?? [];
+    for (const a of arr) {
+      const s = String(a.activity_date_local ?? a.activity_date ?? a.start_date_local ?? "").trim();
+      if (s) candidates.push(s);
+    }
+  }
+  for (const a of today.actualActivities.value ?? []) if (a.date) candidates.push(a.date);
+  if (!candidates.length) return null;
+  const maxDay = candidates.reduce((m, s) => (s.slice(0, 10) > m ? s.slice(0, 10) : m), "0000-00-00");
+  const withTime = candidates.find((s) => s.slice(0, 10) === maxDay && /\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(s));
+  return withTime ? { iso: withTime, hasTime: true } : { iso: maxDay, hasTime: false };
+}
+
+/** The readable freshness line shown under the title (replaces the raw ISO "as of …"). */
+function freshnessLine(today: AthleteState): string {
+  const updated = new Date(today.assembledAt);
+  if (Number.isNaN(updated.getTime())) return `as of ${escapeHtml(today.assembledAt)}`;
+  const now = Date.now();
+  let line = `Data last updated <b>${escapeHtml(fmtWhen(today.assembledAt, true))}</b> · ${escapeHtml(fmtSince(now - updated.getTime()))}`;
+  const lw = latestWorkout(today);
+  if (lw) {
+    const wMs = new Date(lw.iso.length <= 10 ? `${lw.iso}T12:00:00` : lw.iso).getTime();
+    const gap = updated.getTime() - wMs;
+    const gapNote = gap > 30 * 60_000 ? ` (${escapeHtml(fmtSince(gap, " before this update"))})` : "";
+    line += `<br>Latest ingested workout <b>${escapeHtml(fmtWhen(lw.iso, lw.hasTime))}</b> · ${escapeHtml(fmtSince(now - wMs))}${gapNote}`;
+  }
+  return line;
 }
 
 export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, autoSyncStaleMin, share }: DashboardInput): string {
@@ -652,7 +733,7 @@ code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 }
 </style></head><body>
 <h1>Endurance Coach</h1>
-<div class="sub">as of ${today.assembledAt}</div>
+<div class="sub">${freshnessLine(today)}</div>
 ${
   share
     ? `<div class="card sharebanner" style="background:#eef4ff;border:1px solid #cfe0ff;color:#244">🔒 <b>Share view</b> — real race names, exact dates and your location/weather are hidden, the analysis is intact. <a href="?">Exit share view</a></div>`
@@ -673,6 +754,7 @@ async function sync(note){
 function autoSync(min){ sync('Data is '+min+' min old — auto-refreshing:'); }
 </script>
 
+${renderHealthBanner(share ? null : assessHealthRisk(window))}
 ${insights ? renderHeader(today, insights, decisions, garminDays) : ""}
 ${insights ? renderInsightsBox(insights, reactions, firstSeen) : ""}
 ${renderLastSession(window, insights, fitSummaries, canFetchFit)}
@@ -777,6 +859,10 @@ ${insights ? renderSplits(insights, share) : ""}
 </div>
 
 ${renderCost(costRecords)}
+<footer style="max-width:880px;margin:24px auto 8px;padding:0 16px;color:#aaa;font-size:12px;line-height:1.5">
+  Not medical advice. This is a personal training tool, not a medical professional — estimates are labelled MODEL.
+  For pain, injury, illness or any acute symptom, stop and consult a doctor or sports physician.
+</footer>
 ${autoSyncStaleMin != null ? `<script>autoSync(${Math.round(autoSyncStaleMin)})</script>` : ""}
 </body></html>`;
 }
