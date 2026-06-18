@@ -16,6 +16,7 @@ import { ArchiveStore } from "./archive/store.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
 import { answerQuestion } from "./coach/ask.js";
+import { loadProfileSafe } from "./profile/load.js";
 import { runSessionFeedback, assembleSession } from "./coach/session.js";
 import { loadSessionDecays, fitStreamsDir } from "./insights/fit.js";
 import { readCostRecords } from "./llm/costLog.js";
@@ -235,6 +236,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer: "No data assembled yet — hit ↻ refresh first." }));
         return;
       }
+      // Best-effort: attach the stable profile so the dashboard Ask box has the same medical/biomechanical
+      // context as CLI/MCP ask (which build state via buildTodayState). In-memory only; degrades to
+      // no-profile when absent/invalid, and the store strips it so it never reaches data/state/*.json.
+      const loaded = await loadProfileSafe();
+      if (loaded) state.profile = loaded.profile;
       const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt(), "ask", "medium"), question, state, await loadArchive());
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer }));
       return;
