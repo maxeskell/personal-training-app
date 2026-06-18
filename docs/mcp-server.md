@@ -16,6 +16,11 @@ the answers Claude gives match the CLI and dashboard exactly.
 Pick stdio if Desktop/Code is fine — it's zero-exposure and the simplest. Use HTTP only when it has
 to be **Cowork**, and only behind the bearer token + tunnel described below.
 
+> **You do not need a tunnel, Tailscale or cloudflared** unless you specifically want **Claude Cowork**
+> (Anthropic's cloud) to reach your Mac. The CLI, the dashboard, and Claude Desktop/Code all run fully
+> locally with no tunnel. Tailscale/cloudflared appear below *only* to give Cowork's cloud VM a stable
+> public HTTPS URL to your local server — skip sections B and C entirely if you're not using Cowork.
+
 > This is the "full local dataset" route. A remote AI Endurance connector wired straight into Claude
 > only sees what AI Endurance exposes; this server runs on your Mac, so it *also* reaches your Garmin
 > gap-metrics, the backfilled archive, and the locally-computed insight engine.

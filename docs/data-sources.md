@@ -54,6 +54,16 @@ the gated AIE write path (propose → confirm) isn't available on this source.
 > what got populated, and if a field is empty or wrong, the candidate key names are in
 > `src/sources/intervals/map.ts` (a quick fix).
 
+## TrainingPeaks / Strava / others?
+
+**TrainingPeaks is not a direct source, and can't easily become one:** TrainingPeaks has **no self-serve
+personal API** — access is partner-gated (a commercial agreement), so there's no API key a single athlete
+can generate the way intervals.icu hands you one. The practical route is **TrainingPeaks → intervals.icu**:
+intervals.icu can pull your TrainingPeaks (and Garmin/Strava) data in, and the coach reads intervals.icu
+(`COACH_SOURCE=intervals`). So a TrainingPeaks user points intervals.icu at their TP account and uses the
+intervals source here. If you ever obtain TP partner-API access, the `DataSource` seam below is where a
+native adapter would slot in.
+
 ## Adding another source
 
 1. Implement `DataSource` in `src/sources/<name>Source.ts` — map your API into `AthleteState`. Fields a

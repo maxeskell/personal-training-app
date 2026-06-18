@@ -39,6 +39,24 @@ A working local AI endurance coach: a CLI plus a local web dashboard you can ope
 **live** from your own AI Endurance account (and optionally your Garmin). Setup is ~15 minutes, most of
 it the two one-time browser logins.
 
+## How the connections work (so the auth steps make sense)
+
+Three external connections, each with its own login and token store — all kept **outside the repo**:
+
+- **AI Endurance (required — the data spine).** Your plan, races, recovery model and thresholds. You log
+  in once via browser (`npm run auth:aie`, Step 4) and the OAuth tokens cache in `~/.endurance-coach`. The
+  coach *reads* this through AI Endurance's own connector — you don't host anything for it.
+- **Anthropic API (required for the AI write-ups).** A key in `.env` (`ANTHROPIC_API_KEY`), used for the
+  readiness/weekly/race/ask prose. The deterministic dashboard, zones and health checks need no key.
+- **Garmin (optional).** Device data (HRV, training status, raw `.FIT`) via an *unofficial community* MCP;
+  login in Step 5a, tokens in `~/.garminconnect`.
+
+> **This is not the same as the coach's *own* MCP server.** Separately and optionally, the coach can
+> *expose itself* as an MCP server so Claude (Desktop / Code / Cowork) can query your data in chat — that's
+> [docs/mcp-server.md](docs/mcp-server.md), and it is **not needed** for the CLI or the dashboard. "AI
+> Endurance MCP" = the spine the coach reads; "the coach's MCP server" = an optional way to ask Claude
+> about your data. Different things.
+
 ## Step 0 — Prerequisites (🧑 confirm you have these)
 
 | Need | Required? | How to check / get it |
@@ -134,6 +152,13 @@ uvx --python 3.12 --from git+https://github.com/Taxuspt/garmin_mcp garmin-mcp-au
 Then set `GARMIN_ENABLED=true` in `.env` and re-run `npm run state:today`. Garmin is an *unofficial*
 client — treat any flakiness as "degrade to AI Endurance," not an outage. Keep the pinned
 `GARMIN_MCP_ARGS` commit from `.env.example` so raw `.FIT` auto-download keeps working.
+
+> **Trust note (read before running).** `garmin-mcp-auth` runs a **third-party community tool**
+> (`Taxuspt/garmin_mcp`) that logs into Garmin Connect on your behalf and stores your Garmin **session
+> tokens** in `~/.garminconnect` (your credentials pass through it). Review the tool before running it,
+> and keep the **commit pin** in `GARMIN_MCP_ARGS` so you stay on a known version. Tokens last ~6 months;
+> when reads start failing, re-run this command. Garmin is entirely optional — skip it and the coach runs
+> on AI Endurance alone.
 
 ## Step 6 — (optional) always-on dashboard + hands-free updates
 

@@ -113,6 +113,19 @@ test("dashboard surfaces the wellbeing escalation banner; Share mode suppresses 
   assert.ok(!/Health check|Health signals worth/.test(shared), "health banner suppressed in Share view (personal health detail)");
 });
 
+test("freshness line is human-readable (no raw ISO), with time-since + latest-workout gap", () => {
+  const updated = new Date(Date.now() - (2 * 60 + 41) * 60_000); // 2h 41m ago
+  const s = emptyState("2026-06-18", updated.toISOString());
+  s.actualActivities = { value: [{ date: "2026-06-16", sport: "Run", durationMin: 60, distanceKm: 12 }], source: "ai-endurance" };
+  const html = renderDashboard({ window: [s], decisions: [] });
+  assert.match(html, /Data last updated <b>/); // readable label
+  assert.match(html, /\dh \d+m ago|\dm ago|just now/); // duration since update
+  assert.match(html, /Latest ingested workout <b>/); // workout line
+  assert.match(html, /before this update/); // the gap between update and the last workout
+  assert.ok(!html.includes(updated.toISOString()), "the raw ISO timestamp must not appear");
+  assert.ok(!html.includes("as of 2026"), "the old 'as of <ISO>' line is gone");
+});
+
 test("week table uses h:mm, missing swim distance shows — , planned session joins the last-session card", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
   s.actualActivities = {
