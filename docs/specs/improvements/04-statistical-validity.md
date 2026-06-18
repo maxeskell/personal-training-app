@@ -28,16 +28,18 @@ warns against. Plus a permanently-dead detector and timezone bucketing that can 
    it at source too).
 5. **Change-points unvalidated but called "genuine"** (`changepoint.ts:~116`): **Fix:** per-segment σ², and a
    permutation/penalty-sensitivity check; soften wording + lower confidence when not validated.
-6. **EF~CTL collinearity** (`efficiency.ts:62`): CTL trends with time, so the residual-trend "economy beyond fitness"
-   is ill-identified. **Fix:** joint `EF ~ CTL + t`, report the `t` coefficient with a CI; else state the limitation.
+6. **✅ DONE — EF~CTL collinearity** (`efficiency.ts`): replaced the residual-trend with a joint `EF ~ CTL + t`
+   multiple regression (`stats.ts:mlr2`); the `t` coefficient is reported with a 95% CI and an economy gain is
+   only claimed ("apparent") when the CI excludes 0, explicitly labelled not-heat-adjusted. n bar raised to ≥10.
 7. **Dead/duplicated fuelling** (`engine.ts:~285`): `analyseFuelling([], [], …)` can never fire; real series only
    reaches `garminTrends.fuellingFromGarmin`. **Fix:** remove the dead engine call (single source = garminTrends).
 8. **UTC week bucketing** (`metrics.ts:~68`, `runLoadRamp`): activities near local midnight land in the wrong ISO
    week → can flip a flag-severity run-load-spike. **Fix:** bucket by the captured local activity date everywhere.
 9. **Load model** (`metrics.ts:138`): CTL/ATL cold-start = `ess[0]` (early-window bias) and 0-padding ignores date
    gaps. **Fix:** short burn-in / trailing-mean seed; build on a dense date axis.
-10. **Monitoring small-n power** (`monitoring.ts`): `canHoldout` at 50 days → ~3–5 holdout events; permutation
-    near-powerless. **Fix:** raise the holdout-event floor; when below it, label "insufficient power" rather than a clean p.
+10. **✅ DONE — Monitoring small-n power** (`monitoring.ts`): raised the holdout floor to ≥8 outcomes / ≥4 fires
+    and Bonferroni-adjusted the permutation p for the best-of-N candidate selection (`selectedFrom`); below the
+    floor a rule stays exploratory (never reported as validated).
 11. **De-dup primitives**: 4+ copies of `mean`/`slope`/`zscore` with inconsistent null handling → consolidate in `stats.ts`.
 
 ## Acceptance criteria

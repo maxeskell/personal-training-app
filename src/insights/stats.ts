@@ -45,6 +45,45 @@ export function slope(xs: number[], ys: number[]): number | null {
   return sxx === 0 ? null : sxy / sxx;
 }
 
+export interface Mlr2 {
+  b1: number; // coefficient on x1
+  b2: number; // coefficient on x2
+  intercept: number;
+  seB1: number; // standard error of b1
+  seB2: number; // standard error of b2
+  n: number;
+}
+
+/**
+ * Ordinary least squares for TWO predictors + intercept: y ~ b1·x1 + b2·x2 + a, with each coefficient's
+ * standard error. Used for the efficiency confound (EF ~ CTL + time): the time coefficient is the EF↔time
+ * relationship holding fitness constant — the Frisch–Waugh–Lovell-correct "economy beyond fitness", and
+ * its SE is correctly inflated by CTL/time collinearity, so the CI honestly widens rather than over-claims.
+ * Returns null with too few points for a residual df. Closed form on the centred normal equations.
+ */
+export function mlr2(y: number[], x1: number[], x2: number[]): Mlr2 | null {
+  const n = Math.min(y.length, x1.length, x2.length);
+  if (n < 6) return null; // need n-3 ≥ 3 residual df for a usable SE
+  const my = mean(y.slice(0, n))!, m1 = mean(x1.slice(0, n))!, m2 = mean(x2.slice(0, n))!;
+  let s11 = 0, s22 = 0, s12 = 0, s1y = 0, s2y = 0;
+  for (let i = 0; i < n; i++) {
+    const a = x1[i] - m1, b = x2[i] - m2, c = y[i] - my;
+    s11 += a * a; s22 += b * b; s12 += a * b; s1y += a * c; s2y += b * c;
+  }
+  const det = s11 * s22 - s12 * s12;
+  if (det === 0) return null; // perfectly collinear predictors (or no spread)
+  const b1 = (s22 * s1y - s12 * s2y) / det;
+  const b2 = (s11 * s2y - s12 * s1y) / det;
+  const intercept = my - b1 * m1 - b2 * m2;
+  let sse = 0;
+  for (let i = 0; i < n; i++) {
+    const e = y[i] - (intercept + b1 * x1[i] + b2 * x2[i]);
+    sse += e * e;
+  }
+  const s2 = sse / (n - 3); // residual variance
+  return { b1, b2, intercept, seB1: Math.sqrt((s2 * s22) / det), seB2: Math.sqrt((s2 * s11) / det), n };
+}
+
 /** Lag-1 autocorrelation of a series — used to discount the effective sample size. */
 export function lag1Autocorr(xs: number[]): number {
   if (xs.length < 3) return 0;
