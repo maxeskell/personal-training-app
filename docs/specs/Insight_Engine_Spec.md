@@ -168,11 +168,19 @@ goes and the practical rate/token cost of bulk detail pulls.
 **Surfaced-insight history + engagement model (added 2026-06-17).** Whenever findings are surfaced
 (dashboard Top-insights card, MCP `insights` tool) the full surfaced set is appended to
 `data/insights/log.jsonl` (`state/insightLog.ts`) — de-duplicated so an unchanged surface isn't re-logged
-on every render. This is the "what was I shown" record that the decision log's 👍/👎/✕ feedback is read
-against. `npm run listening` / the MCP `listening` tool (`coach/listening.ts`) joins the two into a
-deterministic engagement model: per-family act-on-vs-dismiss rates, gated-proposal accept/decline, what's
-currently suppressed, and **findings dismissed that later recurred**. It also reads the trailing daily
-AthleteStates for two more dimensions:
+on every render. It also carries first-seen per finding key (`firstSeenByKey`) — the insight's age, shown on
+the dashboard as a NEW badge / "first seen" line. This is the "what was I shown" record that the decision
+log's reactions are read against. `npm run listening` / the MCP `listening` tool (`coach/listening.ts`)
+joins the two into a deterministic engagement model: per-family act-on-vs-dismiss rates, gated-proposal
+accept/decline, what's currently snoozed, and **findings snoozed that later recurred**. It also reads the
+trailing daily AthleteStates for two more dimensions:
+
+> **Reaction model (revised 2026-06-18).** The three buttons are **👍 Like / 👎 Dislike / 💤 Snooze**.
+> Like/dislike (accepted/declined) are persistent, **visible, reversible opinions** rendered back on reload;
+> a later `clear` (status `cleared`) drops the opinion. **Dislike no longer hides** — it only down-ranks via
+> the engagement weights, so it stays visible and changeable. **Snooze (deferred) is the sole hide action**:
+> `suppressedInsightKeys` now suppresses snooze only (~2-week cool-off), and the "came back" recurrence
+> tracks snooze only (a still-visible dislike can't "come back"). Like still lifts a family; dislike sinks it.
 
 - **Plan adherence** — done vs planned hours, overall and per zone, with a trend. This **defers to AI
   Endurance's `getPlanProgress`** (the §4 principle: trend the platform's own numbers, never run a

@@ -75,13 +75,18 @@ async function renderLatest(): Promise<string> {
   const latest = window[window.length - 1];
   const log = new DecisionLog();
   const decisions = await log.all();
-  const suppressed = suppressedInsightKeys(await log.insightReactions());
+  const reactionState = await log.insightReactions();
+  const suppressed = suppressedInsightKeys(reactionState);
+  const reactions = new Map([...reactionState].map(([k, v]) => [k, v.reaction] as const));
   const archive = await loadArchive();
   const engagement = await loadEngagementContext(window); // closes the loop: feedback/adherence reshape surfacing
+  const insightLog = new InsightLog();
+  // Read first-seen BEFORE recording this render, so a finding new to this render reads as brand new.
+  const firstSeen = await insightLog.firstSeenByKey();
   const insights = latest.raw ? buildInsights(latest, archive, { suppressed, history: window, engagement }) : undefined;
   // Record the full surfaced set (not just what gets a reaction) so the "what I listen to" model
   // (npm run listening) can read feedback against everything shown. Best-effort, de-duped, never blocks.
-  if (insights) await new InsightLog().recordSurfaced(insights.topFindings, "dashboard");
+  if (insights) await insightLog.recordSurfaced(insights.topFindings, "dashboard");
   // Week-ahead weather: cached (or short-timeout fetched) forecast joined to the upcoming plan.
   // Best-effort — undefined just means the card is absent, never an error page.
   let weather: WeekWeather | undefined;
@@ -100,6 +105,8 @@ async function renderLatest(): Promise<string> {
     window,
     decisions,
     insights,
+    reactions,
+    firstSeen,
     garminDays: archive?.garminDays,
     costRecords: await readCostRecords(),
     fitSummaries: archive?.fitSummaries,
@@ -274,11 +281,17 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       return json({ markdown: feedback?.markdown ?? "No recent activity found to analyse.", skippedNoFit: feedback?.skippedNoFit === true });
     }
 
-    // Insight feedback (the insights box posts agree/disagree/ignore here).
+    // Insight feedback (the insights box posts like/dislike/snooze/clear here). The UI vocabulary maps to
+    // the persisted reactions: like→agree, dislike→disagree (still shown, just down-ranked), snooze→ignore
+    // (hides ~2wk), clear→neutral. Canonical names are still accepted for back-compat.
     if (url.pathname === "/insight-feedback" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)) || "{}") as { key?: string; reaction?: string; summary?: string };
-      const reaction = body.reaction as InsightReaction;
-      if (!body.key || !["agree", "disagree", "ignore"].includes(reaction)) {
+      const ALIAS: Record<string, InsightReaction> = {
+        like: "agree", dislike: "disagree", snooze: "ignore", clear: "clear",
+        agree: "agree", disagree: "disagree", ignore: "ignore",
+      };
+      const reaction = ALIAS[String(body.reaction)];
+      if (!body.key || !reaction) {
         res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "need key + reaction" }));
         return;
       }

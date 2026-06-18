@@ -10,10 +10,14 @@ import { config } from "../config.js";
  * chat history. Stored as JSONL so it's append-cheap and inspectable.
  */
 
-export type DecisionStatus = "proposed" | "accepted" | "declined" | "deferred" | "executing" | "executed" | "note";
+export type DecisionStatus = "proposed" | "accepted" | "declined" | "deferred" | "executing" | "executed" | "note" | "cleared";
 
-/** How the athlete reacted to a surfaced insight (maps to accepted/declined/deferred). */
-export type InsightReaction = "agree" | "disagree" | "ignore";
+/**
+ * How the athlete reacted to a surfaced insight. like/dislike (agree/disagree) are persistent, visible
+ * OPINIONS — neither hides the insight; dislike just down-ranks it. snooze (ignore) is the hide action
+ * (~2-week cool-off). clear removes a previous opinion (back to neutral). Maps to the statuses below.
+ */
+export type InsightReaction = "agree" | "disagree" | "ignore" | "clear";
 
 export interface DecisionRecord {
   id: string;
@@ -34,6 +38,7 @@ const REACTION_STATUS: Record<InsightReaction, DecisionStatus> = {
   agree: "accepted",
   disagree: "declined",
   ignore: "deferred",
+  clear: "cleared",
 };
 
 export class DecisionLog {
@@ -124,14 +129,20 @@ export function latestInsightReactions(
   const out = new Map<string, { reaction: InsightReaction; timestamp: string }>();
   for (const r of records) {
     if (r.kind !== "insight-feedback" || !r.insightKey) continue;
+    if (r.status === "cleared") {
+      out.delete(r.insightKey); // a later "clear" drops the prior opinion (back to neutral)
+      continue;
+    }
     out.set(r.insightKey, { reaction: reactionOf(r.status), timestamp: r.timestamp });
   }
   return out;
 }
 
 /**
- * Keys the athlete has dismissed (disagree/ignore) within `withinDays` — suppressed from surfacing.
- * Agreeing re-activates a key (it's a real signal they want to keep seeing).
+ * Keys the athlete SNOOZED within `withinDays` — suppressed from surfacing. Only snooze (ignore) hides:
+ * like/dislike are visible opinions (dislike just down-ranks), so they never suppress. A snooze older than
+ * the window lapses and the insight can surface again (and re-snooze, which is how "it keeps coming back"
+ * is detected).
  */
 export function suppressedInsightKeys(
   reactions: Map<string, { reaction: InsightReaction; timestamp: string }>,
@@ -140,7 +151,7 @@ export function suppressedInsightKeys(
 ): Set<string> {
   const out = new Set<string>();
   for (const [key, { reaction, timestamp }] of reactions) {
-    if (reaction === "agree") continue;
+    if (reaction !== "ignore") continue; // only snooze hides; like/dislike stay visible
     const ageDays = (now.getTime() - new Date(timestamp).getTime()) / 86_400_000;
     if (ageDays <= withinDays) out.add(key);
   }

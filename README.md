@@ -161,13 +161,27 @@ important also feed a multiple-comparisons guard: the exploratory correlation sc
 (Benjamini–Hochberg, q=0.1), so a relationship is "confirmed" only if its CI clears 0 *and* it survives
 FDR — otherwise it's labelled exploratory.
 
-## Top insights box — your call (agree / disagree / ignore)
+## Top insights box — like, dislike, snooze (and how old each signal is)
 
-The dashboard leads with a **Top insights** card: the five strongest, non-dismissed findings ranked by
-signal strength, each with **👍 Agree / 👎 Disagree / ✕ Ignore**. Every reaction is logged to the decision
-log. **Disagree or Ignore hides that insight for ~2 weeks** and the coach (readiness/weekly/ask) reads your
-feedback so it stops re-raising calls you've rejected; **Agree** keeps it active. Feedback posts to the
-server's `/insight-feedback` endpoint — credentials never leave the Mac.
+The dashboard leads with a **Top insights** card: the five strongest findings ranked by signal strength,
+each with **👍 Like / 👎 Dislike / 💤 Snooze**.
+
+- **Like / Dislike is a saved, visible opinion** — your choice is rendered back on every reload (the button
+  shows as active), and it's **reversible**: click it again to clear, or click the other to switch. Both are
+  logged to the decision log (append-only, latest-wins), so changing your mind just records a newer choice.
+- **Dislike does _not_ hide the insight** — it stays on the card (marked, and **down-ranked** via the
+  engagement loop), because you asked to keep seeing it and be able to change your mind. Liking lifts its
+  family; disliking sinks it.
+- **Snooze is the hide action** — it removes the insight for ~2 weeks and tells the coach
+  (readiness/weekly/ask) to stop raising it. After the cool-off it can resurface (and if it keeps coming
+  back, that becomes a *"recurring signal you've set aside"* finding).
+- **Freshness is explicit** — each insight shows a **NEW** badge (and the header a *"N new"* count) when it
+  first appeared in the last ~24h, plus a **"first seen <date> · Nd"** age line so you can tell a brand-new
+  signal from a long-standing one. Age is floored at "since logging began" (the insight-history log starts
+  when this shipped), and it's labelled that way rather than implying something is new when we just weren't
+  watching yet.
+
+Feedback posts to the server's `/insight-feedback` endpoint — credentials never leave the Mac.
 
 ### What you listen to — your engagement model
 
@@ -187,8 +201,8 @@ saves as a dated report — your engagement model:
   snapshots (guarded so a workout that simply passed isn't mistaken for a deletion; approximate, and
   workouts without a stable id are skipped). This is something the platform doesn't expose, so it's
   computed here;
-- what's **currently hidden** inside the cool-off, and the honest one — **findings you dismissed that the
-  engine surfaced again anyway** ("dismissed, but came back").
+- what's **currently snoozed** inside the cool-off, and the honest one — **findings you snoozed that the
+  engine surfaced again afterwards** ("dismissed, but came back").
 
 It's deterministic (no LLM, no cost) and **descriptive, not causal**: it tracks engagement, adherence and
 recurrence and labels the form numbers a MODEL; it does not claim a finding you ignored *caused* a later
@@ -205,9 +219,10 @@ dashboard, `insights` and `deep-dive`:
   never be buried under a family you like) and flags are never down-weighted. It only reorders *within* a
   severity tier.
 - **New "Follow-through" findings.** Two insights are now **generated from your own behaviour**: a
-  *recurring signal you've set aside* (something you dismissed that the engine keeps re-raising — surfaced
+  *recurring signal you've set aside* (something you snoozed that the engine keeps re-raising — surfaced
   only after it recurs ≥2×) and *plan adherence is slipping* (you're doing <70% of planned hours, or it
-  dropped ≥15 points). Both are ordinary findings with 👍/👎/✕ buttons, so you can dismiss them too.
+  dropped ≥15 points). Both are ordinary findings with 👍/👎/💤 buttons, so you can like, dislike or snooze
+  them too.
 
 Still no causal claim and still no LLM — it's a transparent, bounded re-weighting plus two honest,
 behaviour-derived findings. The whole loop degrades silently: if the history can't be read, surfacing
