@@ -3,8 +3,8 @@ import { config } from "../config.js";
 import { appendCostRecord, costUsd } from "./costLog.js";
 import type { ChatCompleter, LocalChatOpts } from "./localClient.js";
 
-/** Cheap side-task model for `ask` intent routing. */
-const HAIKU_MODEL = "claude-haiku-4-5-20251001";
+/** Cheap side-task model for `ask` intent routing (alias — avoids pinning a dated snapshot). */
+const HAIKU_MODEL = "claude-haiku-4-5";
 
 /**
  * Haiku-backed intent router (a `ChatCompleter`, so it drops into the same hybrid router LocalLLM uses).

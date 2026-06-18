@@ -92,16 +92,20 @@ export class CoachLLM {
    * NOTE: web search bills per search on top of tokens; only token cost is recorded in the cost log.
    */
   async research(userContent: string, maxSearches = 6): Promise<{ text: string; cacheRead: number; costUsd: number }> {
-    const res = await this.client.messages.create({
-      model: this.model,
-      max_tokens: 8000,
-      thinking: { type: "adaptive" },
-      output_config: { effort: this.effort } as never,
-      system: [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }],
-      // Server-side web search; the model runs searches and returns cited prose. Capped to bound cost.
-      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxSearches } as never],
-      messages: [{ role: "user", content: userContent }],
-    });
+    // Streamed: a high-effort web-grounded run can take minutes (adaptive thinking + several searches),
+    // and a non-streaming call risks the SDK's HTTP timeout. finalMessage() collects the full result.
+    const res = await this.client.messages
+      .stream({
+        model: this.model,
+        max_tokens: 8000,
+        thinking: { type: "adaptive" },
+        output_config: { effort: this.effort } as never,
+        system: [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }],
+        // Server-side web search (current 2026-02 tool — adds dynamic result filtering on Opus 4.8). Capped to bound cost.
+        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxSearches } as never],
+        messages: [{ role: "user", content: userContent }],
+      })
+      .finalMessage();
     const text = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
@@ -116,17 +120,20 @@ export class CoachLLM {
   /** Plain-prose completion (for the weekly review and race-prep reports). Same cached system prompt. */
   async text(userContent: string): Promise<{ text: string; cacheRead: number; costUsd: number }> {
     // Headroom matters: adaptive thinking consumes part of max_tokens, so a low cap can leave no
-    // room for the prose. 12k comfortably covers thinking + a long report.
-    const res = await this.client.messages.create({
-      model: this.model,
-      max_tokens: 12000,
-      thinking: { type: "adaptive" },
-      output_config: { effort: this.effort } as never,
-      system: [
-        { type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } },
-      ],
-      messages: [{ role: "user", content: userContent }],
-    });
+    // room for the prose. 12k comfortably covers thinking + a long report. Streamed so a long
+    // high-effort generation can't trip the SDK's non-streaming HTTP timeout; finalMessage() collects it.
+    const res = await this.client.messages
+      .stream({
+        model: this.model,
+        max_tokens: 12000,
+        thinking: { type: "adaptive" },
+        output_config: { effort: this.effort } as never,
+        system: [
+          { type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } },
+        ],
+        messages: [{ role: "user", content: userContent }],
+      })
+      .finalMessage();
     const text = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
