@@ -74,6 +74,11 @@ calendar come live from AI Endurance — never hard-code them.**
 
 ## Step 3 — Gather this user's settings and write `.env` (🧑 ASK each one)
 
+> **Fast path (humans):** run **`npm run setup`** — an interactive wizard that asks for the key, units,
+> training location and Garmin and writes `.env` for you, then prints the next steps. It's the one-command
+> version of this section; skip to Step 4 after it. (An assistant following this file should still gather
+> the values explicitly below, since the wizard needs a terminal.)
+
 Ask the user, then write the answers into `.env` (uncomment the relevant lines from `.env.example`):
 
 1. **Anthropic API key** → `ANTHROPIC_API_KEY=sk-ant-...` (you can also export it in the shell instead
@@ -134,15 +139,15 @@ client — treat any flakiness as "degrade to AI Endurance," not an outage. Keep
 
 ```bash
 ▶ RUN   # localhost only; prints a one-time /pair?token=… link to open in the browser
-npm run serve
+npm start                  # alias for `npm run serve` — the everyday "run the coach" command
 ```
-To run it on phone-over-WiFi, start with `COACH_LAN=1 npm run serve` (still token-gated). To keep it
+To run it on phone-over-WiFi, start with `COACH_LAN=1 npm start` (still token-gated). To keep it
 running and auto-updating (macOS launchd; the installer prints a Linux systemd/cron equivalent):
 
 ```bash
-▶ RUN   # use the absolute path to THIS user's clone
-cd /path/to/personal-training-app && npm run serve:install        # start at login + restart if it stops
-cd /path/to/personal-training-app && npm run autoupdate:install   # fast-forward pull + restart on a timer
+▶ RUN   # use the absolute path to THIS user's clone — `service:install` does both at once
+cd /path/to/personal-training-app && npm run service:install      # start at login + auto-update on a timer
+#   (or the two granular installers separately: `npm run serve:install` and `npm run autoupdate:install`)
 ```
 
 ## Step 7 — Done & troubleshooting

@@ -37,7 +37,19 @@ import open from "open";
 import { assessHealthRisk } from "./guardrails/wellbeing.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { DecisionLog, suppressedInsightKeys } from "./state/decisionLog.js";
+import { runSetup } from "./setup.js";
+import { helpText } from "./help.js";
 import type { AthleteState } from "./state/types.js";
+
+/** `setup` — guided wizard that writes .env (key, units, location, Garmin). See src/setup.ts. */
+async function cmdSetup(): Promise<void> {
+  await runSetup();
+}
+
+/** `help` — the curated everyday commands (full list in docs/commands.md). */
+async function cmdHelp(): Promise<void> {
+  console.log("\n" + helpText() + "\n");
+}
 
 function requireLLM(): boolean {
   if (CoachLLM.hasApiKey()) return true;
@@ -731,6 +743,8 @@ async function cmdDoctor(): Promise<void> {
 
 const [, , cmd] = process.argv;
 const commands: Record<string, () => Promise<void>> = {
+  setup: cmdSetup,
+  help: cmdHelp,
   auth: cmdAuth,
   verify: cmdVerify,
   doctor: cmdDoctor,
@@ -765,7 +779,9 @@ const commands: Record<string, () => Promise<void>> = {
 
 const run = commands[cmd ?? ""];
 if (!run) {
-  console.log("Usage: tsx src/cli.ts <command>");
+  console.log("Usage: tsx src/cli.ts <command>   (or `npm run help` for the common ones)");
+  console.log("  setup      guided wizard: write .env (key, units, location, Garmin)");
+  console.log("  help       the curated everyday commands (full list: docs/commands.md)");
   console.log("  auth       run OAuth + confirm the AI Endurance connection");
   console.log("  verify     exercise every read tool, confirm the write-gate");
   console.log("  doctor     health check: creds, Garmin token age, key, AIE tool drift");
