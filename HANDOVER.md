@@ -244,3 +244,15 @@ fire-only health check), `npm run backfill:install` (history grind).
 - Enable **Settings → "Automatically delete head branches"** so merged branches don't accumulate.
 - Repo: `github.com/maxeskell/personal-training-app`. License: MIT (see `LICENSE`).
 - The companion `maxeskell/local-llm-server` is an optional dependency with its own handover doc.
+
+## Project background — Path A → Path B (moved from the README)
+
+Per the [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) §1 decision gate:
+
+- **Path A:** a Claude Project + AI Endurance MCP + coach persona — ~80% of the value, zero code.
+  See [docs/setup-path-a.md](docs/setup-path-a.md).
+- **Path B (this repo):** a small local-first orchestrator, justified because all three §1 needs apply
+  (scheduling, dashboard, decision log). See [docs/path-b-plan.md](docs/path-b-plan.md).
+
+This history lived at the top of the README; it was moved here in the Phase 1 onboarding-simplification
+pass so the README leads with what the tool *does* for a newcomer, not how it came to be.
