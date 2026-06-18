@@ -78,6 +78,12 @@ test("screenNutritionPrompt routes acute medical symptoms to a stop-and-see-a-pr
   }
 });
 
+test("screenNutritionPrompt catches common non-English cues (best-effort, English-first)", () => {
+  assert.equal(screenNutritionPrompt("je veux maigrir avant la course").blocked, true); // FR: lose weight → restriction
+  assert.equal(screenNutritionPrompt("ich will vor dem Rennen abnehmen").blocked, true); // DE: lose weight
+  assert.equal(screenNutritionPrompt("comment me faire vomir après manger").category, "disordered-eating"); // FR: self-induced vomiting
+});
+
 test("screenNutritionPrompt routes disordered-eating cues to a non-judgmental support referral", () => {
   const cases = [
     "should I purge after a big meal?",

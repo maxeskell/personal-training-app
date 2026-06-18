@@ -64,7 +64,7 @@ export function sleepVsNextDayLoad(
   const c = corrWithCi(xs, ys);
   if (!c || c.n < 20 || Math.abs(c.r) < 0.3) return null;
   return {
-    label: "Last night's sleep → next-day training load",
+    label: "Last night's sleep vs next-day training load",
     r: c.r,
     n: c.n,
     lagDays: 1,
@@ -76,7 +76,7 @@ export function sleepVsNextDayLoad(
     // is NOT multiplicity-corrected — never claim FDR confirmation (it would otherwise surface at 0.8
     // "confirmed" confidence on a single uncorrected test). CI-excludes-0 is the most it can assert.
     fdrPass: false,
-    interpretation: `${strength(c.r)} (r=${c.r}, 95% CI [${c.ciLow},${c.ciHigh}], n=${c.n}${c.significant ? "" : ", CI spans 0 — tentative"}): ${c.r > 0 ? "you train more after good sleep — readiness shows up the next day." : "your training load doesn't follow sleep — but watch session quality on short-sleep days."} [single uncorrected test — not FDR-confirmed]`,
+    interpretation: `${strength(c.r)} (r=${c.r}, 95% CI [${c.ciLow},${c.ciHigh}], n=${c.n}${c.significant ? "" : ", CI spans 0 — tentative"}): ${c.r > 0 ? "you tend to do more load after good sleep. NB next-day load is mostly PLANNED, so read this as association (you schedule/complete more when rested), not proof sleep drives capacity." : "your training load doesn't track sleep — but load is mostly planned, so watch session quality on short-sleep days rather than volume."} [association on a single uncorrected test — not causal, not FDR-confirmed]`,
   };
 }
 

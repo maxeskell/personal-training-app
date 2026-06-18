@@ -37,10 +37,22 @@ export async function fetchIntervals(today: Date): Promise<IntervalsRaw> {
   const oldest = new Date(today.getTime() - config.intervals.windowDays * 86_400_000);
   const future = new Date(today.getTime() + 365 * 86_400_000); // upcoming planned workouts + races
   const win = `oldest=${ymd(oldest)}&newest=${ymd(today)}`;
-  const [activities, wellness, events] = await Promise.all([
+  // Per-endpoint degradation: one slice failing (e.g. /events) shouldn't lose the others. allSettled +
+  // empty-on-failure keeps a partial state assembling (the mapper degrades absent slices); only if ALL
+  // three fail do we throw, so the DataSource degrades to "keep last state" rather than show garbage.
+  const labels = ["activities", "wellness", "events"] as const;
+  const results = await Promise.allSettled([
     getJson<Record<string, unknown>[]>(`/activities?${win}`),
     getJson<Record<string, unknown>[]>(`/wellness?${win}`),
     getJson<Record<string, unknown>[]>(`/events?oldest=${ymd(oldest)}&newest=${ymd(future)}`),
   ]);
+  if (results.every((r) => r.status === "rejected")) {
+    throw new Error(`intervals.icu: all endpoints failed — ${(results[0] as PromiseRejectedResult).reason}`);
+  }
+  const [activities, wellness, events] = results.map((r, i) => {
+    if (r.status === "fulfilled") return r.value;
+    console.warn(`intervals.icu: ${labels[i]} fetch failed (${(r.reason as Error)?.message ?? r.reason}); degrading that slice to empty.`);
+    return [] as Record<string, unknown>[];
+  });
   return { activities, wellness, events };
 }

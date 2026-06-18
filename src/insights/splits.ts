@@ -21,7 +21,7 @@ export interface Segment {
   distanceKm: number;
   targetPaceSecPerKm: number;
   cumulativeSec: number;
-  /** Display override for non-run legs (e.g. "1:52/100m", "208 W · 34.2 km/h"). */
+  /** Display override for non-run legs (e.g. "1:52/100m", "208 W · ~34 km/h" — speed is a rough aero estimate). */
   target?: string;
 }
 
@@ -270,7 +270,7 @@ export function estimateTriSplits(
   if (hasBike) {
     const watts = Math.round(perf.ftpW! * c.bikeIF);
     const v = speedMsFromPower(watts, perf.riderWeightKg ?? 75);
-    push(`Bike ${c.bikeKm} km`, c.bikeKm, (c.bikeKm * 1000) / v, `${watts} W · ${(v * 3.6).toFixed(1)} km/h`);
+    push(`Bike ${c.bikeKm} km`, c.bikeKm, (c.bikeKm * 1000) / v, `${watts} W · ~${Math.round(v * 3.6)} km/h`);
     basis.push(`bike ~${Math.round(c.bikeIF * 100)}% FTP (${watts} W of ${perf.ftpW} W, flat-course aero model)`);
   } else {
     missing.push("bike (no FTP)");

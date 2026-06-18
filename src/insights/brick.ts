@@ -75,9 +75,10 @@ export function brickFinding(b: BrickAnalysis): Finding | null {
     detail:
       `Run efficiency off the bike is ${b.decouplingPct >= 0 ? "down" : "up"} ${Math.abs(b.decouplingPct)}% vs fresh runs ` +
       `(brick EF ${b.brickEf} vs fresh ${b.freshEf}, ride load ~${b.rideEssOnBrickDays} ESS those days). ` +
-      `${big ? "That gap points to bike pacing too aggressive or run-off-bike adaptation lacking — rehearse race-effort bricks and hold the bike ceiling." : "Encouraging durability into T2 — keep the brick rehearsals going."}`,
-    evidence: `${b.brickDays} brick days vs ${b.freshRuns} fresh runs (same-day Ride+Run proxy) [derived]`,
-    recommendation: big ? "Cap the bike leg's intensity and practise the first 2 km off the bike at goal effort." : undefined,
-    confidence: Math.min(0.75, 0.45 + b.brickDays * 0.04),
+      `${big ? "That gap MAY reflect bike pacing or run-off-bike adaptation — but this is a same-day Ride+Run proxy (no within-leg timing, no statistical test, heat not controlled), so read it as a prompt to rehearse race-effort bricks, not a verdict." : "Encouraging durability into T2 — keep the brick rehearsals going."}`,
+    evidence: `${b.brickDays} brick days vs ${b.freshRuns} fresh runs (same-day Ride+Run proxy, uncontrolled) [derived]`,
+    recommendation: big ? "Rehearse race-effort bricks and the first 2 km off the bike; treat the bike-ceiling read as a hypothesis to test." : undefined,
+    // Capped low: a small-n, uncontrolled proxy shouldn't read as a confident finding.
+    confidence: Math.min(0.6, 0.4 + b.brickDays * 0.03),
   };
 }
