@@ -8,6 +8,7 @@ import { coachHeadline, tsbBand, rampBand, type Tone } from "../insights/headlin
 import { assembleSession } from "./session.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
 import { weekday, type WeekWeather } from "../weather/assess.js";
+import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
 
 /**
  * Glanceable local dashboard (Path-B need #2): a single self-contained HTML file with
@@ -505,6 +506,23 @@ function chip(label: string, value: string, tone: Tone = "neutral"): string {
 }
 
 /**
+ * Wellbeing escalation banner (#P1-3): the deterministic assessHealthRisk() verdict surfaced on the
+ * dashboard — the daily surface — not just in the CLI/MCP readiness output. Shown when ≥2 risk signals
+ * co-occur (or a standalone rapid weight drop). Suppressed in Share mode (it carries personal health
+ * detail). Renders nothing when level === "none".
+ */
+function renderHealthBanner(risk: HealthRiskAssessment | null): string {
+  if (!risk || risk.level === "none" || !risk.message) return "";
+  const tone = risk.level === "raise" ? "bad" : "warn";
+  const title = risk.level === "raise" ? "Health check — worth easing off" : "Health signals worth watching";
+  return `<div class="card" style="border-left:5px solid ${TONE_COLOR[tone]};background:#fbf6f0">
+    <h2 style="margin-top:0">⚠️ ${escapeHtml(title)}</h2>
+    <p style="font-size:14px;color:#333;margin:6px 0">${escapeHtml(risk.message)}</p>
+    <p class="k" style="font-size:12px;margin:4px 0 0">Not a diagnosis — a deterministic check on your own recent data. For anything persistent or worrying, see a doctor or sports physician.</p>
+  </div>`;
+}
+
+/**
  * The "Today" decision header (#1) — leads with one synthesised call + the single action, corroborating
  * drivers, an always-visible health strip (#8), the LLM readiness narrative, and the key metrics.
  */
@@ -673,6 +691,7 @@ async function sync(note){
 function autoSync(min){ sync('Data is '+min+' min old — auto-refreshing:'); }
 </script>
 
+${renderHealthBanner(share ? null : assessHealthRisk(window))}
 ${insights ? renderHeader(today, insights, decisions, garminDays) : ""}
 ${insights ? renderInsightsBox(insights, reactions, firstSeen) : ""}
 ${renderLastSession(window, insights, fitSummaries, canFetchFit)}
@@ -777,6 +796,10 @@ ${insights ? renderSplits(insights, share) : ""}
 </div>
 
 ${renderCost(costRecords)}
+<footer style="max-width:880px;margin:24px auto 8px;padding:0 16px;color:#aaa;font-size:12px;line-height:1.5">
+  Not medical advice. This is a personal training tool, not a medical professional — estimates are labelled MODEL.
+  For pain, injury, illness or any acute symptom, stop and consult a doctor or sports physician.
+</footer>
 ${autoSyncStaleMin != null ? `<script>autoSync(${Math.round(autoSyncStaleMin)})</script>` : ""}
 </body></html>`;
 }

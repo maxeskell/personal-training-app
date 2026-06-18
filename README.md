@@ -7,6 +7,11 @@ hard-coded: change your goals and the coaching follows on the next sync, with th
 windows, don't-stack-peaks, a B-race that should be a capped tempo, the injury window when a run goal sits
 off a triathlon base) **derived from whatever races you've set**.
 
+> **Not medical advice.** This is a personal training tool, not a medical professional. Anything estimated
+> is labelled a MODEL. For pain, injury, illness or any acute symptom (chest pain, breathlessness,
+> dizziness, fainting, numbness, bleeding) the answer is to stop and see a qualified professional. It will
+> never help with under-fuelling or weight-loss targets — fuel to train.
+
 ## See it in 30 seconds — no account, no key
 
 ```bash
@@ -59,9 +64,13 @@ gated**: `propose` only logs a change + its trade-off; nothing is written to AI 
 explicitly `confirm`.
 
 **Deterministic safety guardrails (not just prompt instructions):**
-- **Fuel to train.** Restriction / deficit / "race weight" / "cut" / weight-target phrasings are screened
-  in code *before* the model and redirected to adequate-fuelling targets. A **rapid or unexplained weight
-  drop is flagged as a health concern on its own** (never gated behind other signals, never framed as a win).
+- **Pre-LLM safety screen.** Free-text questions are screened in code *before* the model, in three classes:
+  **acute medical symptoms** (chest pain, breathlessness, fainting, numbness, bleeding → stop and see a
+  professional), **disordered-eating cues** (purging, skipping meals, food guilt → a non-judgmental support
+  referral), and **restriction / "race weight" / deficit / weight-target** phrasings (→ adequate-fuelling
+  targets). A standing clinical-boundary clause backs this inside every LLM prompt. A **rapid or unexplained
+  weight drop is flagged as a health concern on its own** (never gated behind other signals, never a win),
+  and that wellbeing escalation now shows on the **dashboard**, not just the CLI/MCP output.
 - **Trend over single point.** The green/amber/red call applies a code-level floor: a `red` is downgraded
   to `amber` unless **two** interpretable signals are out of line *or* there's a multi-day deterioration —
   so one bad night can't flip the call. The morning snapshot also carries your weight as a trend-only line.

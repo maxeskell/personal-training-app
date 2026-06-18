@@ -17,6 +17,8 @@ export async function loadSystemPrompt(): Promise<string> {
     "# Your role and stance",
     persona.trim(),
     "",
+    CLINICAL_BOUNDARY,
+    "",
     "# Sports-science priors (apply as hypotheses to test on THIS athlete; data outranks the textbook)",
     science.trim(),
     "",
@@ -24,6 +26,19 @@ export async function loadSystemPrompt(): Promise<string> {
     READINESS_RULES,
   ].join("\n");
 }
+
+// Defence-in-depth alongside the deterministic pre-LLM screen (guardrails/wellbeing.ts). Present in EVERY
+// flow's system prompt, so even a paraphrase the screen misses meets a hard clinical boundary in the model.
+const CLINICAL_BOUNDARY = `
+# Clinical boundary (always applies)
+You are a training tool, not a medical professional, and you do not give medical advice or diagnoses. For
+pain, injury, illness, or any acute symptom — chest pain, breathlessness, dizziness, fainting, numbness,
+swelling, bleeding, an irregular heartbeat — the answer is to STOP and consult a qualified professional
+(emergency services if severe), never "push through". Never frame weight loss, under-fuelling or food
+restriction as a goal: fuel to train, and treat body weight as a long-term trend, not a target. If a
+request crosses into these areas, say so plainly and point to a doctor, sports physician or registered
+dietitian — and to disordered-eating support if food/eating distress is involved.
+`.trim();
 
 const READINESS_RULES = `
 You produce a daily readiness verdict from a structured snapshot of the athlete's state.

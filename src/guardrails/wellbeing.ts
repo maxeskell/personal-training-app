@@ -4,73 +4,125 @@ import type { AthleteState } from "../state/types.js";
  * Hard wellbeing guardrails — DETERMINISTIC code, not LLM judgement (Build Spec §8).
  *
  * Two jobs:
- *  1. screenNutritionPrompt(): block restriction/deficit/"race weight" framing BEFORE
- *     it reaches the model, and redirect to adequate fuelling (acceptance §9.7).
+ *  1. screenNutritionPrompt(): a pre-LLM safety screen on free-text prompts. It blocks three classes
+ *     BEFORE they reach the model — (a) acute medical symptoms (stop & see a professional), (b)
+ *     disordered-eating cues (non-judgmental support referral), (c) restriction / "race weight" framing
+ *     (redirect to adequate fuelling) — returning a category-appropriate `redirect` for the caller to
+ *     surface instead of forwarding the prompt. (Also exported as `screenWellbeingPrompt`.)
  *  2. assessHealthRisk(): if multiple risk signals co-occur, raise gently and refer to a
  *     professional — NEVER diagnose (no RED-S labelling), never treat weight loss as a win.
+ *
+ * These are deterministic backstops; the system prompt's clinical-boundary clause (coach/persona.ts) is
+ * the in-LLM defence-in-depth for anything the screens don't catch.
  */
 
-// Intent-matching, not exact-phrase matching. The earlier patterns were brittle adjacency regexes that
-// any intervening word ("a few", "some", a number) or the natural word "racing" defeated — so "shed a few
-// kilos", "drop a couple of kg", "get to racing weight", "put me on a cut" all leaked to the model. These
-// allow a short, bounded run of words between the verb and the body-mass object, and cover the common
-// weight-target / cut / slim-down phrasings. The aim is to REDIRECT (not refuse) restriction intent, so
-// erring toward catching it is correct; legitimate fuelling questions (carbs/protein/what to eat) never
-// contain a weight-loss verb + a body-mass object, so they pass.
+// ---- (a) Acute medical symptoms — most urgent; never forward to a training LLM. ----
+const ACUTE_SYMPTOM_PATTERNS: RegExp[] = [
+  /\bchest\s+(pain|tightness|pressure)\b|\btight(ness)?\s+in\s+(my\s+)?chest\b|\bchest\b[\w\s'’,-]{0,10}?\bpain\b/i,
+  /\b(short(ness)? of breath|can'?t breathe|trouble breathing|breathless)\b/i,
+  /\b(faint(ed|ing)?|pass(ed|ing)? out|black(ed|ing)? out|dizzy|dizziness|light-?headed|vertigo)\b/i,
+  /\b(numb(ness)?|tingling|pins and needles)\b/i,
+  /\b(palpitations|heart (racing|skipping|fluttering|irregular)|irregular (heart ?beat|pulse))\b/i,
+  /\b(coughing up blood|blood in (my\s+)?(urine|pee|stool|poo)|peeing blood)\b/i,
+  /\b(sharp|severe|stabbing|excruciating)\s+pain\b/i,
+  /\b(swollen|swelling|popped|gave way|can'?t (put|bear) weight|can'?t walk)\b/i,
+  /\b(concussion|hit my head|head injury|knocked out)\b/i,
+];
+const ACUTE_REDIRECT =
+  "That sounds like a possible medical symptom, not a training question — I'm a training tool, not a " +
+  "medical professional, and I can't assess it. If anything is severe, sudden or worrying (chest pain, " +
+  "trouble breathing, fainting, numbness, bleeding), stop and seek medical help now — emergency services " +
+  "if it's severe. For pain, swelling or an injury that won't settle, see a doctor or physio before you " +
+  "train through it. Please don't push through this on my say-so.";
+
+// ---- (b) Disordered-eating cues — non-judgmental support referral; never forwarded. ----
+const ED_PATTERNS: RegExp[] = [
+  /\b(purge|purging|purged|make myself (sick|throw up|vomit)|throw(ing)? up|vomit(ing|ed)?)\b/i,
+  /\b(binge|binging|bingeing|binged)\b/i,
+  /\b(laxative|diuretic)s?\b|\bdiet pills?\b/i,
+  /\b(starve|starving|starved)\b/i,
+  /\b(skip(ping)?\s+(meals|eating)|not eating|barely eat(ing)?|stopped eating)\b/i,
+  /\b(guilt(y)?|ashamed|shame|disgust(ed|ing)?)\b[\w\s'’,-]{0,20}?\b(eat(ing)?|food|meal|ate)\b/i,
+  /\b(scared|afraid|terrified|anxious)\b[\w\s'’,-]{0,15}?\b(eat(ing)?|food)\b/i,
+  /\bout of control\b[\w\s'’,-]{0,15}?\b(eat(ing)?|food)\b|\beat(ing)?\b[\w\s'’,-]{0,15}?\bout of control\b/i,
+  /\b(compensate|punish)\b[\w\s'’,-]{0,20}?\b(eat(ing)?|food|calories|binge)\b/i,
+];
+const ED_REDIRECT =
+  "I'm not able to help with that, and I want to be straight with you: purging, skipping meals to lose " +
+  "weight, or feeling out of control or guilty around food are signs worth taking seriously — and they're " +
+  "outside what a training tool should advise on. Please talk to a doctor, or a service that supports " +
+  "disordered eating (an eating-disorder helpline, or a sports physician/registered dietitian who works " +
+  "with athletes). You deserve support with this — it matters far more than any session or race.";
+
+// ---- (c) Restriction / under-fuelling / "race weight" intent → redirect to adequate fuelling. ----
+// Two-part test: high-signal standalone phrases PLUS a token CO-OCCURRENCE test — any hard reduction verb
+// together with any body-mass noun ANYWHERE in the prompt (not just adjacent). The earlier adjacency-only
+// regexes leaked "reduce my weight", "get my weight down", "skip breakfast", "8% body fat", "1000 calorie
+// diet". The redirect is gentle (fuel-to-train, not a refusal), so we accept some false positives to avoid
+// leaking the real thing; legitimate fuelling questions carry no reduction verb and pass.
+const REDUCE_VERB = /\b(lose|losing|lost|drop|dropping|cut|cutting|shed|shedding|trim|trimming|reduce|reducing|lower|lowering|shrink|shrinking|burn(?:ing)?\s+off)\b/i;
+const BODY_MASS = /\b(weight|kgs?|kilos?|kilograms?|pounds?|lbs?|body\s?fat|bodyfat|fat|waist(?:line)?)\b/i;
 const RESTRICTION_PATTERNS: Array<{ rx: RegExp; label: string }> = [
-  { rx: /\b(calorie|caloric)s?\s+(deficit|restrict)/i, label: "calorie deficit" },
+  { rx: /\b(calorie|caloric|kcal)s?\s+(deficit|restrict|cap|limit)\b|\bcalorie\s+deficit\b/i, label: "calorie deficit" },
   { rx: /\bdeficit\b/i, label: "deficit" },
-  // verb + (a short bounded gap) + body-mass object — catches "lose weight", "shed a few kilos",
-  // "drop a couple of kg", "trim some body fat", "cut weight", "lose fat".
-  {
-    rx: /\b(lose|losing|lost|drop|dropping|cut|cutting|shed|shedding|trim|trimming|burn|burning|shift|shifting)\b[\w\s'’,-]{0,18}?\b(weight|kgs?|kilos?|kilograms?|pounds?|lbs?|body\s?fat|fat)\b/i,
-    label: "weight loss",
-  },
-  { rx: /\b(race|racing)\s?weight\b/i, label: "race weight" },
-  { rx: /\b(restrict|restricting|under-?eat|undereat)/i, label: "restriction" },
-  // leaning-out intent: "lean out", "leaning out", "get leaner", "leaner for race".
-  { rx: /\b(get(ting)?\s+lean(er)?|lean(er)?\s+(for|before|out)|lean\s+out|leaning\s+out)\b/i, label: "leaning out" },
-  // slim/trim down, getting lighter for an event, eating below maintenance, being "on a cut".
-  { rx: /\b(slim|trim)\w*\s+(down|up)\b/i, label: "slimming down" },
-  { rx: /\blighter\s+(for|before|to)\b/i, label: "getting lighter" },
+  { rx: /\b\d{2,4}\s*-?\s*(k?cal|calorie)/i, label: "calorie-capped diet" },
   { rx: /\b(under|below)\s+maintenance\b/i, label: "eating under maintenance" },
-  { rx: /\b(on|do|doing|start|starting)\s+a\s+cut\b/i, label: "a cut" },
-  // weight-as-a-target intent: "what bodyweight should I be at", "target/goal/ideal race weight".
-  { rx: /\bbody\s?weight\s+should\s+i\b/i, label: "weight target" },
+  { rx: /\b(restrict|restricting|under-?eat|undereat|eat(?:ing)?\s+less)\b/i, label: "restriction" },
+  { rx: /\b(race|racing)\s?weight\b/i, label: "race weight" },
+  { rx: /\bintermittent\s+fast|fast(?:ing)?\s+(to|for)\s+(lose|lean|weight|cut)|\bfasting\s+diet\b/i, label: "fasting to lose" },
+  { rx: /\bskip(?:ping)?\s+(?:a\s+|my\s+)?(meal|meals|breakfast|lunch|dinner|food)\b/i, label: "skipping meals" },
+  { rx: /\bget(?:ting)?\s+(shredded|ripped)\b|\bshredded\s+(for|before)\b/i, label: "getting shredded" },
+  { rx: /\b\d{1,2}\s*%?\s*body\s?fat\b|\bbody\s?fat\s+(percentage|target|goal|of)\b/i, label: "body-fat target" },
+  { rx: /\b(get(?:ting)?\s+lean(er)?|lean(er)?\s+(for|before|out)|lean\s+out|leaning\s+out)\b/i, label: "leaning out" },
+  { rx: /\b(slim|trim)\w*\s+(down|up)\b/i, label: "slimming down" },
+  { rx: /\b(lighter|lightest|lowest|minimum)\b[\w\s'’,-]{0,20}?\b(weight|race|climb|for)\b/i, label: "getting lighter" },
+  { rx: /\bhow\s+(light|low)\b[\w\s'’,-]{0,20}?\b(can|should|safe)\b/i, label: "how light can I get" },
+  { rx: /\b(weight|kgs?|kilos?)\b[\w\s'’,-]{0,15}?\bdown\b/i, label: "getting weight down" },
   { rx: /\b(target|goal|ideal|optimal|racing|race)\s+(body\s?)?weight\b/i, label: "weight target" },
-  { rx: /\bweight\s+should\s+i\s+(be|race|aim|target|get)\b/i, label: "weight target" },
-  { rx: /\bhow\s+(do\s+i|to|can\s+i|should\s+i)\s+(lose|drop|shed|cut)\b/i, label: "weight loss" },
+  { rx: /\b(body\s?weight|weight)\s+should\s+i\s+(be|race|aim|target|get|eat)\b/i, label: "weight target" },
+  { rx: /\b(on|do|doing|start|starting|put me on)\s+a\s+cut\b/i, label: "a cut" },
   { rx: /\b(low[-\s]?carb|keto)\s+to\s+(lose|lean|cut)/i, label: "restrictive diet for weight loss" },
 ];
+const RESTRICTION_REDIRECT =
+  "I won't help with calorie deficits, restriction, or a 'race weight' — under-fuelling " +
+  "endurance training risks your health and your goals. Fuel to train: I'll use AI Endurance's " +
+  "nutrition ranges as adequate-fuelling targets, and treat weight only as a long-term trend, " +
+  "never a daily target. If you're worried about body composition, that's a conversation for a " +
+  "sports dietitian, not a deficit. Want me to pull today's fuelling ranges and your long-run " +
+  "carb targets instead?";
+
+function matchRestriction(prompt: string): string | null {
+  for (const { rx, label } of RESTRICTION_PATTERNS) if (rx.test(prompt)) return label;
+  if (REDUCE_VERB.test(prompt) && BODY_MASS.test(prompt)) return "weight loss";
+  return null;
+}
 
 export interface NutritionScreen {
   blocked: boolean;
+  category?: "acute-symptom" | "disordered-eating" | "restriction";
   matched?: string;
   redirect?: string;
 }
 
 /**
- * Returns blocked:true with a redirect message if the prompt implies restriction.
- * The caller must surface `redirect` instead of forwarding the prompt to the LLM.
+ * Pre-LLM safety screen. Returns blocked:true with a category-appropriate `redirect` when the prompt is an
+ * acute medical symptom, a disordered-eating cue, or restriction/weight-target framing. The caller MUST
+ * surface `redirect` instead of forwarding the prompt to the model. Checked most-urgent-first.
  */
 export function screenNutritionPrompt(prompt: string): NutritionScreen {
-  for (const { rx, label } of RESTRICTION_PATTERNS) {
-    if (rx.test(prompt)) {
-      return {
-        blocked: true,
-        matched: label,
-        redirect:
-          "I won't help with calorie deficits, restriction, or a 'race weight' — under-fuelling " +
-          "endurance training risks your health and your goals. Fuel to train: I'll use AI Endurance's " +
-          "nutrition ranges as adequate-fuelling targets, and treat weight only as a long-term trend, " +
-          "never a daily target. If you're worried about body composition, that's a conversation for a " +
-          "sports dietitian, not a deficit. Want me to pull today's fuelling ranges and your long-run " +
-          "carb targets instead?",
-      };
-    }
+  if (ACUTE_SYMPTOM_PATTERNS.some((rx) => rx.test(prompt))) {
+    return { blocked: true, category: "acute-symptom", matched: "acute symptom", redirect: ACUTE_REDIRECT };
   }
+  if (ED_PATTERNS.some((rx) => rx.test(prompt))) {
+    return { blocked: true, category: "disordered-eating", matched: "disordered eating", redirect: ED_REDIRECT };
+  }
+  const label = matchRestriction(prompt);
+  if (label) return { blocked: true, category: "restriction", matched: label, redirect: RESTRICTION_REDIRECT };
   return { blocked: false };
 }
+
+/** Clearer name for the broadened screen; same function. */
+export const screenWellbeingPrompt = screenNutritionPrompt;
 
 export type RiskLevel = "none" | "watch" | "raise";
 

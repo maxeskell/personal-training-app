@@ -92,6 +92,27 @@ test("share view: redacts real race names + dates and shows the banner; normal v
   for (const [i, sc] of [...shared.matchAll(/<script>([\s\S]*?)<\/script>/g)].entries()) assert.doesNotThrow(() => new Function(sc[1]), `script ${i}`);
 });
 
+test("dashboard surfaces the wellbeing escalation banner; Share mode suppresses it", () => {
+  const win = Array.from({ length: 7 }, (_, i) => {
+    const s = emptyState(`2026-06-${String(8 + i).padStart(2, "0")}`, new Date().toISOString());
+    s.weightKg = { value: 70 - i * 0.3, source: "garmin" }; // ~2.7% drop across the window
+    s.sleep = { value: { hours: 5.8, score: 55 }, source: "garmin" };
+    return s;
+  });
+  const today = win[win.length - 1];
+  today.hrvOvernight = { value: 45, source: "garmin" };
+  today.hrv7dBaseline = { value: 60, source: "derived" };
+  today.restingHr = { value: 56, source: "garmin" };
+  today.restingHr7dBaseline = { value: 48, source: "derived" };
+
+  const html = renderDashboard({ window: win, decisions: [] });
+  assert.match(html, /Health check|Health signals worth/); // banner present
+  assert.match(html, /doctor|physician|easing off/i); // with the professional-referral message
+
+  const shared = renderDashboard({ window: win, decisions: [], share: true });
+  assert.ok(!/Health check|Health signals worth/.test(shared), "health banner suppressed in Share view (personal health detail)");
+});
+
 test("week table uses h:mm, missing swim distance shows — , planned session joins the last-session card", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
   s.actualActivities = {
