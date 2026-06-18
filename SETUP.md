@@ -93,9 +93,10 @@ calendar come live from AI Endurance — never hard-code them.**
 ## Step 3 — Gather this user's settings and write `.env` (🧑 ASK each one)
 
 > **Fast path (humans):** run **`npm run setup`** — an interactive wizard that asks for the key, units,
-> training location and Garmin and writes `.env` for you, then prints the next steps. It's the one-command
-> version of this section; skip to Step 4 after it. (An assistant following this file should still gather
-> the values explicitly below, since the wizard needs a terminal.)
+> training location and Garmin, writes `.env` for you, then offers to set up your **athlete profile**
+> (Step 3a below) and prints the next steps. It's the one-command version of this section; skip to Step 4
+> after it. (An assistant following this file should still gather the values explicitly below, since the
+> wizard needs a terminal.)
 
 Ask the user, then write the answers into `.env` (uncomment the relevant lines from `.env.example`):
 
@@ -116,6 +117,24 @@ Ask the user, then write the answers into `.env` (uncomment the relevant lines f
 7. **`ask` intent routing** (optional) — `COACH_INTENT_ROUTER`. Leave `regex` (default, zero-cost) for
    most people. The cheap upgrade is `haiku` (a `claude-haiku-4-5` micro-call on the API key you already
    set — no extra server). Only pick `local` if you specifically want the separate `local-llm-server`.
+
+### Step 3a — (optional) athlete profile
+
+`.env` holds the machine's settings; your **athlete profile** holds the stable *human* context no API
+can — biomechanics, kit/fit, medical notes, weekly availability and race targets. It lives in
+`profile.local.yaml` (**gitignored**, never shared) and feeds the coaching flows and the `get_profile`
+MCP tool. It's optional — the coach runs fine without it — and `npm run setup` already offers it as its
+last step. To set it up (or redo it) on its own:
+
+```bash
+▶ RUN   # interactive — copies the template, then walks identity, availability and your first race
+npm run profile:init
+```
+
+This writes `profile.example.yaml` → `profile.local.yaml` and validates the required fields; edit the
+file afterwards to fill in the rest. **Never put live numbers** (FTP, weight, paces, CSS, HRV, load) in
+it — those stay live from AI Endurance/Garmin, and a schema guard rejects them if you try. Full schema
+and privacy detail: [docs/profile.md](docs/profile.md).
 
 ## Step 4 — Connect AI Endurance (🧑 user does the browser login)
 
