@@ -38,43 +38,92 @@ export interface RaceSplitPlan {
   rangeBasis?: string;
 }
 
-/** Cap on the best-case improvement we'll project from the trend — no runaway extrapolation. */
+/** Cap on the best-case improvement we'll project — no runaway extrapolation. */
 export const MAX_PROJECTED_GAIN = 0.07; // 7%
 
+// --- Planned-training (CTL) forward-projection constants (the PRIMARY race-day basis) ---
+/** Cap on the projected fractional CTL (fitness) gain over the whole horizon — ramps plateau, so the
+ * naive "this week's ramp holds to race day" saturates toward this instead of growing without bound. */
+export const CTL_GAIN_SATURATION = 0.3; // 30%
+/** Coarse performance elasticity: fractional finish-time improvement per unit fractional CTL gain. A
+ * deliberately conservative MODEL constant (a ~10% fitness gain → ~2.5% faster), hard-capped below by
+ * MAX_PROJECTED_GAIN. Tune here if your own prediction-vs-fitness history says otherwise. */
+export const FITNESS_TIME_ELASTICITY = 0.25;
+/** Below this the projected upside is within prediction noise (and vanishes once rounded to the minute),
+ * so we treat it as "no usable upside" and let the fallback / current-level basis take over. */
+const MIN_MEANINGFUL_GAIN = 0.003; // 0.3%
+
 /**
- * Project a finish-time RANGE for a race:
- *  - worst case = your CURRENT prediction (race it today, at today's fitness);
- *  - best case  = that prediction carried along YOUR OWN recent race-predictor trajectory to race day,
- *    capped at MAX_PROJECTED_GAIN.
- * `fracImprovePerDay` is the fractional change in predicted finish time per day (negative = getting
- * faster); null or non-improving → no projected upside (best = current level). Honest MODEL: the best
- * case assumes you complete the planned build, stay healthy, adapt well and taper.
+ * PRIMARY race-day basis — "predicted from the training between now and the race." Projects the
+ * athlete's current fitness (CTL) ramp forward to race day and maps the fitness gain to a finish-time
+ * gain. Returns null (→ caller falls back) when there's no usable build ahead: no CTL, a flat/negative
+ * ramp (maintaining or tapering, not building), the race is here, or the upside is negligible.
+ *
+ * `rampPerWeek` should be a SMOOTHED ΔCTL/week (e.g. over ~28d) — steadier than the 7-day ramp for a
+ * multi-week projection. Honest MODEL: assumes you hold the build, stay healthy, adapt well and taper.
+ */
+export function projectFromTrainingLoad(
+  ctlNow: number | null | undefined,
+  rampPerWeek: number | null | undefined,
+  daysToRace: number,
+): { projectedFrac: number; basis: string } | null {
+  if (ctlNow == null || !(ctlNow > 0) || rampPerWeek == null || rampPerWeek <= 0 || daysToRace <= 0) return null;
+  const weeks = daysToRace / 7;
+  const weeklyCtlFrac = rampPerWeek / ctlNow; // current fractional fitness gain per week
+  const linearCtlGain = weeklyCtlFrac * weeks; // naive "ramp holds to race day"
+  // Builds plateau and end in a taper, so the ramp can't hold linearly — saturate the CTL gain toward
+  // CTL_GAIN_SATURATION (≈ linear for short horizons, asymptotic for long ones).
+  const ctlGainFrac = CTL_GAIN_SATURATION * (1 - Math.exp(-linearCtlGain / CTL_GAIN_SATURATION));
+  const projectedFrac = Math.min(MAX_PROJECTED_GAIN, FITNESS_TIME_ELASTICITY * ctlGainFrac);
+  if (projectedFrac < MIN_MEANINGFUL_GAIN) return null;
+  const pct = +(projectedFrac * 100).toFixed(1);
+  return {
+    projectedFrac,
+    basis: `Best case projects the training still ahead of you: your fitness (CTL) is climbing ~${rampPerWeek.toFixed(1)}/week, carried to race day with diminishing returns (builds plateau and end in a taper) and mapped to ~${pct}% faster, capped near ${Math.round(MAX_PROJECTED_GAIN * 100)}%. It assumes you hold the build, stay healthy, adapt well and taper. Worst case is racing at today's fitness.`,
+  };
+}
+
+/**
+ * Project a finish-time RANGE for a race (worst = race it today, at today's fitness):
+ *  - best case PRIMARY = `planned`, a forward projection from the training still ahead (see
+ *    projectFromTrainingLoad);
+ *  - best case FALLBACK (when there's no usable build ahead) = today's prediction carried along YOUR OWN
+ *    recent race-predictor trajectory to race day, capped at MAX_PROJECTED_GAIN, and only when that trend
+ *    is statistically reliable (`fracImprovePerDay` < 0).
+ * With neither, the range collapses to your current level — never an empty promise. Honest MODEL.
  */
 export function projectRaceDayRange(
   predictedSec: number,
   daysToRace: number,
   fracImprovePerDay: number | null,
+  planned?: { projectedFrac: number; basis: string } | null,
 ): { worstSec: number; bestSec: number; rangeBasis: string } {
   const worstSec = Math.round(predictedSec);
-  if (fracImprovePerDay == null || fracImprovePerDay >= 0 || daysToRace <= 0) {
+  if (daysToRace <= 0) {
+    return { worstSec, bestSec: worstSec, rangeBasis: "Race is here — this is your current level." };
+  }
+  // PRIMARY: forward projection from the planned training between now and race day.
+  if (planned && planned.projectedFrac > 0) {
+    return { worstSec, bestSec: Math.round(predictedSec * (1 - planned.projectedFrac)), rangeBasis: planned.basis };
+  }
+  // FALLBACK: extrapolate the athlete's own observed rate of improvement. Diminishing returns — fitness
+  // gains are concave and a build ends in a taper, so a recent sec/day rate can't be carried LINEARLY to
+  // race day (the textbook over-promise). Saturate toward the cap instead.
+  if (fracImprovePerDay != null && fracImprovePerDay < 0) {
+    const linearFrac = Math.abs(fracImprovePerDay) * daysToRace; // ≥0, the naive "rate holds" gain
+    const projectedFrac = MAX_PROJECTED_GAIN * (1 - Math.exp(-linearFrac / MAX_PROJECTED_GAIN));
     return {
       worstSec,
-      bestSec: worstSec,
-      rangeBasis:
-        daysToRace <= 0
-          ? "Race is here — this is your current level."
-          : "No improving trend to project yet, so best case = your current level. The range opens up once your race predictions start trending faster.",
+      bestSec: Math.round(predictedSec * (1 - projectedFrac)),
+      rangeBasis: `Best case carries your recent rate of improvement toward race day with diminishing returns (gains are concave and a build ends in a taper), capped near ${Math.round(MAX_PROJECTED_GAIN * 100)}%, and only when that trend is statistically reliable. It assumes you complete the planned build, stay healthy, adapt well and taper. Worst case is racing at today's fitness.`,
     };
   }
-  // Diminishing returns: fitness gains are concave and a build ends in a taper, so a recent sec/day rate
-  // can't be carried LINEARLY to race day (the textbook over-promise). Saturate toward the cap instead —
-  // ≈ linear for small gains, asymptotic to (never reaching) MAX_PROJECTED_GAIN for long horizons.
-  const linearFrac = Math.abs(fracImprovePerDay) * daysToRace; // ≥0, the naive "rate holds" gain
-  const projectedFrac = MAX_PROJECTED_GAIN * (1 - Math.exp(-linearFrac / MAX_PROJECTED_GAIN));
+  // NEITHER a build nor a reliable trend → collapse to current level.
   return {
     worstSec,
-    bestSec: Math.round(predictedSec * (1 - projectedFrac)),
-    rangeBasis: `Best case carries your recent rate of improvement toward race day with diminishing returns (gains are concave and a build ends in a taper), capped near ${Math.round(MAX_PROJECTED_GAIN * 100)}%, and only when that trend is statistically reliable. It assumes you complete the planned build, stay healthy, adapt well and taper. Worst case is racing at today's fitness.`,
+    bestSec: worstSec,
+    rangeBasis:
+      "No build or improving trend to project yet, so best case = your current level. The range opens up once your fitness (CTL) is climbing or your race predictions start trending faster.",
   };
 }
 

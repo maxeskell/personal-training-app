@@ -17,7 +17,7 @@ import {
   type MonotonyStrain,
   type TID,
 } from "./metrics.js";
-import { estimateRunSplits, estimateTriSplits, projectRaceDayRange, reliableImprovementPerDay, type RaceSplitPlan, type DurabilityState, type TriRaceType, type TriPerformance } from "./splits.js";
+import { estimateRunSplits, estimateTriSplits, projectFromTrainingLoad, projectRaceDayRange, reliableImprovementPerDay, type RaceSplitPlan, type DurabilityState, type TriRaceType, type TriPerformance } from "./splits.js";
 import { analyseRecoverySeries, sleepVsNextDayLoad, type Correlation, type Anomaly } from "./correlations.js";
 import { buildMonitoringRuleSet, monitoringFinding, type MonitoringRuleSet, type MonitoringInput } from "./monitoring.js";
 import { changePointsOf, changePointFindings, type SeriesChangePoints } from "./changepoint.js";
@@ -140,6 +140,17 @@ function predictionsVsGoals(state: AthleteState): PredictionVsGoal[] {
     .sort((a, b) => (a.daysTo ?? 0) - (b.daysTo ?? 0));
 }
 
+/** The next upcoming race that carries a prediction (used to key a comparable history trajectory). */
+export function nearestRaceName(state: AthleteState): string | undefined {
+  return predictionsVsGoals(state).find((p) => (p.daysTo ?? -1) >= 0 && p.predictedSec != null)?.race;
+}
+
+/** Predicted finish (sec) for a named race, else the nearest race with a prediction — for trend series. */
+export function racePredictedSec(state: AthleteState, raceName?: string): number | undefined {
+  const ps = predictionsVsGoals(state);
+  return ((raceName ? ps.find((p) => p.race === raceName && p.predictedSec != null) : undefined) ?? ps.find((p) => p.predictedSec != null))?.predictedSec;
+}
+
 type RecoverySeries = { date?: unknown[]; rMSSD?: unknown[]; resting_heart_rate?: unknown[]; recovery?: unknown[] } | undefined;
 
 /**
@@ -246,6 +257,10 @@ export interface BuildOptions {
   suppressed?: Set<string>;
   /** Trailing daily states (oldest→newest, incl. today) for cross-day trends (VO2max, prediction). */
   history?: AthleteState[];
+  /** Deep, lightweight race-prediction history `{date, v}` (oldest→newest) for the race-day projection's
+   *  FALLBACK trend. The statistical gate needs ≥10 points; the short `history` window can't supply them,
+   *  so callers load this separately (orchestrator.loadPredictionTrajectory). Falls back to `history`. */
+  predictionTrajectory?: Array<{ date: string; v: number }>;
   /** Engagement loop: derived feedback/adherence that GENERATES follow-through findings and reweights
    *  surfacing toward the families the athlete acts on (coach/listening → buildEngagementContext). */
   engagement?: EngagementContext;
@@ -506,19 +521,33 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
     })
     .filter((s): s is RaceSplitPlan => s != null);
 
-  // Finish-time RANGE per split: worst = race today, best = today's prediction carried along the athlete's
-  // OWN race-predictor trajectory (sec/day) to race day, capped. Honest MODEL — labelled as such in the UI.
-  const predTrajectory = (opts?.history ?? [])
-    .map((s) => ({ date: s.date, p: predictionsVsGoals(s)[0] }))
-    .filter((x): x is { date: string; p: PredictionVsGoal } => x.p?.predictedSec != null)
-    .map((x) => ({ date: x.date, v: x.p.predictedSec! }));
+  // Finish-time RANGE per split: worst = race today; best = a forward projection from the training still
+  // ahead (PRIMARY) or, when there's no usable build, the athlete's OWN race-predictor trend (FALLBACK).
+  // Honest MODEL — labelled as such in the UI.
+  // PRIMARY input: a smoothed build ramp (avg ΔCTL/week over ~28d) — steadier than the 7d ramp.
+  const ctlNow = load?.ctl ?? null;
+  const ctlSeries = load?.series ?? [];
+  let ramp28PerWeek: number | null = null;
+  if (ctlNow != null && ctlSeries.length >= 8) {
+    const lookback = Math.min(28, ctlSeries.length - 1);
+    const priorCtl = ctlSeries[ctlSeries.length - 1 - lookback].ctl;
+    ramp28PerWeek = +(((ctlNow - priorCtl) / lookback) * 7).toFixed(2);
+  }
+  // FALLBACK input: prefer the deep prediction trajectory (≥10 pts possible); else the short window.
+  const predTrajectory =
+    opts?.predictionTrajectory ??
+    (opts?.history ?? [])
+      .map((s) => ({ date: s.date, p: predictionsVsGoals(s)[0] }))
+      .filter((x): x is { date: string; p: PredictionVsGoal } => x.p?.predictedSec != null)
+      .map((x) => ({ date: x.date, v: x.p.predictedSec! }));
   const nearestPredicted = predictions.find((p) => p.predictedSec != null)?.predictedSec;
   // Reliability-gated: only project an upside when the prediction trajectory is trending faster with a
   // statistically distinguishable (autocorrelation-aware) signal — never off a few noisy points.
   const fracImprovePerDay = reliableImprovementPerDay(predTrajectory, nearestPredicted);
   for (const plan of splits) {
     const dTo = plan.date ? daysTo(state.date, plan.date) : 0;
-    const r = projectRaceDayRange(plan.predictedSec, dTo, fracImprovePerDay);
+    const planned = projectFromTrainingLoad(ctlNow, ramp28PerWeek, dTo);
+    const r = projectRaceDayRange(plan.predictedSec, dTo, fracImprovePerDay, planned);
     plan.worstSec = r.worstSec;
     plan.bestSec = r.bestSec;
     plan.rangeBasis = r.rangeBasis;

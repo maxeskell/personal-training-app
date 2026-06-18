@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { projectRaceDayRange, reliableImprovementPerDay, MAX_PROJECTED_GAIN } from "../src/insights/splits.js";
+import { projectFromTrainingLoad, projectRaceDayRange, reliableImprovementPerDay, MAX_PROJECTED_GAIN } from "../src/insights/splits.js";
 
 test("projectRaceDayRange: an improving trend opens a faster best-case end (diminishing returns)", () => {
   // 6000s, ~0.05%/day faster, 30 days out. Linear gain would be 1.5%; the damped curve saturates it to
@@ -41,6 +41,58 @@ test("projectRaceDayRange: race day is here (daysToRace ≤ 0) → current level
   const r = projectRaceDayRange(6000, 0, -0.0005);
   assert.equal(r.bestSec, 6000);
   assert.match(r.rangeBasis, /Race is here/);
+});
+
+// ---- PRIMARY basis: forward projection from the planned training (CTL ramp) ----
+
+test("projectFromTrainingLoad: a positive build ramp opens a faster best-case, below the cap", () => {
+  const r = projectFromTrainingLoad(50, 2, 80); // CTL 50, +2/wk, 80 days out
+  assert.ok(r != null, "expected a projection for a building athlete");
+  assert.ok(r!.projectedFrac > 0 && r!.projectedFrac < MAX_PROJECTED_GAIN);
+  assert.match(r!.basis, /training still ahead/);
+  assert.match(r!.basis, /diminishing returns/);
+});
+
+test("projectFromTrainingLoad: no usable build → null (maintaining, tapering, no CTL, or race here)", () => {
+  assert.equal(projectFromTrainingLoad(50, 0, 80), null); // flat ramp = maintaining
+  assert.equal(projectFromTrainingLoad(50, -1, 80), null); // negative = detraining/taper
+  assert.equal(projectFromTrainingLoad(null, 2, 80), null); // no CTL
+  assert.equal(projectFromTrainingLoad(50, 2, 0), null); // race is here
+});
+
+test("projectFromTrainingLoad: a negligible ramp is treated as no usable upside (null)", () => {
+  // CTL 80, +0.05/wk, 20 days → well under the 0.3% meaningful floor once mapped through the elasticity.
+  assert.equal(projectFromTrainingLoad(80, 0.05, 20), null);
+});
+
+test("projectFromTrainingLoad: gain is concave and bounded by the cap", () => {
+  const g80 = projectFromTrainingLoad(50, 2, 80)!.projectedFrac;
+  const g160 = projectFromTrainingLoad(50, 2, 160)!.projectedFrac;
+  assert.ok(g160 > g80); // longer horizon → more projected gain…
+  assert.ok(g160 < 2 * g80); // …but less than linear (diminishing returns)
+  const huge = projectFromTrainingLoad(50, 10, 100000)!.projectedFrac;
+  assert.equal(huge, MAX_PROJECTED_GAIN); // saturates to the hard cap, never beyond
+});
+
+// ---- precedence: planned (PRIMARY) wins over the observed trend (FALLBACK) ----
+
+test("projectRaceDayRange: a planned projection takes precedence over the observed trend", () => {
+  const r = projectRaceDayRange(6000, 30, -0.0005, { projectedFrac: 0.05, basis: "PLANNED BASIS" });
+  assert.equal(r.bestSec, 5700); // 6000 × (1 − 0.05), not the trend's 5919
+  assert.equal(r.rangeBasis, "PLANNED BASIS");
+});
+
+test("projectRaceDayRange: falls back to the observed trend when there's no usable plan", () => {
+  for (const planned of [null, undefined, { projectedFrac: 0, basis: "x" }]) {
+    const r = projectRaceDayRange(6000, 30, -0.0005, planned);
+    assert.equal(r.bestSec, 5919); // the diminishing-returns trend path
+  }
+});
+
+test("projectRaceDayRange: no plan and no trend → current level", () => {
+  const r = projectRaceDayRange(6000, 30, null, null);
+  assert.equal(r.bestSec, r.worstSec);
+  assert.match(r.rangeBasis, /current level/);
 });
 
 // ---- reliability gate: only project off a statistically distinguishable trend ----

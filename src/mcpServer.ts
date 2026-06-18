@@ -5,7 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
-import { buildTodayState, gatherReadiness, loadArchive, todayIso, withAie } from "./coach/orchestrator.js";
+import { buildTodayState, gatherReadiness, loadArchive, loadPredictionTrajectory, todayIso, withAie } from "./coach/orchestrator.js";
 import { StateStore } from "./state/store.js";
 import { buildInsights } from "./insights/engine.js";
 import { DecisionLog, suppressedInsightKeys, reactionFromLabel, type DecisionRecord } from "./state/decisionLog.js";
@@ -212,7 +212,8 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
       const engagement = await loadEngagementContext(window);
       const insightLog = new InsightLog();
       const firstSeen = await insightLog.firstSeenByKey(); // before recording this surfacing → new = brand new
-      const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
+      const predictionTrajectory = await loadPredictionTrajectory(state);
+      const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement, predictionTrajectory });
       await insightLog.recordSurfaced(ins.topFindings, "mcp-insights");
       return ok([
         insightMetricsSummary(ins),

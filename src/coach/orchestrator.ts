@@ -12,8 +12,12 @@ import { ArchiveStore } from "../archive/store.js";
 import { mapRichActivity } from "../insights/metrics.js";
 import { todayIso } from "../util/today.js";
 import { loadProfileSafe } from "../profile/load.js";
-import type { ArchiveInput } from "../insights/engine.js";
+import { nearestRaceName, racePredictedSec, type ArchiveInput } from "../insights/engine.js";
 import type { AthleteState } from "../state/types.js";
+
+/** How far back the race-day projection's FALLBACK trend looks (days). Bounds the deep read; the
+ *  statistical gate needs ≥10 points, so this comfortably clears it while capping parse cost. */
+export const PREDICTION_HISTORY_DAYS = 180;
 
 // Re-exported so existing importers (CLI, dashboard, MCP server) keep getting `todayIso` from here,
 // while the single source of truth — a timezone-aware "today" (DATA-3) — lives in util/today.
@@ -83,6 +87,17 @@ export async function buildTodayState(): Promise<{ state: AthleteState; window: 
   }
 
   return { state, window };
+}
+
+/**
+ * Deep, lightweight race-prediction history for the race-day projection's FALLBACK trend. Keyed to
+ * today's nearest race so the series tracks one comparable target rather than mixing races as they pass.
+ * Loaded separately from the 7-day `window` (kept short for cost/latency on the readiness path) and only
+ * by the insight surfaces that show the finish-time range. Returns [] when there's no history yet.
+ */
+export async function loadPredictionTrajectory(state: AthleteState, days = PREDICTION_HISTORY_DAYS): Promise<Array<{ date: string; v: number }>> {
+  const nearest = nearestRaceName(state);
+  return new StateStore().series(state.date, days, (s) => racePredictedSec(s, nearest));
 }
 
 /** Shared readiness core: assemble → wellbeing → verdict → log. Used by `readiness` and `ping`. */
