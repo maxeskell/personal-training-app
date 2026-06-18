@@ -91,114 +91,24 @@ To enable it, run the one-time `garmin-mcp-auth` (see `.env.example`) then set `
 Layout: `src/mcp/` (AIE OAuth client + Garmin stdio client), `src/state/` (AthleteState, store,
 baselines, sync-gaps), `knowledge/sports-science.md` (priors for the M3 LLM layer).
 
-## n=1 analytics layer (data-scientist brief Q1–Q7)
+## The insight engine (n=1 analytics)
 
-The insight engine answers a set of pre-registered analytical questions (Q1–Q7, summarised below) with HONEST
-uncertainty — autocorrelation-aware, effect-sizes-with-CIs, and every MODEL caveat attached. Each
-detector self-gates and stays silent until there's enough of your own history behind it. Surfaced in
-`deep-dive`, `ask`, and the dashboard Signals panel:
+A deterministic statistical layer — **no LLM, no cost** — answers a set of pre-registered analytical
+questions (a data-scientist brief, Q1–Q7) from your own history, with honest uncertainty:
+autocorrelation-aware correlations (Fisher-z CIs, FDR-controlled), out-of-sample-validated HRV/RHR
+monitoring rules, change-point detection, brick decoupling, taper-target form bands, economy-vs-fitness
+separation, an under-fuelling red flag, and `.FIT` stream analysis (thermal + in-session biomechanics).
+Each detector self-gates until there's enough of your data behind it, every finding carries a confidence
+score, and anything estimated is labelled a MODEL. Surfaced in `deep-dive`, `ask` and the dashboard
+**Signals** / **Top insights** cards.
 
-- **Rigorous correlations (Q1):** lagged cross-correlation (predictor at *t−k* → outcome at *t*) with a
-  Fisher-z 95% CI computed on the *effective* sample size (discounted for serial dependence). Nothing is
-  called real unless its CI clears 0 — the brief's #1 guardrail against naive-Pearson nonsense.
-- **Validated monitoring rule set (Q1, Deliverable #3):** candidate HRV/RHR threshold rules selected on
-  the earlier ~60% of your history and scored on the **held-out** later ~40%, with a circular-shift
-  **permutation null** — a rule is only reported as skilful if it beats chance out-of-sample (else it's
-  labelled exploratory). Runs against the **backfilled Garmin series** with **sleep score** as an
-  outcome *independent* of the HRV/RHR predictors (falling back to the AIE recovery series, relabelled as
-  concordance, when that history isn't there yet).
-- **Change-point detection (§5):** dates genuine regime shifts in CTL, HRV and RHR (binary segmentation,
-  L2 cost) so inflections can be tied to a training/illness/kit change, not smoothed away.
-- **Brick decoupling (Q4):** run efficiency off the bike vs fresh — the triathlon-specific signal.
-- **Taper target (Q6):** the race-day form (TSB) band that accompanied your best past races.
-- **Economy vs fitness (Q5):** run EF residualised on CTL — separates real economy gains from "just fitness".
-- **Fuelling red flag (Q7):** fires when weight *and* skeletal-muscle-mass trend down together (a
-  under-fuelling stop-signal). A rapid weight drop on its own is separately flagged by the wellbeing
-  guardrail above, even without muscle-mass data.
-- **Stream-level (.FIT) analysis (§1)** — two layers, two sources:
-  - **Thermal / effort** (per-activity temperature for the heat confounder, hot/cool-third HR, training
-    effect) comes from `fit-sync`, which pulls Garmin's *parsed summary* (`get_activity_fit_data`). This
-    now runs **automatically as part of dashboard Sync** (small, dedup'd) — and daily if you install the
-    watch. No manual step.
-  - **In-session biomechanics** (aerobic decoupling, cadence/GCT/vertical-osc decay) needs **raw
-    per-second `.FIT` files** in `FIT_STREAMS_DIR` (default `data/fit-streams/`); the dependency-free
-    parser decodes them in-process. These now **auto-download during Sync / `fit-sync`** (and on demand
-    when you ask for deep session feedback) via `download_activity_file` — added to `garmin_mcp` on
-    2026-06-10 and pinned in the default `GARMIN_MCP_ARGS`. On older builds, or for activities outside
-    the sync window, export the original `.FIT` from Garmin Connect (Activity → ⚙ → *Export Original*)
-    into that folder. See `.env.example`.
+The **Top insights** card also closes a feedback loop: 👍/👎/💤 on each finding is saved and reversible,
+down-ranks or lifts its family **within a severity tier** (flags are never buried), and `npm run listening`
+prints your engagement model — what you act on vs dismiss, plan adherence (deferring to AI Endurance) and
+plan changes diffed from daily snapshots.
 
-Every finding now carries a **confidence score**; only good-signal findings are surfaced, and the most
-important also feed a multiple-comparisons guard: the exploratory correlation scan is **FDR-controlled**
-(Benjamini–Hochberg, q=0.1), so a relationship is "confirmed" only if its CI clears 0 *and* it survives
-FDR — otherwise it's labelled exploratory.
-
-## Top insights box — like, dislike, snooze (and how old each signal is)
-
-The dashboard leads with a **Top insights** card: the five strongest findings ranked by signal strength,
-each with **👍 Like / 👎 Dislike / 💤 Snooze**.
-
-- **Like / Dislike is a saved, visible opinion** — your choice is rendered back on every reload (the button
-  shows as active), and it's **reversible**: click it again to clear, or click the other to switch. Both are
-  logged to the decision log (append-only, latest-wins), so changing your mind just records a newer choice.
-- **Dislike does _not_ hide the insight** — it stays on the card (marked, and **down-ranked** via the
-  engagement loop), because you asked to keep seeing it and be able to change your mind. Liking lifts its
-  family; disliking sinks it.
-- **Snooze is the hide action** — it removes the insight for ~2 weeks and tells the coach
-  (readiness/weekly/ask) to stop raising it. After the cool-off it can resurface (and if it keeps coming
-  back, that becomes a *"recurring signal you've set aside"* finding).
-- **Freshness is explicit** — each insight shows a **NEW** badge (and the header a *"N new"* count) when it
-  first appeared in the last ~24h, plus a **"first seen <date> · Nd"** age line so you can tell a brand-new
-  signal from a long-standing one. Age is floored at "since logging began" (the insight-history log starts
-  when this shipped), and it's labelled that way rather than implying something is new when we just weren't
-  watching yet.
-
-Feedback posts to the server's `/insight-feedback` endpoint — credentials never leave the Mac.
-
-### What you listen to — your engagement model
-
-Every time the engine surfaces findings (the dashboard card, the MCP `insights` tool) it appends the
-**full surfaced set** to `data/insights/log.jsonl` — not just the ones you react to — so there's a complete
-record of *what you were shown* alongside *what you acted on*. The log is de-duplicated (an unchanged
-surface isn't re-written on every page load) and gitignored like all personal data.
-
-`npm run listening` (or the MCP `listening` tool) joins that history to your decision log and prints — and
-saves as a dated report — your engagement model:
-- **which insight families you act on vs wave away** (a 👍/👎/✕ breakdown per family), your overall reaction
-  rate, and gated-proposal accept/decline counts;
-- **plan adherence** — done vs planned hours overall and per zone, with a "is it slipping?" trend. This
-  **defers to AI Endurance's own `getPlanProgress`** (the platform's authoritative planned-vs-done
-  reconciliation) and trends its numbers rather than re-deriving a competing match;
-- **plan changes** — sessions **added / moved / dropped**, detected by diffing your daily `plannedSessions`
-  snapshots (guarded so a workout that simply passed isn't mistaken for a deletion; approximate, and
-  workouts without a stable id are skipped). This is something the platform doesn't expose, so it's
-  computed here;
-- what's **currently snoozed** inside the cool-off, and the honest one — **findings you snoozed that the
-  engine surfaced again afterwards** ("dismissed, but came back").
-
-It's deterministic (no LLM, no cost) and **descriptive, not causal**: it tracks engagement, adherence and
-recurrence and labels the form numbers a MODEL; it does not claim a finding you ignored *caused* a later
-result. Note plan edits you make **directly in AI Endurance** are caught by the snapshot diff; there is no
-separate edit feed — the daily snapshots are the record.
-
-### Closing the loop — engagement feeds back into your insights
-
-The engagement model isn't just a mirror; it **feeds back into what the engine surfaces**, on the
-dashboard, `insights` and `deep-dive`:
-
-- **Ranking follows your attention.** Families you consistently dismiss are gently **down-ranked** and the
-  ones you act on are **lifted** — but this is **safety-preserving**: severity always wins (a `flag` can
-  never be buried under a family you like) and flags are never down-weighted. It only reorders *within* a
-  severity tier.
-- **New "Follow-through" findings.** Two insights are now **generated from your own behaviour**: a
-  *recurring signal you've set aside* (something you snoozed that the engine keeps re-raising — surfaced
-  only after it recurs ≥2×) and *plan adherence is slipping* (you're doing <70% of planned hours, or it
-  dropped ≥15 points). Both are ordinary findings with 👍/👎/💤 buttons, so you can like, dislike or snooze
-  them too.
-
-Still no causal claim and still no LLM — it's a transparent, bounded re-weighting plus two honest,
-behaviour-derived findings. The whole loop degrades silently: if the history can't be read, surfacing
-falls back to exactly what it was before.
+**→ Full detail — the Q1–Q7 methods, the like/dislike/snooze mechanics and the engagement loop:
+[docs/insight-engine.md](docs/insight-engine.md).**
 
 ## Deep session feedback
 
@@ -346,9 +256,8 @@ cd /path/to/personal-training-app && npm run serve:logs        # tail /path/to/p
 cd /path/to/personal-training-app && npm run serve:uninstall   # stop auto-starting
 ```
 
-Manual start (foreground, for dev): `cd /path/to/personal-training-app && npm run serve`
-
-Alternative process manager (pm2): `npm i -g pm2 && npm run pm2:start && pm2 startup && pm2 save`.
+Manual start (foreground, for dev) is `npm run serve`; pm2 also works
+(`npm i -g pm2 && npm run pm2:start && pm2 startup && pm2 save`).
 
 **Hands-free code updates (never run git):** install the auto-updater and merged changes pull + restart
 the dashboard on their own — you just use the app.
@@ -360,9 +269,8 @@ npm run update                                                              # pu
 npm run autoupdate:uninstall                                                # turn it off
 ```
 
-It's safe: **fast-forward only**, and it skips the pull entirely if you have uncommitted local edits, so it
-can't clobber anything. Day-to-day you never touch git — and the dashboard's **🔄 Sync** button is unrelated
-(it re-pulls your *training data*, not code).
+It's safe: **fast-forward only**, and it skips the pull if you have uncommitted edits, so it can't clobber
+anything. The dashboard's **🔄 Sync** button is unrelated — it re-pulls your *training data*, not code.
 
 > Note: on the LAN the dashboard is gated only by the per-install pairing token (there is no separate
 > per-user login) — fine on a trusted home network. Don't expose port 3000 to the public internet; for
@@ -453,9 +361,24 @@ Secrets stay local and out of git: AI Endurance OAuth tokens live in `~/.enduran
 Garmin tokens in `~/.garminconnect`, your `ANTHROPIC_API_KEY` in `.env`. `data/`, `reports/`, `*.log`,
 and token dirs are gitignored; token-shaped strings are redacted from logs and notifications.
 
+## Roadmap & non-goals
+
+**What it deliberately is _not_:** not a multi-tenant SaaS, not a hosted service, and not a replacement
+for a human coach or a medical professional. It's **one athlete, local-first** — no database, no app
+accounts, no server you don't run. It won't help with under-fuelling or weight-loss targets (fuel to
+train), and it never auto-rewrites your plan: every write goes through the explicit propose → confirm gate.
+
+**Where it's going:** the standing engineering priority is **inverting the test pyramid** — thicker
+coverage on the `.FIT` parser, the `server.ts` routes and the full `WriteGate` path before widening
+surface area there. The deeper data-mining direction (the trends a pro coach pulls out) is tracked in the
+[Insight Engine Spec](docs/specs/Insight_Engine_Spec.md). Full non-goals, limitations and the risk register
+are in the [Product one-pager](docs/PRODUCT.md).
+
 ## Specs (source of truth)
 
 - [Product one-pager](docs/PRODUCT.md) — what it is, who it's for, data/privacy posture, risk register.
+- [Command reference](docs/commands.md) — every command, grouped by what you're trying to do.
+- [Insight engine](docs/insight-engine.md) — the shipped n=1 analytics layer + engagement loop, in full.
 - [Setup guide](SETUP.md) · [Handover](HANDOVER.md) — stand up your own instance · operate/maintain it.
 - [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) — decision gate + engineering plan (authoritative).
 - [Project Instructions](docs/specs/AI_Triathlon_Coach_Project_Instructions.md) — the coach persona / system prompt.
