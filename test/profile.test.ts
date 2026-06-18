@@ -70,6 +70,27 @@ test("assertNoLiveNumbers throws when a live performance number is planted anywh
   assert.doesNotThrow(() => assertNoLiveNumbers({ ai_endurance_todo: { ftp_w: "unresolved", swim_css: "not_set" } }));
 });
 
+test("the live-number guard catches synonyms and numeric strings, but not substring look-alikes", () => {
+  // Synonyms the old narrow regex missed are now caught when numeric.
+  for (const planted of [
+    { health: { lthr: 162 } },
+    { health: { max_hr: 188 } },
+    { equipment: { threshold_w: 240 } },
+    { health: { functional_threshold: 250 } },
+    { health: { w_per_kg: 4.2 } },
+    { health: { vo2max: 58 } },
+  ]) {
+    assert.throws(() => assertNoLiveNumbers(planted), /live performance number/i, JSON.stringify(planted));
+  }
+  // A live number snuck in as a numeric STRING is caught too; a genuine status string is not.
+  assert.throws(() => assertNoLiveNumbers({ ai_endurance_todo: { ftp_w: "223" } }), /live performance number/i);
+  assert.doesNotThrow(() => assertNoLiveNumbers({ ai_endurance_todo: { ftp_w: "set in AIE" } }));
+  // Whole-segment matching: equipment/fit keys that merely CONTAIN a metric substring must pass.
+  assert.doesNotThrow(() => assertNoLiveNumbers({ equipment: { lightweight_wheels: 1, wheel_weight_g: 1400 } }));
+  assert.doesNotThrow(() => assertNoLiveNumbers({ availability: { space_minutes: 5 } }));
+  assert.doesNotThrow(() => assertNoLiveNumbers({ biomechanics: { paceline_position: 2 } }));
+});
+
 test("requiredFieldsMissing flags the blank example and clears on a filled profile", () => {
   const blank = validateProfile(parseYaml(exampleText));
   const missing = requiredFieldsMissing(blank);
