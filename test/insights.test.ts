@@ -39,6 +39,9 @@ test("splits: plan totals exactly equal predicted finish; improving → negative
   assert.ok(plan);
   assert.equal(plan.segments.at(-1)!.cumulativeSec, 12600);
   assert.ok(plan.segments[0].targetPaceSecPerKm > plan.segments.at(-1)!.targetPaceSecPerKm, "starts slower than it finishes");
+  // Per-segment splits are present and sum exactly to the total (and to each running cumulative).
+  assert.equal(plan.segments.reduce((a, s) => a + s.splitSec, 0), 12600);
+  assert.equal(plan.segments[0].splitSec, plan.segments[0].cumulativeSec);
   assert.equal(estimateRunSplits("x", 0, 100, "unknown"), null);
 });
 
@@ -53,6 +56,9 @@ test("tri splits: olympic plan covers swim/T1/bike/T2/run from CSS + FTP + 10K p
   assert.ok(plan);
   assert.deepEqual(plan.segments.map((s) => s.label), ["Swim 1500 m", "T1", "Bike 40 km", "T2", "Run 10 km"]);
   assert.equal(plan.segments.at(-1)!.cumulativeSec, plan.predictedSec);
+  // Per-leg splits are populated and sum to the total (and equal the cumulative diffs).
+  assert.equal(plan.segments.reduce((a, s) => a + s.splitSec, 0), plan.predictedSec);
+  assert.equal(plan.segments[2].splitSec, plan.segments[2].cumulativeSec - plan.segments[1].cumulativeSec);
   // Bike leg plausible: 40 km at 83% of 250 W on the flat model lands 60–90 min.
   const bikeSec = plan.segments[2].cumulativeSec - plan.segments[1].cumulativeSec;
   assert.ok(bikeSec > 3600 && bikeSec < 5400, `bike leg ${bikeSec}s`);

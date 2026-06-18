@@ -215,9 +215,13 @@ projection, and the dashboard carries an **API cost** card. To keep it down, the
     predictions, extrapolated out to race day but only when that trend is statistically reliable. Both are
     capped (~7%) and assume you hold the build, stay healthy, adapt well and taper. Both ends are labelled a
     MODEL with the assumptions stated, and the range collapses to your current level when there's no build
-    or improving trend to project — never an empty promise. Because each race is a different distance out,
-    the best case differs per race even at identical current fitness. Times are rounded to the minute (a
-    projection isn't second-accurate); each card leads with the race **date + countdown** and a glossary.
+    or improving trend to project — never an empty promise. **Both estimates are always shown** (race-day
+    best and race-it-today, side by side), even when they currently match. Because each race is a different
+    distance out, the best case differs per race even at identical current fitness. Times are rounded to the
+    minute (a projection isn't second-accurate); each card leads with the race **date + countdown** and a glossary.
+  - **The per-segment table** shows both the **Split** (time for that segment alone) and the **Cumulative**
+    (running total), so you can pace each leg/kilometre as well as see the overall clock. Splits sum exactly
+    to the finish.
   - **Run races**: AI Endurance's predicted finish broken into a per-segment pacing plan, shaped by your
     **durability trend** — improving durability earns a gentle negative split; weak/unknown durability gets
     a conservative start that protects against the late fade.

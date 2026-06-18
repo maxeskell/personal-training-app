@@ -20,6 +20,8 @@ export interface Segment {
   label: string;
   distanceKm: number;
   targetPaceSecPerKm: number;
+  /** Time for THIS segment alone (the split). Derived from rounded cumulatives so splits sum exactly. */
+  splitSec: number;
   cumulativeSec: number;
   /** Display override for non-run legs (e.g. "1:52/100m", "208 W · ~34 km/h" — speed is a rough aero estimate). */
   target?: string;
@@ -189,14 +191,19 @@ export function estimateRunSplits(
   const k = predictedSec / rawTotal;
 
   let cum = 0;
+  let prevCum = 0;
   const segments: Segment[] = dists.map((d, i) => {
     const pace = basePace * factors[i] * k;
     cum += pace * d;
+    const cumulativeSec = Math.round(cum);
+    const splitSec = cumulativeSec - prevCum; // diff of rounded cumulatives → splits sum to the total
+    prevCum = cumulativeSec;
     return {
       label: seg === 5 ? `${Math.round(dists.slice(0, i).reduce((a, b) => a + b, 0))}–${Math.round(dists.slice(0, i + 1).reduce((a, b) => a + b, 0))} km` : `km ${i + 1}`,
       distanceKm: d,
       targetPaceSecPerKm: Math.round(pace),
-      cumulativeSec: Math.round(cum),
+      splitSec,
+      cumulativeSec,
     };
   });
 
@@ -300,11 +307,15 @@ export function estimateTriSplits(
   const basis: string[] = [];
   const missing: string[] = [];
   let cum = 0;
+  let prevCum = 0;
   let raced = 0;
   const push = (label: string, distanceKm: number, sec: number, target: string) => {
     cum += sec;
     raced += distanceKm;
-    segments.push({ label, distanceKm, targetPaceSecPerKm: distanceKm > 0 ? Math.round(sec / distanceKm) : 0, cumulativeSec: Math.round(cum), target });
+    const cumulativeSec = Math.round(cum);
+    const splitSec = cumulativeSec - prevCum; // diff of rounded cumulatives → splits sum to the total
+    prevCum = cumulativeSec;
+    segments.push({ label, distanceKm, targetPaceSecPerKm: distanceKm > 0 ? Math.round(sec / distanceKm) : 0, splitSec, cumulativeSec, target });
   };
 
   if (hasSwim) {

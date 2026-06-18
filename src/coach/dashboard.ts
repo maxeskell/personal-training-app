@@ -432,7 +432,7 @@ function renderSplits(ins: InsightReport, share = false): string {
   const blocks = ins.splits
     .map((p, idx) => {
       const rows = p.segments
-        .map((s) => `<tr><td>${escapeHtml(s.label)}</td><td class="num">${s.target ? escapeHtml(s.target) : `${paceStr(s.targetPaceSecPerKm)}/km`}</td><td class="num">${hms(s.cumulativeSec)}</td></tr>`)
+        .map((s) => `<tr><td>${escapeHtml(s.label)}</td><td class="num">${s.target ? escapeHtml(s.target) : `${paceStr(s.targetPaceSecPerKm)}/km`}</td><td class="num">${hms(s.splitSec)}</td><td class="num">${hms(s.cumulativeSec)}</td></tr>`)
         .join("");
       // Date + countdown at the top — in share view, drop the exact date but keep the countdown.
       const dTo = p.date ? daysTo(ins.date, p.date) : null;
@@ -441,19 +441,18 @@ function renderSplits(ins: InsightReport, share = false): string {
       const when = share
         ? countdown ? ` <span class="muted">· ${countdown}</span>` : ""
         : p.date ? ` <span class="muted">· ${escapeHtml(p.date)}${countdown ? ` · ${countdown}` : ""}</span>` : "";
-      // Finish RANGE: best (race day) → worst (race today), rounded to the minute.
+      // Always show BOTH estimates: race-day best (projected) → race-it-today (current level), rounded to
+      // the minute. When there's no build/trend to project they read the same — the basis line says why.
       const worst = p.worstSec ?? p.predictedSec;
-      const hasRange = p.bestSec != null && p.bestSec < worst;
-      const finish = hasRange
-        ? `<b style="font-size:16px">${clockMin(p.bestSec!)} – ${clockMin(worst)}</b> <span class="muted">over ${p.distanceKm} km — race-day best → race-it-today</span>`
-        : `<b style="font-size:16px">~${clockMin(worst)}</b> <span class="muted">over ${p.distanceKm} km (current level)</span>`;
+      const best = p.bestSec ?? worst;
+      const finish = `<b style="font-size:16px">${clockMin(best)}</b> <span class="muted">race-day best (projected)</span> → <b style="font-size:16px">${clockMin(worst)}</b> <span class="muted">race it today (current level)</span> <span class="muted">· over ${p.distanceKm} km</span>`;
       const basis = p.rangeBasis ? `<div class="ev" style="margin:3px 0">${escapeHtml(p.rangeBasis)}</div>` : "";
       return `<div style="margin-bottom:16px">
         <div style="font-size:15px"><b>${raceLabel}</b>${when}</div>
         <div style="margin:5px 0">${finish}</div>
         ${basis}
         <div class="ev" style="margin:4px 0">Pacing for the current prediction — ${escapeHtml(p.strategy)}</div>
-        <table><tr class="k"><td>Segment</td><td>Target</td><td>Cumulative</td></tr>${rows}</table>
+        <table><tr class="k"><td>Segment</td><td>Target</td><td>Split</td><td>Cumulative</td></tr>${rows}</table>
       </div>`;
     })
     .join("");
@@ -482,6 +481,8 @@ function clockMin(sec: number): string {
 function raceGlossary(): string {
   const terms: Array<[string, string]> = [
     ["Range", "best case = race day if the build goes well; worst = racing at today's fitness"],
+    ["Split", "the target time for that one segment/leg on its own"],
+    ["Cumulative", "the running total elapsed by the end of that segment"],
     ["Negative split", "running the second half slightly faster than the first"],
     ["Durability", "how little your pace/power fades late in long efforts — fatigue resistance"],
     ["CSS", "Critical Swim Speed — the swim pace you can hold, per 100m"],
