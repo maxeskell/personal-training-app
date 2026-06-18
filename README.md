@@ -244,6 +244,7 @@ at all; HRV/RHR/sleep/VO2max are health numbers but don't identify *who* you are
 PDF, use `npm run dashboard -- --share`.
 
 ```bash
+# Foreground / DEV only — dies when you close the terminal. For the always-on server, see below.
 npm run serve                 # localhost only; prints a /pair?token=… link at startup
 COACH_LAN=1 npm run serve     # also bind the LAN for phone access
 ```
@@ -274,7 +275,9 @@ devices share one pull.
 The dashboard has an **"Ask your data"** chat box — type a question (e.g. *"am I overtraining?"*) and the
 coach answers from your assembled state + insights, with the same guardrails as every other flow.
 
-**Start it automatically when you turn the Mac on** (recommended — launchd, no extra install):
+**The canonical way to run the server — install it once as an always-on service** (macOS launchd, no
+extra dependency). This, not an open terminal, is what serves the site: it starts at login, restarts on
+crash, and auto-restarts after a code pull.
 
 ```bash
 cd /path/to/personal-training-app && npm run serve:install     # starts at login + restarts if it stops
@@ -282,8 +285,11 @@ cd /path/to/personal-training-app && npm run serve:logs        # tail /path/to/p
 cd /path/to/personal-training-app && npm run serve:uninstall   # stop auto-starting
 ```
 
-Manual start (foreground, for dev) is `npm run serve`; pm2 also works
-(`npm i -g pm2 && npm run pm2:start && pm2 startup && pm2 save`).
+**Pick one server model — don't mix them.** With the service installed you never run `npm run serve`
+again: that's foreground **dev only**, and starting it while the service is up makes two instances fight
+for port 3000. To check what's actually running: `lsof -nP -iTCP:3000 -sTCP:LISTEN`. (pm2 —
+`npm i -g pm2 && npm run pm2:start && pm2 startup && pm2 save` — is an alternative manager to use
+*instead of* launchd, never alongside it.)
 
 **Hands-free code updates (never run git):** install the auto-updater and merged changes pull + restart
 the dashboard on their own — you just use the app.
