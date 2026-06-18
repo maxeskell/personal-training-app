@@ -83,6 +83,12 @@ export interface DashboardInput {
   /** Week-ahead weather joined to the upcoming plan (omitted when the forecast is unavailable). */
   weather?: WeekWeather;
   /**
+   * Share/redacted view (for screenshots): hides the identifying bits — real race names + dates and the
+   * location-revealing weather card — while keeping the analysis/trends shape. The health metrics shown
+   * (HRV/RHR/sleep/VO2max) aren't identifying; weight/body-comp aren't on the dashboard at all.
+   */
+  share?: boolean;
+  /**
    * Minutes since the snapshot was assembled, set ONLY when the server wants the page to kick a
    * background Sync on load (stale-while-revalidate). Leave unset for the one-off CLI HTML file,
    * which has no /refresh endpoint behind it.
@@ -420,16 +426,20 @@ function renderRacePredictions(today: AthleteState): string {
 }
 
 /** Estimated race splits dependent on training: a finish-time RANGE + per-segment pacing. */
-function renderSplits(ins: InsightReport): string {
+function renderSplits(ins: InsightReport, share = false): string {
   if (!ins.splits.length) return "";
   const blocks = ins.splits
-    .map((p) => {
+    .map((p, idx) => {
       const rows = p.segments
         .map((s) => `<tr><td>${escapeHtml(s.label)}</td><td class="num">${s.target ? escapeHtml(s.target) : `${paceStr(s.targetPaceSecPerKm)}/km`}</td><td class="num">${hms(s.cumulativeSec)}</td></tr>`)
         .join("");
-      // Date + countdown at the top.
+      // Date + countdown at the top — in share view, drop the exact date but keep the countdown.
       const dTo = p.date ? daysTo(ins.date, p.date) : null;
-      const when = p.date ? ` <span class="muted">· ${escapeHtml(p.date)}${dTo != null && dTo >= 0 ? ` · ${dTo}d to go` : ""}</span>` : "";
+      const countdown = dTo != null && dTo >= 0 ? `${dTo}d to go` : "";
+      const raceLabel = share ? `Race ${idx + 1}` : escapeHtml(p.race);
+      const when = share
+        ? countdown ? ` <span class="muted">· ${countdown}</span>` : ""
+        : p.date ? ` <span class="muted">· ${escapeHtml(p.date)}${countdown ? ` · ${countdown}` : ""}</span>` : "";
       // Finish RANGE: best (race day) → worst (race today), rounded to the minute.
       const worst = p.worstSec ?? p.predictedSec;
       const hasRange = p.bestSec != null && p.bestSec < worst;
@@ -438,7 +448,7 @@ function renderSplits(ins: InsightReport): string {
         : `<b style="font-size:16px">~${clockMin(worst)}</b> <span class="muted">over ${p.distanceKm} km (current level)</span>`;
       const basis = p.rangeBasis ? `<div class="ev" style="margin:3px 0">${escapeHtml(p.rangeBasis)}</div>` : "";
       return `<div style="margin-bottom:16px">
-        <div style="font-size:15px"><b>${escapeHtml(p.race)}</b>${when}</div>
+        <div style="font-size:15px"><b>${raceLabel}</b>${when}</div>
         <div style="margin:5px 0">${finish}</div>
         ${basis}
         <div class="ev" style="margin:4px 0">Pacing for the current prediction — ${escapeHtml(p.strategy)}</div>
@@ -540,7 +550,7 @@ function renderHeader(today: AthleteState, insights: InsightReport | undefined, 
   </div>`;
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, autoSyncStaleMin }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, autoSyncStaleMin, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Week: load by sport. Time in h:mm (user ask); a zero distance renders "—" not a misleading 0.0 km.
@@ -572,10 +582,12 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
     .filter((g) => g.event_date)
     .map((g) => ({ ...g, dt: daysTo(today.date, g.event_date!) }))
     .sort((a, b) => a.dt - b.dt)
-    .map(
-      (g) =>
-        `<tr><td>${escapeHtml(g.event_name ?? "—")}</td><td>${escapeHtml(String(g.event_date ?? ""))}</td><td class="num">${g.dt >= 0 ? `T-${g.dt}d` : `${-g.dt}d ago`}</td><td>${escapeHtml(String(g.priority ?? ""))}</td></tr>`,
-    )
+    .map((g, i) => {
+      // Share view: redact the real name + exact date (the identifying bits); keep the countdown + priority.
+      const name = share ? `Race ${i + 1}` : escapeHtml(g.event_name ?? "—");
+      const date = share ? '<span class="muted">—</span>' : escapeHtml(String(g.event_date ?? ""));
+      return `<tr><td>${name}</td><td>${date}</td><td class="num">${g.dt >= 0 ? `T-${g.dt}d` : `${-g.dt}d ago`}</td><td>${escapeHtml(String(g.priority ?? ""))}</td></tr>`;
+    })
     .join("");
 
   // Humanised activity log — plain labels, status icon, dev ids stripped from the summary.
@@ -633,7 +645,7 @@ code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 @media print {
   body{background:#fff}
   .card{break-inside:avoid;box-shadow:none;border:1px solid #ddd}
-  .acts, .syncbtn, .actbtn, button, #ask, #proposals{display:none !important}
+  .acts, .syncbtn, .actbtn, button, #ask, #proposals, .sharelink, .sharebanner a{display:none !important}
   details{display:block}
   details > summary{display:none}
   a{color:inherit;text-decoration:none}
@@ -641,6 +653,11 @@ code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 </style></head><body>
 <h1>Endurance Coach</h1>
 <div class="sub">as of ${today.assembledAt}</div>
+${
+  share
+    ? `<div class="card sharebanner" style="background:#eef4ff;border:1px solid #cfe0ff;color:#244">🔒 <b>Share view</b> — real race names, exact dates and your location/weather are hidden, the analysis is intact. <a href="?">Exit share view</a></div>`
+    : `<div class="sharelink" style="text-align:right;margin:-8px 0 8px"><a href="?share=1" style="font-size:12px;color:#888">🔒 Share view (hide race names + location for screenshots)</a></div>`
+}
 <div class="card" style="display:flex;align-items:center">
   <button id="syncbtn" class="syncbtn" onclick="sync()">🔄 Sync latest data</button>
   <span id="syncstatus" class="syncstatus"></span>
@@ -736,7 +753,7 @@ ${insights ? renderSignals(insights) : ""}
   <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows || '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
 </div>
 
-${renderWeather(weather)}
+${share ? "" : renderWeather(weather)}
 
 <div class="card"><h2>Trends (last ${gar.length || 0} days)</h2>
   ${trendRows ? `<table>${trendRows}</table>` : '<div class="muted">Backfill the Garmin daily archive to populate trends (npm run backfill).</div>'}
@@ -753,7 +770,7 @@ ${renderScores(today)}
 
 ${renderRacePredictions(today)}
 
-${insights ? renderSplits(insights) : ""}
+${insights ? renderSplits(insights, share) : ""}
 
 <div class="card"><h2>Recent decisions</h2>
   <table><tr class="k"><td>Kind</td><td>Status</td><td>Summary</td></tr>${recentDecisions || '<tr><td colspan="3" class="muted">none yet</td></tr>'}</table>

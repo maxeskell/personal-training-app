@@ -281,6 +281,13 @@ writes + LLM spend, so it is not left open. To reach it from your **phone on the
 (⌘P). A print stylesheet kicks in for the PDF — it hides the interactive buttons, keeps cards from
 splitting across pages, and expands the glossaries — so the whole thing captures cleanly in one document.
 
+**Share view (post a screenshot without doxxing yourself):** the served page carries a small **🔒 Share
+view** toggle (top-right) — flip it live, no data change. It hides the only identifying bits — your **real
+race names + exact dates** (shown as "Race 1", with just the countdown) and the **location-revealing weather
+card** — while keeping all the analysis, trends and zones intact. (Weight/body-comp aren't on the dashboard
+at all; HRV/RHR/sleep/VO2max are health numbers but don't identify *who* you are.) For the one-off HTML or a
+PDF, use `npm run dashboard -- --share`.
+
 ```bash
 npm run serve                 # localhost only; prints a /pair?token=… link at startup
 COACH_LAN=1 npm run serve     # also bind the LAN for phone access
