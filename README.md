@@ -303,7 +303,7 @@ dashboard's **🔄 Sync** button is unrelated — it re-pulls your *training dat
 
 > Note: on the LAN the dashboard is gated only by the per-install pairing token (there is no separate
 > per-user login) — fine on a trusted home network. Don't expose port 3000 to the public internet; for
-> remote access use a private tunnel (Tailscale/cloudflared), not port-forwarding.
+> remote access use a private tunnel (Tailscale Funnel), not port-forwarding.
 
 ## Interrogate your data from Claude (MCP server)
 
@@ -321,8 +321,9 @@ cd /path/to/personal-training-app && npm run mcp:http   # HTTP  — Claude Cowor
   `command: npm`, `args: ["run","mcp"]`, `cwd: /path/to/personal-training-app`. No port, no exposure.
 - **Claude Cowork (HTTP + OAuth):** Cowork's sandboxed cloud VM can't reach a local process and
   authenticates connectors via **OAuth, not a static token**. Open an **authenticated HTTPS tunnel**
-  (cloudflared / Tailscale Funnel) to `127.0.0.1:8787`, then run the server in OAuth mode pointed at the
-  public URL — `COACH_MCP_AUTH=oauth COACH_MCP_PUBLIC_URL=https://<tunnel> COACH_MCP_READONLY=true npm run mcp:http`.
+  to `127.0.0.1:8787` — **Tailscale Funnel** is recommended (free, no domain, stable URL across
+  reboots; a cloudflared named tunnel works too if you own a domain) — then run the server in OAuth
+  mode pointed at the public URL — `COACH_MCP_AUTH=oauth COACH_MCP_PUBLIC_URL=https://<tunnel> COACH_MCP_READONLY=true npm run mcp:http`.
   Add `https://<tunnel>/mcp` as a custom connector (it self-registers via dynamic client registration);
   Claude opens a consent page where you paste your **coach token** once to authorize. **Never** run HTTP
   mode without auth + a tunnel you control. For a hands-off setup — auto-start at login + a stable URL so
