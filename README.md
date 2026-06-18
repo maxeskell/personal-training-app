@@ -26,7 +26,7 @@ anything of your own.
 | | |
 |---|---|
 | **Node.js 20+** | `node --version` (from https://nodejs.org). |
-| **An AI Endurance account** | the data spine — the coach reads your plan, races and metrics from it. Today this is **required**; more data sources (e.g. intervals.icu) are on the roadmap. https://aiendurance.com |
+| **A data source** | the spine the coach reads your plan, races and metrics from. **AI Endurance** is the default and most capable (https://aiendurance.com); **intervals.icu** is also supported (experimental, a thinner coach) — set `COACH_SOURCE=intervals`, see [docs/data-sources.md](docs/data-sources.md). |
 | **An Anthropic API key** | only for the **AI write-ups** (readiness / weekly / race / ask / …). The **dashboard, zones and health checks run with no key.** Pay-as-you-go and usually pennies a day — `npm run cost` shows your spend. https://console.anthropic.com |
 | **Optional, all degradable** | Garmin device data, free Open-Meteo weather, a local LLM for cheap routing. Each is best-effort: if it's absent the matching card is simply omitted, never an error. |
 
