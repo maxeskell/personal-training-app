@@ -38,16 +38,17 @@ the auto-start installers are macOS-specific, and they no-op elsewhere).
 
 ## Everyday commands
 
-After the one-time setup, this is all most days need:
+First time: `npm run setup` (guided wizard → writes `.env`), then `npm run auth:aie`. After that, most
+days only need:
 
 ```bash
+npm start                    # run the coach (dashboard server) — open the printed localhost link
 npm run demo                 # see the dashboard on sample data (no account/key)
-npm run dashboard            # your glanceable Today / Week / Trends / Race view
 npm run readiness            # today's green / amber / red verdict, with cited reasons
 npm run weekly               # weekly review → a saved report
 npm run tune                 # the small, easy wins to apply this week
 npm run ask -- "how were my long rides this month?"   # ask your own data
-npm run serve                # always-on dashboard you can open on your phone (same Wi-Fi)
+npm run help                 # this short list any time (full reference below)
 ```
 
 **→ Full command reference** — race prep, gated plan changes, deep dives, the research/knowledge

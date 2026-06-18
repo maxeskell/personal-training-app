@@ -12,7 +12,7 @@ you're trying to do. All commands are run from the repo root.
 | Command | What it does |
 |---|---|
 | `npm install` | install dependencies |
-| `cp .env.example .env` | create your config (defaults are fine for AI Endurance; see `.env.example`) |
+| `npm run setup` | **guided wizard** — asks for key/units/location/Garmin and writes `.env` for you (the one-command version of editing `.env` by hand) |
 | `npm run auth:aie` | one-time AI Endurance OAuth (opens a browser); tokens cached in `~/.endurance-coach` |
 | `npm run verify:reads` | exercise every read tool and confirm the write-gate is closed |
 | `npm run state:today` | assemble + persist + summarise today's AthleteState |
@@ -32,7 +32,8 @@ you're trying to do. All commands are run from the repo root.
 | Command | What it does |
 |---|---|
 | `npm run demo` | render the dashboard from built-in sample data (no account/key/network) |
-| `npm run dashboard` | generate + open the glanceable Today/Week/Trends/Race view |
+| `npm start` | run the coach — alias for `npm run serve` (the everyday "run it" command) |
+| `npm run dashboard` | generate + open a one-off glanceable view (add `--share` for a redacted screenshot view) |
 | `npm run serve` | run the always-on local dashboard (localhost; prints a `/pair?token=…` link) |
 | `COACH_LAN=1 npm run serve` | also bind the LAN so a phone on the same Wi-Fi can open it (still token-gated) |
 
@@ -97,6 +98,7 @@ you're trying to do. All commands are run from the repo root.
 ## Maintenance & development
 | Command | What it does |
 |---|---|
+| `npm run help` | the curated everyday commands (a short version of this page) |
 | `npm test` | unit tests (node:test, no network) |
 | `npm run typecheck` | TypeScript typecheck |
 | `npm run build` | compile to `dist/` |
