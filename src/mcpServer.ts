@@ -8,7 +8,7 @@ import { loadSystemPrompt } from "./coach/persona.js";
 import { buildTodayState, gatherReadiness, loadArchive, todayIso, withAie } from "./coach/orchestrator.js";
 import { StateStore } from "./state/store.js";
 import { buildInsights } from "./insights/engine.js";
-import { DecisionLog, suppressedInsightKeys, type DecisionRecord } from "./state/decisionLog.js";
+import { DecisionLog, suppressedInsightKeys, reactionFromLabel, type DecisionRecord } from "./state/decisionLog.js";
 import { InsightLog } from "./state/insightLog.js";
 import { analyseListening, formatListening } from "./coach/listening.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
@@ -188,11 +188,21 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
     async () => {
       const { state, window } = await buildTodayState();
       if (!state.raw) return fail("No data assembled — nothing to analyse.");
-      const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
+      const reactionState = await new DecisionLog().insightReactions();
+      const suppressed = suppressedInsightKeys(reactionState);
+      const reactions = new Map([...reactionState].map(([k, v]) => [k, v.reaction] as const));
       const engagement = await loadEngagementContext(window);
+      const insightLog = new InsightLog();
+      const firstSeen = await insightLog.firstSeenByKey(); // before recording this surfacing → new = brand new
       const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
-      await new InsightLog().recordSurfaced(ins.topFindings, "mcp-insights");
-      return ok([insightMetricsSummary(ins), "", insightFindings(ins)].join("\n"));
+      await insightLog.recordSurfaced(ins.topFindings, "mcp-insights");
+      return ok([
+        insightMetricsSummary(ins),
+        "",
+        insightFindings(ins, { firstSeen, reactions }),
+        "",
+        "(react with `react_to_insight`: key=… + like / dislike / snooze / clear — like/dislike persist & are reversible; snooze hides ~2wk)",
+      ].join("\n"));
     },
   );
 
@@ -225,6 +235,24 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
     "View the decision log (audit trail of readiness calls, insight feedback and gated plan proposals). filter='pending' shows only proposals awaiting confirm/decline.",
     { filter: z.enum(["all", "pending"]).optional() },
     async ({ filter }) => ok(formatDecisions(await new DecisionLog().all(), filter ?? "all")),
+  );
+
+  server.tool(
+    "react_to_insight",
+    "Record your reaction to a surfaced insight — the same like/dislike/snooze the dashboard offers, so it persists and shapes future surfacing (parity with the website; no AI Endurance write). `key` comes from the `insights` tool (key=…). like/dislike are saved, visible, REVERSIBLE opinions (dislike just down-ranks, stays visible); snooze hides it ~2 weeks; clear removes a prior opinion. Local decision-log write only.",
+    {
+      key: z.string().min(1).describe("Finding key from the `insights` tool output (the key=… field)."),
+      reaction: z.enum(["like", "dislike", "snooze", "clear"]),
+      summary: z.string().optional().describe("The finding's title, for the audit log (optional)."),
+    },
+    async ({ key, reaction, summary }) => {
+      const mapped = reactionFromLabel(reaction);
+      if (!mapped) return fail(`Unknown reaction: ${reaction}`);
+      await new DecisionLog().recordInsightFeedback(key, mapped, summary ?? key);
+      const note =
+        reaction === "snooze" ? "hidden ~2 weeks" : reaction === "clear" ? "opinion cleared" : `saved (${reaction === "dislike" ? "stays visible, down-ranked" : "reversible"})`;
+      return ok(`Recorded ${reaction} on "${key}" — ${note}.`);
+    },
   );
 
   server.tool(
@@ -425,7 +453,7 @@ async function main(): Promise<void> {
   const server = buildServer();
   await server.connect(new StdioServerTransport());
   console.error(
-    "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/insights/list_reports/" +
+    "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/insights/react_to_insight/list_reports/" +
       "read_report/decisions/listening/cost · LLM tools: ask/readiness/weekly/race_prep/deep_dive/session_feedback · " +
       "gated writes: propose_adjustment/confirm/decline.",
   );

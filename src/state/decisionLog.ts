@@ -122,6 +122,19 @@ export function reactionOf(status: DecisionStatus): InsightReaction {
   return status === "accepted" ? "agree" : status === "declined" ? "disagree" : "ignore";
 }
 
+/**
+ * Canonicalise a UI/agent reaction label to a stored InsightReaction. Both the dashboard buttons
+ * (like/dislike/snooze/clear) and the canonical names (agree/disagree/ignore) are accepted, so the
+ * website endpoint and the MCP `react_to_insight` tool share one vocabulary. Returns undefined if unknown.
+ */
+const REACTION_LABELS: Record<string, InsightReaction> = {
+  like: "agree", dislike: "disagree", snooze: "ignore", clear: "clear",
+  agree: "agree", disagree: "disagree", ignore: "ignore",
+};
+export function reactionFromLabel(label: string): InsightReaction | undefined {
+  return REACTION_LABELS[label];
+}
+
 /** Latest reaction per insight key from a set of decision records (most recent wins). Pure — testable. */
 export function latestInsightReactions(
   records: DecisionRecord[],

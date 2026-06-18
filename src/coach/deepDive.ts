@@ -1,7 +1,27 @@
 import { CoachLLM } from "../llm/client.js";
 import { liveCoachingContext } from "./seasonContext.js";
+import { findingKey } from "../insights/metrics.js";
 import type { AthleteState } from "../state/types.js";
 import type { InsightReport } from "../insights/engine.js";
+import type { InsightReaction } from "../state/decisionLog.js";
+
+/** Per-finding context for the MCP surface: how old each insight is + the saved like/dislike. */
+export interface FindingContext {
+  firstSeen?: Map<string, string>;
+  reactions?: Map<string, InsightReaction>;
+}
+
+/** "[key=… · NEW|Nd old · your call: 👍/👎]" annotation so an MCP agent can see freshness + react by key. */
+function annotateFinding(f: InsightReport["topFindings"][number], ctx: FindingContext | undefined, now: number): string {
+  if (!ctx) return "";
+  const key = findingKey(f);
+  const fs = ctx.firstSeen?.get(key);
+  const ageDays = fs ? Math.floor((now - new Date(fs).getTime()) / 86_400_000) : null;
+  const age = ageDays == null || ageDays < 1 ? "NEW" : `${ageDays}d old`;
+  const r = ctx.reactions?.get(key);
+  const call = r === "agree" ? " · your call: 👍 liked" : r === "disagree" ? " · your call: 👎 disliked" : "";
+  return ` [key=${key} · ${age}${call}]`;
+}
 
 /**
  * Deep-dive analysis. The locally-computed insight metrics are formatted into a digest the LLM
@@ -34,11 +54,17 @@ export function insightMetricsSummary(ins: InsightReport): string {
   ].join("\n");
 }
 
-/** The triaged findings — top surfaced (gated) then the full detector list. Deterministic, no LLM. */
-export function insightFindings(ins: InsightReport): string {
+/**
+ * The triaged findings — top surfaced (gated) then the full detector list. Deterministic, no LLM.
+ * Pass `ctx` (MCP surface) to annotate each top finding with its key, age and your saved reaction, so an
+ * agent can see what's NEW / already-rated and react to it by key (`react_to_insight`). Omit it for the
+ * deep-dive LLM prompt, which doesn't need the plumbing.
+ */
+export function insightFindings(ins: InsightReport, ctx?: FindingContext): string {
+  const now = Date.now();
   return [
-    `TOP SURFACED INSIGHTS (good-signal, ranked; suppressed/dismissed removed):`,
-    ...ins.topFindings.slice(0, 5).map((f) => `- [${f.severity}, ${Math.round((f.confidence ?? 0.6) * 100)}%] ${f.title}: ${f.detail} (${f.evidence})`),
+    `TOP SURFACED INSIGHTS (good-signal, ranked; snoozed removed):`,
+    ...ins.topFindings.slice(0, 5).map((f) => `- [${f.severity}, ${Math.round((f.confidence ?? 0.6) * 100)}%] ${f.title}: ${f.detail} (${f.evidence})${annotateFinding(f, ctx, now)}`),
     "",
     `ALL DETECTOR FINDINGS (triaged by severity):`,
     ...ins.findings.map((f) => `- [${f.severity}] ${f.title}: ${f.detail} (${f.evidence})`),

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { latestInsightReactions, suppressedInsightKeys, type DecisionRecord, type DecisionStatus } from "../src/state/decisionLog.js";
+import { latestInsightReactions, suppressedInsightKeys, reactionFromLabel, type DecisionRecord, type DecisionStatus } from "../src/state/decisionLog.js";
 
 function fb(key: string, status: DecisionStatus, ts: string): DecisionRecord {
   return { id: `${key}-${ts}`, timestamp: ts, kind: "insight-feedback", summary: key, insightKey: key, status };
@@ -26,4 +26,13 @@ test("latestInsightReactions: latest wins, and a later 'clear' drops the opinion
   assert.equal(latestInsightReactions(recs).get("k")?.reaction, "disagree"); // most recent wins
   const cleared = latestInsightReactions([...recs, fb("k", "cleared", "2026-06-06T00:00:00Z")]);
   assert.equal(cleared.has("k"), false); // clear removes it
+});
+
+test("reactionFromLabel: shared vocabulary for the website + MCP react_to_insight; unknown → undefined", () => {
+  assert.equal(reactionFromLabel("like"), "agree");
+  assert.equal(reactionFromLabel("dislike"), "disagree");
+  assert.equal(reactionFromLabel("snooze"), "ignore");
+  assert.equal(reactionFromLabel("clear"), "clear");
+  assert.equal(reactionFromLabel("agree"), "agree"); // canonical names still accepted
+  assert.equal(reactionFromLabel("bogus"), undefined);
 });
