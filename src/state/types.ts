@@ -172,6 +172,10 @@ export interface AthleteProfile {
   name?: string;
   age?: number;
   sex?: string;
+  /** STABLE date of birth (YYYY-MM-DD) — Garmin holds it where AIE only exposes age. Used to pre-fill the profile. */
+  dateOfBirth?: string;
+  /** STABLE standing height in cm — anthropometry Garmin holds (never weight, which is live). Pre-fills the profile. */
+  heightCm?: number;
 }
 
 export interface SyncGap {

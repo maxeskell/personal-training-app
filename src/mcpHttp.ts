@@ -132,7 +132,7 @@ async function runHttpRaw(): Promise<void> {
         const body = await readJsonBody(req);
         // Stateless: a fresh server + transport per request, so there's no cross-request session state
         // to leak between calls and no request-id collisions (the SDK's documented stateless pattern).
-        const server = buildServer({ includeWrites });
+        const server = buildServer({ includeWrites, includeProfileWrite: config.mcp.profileWrite });
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
         res.on("close", () => {
           void transport.close();
@@ -152,7 +152,7 @@ async function runHttpRaw(): Promise<void> {
 
   httpServer.on("clientError", (_e, socket) => socket.destroy());
   httpServer.listen(config.mcp.httpPort, config.mcp.httpHost, () => {
-    console.error(`endurance-coach MCP (HTTP, auth=${config.mcp.auth}) on http://${config.mcp.httpHost}:${config.mcp.httpPort}/  —  ${includeWrites ? "read + gated writes" : "READ-ONLY"}`);
+    console.error(`endurance-coach MCP (HTTP, auth=${config.mcp.auth}) on http://${config.mcp.httpHost}:${config.mcp.httpPort}/  —  ${includeWrites ? "read + gated writes" : "READ-ONLY"}${config.mcp.profileWrite ? " + profile-write" : ""}`);
     if (requireToken) console.error(`Auth: every request needs  Authorization: Bearer <token>.  Token file: ${config.secretsDir}/mcp.token  (or set COACH_MCP_TOKEN).`);
     else console.error("Auth: NONE — only expose this behind a private tunnel you control.");
     console.error("Reach it from Claude Cowork via an authenticated HTTPS tunnel — see docs/mcp-server.md.");
@@ -220,7 +220,7 @@ async function runHttpOAuth(): Promise<void> {
   );
 
   app.listen(config.mcp.httpPort, config.mcp.httpHost, () => {
-    console.error(`endurance-coach MCP (HTTP+OAuth) on ${config.mcp.httpHost}:${config.mcp.httpPort}  —  ${includeWrites ? "read + gated writes" : "READ-ONLY"}`);
+    console.error(`endurance-coach MCP (HTTP+OAuth) on ${config.mcp.httpHost}:${config.mcp.httpPort}  —  ${includeWrites ? "read + gated writes" : "READ-ONLY"}${config.mcp.profileWrite ? " + profile-write" : ""}`);
     console.error(`Point the Claude Cowork connector at:  ${resourceServerUrl.href}`);
     console.error(`Authorize gate: your coach token (${config.secretsDir}/mcp.token, or COACH_MCP_TOKEN).`);
   });

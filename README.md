@@ -103,9 +103,27 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   **`profile.local.yaml`** (gitignored, never shared) and fill in your own values. The app loads
   `profile.local.yaml` if present, else falls back to the example, and validates on load — failing
   loudly with a clear message if anything's malformed.
-- **Setup.** `npm run setup` offers it, or run **`npm run profile:init`** directly — it copies the
-  template and walks you through the required fields (identity, weekly hours, at least one race),
-  validating as it goes. Everything else you fill in by hand.
+- **Setup.** `npm run setup` offers it, or run **`npm run profile:init`** directly. It **pre-fills from
+  your connected integrations** — name and sex from AI Endurance, units/timezone from your `.env`, all
+  upcoming races from your AI Endurance goals, a **MODEL estimate** of your weekly hours from recent
+  training volume, and — when **Garmin is enabled** — your **date of birth and height** from Garmin's
+  `get_user_profile` (stable identity AI Endurance doesn't hold). It then prints a summary and asks
+  **"Does this look right? [Y/n]"**: **Y** keeps everything pulled and only prompts for the fields still
+  genuinely missing; **n** drops you into the per-field flow (each prompt shows the pulled value as the
+  default — Enter keeps it). **Date of birth is only asked when Garmin didn't supply it** (AI Endurance
+  exposes your age, not your DOB). If AI Endurance is unreachable (or you haven't authed yet) it degrades
+  cleanly to the full manual flow. Everything else — biomechanics, equipment, fuelling, medical — you
+  fill in by hand. (Height is the only body number stored: stable anthropometry, never weight — weight
+  stays a live number pulled from Garmin/AIE, and the schema guard rejects it in the profile.)
+- **The optional extras, explained.** Run **`npm run profile:questions`** for the list of optional
+  profile fields you can fill whenever you like — each with a plain-language question and a one-line
+  *why it changes your coaching* (e.g. medication timing drives the dose-cycle the coach plans around;
+  leg-length/cleat inform run-load and injury notes; fuelling targets feed race advice). Everything
+  there stays optional. Also rendered as [docs/profile-questions.md](docs/profile-questions.md).
+- **Three ways to fill it.** The wizard (`npm run profile:init`), editing `profile.local.yaml` by hand,
+  or **by talking to Claude** — the MCP `update_profile` tool patches your answers straight into the file
+  (validated; live numbers rejected). It's on for local **Claude Desktop/Code**; on **Cowork** set
+  `COACH_MCP_PROFILE_WRITE=true` to allow it (it writes a file on your Mac from a remote session).
 - **`dose_cycle`.** If you set `health.medication.dose_day` + `gi_trough_days`, `get_profile` returns a
   computed `dose_cycle` (`days_since_dose`, `in_gi_trough`) so the coach can keep your hardest/longest
   sessions off the GI-trough days and watch under-fuelling — the personalisation a generic endurance

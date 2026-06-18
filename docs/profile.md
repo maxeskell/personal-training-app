@@ -40,7 +40,69 @@ cd /Users/maxeskell/personal-training-app && npm run profile:init     # copy tem
 - at least one race in `races` (with a name + date)
 
 Everything else is optional — open `profile.local.yaml` and fill in biomechanics, equipment, fuelling
-and medical context by hand.
+and medical context by hand. For a guided list of those optional fields with a plain-language question
+and a one-line *why it helps the coach* for each, run **`npm run profile:questions`** (or read the
+generated [docs/profile-questions.md](profile-questions.md)).
+
+**Three ways to fill it — pick whichever suits you; all are optional and the coach works without any:**
+
+1. **The wizard** — `npm run profile:init` (above), re-runnable any time.
+2. **By hand** — edit `profile.local.yaml` in your editor.
+3. **By talking to Claude** — the MCP `update_profile` tool lets Claude write your answers straight into
+   `profile.local.yaml` (deep-merged onto what's there, validated, live numbers rejected). Tell Claude
+   *"add my medication: 5mg on Sundays, GI trough Tue–Thu"* and it patches the file. Always available to
+   **Claude Desktop / Code** (local); on **Cowork** (cloud) it's off until you set
+   `COACH_MCP_PROFILE_WRITE=true` — since that lets a remote session write a file on your Mac. See
+   [docs/mcp-server.md](mcp-server.md) → `update_profile`.
+
+### Integration bootstrap — pre-fill from your connected account
+
+`profile:init` doesn't ask cold. It first assembles today's state from your **connected integrations**
+(AI Endurance, plus Garmin if enabled — the same best-effort `buildTodayState()` the coach uses) and
+**pre-fills** the intake, so you only confirm or override what it pulled, and only get *asked* for what
+no integration holds. The pull is best-effort: if AI Endurance is unreachable or you haven't authed
+yet, it **degrades cleanly** to the full manual flow (and says so), never crashing.
+
+| Field | Where it comes from |
+|---|---|
+| `identity.name`, `identity.sex` | **AI Endurance** `getUser` (sex normalised to the `male/female/other` enum) |
+| `identity.units`, `identity.timezone` | your **`.env`** (`COACH_UNITS` mapped to `metric`/`imperial`; `COACH_TZ`) |
+| `races[]` | **AI Endurance** goal calendar — *all upcoming* races, soonest first, with priority, an inferred distance and a readable `target_time` (e.g. `sub 5:00:00`) |
+| `availability.weekly_hours` | **MODEL estimate** from your recent training volume (see below) |
+| `identity.date_of_birth` | **Garmin** `get_user_profile` (`birthDate`) when Garmin is enabled — else **asked** (AI Endurance exposes `age`, not DOB) |
+| `identity.height_cm` | **Garmin** `get_user_profile` (`height`, normalised to cm) when Garmin is enabled — else left blank/hand-edited |
+| biomechanics · health · medication · equipment · fuelling | **not pulled** — no integration holds these; hand-edit them after |
+
+A transparent summary prints first ("From AI Endurance: name, sex, 3 upcoming races. From Garmin: date
+of birth, height. From your .env: units, timezone…") so it's always clear what was pulled and from
+where, then it asks **"Does this look right? [Y/n]"**:
+
+- **Y** — keep everything pulled and only prompt for the **required** fields still genuinely missing
+  (e.g. DOB when Garmin didn't supply it, or your first race). The optional `height` is kept as pulled.
+- **n** — the per-field flow: every prompt shows the pulled value as its default, so **Enter keeps it**
+  or you type to override.
+
+Nothing is invented: a field an integration doesn't expose is simply asked (if required) or left blank.
+
+> **DOB + height come from Garmin, not AI Endurance.** AI Endurance's `getUser` exposes your *age* but
+> not your date of birth, and holds no height. Garmin's `get_user_profile` (the
+> [Taxuspt/garmin_mcp](https://github.com/Taxuspt/garmin_mcp) user-profile tool → python-garminconnect
+> `get_user_profile()`) holds both as **stable identity**. They're normalised — `birthDate` → `YYYY-MM-DD`,
+> `height` → whole cm — and added with source `garmin`. **Weight is NOT taken** even though Garmin holds
+> it: weight is a *live* number, pulled live and rejected by the no-live-numbers guard. With Garmin
+> disabled (or down) the enrichment degrades — DOB falls back to being asked and height is left blank.
+
+**Weekly hours is a MODEL estimate.** It groups your recent activities (trailing ~8 weeks) by ISO week,
+drops the partial current week and any zero-volume weeks, takes the **median** representative week and
+presents a ±0.5h band (e.g. `10-11`) — labelled a MODEL estimate per the *honest models* convention.
+You accept it with Enter or override. If there isn't at least one full week of data to estimate from,
+it falls back to **asking**. (It's a planning band for `availability.weekly_hours`, never a live number
+— actual load stays live in AI Endurance.)
+
+**Date of birth is auto-filled from Garmin, else asked.** The profile stores DOB (not age) so age stays
+correct as time passes. When Garmin is enabled and supplies a `birthDate` it's pre-filled; otherwise
+AI Endurance's `getUser` exposes only your `age`, so DOB is asked — with the API-derived age shown next
+to the prompt as a sanity hint.
 
 ## The schema (stable context only)
 
@@ -66,6 +128,10 @@ status strings stay fine (`ftp_w: unresolved`, `swim_css: not_set`), which is ex
 Equipment/fit/fuelling numbers are untouched — segment matching means `crank_length_mm`,
 `saddle_height_mm`, `carb_target_g_per_hour`, `lightweight_wheels` and a kit `weight_g` all pass; a
 stray `ftp_w: 223` (or `threshold_w: 240`) anywhere does not.
+
+**Height vs weight.** `identity.height_cm` is allowed to be a number — height is *stable anthropometry*,
+not a live performance metric (it's what the Garmin enrichment fills). **Weight is denied**: it changes
+daily, is pulled live, and a numeric weight anywhere in the profile trips the guard.
 
 ## `get_profile` (MCP) and `dose_cycle`
 

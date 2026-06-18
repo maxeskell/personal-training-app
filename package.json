@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "setup": "tsx src/cli.ts setup",
     "profile:init": "tsx src/cli.ts profile-init",
+    "profile:questions": "tsx src/cli.ts profile-questions",
     "start": "tsx src/server.ts",
     "help": "tsx src/cli.ts help",
     "auth:aie": "tsx src/cli.ts auth",

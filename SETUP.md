@@ -131,10 +131,24 @@ last step. To set it up (or redo it) on its own:
 npm run profile:init
 ```
 
+It **pre-fills from your connected integrations** (best-effort): name and sex from AI Endurance,
+units/timezone from the `.env` you just wrote, all upcoming races from your AI Endurance goals, a
+**MODEL estimate** of weekly hours from recent training volume, and — when **Garmin is enabled** —
+**date of birth and height** from Garmin's `get_user_profile`. It prints a summary, then asks **"Does
+this look right? [Y/n]"**: **Y** keeps everything pulled and only asks for the required fields still
+missing; **n** lets you override each (Enter keeps the pulled value). **Date of birth is only asked when
+Garmin didn't supply it** (AI Endurance exposes age, not DOB). Best run **after Step 4** (AI Endurance
+auth — and Garmin auth if you use it) so there's an account to pull from; before that — or if AI
+Endurance is unreachable — it degrades to a full manual flow.
+
 This writes `profile.example.yaml` → `profile.local.yaml` and validates the required fields; edit the
-file afterwards to fill in the rest. **Never put live numbers** (FTP, weight, paces, CSS, HRV, load) in
-it — those stay live from AI Endurance/Garmin, and a schema guard rejects them if you try. Full schema
-and privacy detail: [docs/profile.md](docs/profile.md).
+file afterwards to fill in biomechanics/kit/medical/fuelling (no integration holds those). **Never put
+live numbers** (FTP, weight, paces, CSS, HRV, load) in it — those stay live from AI Endurance/Garmin,
+and a schema guard rejects them if you try. Full schema and privacy detail: [docs/profile.md](docs/profile.md).
+
+For the optional fields worth filling in later — each with a plain-language question and a one-line
+*why it helps the coach* — run `npm run profile:questions` (or read
+[docs/profile-questions.md](docs/profile-questions.md)). All of them are optional.
 
 ## Step 4 — Connect AI Endurance (🧑 user does the browser login)
 

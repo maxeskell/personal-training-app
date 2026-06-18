@@ -176,6 +176,10 @@ export const config = {
     httpHost: process.env.COACH_MCP_HOST ?? "127.0.0.1",
     httpPort: Number(process.env.COACH_MCP_PORT ?? 8787),
     readOnly: process.env.COACH_MCP_READONLY === "true",
+    /** Expose the local-file `update_profile` write tool on the HTTP/Cowork surface. Off by default —
+     *  it lets a REMOTE session write profile.local.yaml on the host, so it's opt-in. Always on for
+     *  local stdio (Claude Desktop/Code) regardless of this flag. Validated; never stores live numbers. */
+    profileWrite: process.env.COACH_MCP_PROFILE_WRITE === "true",
     /**
      * HTTP auth mode. "token" (default): a static bearer token — good for scripts and a self-hosted
      * Desktop-over-HTTP. "oauth": full OAuth 2.1 (DCR + PKCE + a coach-token-gated consent) — required

@@ -9,7 +9,8 @@ schema_version: 1
 identity:
   name:               # your name
   sex:                # male | female | other  (affects physiology models)
-  date_of_birth:      # YYYY-MM-DD
+  date_of_birth:      # YYYY-MM-DD  (auto-filled from Garmin when enabled, else asked)
+  height_cm:          # standing height in cm (stable anthropometry; auto-filled from Garmin when enabled)
   location:           # city / region
   units: metric       # metric | imperial
   timezone:           # e.g. Europe/London

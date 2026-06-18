@@ -192,6 +192,13 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
   (`days_since_dose`, `in_gi_trough`) when a medication cycle is set. **No live numbers** — FTP, weight,
   paces, swim CSS, HRV and load come from `get_state`. Reads `profile.local.yaml`, else the committed
   `profile.example.yaml`. Deterministic — no LLM cost. See [docs/profile.md](profile.md).
+- **`update_profile`** `{ patch }` — **write** the athlete profile by talking to Claude. `patch` is a
+  partial profile object (same shape as `get_profile`); it's **deep-merged** onto your current profile
+  (nested objects merged, arrays/scalars replaced), **validated**, then written to the gitignored
+  `profile.local.yaml`. The no-live-numbers guard rejects FTP/weight/HRV/CSS/pace/load, so they can
+  never be written. **Gating:** always available to **local** Claude Desktop/Code (stdio); on the
+  **HTTP/Cowork** surface it's **off unless `COACH_MCP_PROFILE_WRITE=true`** (it writes a file on your
+  Mac from a remote session). Writes a local file only — never AI Endurance.
 - **`insights`** — run the insight engine over your history (CTL/ATL/TSB & ramp, EF, durability,
   run-load, autocorr-aware correlations, change-points, taper target, validated monitoring rules)
   and return the computed metrics + top surfaced findings. Each top finding is annotated with its
@@ -254,7 +261,8 @@ optional Garmin, `ANTHROPIC_API_KEY` for the LLM tools). **HTTP** mode adds a fe
 | `COACH_MCP_HOST` | `127.0.0.1` | interface to bind (keep localhost; the tunnel reaches it) |
 | `COACH_MCP_PORT` | `8787` | local port for the HTTP listener |
 | `COACH_MCP_TOKEN` | _(generated)_ | the secret; `token` mode → bearer header, `oauth` mode → typed into the consent page. If unset, a random one is written to `<secretsDir>/mcp.token` (0600) |
-| `COACH_MCP_READONLY` | `false` | `true` drops the gated write tools from the HTTP surface |
+| `COACH_MCP_READONLY` | `false` | `true` drops the gated AI Endurance write tools from the HTTP surface |
+| `COACH_MCP_PROFILE_WRITE` | `false` | `true` exposes the local-file `update_profile` tool on the HTTP/Cowork surface (always on for local stdio) |
 
 The same `npm run doctor` health check covers the rest.
 
