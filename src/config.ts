@@ -179,6 +179,13 @@ export const config = {
   dataDir: process.env.COACH_DATA_DIR ?? join(process.cwd(), "data"),
 
   /**
+   * Optional override for the athlete-profile file. Default resolution is profile.local.yaml (your
+   * real, gitignored data) → profile.example.yaml (the committed blank template). Set this to point at
+   * a profile file elsewhere; relative paths resolve from the repo root.
+   */
+  profilePath: process.env.COACH_PROFILE_PATH,
+
+  /**
    * intervals.icu — an alternative training-data spine (Phase 3b). A free, popular platform with an
    * API-key'd REST API. Used only when COACH_SOURCE=intervals. Read-only here.
    */

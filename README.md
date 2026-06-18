@@ -91,6 +91,32 @@ To enable it, run the one-time `garmin-mcp-auth` (see `.env.example`) then set `
 Layout: `src/mcp/` (AIE OAuth client + Garmin stdio client), `src/state/` (AthleteState, store,
 baselines, sync-gaps), `knowledge/sports-science.md` (priors for the M3 LLM layer).
 
+## Your athlete profile
+
+The coach needs the **stable context no training API holds** — body and biomechanics, kit, medical
+notes, availability, fuelling, your own race targets. That lives in a personal **athlete profile**,
+served to coaching flows and to Claude (the `get_profile` MCP tool). **Live numbers — FTP, weight,
+paces, swim CSS, HRV, training load — are *not* stored here**; they're pulled live from AI Endurance
+and Garmin, and a schema guard rejects any live number that strays into the profile.
+
+- **Two-file privacy split.** `profile.example.yaml` is the committed blank template; copy it to
+  **`profile.local.yaml`** (gitignored, never shared) and fill in your own values. The app loads
+  `profile.local.yaml` if present, else falls back to the example, and validates on load — failing
+  loudly with a clear message if anything's malformed.
+- **Setup.** `npm run setup` offers it, or run **`npm run profile:init`** directly — it copies the
+  template and walks you through the required fields (identity, weekly hours, at least one race),
+  validating as it goes. Everything else you fill in by hand.
+- **`dose_cycle`.** If you set `health.medication.dose_day` + `gi_trough_days`, `get_profile` returns a
+  computed `dose_cycle` (`days_since_dose`, `in_gi_trough`) so the coach can keep your hardest/longest
+  sessions off the GI-trough days and watch under-fuelling — the personalisation a generic endurance
+  MCP can't do. (Medication boundaries are the prescriber's call; the coach works *around* it.)
+- **What this app can't set for you.** This connector is **read-only to AI Endurance**, so it can't
+  write your **swim CSS, FTP or race target times** there — set those directly in the AI Endurance app.
+  The profile's `ai_endurance_todo` block is a reminder, not a write path.
+- **The coaching brief ships as a default prompt.** [`coach-instructions.md`](coach-instructions.md)
+  is the default system prompt a fresh clone gets (a prompt, *not* data — kept separate from the
+  profile); edit it to taste. Full schema + privacy detail: [docs/profile.md](docs/profile.md).
+
 ## The insight engine (n=1 analytics)
 
 A deterministic statistical layer — **no LLM, no cost** — answers a set of pre-registered analytical
@@ -334,6 +360,7 @@ see and blocking for minutes (which used to surface in Cowork as a mystery timeo
 | Tool | What it does | Cost |
 | --- | --- | --- |
 | `sync` / `get_state` | assemble (or read) today's AthleteState — plan, recovery, HRV/RHR, weight, thresholds, zones | none |
+| `get_profile` | the validated athlete profile (stable context: body, kit, medical, availability, race targets) + a computed `dose_cycle` (days_since_dose, in_gi_trough). NO live numbers — those are in `get_state` | none |
 | `insights` | run the n=1 insight engine: CTL/ATL/TSB & ramp, EF, durability, correlations, change-points, taper target, validated monitoring rules — each top finding annotated with its **key, age (NEW/Nd old) and your saved reaction** | none |
 | `react_to_insight` | like / dislike / snooze / clear a surfaced insight by `key` — full parity with the dashboard buttons (persists, reshapes surfacing); a local decision-log write, **available even on the read-only Cowork surface** | none |
 | `list_reports` / `read_report` | list and read the dated markdown reports under `reports/` | none |

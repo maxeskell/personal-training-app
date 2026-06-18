@@ -4,6 +4,11 @@
  * tell a real signal from a black-box tiebreak or a degraded/absent source.
  */
 
+// The stable athlete profile (profile.local.yaml). Aliased `ProfileDoc` to avoid colliding with the
+// getUser-derived `AthleteProfile` identity slot below. Type-only import — no runtime coupling.
+import type { Profile as ProfileDoc } from "../profile/schema.js";
+export type { ProfileDoc };
+
 export type Source = "ai-endurance" | "intervals" | "garmin" | "derived" | "manual";
 
 /** A value plus where it came from. `null` value = known-absent (e.g. Garmin down). */
@@ -249,6 +254,14 @@ export interface AthleteState {
    * hard-coding every field.
    */
   raw?: Record<string, unknown>;
+
+  /**
+   * The athlete's STABLE profile (body, kit, medical, availability, fuelling, race targets) from
+   * profile.local.yaml — stable context AI Endurance/Garmin don't hold. Attached in-memory by the
+   * orchestrator for the coaching prompts; NOT persisted to the state store (so the medical data never
+   * lands in data/state/*.json), and never live numbers. Absent when no profile is present/valid.
+   */
+  profile?: ProfileDoc;
 }
 
 export function emptyState(date: string, assembledAt: string): AthleteState {

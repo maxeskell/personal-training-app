@@ -11,6 +11,7 @@ import { runSessionFeedback } from "./session.js";
 import { loadSessionDecays } from "../insights/fit.js";
 import { ArchiveStore } from "../archive/store.js";
 import { classifyIntent, isLastSessionQuestion } from "./intent.js";
+import { renderProfileContext } from "../profile/context.js";
 
 // Re-exported for callers/tests that depend on the regex fast-path directly; the full hybrid
 // router (regex + optional local model) lives in ./intent.ts.
@@ -71,6 +72,7 @@ export function buildAskContext(state: AthleteState, insights: InsightReport): s
     state.racePredictions.value ? `- Garmin race-time predictions: ${state.racePredictions.value.predictions.map((p) => `${p.label} ${Math.floor(p.timeSeconds / 60)}:${String(Math.round(p.timeSeconds % 60)).padStart(2, "0")}`).join(", ")} [garmin MODEL]` : "",
     `- Weight ${fmt(state.weightKg.value, 1)}kg (trend only), VO2max ${fmt(state.vo2max.value)} [${state.weightKg.source}/${state.vo2max.source}]`,
     "",
+    state.profile ? renderProfileContext(state.profile, state.date) + "\n" : "",
     `INSIGHTS:`,
     ins.load ? `- Load: CTL ${ins.load.ctl} / ATL ${ins.load.atl} / TSB ${ins.load.tsb}, ΔCTL/wk ${ins.load.rampPerWeek}` : "- Load: n/a",
     `- Run EF ${ins.ef.run.recent ?? "—"} (Δ${ins.ef.run.deltaPct ?? "—"}%), Ride EF ${ins.ef.ride.recent ?? "—"} (Δ${ins.ef.ride.deltaPct ?? "—"}%)`,

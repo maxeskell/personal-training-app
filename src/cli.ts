@@ -38,12 +38,18 @@ import { assessHealthRisk } from "./guardrails/wellbeing.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { DecisionLog, suppressedInsightKeys } from "./state/decisionLog.js";
 import { runSetup } from "./setup.js";
+import { initProfile } from "./profile/setup.js";
 import { helpText } from "./help.js";
 import type { AthleteState } from "./state/types.js";
 
 /** `setup` — guided wizard that writes .env (key, units, location, Garmin). See src/setup.ts. */
 async function cmdSetup(): Promise<void> {
   await runSetup();
+}
+
+/** `profile-init` — copy profile.example.yaml → profile.local.yaml and walk the required fields. */
+async function cmdProfileInit(): Promise<void> {
+  await initProfile();
 }
 
 /** `help` — the curated everyday commands (full list in docs/commands.md). */
@@ -744,6 +750,7 @@ async function cmdDoctor(): Promise<void> {
 const [, , cmd] = process.argv;
 const commands: Record<string, () => Promise<void>> = {
   setup: cmdSetup,
+  "profile-init": cmdProfileInit,
   help: cmdHelp,
   auth: cmdAuth,
   verify: cmdVerify,
@@ -781,6 +788,7 @@ const run = commands[cmd ?? ""];
 if (!run) {
   console.log("Usage: tsx src/cli.ts <command>   (or `npm run help` for the common ones)");
   console.log("  setup      guided wizard: write .env (key, units, location, Garmin)");
+  console.log("  profile-init  copy profile.example.yaml → profile.local.yaml and fill the required fields");
   console.log("  help       the curated everyday commands (full list: docs/commands.md)");
   console.log("  auth       run OAuth + confirm the AI Endurance connection");
   console.log("  verify     exercise every read tool, confirm the write-gate");

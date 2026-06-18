@@ -11,6 +11,7 @@ import { DecisionLog, decisionId, nowIso } from "../state/decisionLog.js";
 import { ArchiveStore } from "../archive/store.js";
 import { mapRichActivity } from "../insights/metrics.js";
 import { todayIso } from "../util/today.js";
+import { loadProfileSafe } from "../profile/load.js";
 import type { ArchiveInput } from "../insights/engine.js";
 import type { AthleteState } from "../state/types.js";
 
@@ -71,6 +72,16 @@ export async function buildTodayState(): Promise<{ state: AthleteState; window: 
   }
 
   const window = await store.recent(today, 7);
+
+  // Attach the stable athlete profile (profile.local.yaml) for the coaching prompts — best-effort and
+  // AFTER save, so the medical/personal context is never persisted into data/state/*.json. Degrade
+  // silently if it's absent or invalid; the explicit `get_profile` MCP tool is the loud surface.
+  const loaded = await loadProfileSafe();
+  if (loaded) {
+    state.profile = loaded.profile;
+    if (window.length) window[window.length - 1].profile = loaded.profile;
+  }
+
   return { state, window };
 }
 

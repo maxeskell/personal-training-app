@@ -8,10 +8,12 @@ import { join } from "node:path";
  */
 export async function loadSystemPrompt(): Promise<string> {
   const root = process.cwd();
-  const [persona, science] = await Promise.all([
-    readFile(join(root, "docs/specs/AI_Triathlon_Coach_Project_Instructions.md"), "utf8").catch(() => ""),
-    readFile(join(root, "knowledge/sports-science.md"), "utf8").catch(() => ""),
-  ]);
+  // The coaching brief ships as a default prompt at the repo root (coach-instructions.md) so a fresh
+  // clone gets sensible behaviour; fall back to the spec for older checkouts that don't have it yet.
+  const persona =
+    (await readFile(join(root, "coach-instructions.md"), "utf8").catch(() => "")) ||
+    (await readFile(join(root, "docs/specs/AI_Triathlon_Coach_Project_Instructions.md"), "utf8").catch(() => ""));
+  const science = await readFile(join(root, "knowledge/sports-science.md"), "utf8").catch(() => "");
 
   return [
     "# Your role and stance",
