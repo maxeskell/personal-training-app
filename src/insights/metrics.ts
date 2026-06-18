@@ -145,14 +145,21 @@ export interface LoadModel {
   rampPerWeek: number; // ΔCTL over the last 7 days
 }
 
-/** EWMA load model. `getRecoveryModel.data` has parallel `date` + `external_stress_score` arrays. */
+/**
+ * CTL/ATL/TSB load model. `getRecoveryModel.data` has parallel `date` + `external_stress_score` arrays.
+ *
+ * Uses the Banister/Coggan impulse-response decay `k = 1 − e^(−1/τ)` (τ = 42d chronic, 7d acute) — the
+ * same formula TrainingPeaks/AI Endurance use — NOT the technical-analysis EMA factor `2/(τ+1)`. The
+ * `2/(τ+1)` form makes the effective time constant ~half (a "42-day" CTL would react like ~21 days),
+ * inflating TSB swings and the weekly ramp and diverging from the numbers an athlete cross-checks.
+ */
 export function loadModel(recoveryData: { date?: unknown[]; external_stress_score?: unknown[] } | undefined): LoadModel | null {
   const dates = (recoveryData?.date ?? []).map((d) => String(d).slice(0, 10));
   const ess = (recoveryData?.external_stress_score ?? []).map((e) => num(e) ?? 0);
   if (dates.length < 14 || dates.length !== ess.length) return null;
 
-  const ctlK = 2 / (42 + 1);
-  const atlK = 2 / (7 + 1);
+  const ctlK = 1 - Math.exp(-1 / 42);
+  const atlK = 1 - Math.exp(-1 / 7);
   // Seed the EWMAs with a short burn-in mean rather than a single day (ess[0] alone biases early
   // CTL/ATL/TSB toward one possibly-atypical session).
   const seed = (mean(ess.slice(0, Math.min(7, ess.length))) ?? ess[0]) || 0;
