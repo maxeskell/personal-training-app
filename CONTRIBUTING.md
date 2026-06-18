@@ -16,7 +16,7 @@ npm run typecheck && npm test     # should be green before you change anything
 
 You do **not** need any external account to build, typecheck, or run the test suite — tests are pure
 and use fixtures, never the network. You only need accounts (AI Endurance, Anthropic, optionally
-Garmin) to exercise the live flows. See [Prerequisites](./README.md#prerequisites).
+Garmin) to exercise the live flows. See [What you need to run it](./README.md#what-you-need-to-run-it-for-real).
 
 ## Definition of done (every change)
 
@@ -60,4 +60,4 @@ These are non-negotiable and mirror [`CLAUDE.md`](./CLAUDE.md):
 
 `README.md` (what it does) → `HANDOVER.md` (how it is built and operated) →
 `docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md` (authoritative design) →
-`docs/engineering-review.md` + `docs/improvement-plan.md` (known gaps and the roadmap).
+`docs/specs/` (per-feature specs, including the Insight Engine spec).

@@ -32,8 +32,8 @@ anything of your own.
 
 **Setting it up:** the easy path is to point an AI assistant (Claude Code or similar) at the repo and say
 *"follow SETUP.md"* — it runs the steps and stops to ask you for your accounts, units and training base.
-By hand works too — [SETUP.md](./SETUP.md) is written for both. *(A one-command `npm run setup` wizard is
-on the roadmap.)* Developed on macOS; the CLI + dashboard also run on Linux (only desktop notifications and
+By hand works too — [SETUP.md](./SETUP.md) is written for both, and `npm run setup` is a guided wizard
+that writes your `.env`. Developed on macOS; the CLI + dashboard also run on Linux (only desktop notifications and
 the auto-start installers are macOS-specific, and they no-op elsewhere).
 
 ## Everyday commands

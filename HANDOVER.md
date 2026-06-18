@@ -3,9 +3,8 @@
 A practical guide to picking this project up cold: what it is, how it is built, how to run and operate
 it, and where the bodies are buried. For the *why it exists* read
 [`docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md`](./docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md);
-for day-to-day usage read [`README.md`](./README.md); for the known-debt roadmap read
-[`docs/engineering-review.md`](./docs/engineering-review.md) and
-[`docs/improvement-plan.md`](./docs/improvement-plan.md).
+for day-to-day usage read [`README.md`](./README.md); for the design rationale of the insight
+layer read [`docs/specs/Insight_Engine_Spec.md`](./docs/specs/Insight_Engine_Spec.md).
 
 ---
 
@@ -143,8 +142,8 @@ it as best-effort. It is not required and has its own `HANDOVER.md`.
 - **Honest coverage note:** the deterministic detectors (insights, weather, season context, cost,
   store, archive, server auth) are well-tested. **Thinner coverage** sits on the hand-rolled binary
   `.FIT` parser, the live `server.ts` routes, the full `WriteGate` propose→confirm→replay path, and
-  some statistical edge cases. `docs/engineering-review.md` §5 and `docs/improvement-plan.md` track
-  this "test inversion" as the standing priority — fix it before adding surface area there.
+  some statistical edge cases. Treat this "test inversion" as the standing priority — thicken coverage
+  there before adding surface area.
 
 ---
 
@@ -222,18 +221,15 @@ fire-only health check), `npm run backfill:install` (history grind).
 - **Single-writer assumption.** State writes are atomic (temp + `rename`) and archive reads dedup, but
   there is no multi-process locking beyond that. Two dashboards syncing at once share one pull; don't
   run several writers against the same `data/`.
-- **No demo / no-account mode yet.** Evaluating the app currently requires a real AI Endurance account
-  (the spine). A sample-data/offline mode is the biggest single item for "let a stranger try it" and is
-  a recommended next step.
+- **Demo / no-account mode shipped.** `npm run demo` renders the dashboard on bundled sample data with
+  no account or API key, so a stranger can evaluate the app. The live flows still need real accounts.
 - **`npm audit`** flags a high-severity advisory in **esbuild** — a *dev-only* transitive dependency
   (via `tsx`), and the advisories are Deno/Windows-dev-server specific, so runtime risk here is
   negligible. `npm audit fix` clears it; keep it clear.
-- **Deeper technical debt** (test inversion on the parser/server/write-gate, a few statistical
-  edge cases, duplicated small utilities, perf of re-parsing the archive per request) is catalogued
-  honestly in [`docs/engineering-review.md`](./docs/engineering-review.md) with a sequenced fix order in
-  [`docs/improvement-plan.md`](./docs/improvement-plan.md). The Spec 1–6 security/integrity initiatives
-  there (server auth + localhost default, write-path arg validation, dashboard escaping, FDR
-  multiplicity, atomic writes, grounded proposals) have already landed on `main`.
+- **Deeper technical debt** remains: test inversion on the parser/server/write-gate, a few statistical
+  edge cases, duplicated small utilities, and the perf of re-parsing the archive per request. The
+  earlier security/integrity initiatives (server auth + localhost default, write-path arg validation,
+  dashboard escaping, FDR multiplicity, atomic writes, grounded proposals) have already landed on `main`.
 
 ---
 
@@ -250,9 +246,8 @@ fire-only health check), `npm run backfill:install` (history grind).
 Per the [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) §1 decision gate:
 
 - **Path A:** a Claude Project + AI Endurance MCP + coach persona — ~80% of the value, zero code.
-  See [docs/setup-path-a.md](docs/setup-path-a.md).
 - **Path B (this repo):** a small local-first orchestrator, justified because all three §1 needs apply
-  (scheduling, dashboard, decision log). See [docs/path-b-plan.md](docs/path-b-plan.md).
+  (scheduling, dashboard, decision log).
 
 This history lived at the top of the README; it was moved here in the Phase 1 onboarding-simplification
 pass so the README leads with what the tool *does* for a newcomer, not how it came to be.
