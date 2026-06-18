@@ -87,16 +87,51 @@ export const ProfileSchema = z
 export type Profile = z.infer<typeof ProfileSchema>;
 
 /**
- * Live-performance keys that must NEVER appear as a number in the profile — they come live from AI
- * Endurance / Garmin. Matched against object keys; only a NUMERIC value trips the guard, so status
- * strings like `ai_endurance_todo.ftp_w: unresolved` / `swim_css: not_set` are fine, while a stray
- * `ftp_w: 223` anywhere fails loudly. Deliberately narrow so equipment/fit/fuelling numbers
- * (crank_length_mm, carb_target_g_per_hour, saddle_height_mm, …) are NOT caught.
+ * Live-performance metrics that must NEVER appear as a number in the profile — they come live from AI
+ * Endurance / Garmin. We match against the KEY's underscore/camelCase SEGMENTS (not a raw substring),
+ * so equipment/fit keys like `lightweight_wheels`, `paceline_offset`, `space_minutes` or `weight_g`
+ * are NOT false-positives, while `ftp_w`, `max_hr`, `threshold_w`, `w_per_kg` are caught. A value trips
+ * the guard when it's a finite number OR a purely-numeric string ("223") — so status strings like
+ * `ai_endurance_todo.ftp_w: unresolved` / `swim_css: not_set` stay fine, but a live number snuck in as
+ * text doesn't slip past. Equipment/fit/fuelling numbers (crank_length_mm, carb_target_g_per_hour,
+ * saddle_height_mm, …) are NOT caught.
  */
-const LIVE_METRIC_KEY =
-  /(ftp|css|vo2|hrv|resting_?hr|(^|_)rhr(_|$)|pace|weight|(^|_)(ctl|atl|tsb)(_|$)|training_load|load_ratio)/i;
 
-/** Walk the profile and collect any live-metric key holding a numeric value, with its path. */
+/** Normalise a key to lowercase snake_case (so camelCase humps become segment boundaries). */
+function normalizeKey(key: string): string {
+  return key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+}
+
+/** Tokens that mark a live metric when they appear as a WHOLE segment of a key. */
+const LIVE_TOKENS = new Set(["ftp", "css", "hrv", "rhr", "hr", "lthr", "pace", "ctl", "atl", "tsb", "tss", "wkg"]);
+
+/** Live metrics best matched as multi-segment patterns against the normalised key. */
+const LIVE_KEY_PATTERNS: RegExp[] = [
+  /(^|_)vo2(max)?(_|$)/,
+  /(^|_)threshold(_|$)/, // threshold_w, functional_threshold, threshold_pace
+  /(^|_)training_load(_|$)/,
+  /(^|_)load_ratio(_|$)/,
+  /(^|_)w(atts)?_per_kg(_|$)/,
+  /^weight$/, // bare athlete bodyweight — equipment `weight_g`/`weight_grams` stays fine
+  /(^|_)body_?weight(_|$)/,
+  /(^|_)weight_kg(_|$)/,
+];
+
+function isLiveMetricKey(key: string): boolean {
+  const norm = normalizeKey(key);
+  const segments = norm.split(/[^a-z0-9]+/).filter(Boolean);
+  if (segments.some((s) => LIVE_TOKENS.has(s))) return true;
+  return LIVE_KEY_PATTERNS.some((re) => re.test(norm));
+}
+
+/** A live number, whether stored as a number or as a purely-numeric string (`"223"`, `"4.2"`). */
+function isLiveNumberValue(v: unknown): boolean {
+  if (typeof v === "number") return Number.isFinite(v);
+  if (typeof v === "string") return /^[+-]?\d+(\.\d+)?$/.test(v.trim());
+  return false;
+}
+
+/** Walk the profile and collect any live-metric key holding a live-number value, with its path. */
 function findLiveNumbers(node: unknown, path: string, out: string[]): void {
   if (Array.isArray(node)) {
     node.forEach((v, i) => findLiveNumbers(v, `${path}[${i}]`, out));
@@ -105,7 +140,7 @@ function findLiveNumbers(node: unknown, path: string, out: string[]): void {
   if (node && typeof node === "object") {
     for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
       const here = path ? `${path}.${k}` : k;
-      if (typeof v === "number" && Number.isFinite(v) && LIVE_METRIC_KEY.test(k)) out.push(`${here}: ${v}`);
+      if (isLiveMetricKey(k) && isLiveNumberValue(v)) out.push(`${here}: ${v}`);
       else findLiveNumbers(v, here, out);
     }
   }

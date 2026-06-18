@@ -36,7 +36,11 @@ export class StateStore {
     try {
       const final = this.fileFor(state.date);
       const tmp = `${final}.${process.pid}.tmp`;
-      await writeFile(tmp, JSON.stringify(state, null, 2));
+      // The athlete profile is ambient context attached in-memory for the coaching prompts — it must
+      // NEVER reach disk (medical data, DOB, …). Strip it here so the privacy guarantee is enforced at
+      // the store layer, not left to every caller saving before it attaches the profile.
+      const { profile: _profile, ...persistable } = state;
+      await writeFile(tmp, JSON.stringify(persistable, null, 2));
       await rename(tmp, final);
     } finally {
       await release();

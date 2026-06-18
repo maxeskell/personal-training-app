@@ -1,8 +1,36 @@
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, isAbsolute } from "node:path";
 import { config as loadEnv } from "dotenv";
+import { parse as parseYaml } from "yaml";
 
 loadEnv();
+
+/**
+ * Resolve the athlete's IANA timezone for "today" calculations. Precedence: an explicit COACH_TZ wins;
+ * otherwise the app-owned profile (identity.timezone) is the source of truth; otherwise Europe/London.
+ * Reading the profile here — a tiny synchronous parse, matching loadProfile's resolution order — lets
+ * the required profile field actually drive scheduling (dose_cycle, age, which calendar day "today" is)
+ * without a second env var to keep in sync. Best-effort: any missing/malformed file falls through.
+ */
+export function resolveAthleteTimezone(): string {
+  const explicit = process.env.COACH_TZ?.trim();
+  if (explicit) return explicit;
+  const candidates = [process.env.COACH_PROFILE_PATH, "profile.local.yaml", "profile.example.yaml"].filter(
+    (p): p is string => Boolean(p),
+  );
+  for (const c of candidates) {
+    try {
+      const path = isAbsolute(c) ? c : join(process.cwd(), c);
+      const parsed = parseYaml(readFileSync(path, "utf8")) as { identity?: { timezone?: unknown } } | null;
+      const tz = parsed?.identity?.timezone;
+      if (typeof tz === "string" && tz.trim()) return tz.trim();
+    } catch {
+      /* missing/malformed candidate — try the next, then the default */
+    }
+  }
+  return "Europe/London";
+}
 
 /** Parse GARMIN_MCP_ARGS as a JSON array (handles args with spaces) or fall back to whitespace split. */
 function parseArgsList(s: string): string[] {
@@ -167,9 +195,10 @@ export const config = {
   athlete: {
     equipment: process.env.COACH_EQUIPMENT ?? "Garmin Forerunner 970, Edge 1040, Index scale",
     units: process.env.COACH_UNITS ?? "metric, UK",
-    /** IANA timezone used to decide which calendar day "today" is (UK athlete → Europe/London).
-     *  Avoids a UTC "today" mis-dating a late-night (BST) session or readiness window. */
-    timezone: process.env.COACH_TZ ?? "Europe/London",
+    /** IANA timezone used to decide which calendar day "today" is. Precedence: COACH_TZ → the profile's
+     *  identity.timezone → Europe/London (see resolveAthleteTimezone). Avoids a UTC "today" mis-dating a
+     *  late-night session/readiness window, and keeps the dose_cycle on the athlete's own calendar day. */
+    timezone: resolveAthleteTimezone(),
   },
 
   /** Where persisted secrets/tokens live — gitignored, outside the repo by default. */

@@ -1,10 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { validateProfile, computeDoseCycle, assertNoLiveNumbers, type Profile } from "../src/profile/schema.js";
 import { applyIntake, requiredFieldsMissing } from "../src/profile/setup.js";
 import { renderProfileContext, formatProfileForTool } from "../src/profile/context.js";
+import { loadProfile, loadProfileSafe } from "../src/profile/load.js";
+import { config } from "../src/config.js";
 
 /**
  * The athlete profile is a privacy-split, validated config: profile.example.yaml is committed and must
@@ -70,6 +75,27 @@ test("assertNoLiveNumbers throws when a live performance number is planted anywh
   assert.doesNotThrow(() => assertNoLiveNumbers({ ai_endurance_todo: { ftp_w: "unresolved", swim_css: "not_set" } }));
 });
 
+test("the live-number guard catches synonyms and numeric strings, but not substring look-alikes", () => {
+  // Synonyms the old narrow regex missed are now caught when numeric.
+  for (const planted of [
+    { health: { lthr: 162 } },
+    { health: { max_hr: 188 } },
+    { equipment: { threshold_w: 240 } },
+    { health: { functional_threshold: 250 } },
+    { health: { w_per_kg: 4.2 } },
+    { health: { vo2max: 58 } },
+  ]) {
+    assert.throws(() => assertNoLiveNumbers(planted), /live performance number/i, JSON.stringify(planted));
+  }
+  // A live number snuck in as a numeric STRING is caught too; a genuine status string is not.
+  assert.throws(() => assertNoLiveNumbers({ ai_endurance_todo: { ftp_w: "223" } }), /live performance number/i);
+  assert.doesNotThrow(() => assertNoLiveNumbers({ ai_endurance_todo: { ftp_w: "set in AIE" } }));
+  // Whole-segment matching: equipment/fit keys that merely CONTAIN a metric substring must pass.
+  assert.doesNotThrow(() => assertNoLiveNumbers({ equipment: { lightweight_wheels: 1, wheel_weight_g: 1400 } }));
+  assert.doesNotThrow(() => assertNoLiveNumbers({ availability: { space_minutes: 5 } }));
+  assert.doesNotThrow(() => assertNoLiveNumbers({ biomechanics: { paceline_position: 2 } }));
+});
+
 test("requiredFieldsMissing flags the blank example and clears on a filled profile", () => {
   const blank = validateProfile(parseYaml(exampleText));
   const missing = requiredFieldsMissing(blank);
@@ -112,4 +138,32 @@ test("formatProfileForTool reports the dose_cycle and the source path", () => {
   assert.match(out, /dose_cycle/);
   assert.match(out, /in_gi_trough=true/);
   assert.match(out, /source: local/);
+});
+
+test("the loader degrades (safe→null) and fails loud (clear message, no stack trace) on bad profiles", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "coach-profile-"));
+  const saved = config.profilePath;
+  try {
+    // Malformed YAML: ambient load degrades to null; the loud loader explains the parse failure.
+    const badYaml = join(dir, "bad.yaml");
+    await writeFile(badYaml, 'identity: {name: "x"\n  bad: : :\n\t- broken');
+    (config as { profilePath?: string }).profilePath = badYaml;
+    assert.equal(await loadProfileSafe(), null, "malformed YAML → loadProfileSafe is null");
+    await assert.rejects(loadProfile(), /could not parse .* as yaml/i, "malformed YAML → loud parse error");
+
+    // Schema-invalid (bad enum): same split — null for ambient, loud for the explicit tool surface.
+    const invalid = join(dir, "invalid.yaml");
+    await writeFile(invalid, "schema_version: 1\nidentity:\n  sex: helicopter\n");
+    (config as { profilePath?: string }).profilePath = invalid;
+    assert.equal(await loadProfileSafe(), null, "schema-invalid → loadProfileSafe is null");
+    await assert.rejects(loadProfile(), /failed validation/i, "schema-invalid → loud validation error");
+
+    // The loud error is a clean message, not a raw stack trace leaking to the user.
+    const err = await loadProfile().catch((e) => e as Error);
+    assert.ok(err instanceof Error, "throws an Error");
+    assert.doesNotMatch(err.message, /\n\s+at\s/, "no stack frames in the message");
+  } finally {
+    (config as { profilePath?: string }).profilePath = saved;
+    await rm(dir, { recursive: true, force: true });
+  }
 });
