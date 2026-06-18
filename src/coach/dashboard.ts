@@ -419,7 +419,7 @@ function renderRacePredictions(today: AthleteState): string {
   </div>`;
 }
 
-/** Estimated race splits dependent on training: run plans + per-leg triathlon plans. */
+/** Estimated race splits dependent on training: a finish-time RANGE + per-segment pacing. */
 function renderSplits(ins: InsightReport): string {
   if (!ins.splits.length) return "";
   const blocks = ins.splits
@@ -427,15 +427,28 @@ function renderSplits(ins: InsightReport): string {
       const rows = p.segments
         .map((s) => `<tr><td>${escapeHtml(s.label)}</td><td class="num">${s.target ? escapeHtml(s.target) : `${paceStr(s.targetPaceSecPerKm)}/km`}</td><td class="num">${hms(s.cumulativeSec)}</td></tr>`)
         .join("");
-      return `<div style="margin-bottom:14px">
-        <div style="font-size:14px"><b>${escapeHtml(p.race)}</b> — target ${hms(p.predictedSec)} over ${p.distanceKm} km</div>
-        <div class="ev" style="margin:4px 0">${escapeHtml(p.strategy)}</div>
+      // Date + countdown at the top.
+      const dTo = p.date ? daysTo(ins.date, p.date) : null;
+      const when = p.date ? ` <span class="muted">· ${escapeHtml(p.date)}${dTo != null && dTo >= 0 ? ` · ${dTo}d to go` : ""}</span>` : "";
+      // Finish RANGE: best (race day) → worst (race today), rounded to the minute.
+      const worst = p.worstSec ?? p.predictedSec;
+      const hasRange = p.bestSec != null && p.bestSec < worst;
+      const finish = hasRange
+        ? `<b style="font-size:16px">${clockMin(p.bestSec!)} – ${clockMin(worst)}</b> <span class="muted">over ${p.distanceKm} km — race-day best → race-it-today</span>`
+        : `<b style="font-size:16px">~${clockMin(worst)}</b> <span class="muted">over ${p.distanceKm} km (current level)</span>`;
+      const basis = p.rangeBasis ? `<div class="ev" style="margin:3px 0">${escapeHtml(p.rangeBasis)}</div>` : "";
+      return `<div style="margin-bottom:16px">
+        <div style="font-size:15px"><b>${escapeHtml(p.race)}</b>${when}</div>
+        <div style="margin:5px 0">${finish}</div>
+        ${basis}
+        <div class="ev" style="margin:4px 0">Pacing for the current prediction — ${escapeHtml(p.strategy)}</div>
         <table><tr class="k"><td>Segment</td><td>Target</td><td>Cumulative</td></tr>${rows}</table>
       </div>`;
     })
     .join("");
   return `<div class="card"><h2>Estimated race splits</h2>${blocks}
-    <div class="k">Run races build from AI Endurance's predicted finish shaped by your durability trend; triathlon legs are modelled from your current CSS / FTP / run predictions at standard race intensities (MODEL — a pacing plan, not a guarantee).</div>
+    <div class="k">Run races build from AI Endurance's predicted finish shaped by your durability trend; triathlon legs are modelled from your current CSS / FTP / run predictions at standard race intensities. <b>A MODEL — a range and a pacing plan, not a guarantee.</b></div>
+    ${raceGlossary()}
   </div>`;
 }
 
@@ -444,6 +457,28 @@ function hms(sec: number): string {
   const m = Math.floor((sec % 3600) / 60);
   const s = Math.round(sec % 60);
   return h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** Race finish rounded to the nearest minute (a projection isn't second-accurate): "1:38" or "38 min". */
+function clockMin(sec: number): string {
+  const totalMin = Math.round(sec / 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}` : `${m} min`;
+}
+
+/** A small, collapsible glossary of the jargon on the race cards (static text — no interpolation). */
+function raceGlossary(): string {
+  const terms: Array<[string, string]> = [
+    ["Range", "best case = race day if the build goes well; worst = racing at today's fitness"],
+    ["Negative split", "running the second half slightly faster than the first"],
+    ["Durability", "how little your pace/power fades late in long efforts — fatigue resistance"],
+    ["CSS", "Critical Swim Speed — the swim pace you can hold, per 100m"],
+    ["FTP", "Functional Threshold Power — the cycling power you can hold for ~an hour"],
+    ["TSB", "Training Stress Balance (“form”) — freshness vs fatigue"],
+  ];
+  return `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;color:#888">What these terms mean</summary>
+    <div class="k" style="margin-top:6px;line-height:1.6">${terms.map(([t, d]) => `<div><b>${t}</b> — ${d}</div>`).join("")}</div></details>`;
 }
 
 /** Minutes → "1h 35m" / "45m" (user ask: weekly totals in hours+minutes, not raw minutes). */
@@ -594,6 +629,15 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .actbtn{font-size:13px;padding:7px 14px;border:1px solid #c8642d;border-radius:8px;background:#fff;color:#c8642d;cursor:pointer}.actbtn:hover{background:#c8642d;color:#fff}
 code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 .proposal{border:1px solid #e7d9c6;border-radius:8px;padding:10px 12px;margin-top:10px}
+/* Print / Save-as-PDF: a clean one-document capture — hide interactive controls, keep cards intact, open the glossaries. */
+@media print {
+  body{background:#fff}
+  .card{break-inside:avoid;box-shadow:none;border:1px solid #ddd}
+  .acts, .syncbtn, .actbtn, button, #ask, #proposals{display:none !important}
+  details{display:block}
+  details > summary{display:none}
+  a{color:inherit;text-decoration:none}
+}
 </style></head><body>
 <h1>Endurance Coach</h1>
 <div class="sub">as of ${today.assembledAt}</div>

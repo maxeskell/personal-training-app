@@ -17,7 +17,7 @@ import {
   type MonotonyStrain,
   type TID,
 } from "./metrics.js";
-import { estimateRunSplits, estimateTriSplits, type RaceSplitPlan, type DurabilityState, type TriRaceType, type TriPerformance } from "./splits.js";
+import { estimateRunSplits, estimateTriSplits, projectRaceDayRange, type RaceSplitPlan, type DurabilityState, type TriRaceType, type TriPerformance } from "./splits.js";
 import { analyseRecoverySeries, sleepVsNextDayLoad, type Correlation, type Anomaly } from "./correlations.js";
 import { buildMonitoringRuleSet, monitoringFinding, type MonitoringRuleSet, type MonitoringInput } from "./monitoring.js";
 import { changePointsOf, changePointFindings, type SeriesChangePoints } from "./changepoint.js";
@@ -505,6 +505,23 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
       return km && p.predictedSec != null ? estimateRunSplits(p.race, km, p.predictedSec, durState, p.date) : null;
     })
     .filter((s): s is RaceSplitPlan => s != null);
+
+  // Finish-time RANGE per split: worst = race today, best = today's prediction carried along the athlete's
+  // OWN race-predictor trajectory (sec/day) to race day, capped. Honest MODEL — labelled as such in the UI.
+  const predTrajectory = (opts?.history ?? [])
+    .map((s) => ({ date: s.date, p: predictionsVsGoals(s)[0] }))
+    .filter((x): x is { date: string; p: PredictionVsGoal } => x.p?.predictedSec != null)
+    .map((x) => ({ date: x.date, v: x.p.predictedSec! }));
+  const predSlope = slopePerDay(predTrajectory); // sec/day for the nearest race (negative = getting faster)
+  const nearestPredicted = predictions.find((p) => p.predictedSec != null)?.predictedSec;
+  const fracImprovePerDay = predSlope != null && nearestPredicted ? predSlope / nearestPredicted : null;
+  for (const plan of splits) {
+    const dTo = plan.date ? daysTo(state.date, plan.date) : 0;
+    const r = projectRaceDayRange(plan.predictedSec, dTo, fracImprovePerDay);
+    plan.worstSec = r.worstSec;
+    plan.bestSec = r.bestSec;
+    plan.rangeBasis = r.rangeBasis;
+  }
 
   const findings: Finding[] = [];
 

@@ -251,7 +251,13 @@ projection, and the dashboard carries an **API cost** card. To keep it down, the
   configured bike FTP, the card flags the gap rather than leaving two conflicting numbers on the page:
   the MMP curve only sees power-equipped rides and revises up only on hard, sustained power efforts, so a
   low estimate is a floor, not a downgrade — your **configured FTP** is what drives the zones.
-- **Estimated race splits** for every upcoming race:
+- **Estimated race splits** for every upcoming race — shown as a **finish-time range**, not a single number:
+  - **The range** is *race-day best → race-it-today*. The worst case is your current prediction (racing at
+    today's fitness); the best case carries **your own recent rate of improvement** out to race day (capped),
+    assuming you complete the planned build, stay healthy, adapt well and taper. Both ends are labelled a
+    MODEL with the assumptions stated, and the range collapses to your current level when there's no
+    improving trend to project — never an empty promise. Times are rounded to the minute (a projection isn't
+    second-accurate); each card leads with the race **date + countdown** and carries a plain-English glossary.
   - **Run races**: AI Endurance's predicted finish broken into a per-segment pacing plan, shaped by your
     **durability trend** — improving durability earns a gentle negative split; weak/unknown durability gets
     a conservative start that protects against the late fade.
@@ -269,6 +275,11 @@ A small local web server serves the live dashboard. **It is bound to `localhost`
 route (incl. the AI Endurance write path) requires a per-install **pairing token** — the server exposes
 writes + LLM spend, so it is not left open. To reach it from your **phone on the same Wi-Fi**, set
 `COACH_LAN=1`. Credentials never leave the Mac.
+
+**Save it as a PDF to share:** the dashboard is one self-contained HTML page, so just open it
+(`npm run demo`, `npm run dashboard`, or the served page) and use your browser's **Print → Save as PDF**
+(⌘P). A print stylesheet kicks in for the PDF — it hides the interactive buttons, keeps cards from
+splitting across pages, and expands the glossaries — so the whole thing captures cleanly in one document.
 
 ```bash
 npm run serve                 # localhost only; prints a /pair?token=… link at startup
