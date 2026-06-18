@@ -18,6 +18,9 @@ import { answerQuestion } from "./coach/ask.js";
 import { runWeeklyReview } from "./coach/weekly.js";
 import { runRacePrep } from "./coach/racePrep.js";
 import { runDeepDive, insightMetricsSummary, insightFindings } from "./coach/deepDive.js";
+import { runTuneUp } from "./coach/tuneUp.js";
+import { runResearchDigest } from "./coach/research.js";
+import { readKnowledge, writePendingDigest, pendingName, knowledgeFreshness, listPending } from "./knowledge/store.js";
 import { runSessionFeedback } from "./coach/session.js";
 import { loadSessionDecays } from "./insights/fit.js";
 import { writeReport, listReports, readReport } from "./coach/reports.js";
@@ -349,6 +352,57 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
   );
 
   server.tool(
+    "tune",
+    "Weekly tune-up: the SMALLER, easy-to-action marginal gains from your data (efficiency, durability, fuelling, pacing, biomechanics) — the easy wins, not 'train more / be consistent'. Also writes a dated report.",
+    {},
+    async () => {
+      const miss = missingKey();
+      if (miss) return fail(miss);
+      const { state, window } = await buildTodayState();
+      const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
+      const engagement = await loadEngagementContext(window);
+      const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
+      const { markdown, gains } = await runTuneUp(new CoachLLM(await loadSystemPrompt(), "tune", "medium"), state, ins);
+      if (gains.length) await writeReport("tune-up", todayIso(), markdown);
+      return ok(markdown);
+    },
+  );
+
+  server.tool(
+    "research",
+    "Monthly research digest: web-searches recent training/triathlon/gear thinking (e.g. tyre width, fuelling g/h, heat) against your knowledge layer and DRAFTS proposed prior updates. Writes a review proposal to knowledge/pending/ — nothing is applied until you approve it (`npm run knowledge -- approve <file>`). Best-effort; uses web search.",
+    {},
+    async () => {
+      const miss = missingKey();
+      if (miss) return fail(miss);
+      const today = todayIso();
+      try {
+        const { markdown } = await runResearchDigest(new CoachLLM(await loadSystemPrompt(), "research", "high"), await readKnowledge(), today);
+        await writePendingDigest(today, markdown);
+        return ok(`Drafted a research digest for review → knowledge/pending/${pendingName(today)}\nReview it, then approve with the CLI: npm run knowledge -- approve ${pendingName(today)}\n\n${markdown}`);
+      } catch (e) {
+        return fail(`Research digest unavailable (degraded, priors untouched): ${e instanceof Error ? e.message : String(e)}`);
+      }
+    },
+  );
+
+  server.tool(
+    "knowledge",
+    "Knowledge-layer status: when the coach's sports-science priors were last verified (stale flag) and any research digests awaiting your review. Read-only — approving a digest is a deliberate CLI action (`npm run knowledge -- approve`).",
+    {},
+    async () => {
+      const f = knowledgeFreshness(await readKnowledge());
+      const pending = await listPending();
+      const lines = [
+        `Knowledge layer — last verified ${f.lastVerified ?? "never"}${f.ageDays != null ? ` (${f.ageDays}d ago)` : ""}: ${f.stale ? "STALE — due a refresh (the `research` tool)" : "fresh"}`,
+        pending.length ? `\nPending digests awaiting review (${pending.length}):` : "\nNo pending digests — run the `research` tool to draft one.",
+        ...pending.map((p) => `  ${p.name} (${p.bytes} bytes) → approve via CLI: npm run knowledge -- approve ${p.name}`),
+      ];
+      return ok(lines.join("\n"));
+    },
+  );
+
+  server.tool(
     "session_feedback",
     "Deep, coach-quality feedback on one session (the most recent, or a given date). Needs the session's raw .FIT for biomechanics; pass force=true for summary-only feedback.",
     { date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), force: z.boolean().optional() },
@@ -454,7 +508,7 @@ async function main(): Promise<void> {
   await server.connect(new StdioServerTransport());
   console.error(
     "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/insights/react_to_insight/list_reports/" +
-      "read_report/decisions/listening/cost · LLM tools: ask/readiness/weekly/race_prep/deep_dive/session_feedback · " +
+      "read_report/decisions/listening/knowledge/cost · LLM tools: ask/readiness/weekly/race_prep/deep_dive/tune/research/session_feedback · " +
       "gated writes: propose_adjustment/confirm/decline.",
   );
 }

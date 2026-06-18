@@ -85,6 +85,34 @@ export class CoachLLM {
     return { value, cacheRead: usage.cacheRead, costUsd };
   }
 
+  /**
+   * Web-grounded completion for the monthly research digest — the ONLY flow that reaches the public web,
+   * via Anthropic's server-side web_search tool. Used to draft proposed knowledge-layer updates that the
+   * athlete then REVIEWS (never auto-applied). Degradable: callers treat a throw as "no digest this run".
+   * NOTE: web search bills per search on top of tokens; only token cost is recorded in the cost log.
+   */
+  async research(userContent: string, maxSearches = 6): Promise<{ text: string; cacheRead: number; costUsd: number }> {
+    const res = await this.client.messages.create({
+      model: this.model,
+      max_tokens: 8000,
+      thinking: { type: "adaptive" },
+      output_config: { effort: this.effort } as never,
+      system: [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }],
+      // Server-side web search; the model runs searches and returns cited prose. Capped to bound cost.
+      tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxSearches } as never],
+      messages: [{ role: "user", content: userContent }],
+    });
+    const text = res.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("\n");
+    if (!text && res.stop_reason === "max_tokens") {
+      throw new Error("Model hit max_tokens before emitting the digest — raise max_tokens.");
+    }
+    const { usage, costUsd } = await this.meter(res.usage);
+    return { text, cacheRead: usage.cacheRead, costUsd };
+  }
+
   /** Plain-prose completion (for the weekly review and race-prep reports). Same cached system prompt. */
   async text(userContent: string): Promise<{ text: string; cacheRead: number; costUsd: number }> {
     // Headroom matters: adaptive thinking consumes part of max_tokens, so a low cap can leave no

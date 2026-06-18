@@ -38,3 +38,6 @@ data/
 .garminconnect/
 .endurance-coach/
 
+# Drafted research digests awaiting review (transient; approved content lands in sports-science.md)
+knowledge/pending/
+
