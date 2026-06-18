@@ -78,13 +78,17 @@ export class GarminClient {
   }
 
   private withTimeout<T>(p: Promise<T>, label: string): Promise<T> {
-    const timeout = new Promise<T>((_, reject) =>
-      setTimeout(
+    // Capture and CLEAR the timer: assemble() calls Garmin up to ~14× sequentially, and a leaked timer
+    // per call keeps the event loop alive (process can't exit cleanly) and accumulates on the long-running
+    // server. Clearing it on settle bounds the live-timer count to at most one in flight.
+    let timer: ReturnType<typeof setTimeout>;
+    const timeout = new Promise<T>((_, reject) => {
+      timer = setTimeout(
         () => reject(new Error(`Garmin ${label} timed out after ${config.garmin.timeoutMs}ms`)),
         config.garmin.timeoutMs,
-      ),
-    );
-    return Promise.race([p, timeout]);
+      );
+    });
+    return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
   }
 
   private warn(op: string, err: unknown): void {

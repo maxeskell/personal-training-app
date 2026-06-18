@@ -199,18 +199,24 @@ export function parseFit(buf: Buffer): FitActivity | null {
       }
       const local = h & 0x0f;
       if (h & 0x40) {
-        // definition message
+        // definition message. Bounds-check before each multi-byte read so a truncated/hostile file
+        // degrades cleanly (stop parsing, keep what we have) instead of relying on a thrown RangeError
+        // for control flow / a record straddling `end`.
+        if (pos + 5 > end) break; // reserved(1) + arch(1) + global(2) + nFields(1)
         const le = buf.readUInt8(pos + 1) === 0;
         const global = le ? buf.readUInt16LE(pos + 2) : buf.readUInt16BE(pos + 2);
         const nFields = buf.readUInt8(pos + 4);
         pos += 5;
+        if (pos + nFields * 3 > end) break; // each field descriptor is 3 bytes
         const fields: FieldDef[] = [];
         for (let i = 0; i < nFields; i++) {
           fields.push({ num: buf.readUInt8(pos), size: buf.readUInt8(pos + 1), base: buf.readUInt8(pos + 2), dev: false });
           pos += 3;
         }
         if (h & 0x20) {
+          if (pos + 1 > end) break;
           const nDev = buf.readUInt8(pos++);
+          if (pos + nDev * 3 > end) break;
           for (let i = 0; i < nDev; i++) {
             fields.push({ num: 1000 + buf.readUInt8(pos), size: buf.readUInt8(pos + 1), base: 0x0d, dev: true });
             pos += 3;

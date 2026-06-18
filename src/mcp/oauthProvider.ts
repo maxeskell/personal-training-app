@@ -174,7 +174,9 @@ export class FileOAuthClientProvider implements OAuthClientProvider {
       this.closeCallbackServer();
     });
 
-    this.callbackServer.listen(config.aie.redirectPort);
+    // Bind loopback only: the OAuth redirect callback is for THIS machine's browser during the ~few-minute
+    // auth window; binding 0.0.0.0 would needlessly expose it on the LAN. (The redirect URI is localhost.)
+    this.callbackServer.listen(config.aie.redirectPort, "127.0.0.1");
   }
 
   private closeCallbackServer(): void {

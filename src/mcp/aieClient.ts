@@ -136,7 +136,14 @@ export class AieClient {
    * @internal
    */
   async callRaw(tool: string, args: Record<string, unknown> = {}): Promise<unknown> {
-    const res = await this.require().callTool({ name: tool, arguments: args });
+    const res = (await this.require().callTool({ name: tool, arguments: args })) as { isError?: boolean; content?: Array<{ text?: string }> };
+    // MCP signals a tool failure with `isError: true` + an error payload (not a thrown error). Don't let
+    // that payload be parsed as data — surface it as a throw so the caller degrades (provenanced null)
+    // instead of silently treating an error message as a (missing) reading.
+    if (res?.isError) {
+      const detail = res.content?.map((c) => c?.text).filter(Boolean).join(" ").slice(0, 200) || "(no detail)";
+      throw new Error(`AIE tool ${tool} returned an error: ${detail}`);
+    }
     return res;
   }
 
