@@ -43,7 +43,11 @@ const clean = (s: string | undefined): string | undefined => {
   return t.length ? t : undefined;
 };
 
-/** Merge intake answers onto a base profile (the parsed example). Pure — only sets provided fields. */
+/**
+ * Merge intake answers onto a base profile (the EXISTING profile when present, else the parsed
+ * example). Pure — only sets the integration-sourced fields the intake provides, so every other block
+ * (biomechanics, health/medication, equipment, bike_fit, fuelling, …) on the base is preserved.
+ */
 export function applyIntake(base: Profile, intake: ProfileIntake): Profile {
   const next: Profile = JSON.parse(JSON.stringify(base));
   const id = (next.identity ?? (next.identity = {} as Profile["identity"])) as Record<string, unknown>;
@@ -64,14 +68,30 @@ export function applyIntake(base: Profile, intake: ProfileIntake): Profile {
     avail.weekly_hours = wk;
   }
   type Race = NonNullable<Profile["races"]>[number];
-  const toRace = (r: NonNullable<ProfileIntake["race"]>): Race => ({
-    name: clean(r.name) ?? null,
-    priority: (clean(r.priority) as Race["priority"]) ?? null,
-    date: clean(r.date) ?? null,
-    distance: (clean(r.distance) as Race["distance"]) ?? null,
-    target_time: clean(r.target_time) ?? null,
-    note: null,
-  });
+  // Match an intake race back to a race already on the base (by name, else date) so a REFRESH keeps the
+  // hand-written `note` (and any priority/distance/target the integration didn't supply) instead of
+  // blanking it — the races list is otherwise integration-owned and replaced wholesale.
+  const baseRaces = (base.races ?? []) as Race[];
+  const priorFor = (r: NonNullable<ProfileIntake["race"]>): Race | undefined => {
+    const name = clean(r.name)?.toLowerCase();
+    const date = clean(r.date);
+    return baseRaces.find(
+      (b) =>
+        (name != null && typeof b.name === "string" && b.name.trim().toLowerCase() === name) ||
+        (date != null && b.date === date),
+    );
+  };
+  const toRace = (r: NonNullable<ProfileIntake["race"]>): Race => {
+    const prior = priorFor(r);
+    return {
+      name: clean(r.name) ?? null,
+      priority: (clean(r.priority) as Race["priority"]) ?? prior?.priority ?? null,
+      date: clean(r.date) ?? null,
+      distance: (clean(r.distance) as Race["distance"]) ?? prior?.distance ?? null,
+      target_time: clean(r.target_time) ?? prior?.target_time ?? null,
+      note: prior?.note ?? null,
+    };
+  };
   const all = [intake.race, ...(intake.extraRaces ?? [])].filter(
     (r): r is NonNullable<ProfileIntake["race"]> => Boolean(r && (clean(r.name) || clean(r.date))),
   );
@@ -214,22 +234,53 @@ export async function initProfile(): Promise<void> {
     );
     return;
   }
-  if (await fileExists(target)) {
+  const existed = await fileExists(target);
+  if (existed) {
     const rl0 = createInterface({ input: process.stdin, output: process.stdout });
-    const ans = (await rl0.question(`\n${LOCAL_PROFILE} already exists — overwrite it? [y/N]: `)).trim();
+    const ans = (
+      await rl0.question(
+        `\n${LOCAL_PROFILE} already exists. Refresh it from your integrations?\n` +
+          `  This MERGES — your hand-entered detail (biomechanics, medication, equipment, bike-fit,\n` +
+          `  fuelling, notes…) is KEPT; only the integration-sourced fields (identity, races, weekly\n` +
+          `  hours) are updated and re-confirmed. Nothing else is touched. [y/N]: `,
+      )
+    ).trim();
     rl0.close();
     if (!/^y/i.test(ans)) {
-      console.log(`Keeping your existing ${LOCAL_PROFILE}. Edit it by hand to make changes.\n`);
+      console.log(`Keeping your existing ${LOCAL_PROFILE} unchanged.\n`);
       return;
     }
   }
 
-  const exampleText = await readFile(join(process.cwd(), EXAMPLE_PROFILE), "utf8").catch(() => null);
-  if (exampleText == null) {
-    console.error(`Could not read ${EXAMPLE_PROFILE} — is it in the repo root?`);
-    return;
+  // Merge base: the EXISTING profile when present (so an update PRESERVES every hand-entered block and
+  // only refreshes the integration-sourced fields), else the blank example template. We parse the raw
+  // YAML without validating it — the MERGED result is validated before writing. If an existing file
+  // can't be parsed we ABORT rather than overwrite it from the template (never silently clobber).
+  let base: Profile;
+  if (existed) {
+    const localText = await readFile(target, "utf8").catch(() => null);
+    let parsed: unknown;
+    try {
+      parsed = parseYaml(localText ?? "");
+    } catch {
+      parsed = undefined;
+    }
+    if (parsed == null || typeof parsed !== "object") {
+      console.error(
+        `Could not parse your existing ${LOCAL_PROFILE} — refusing to overwrite it. Fix its YAML (or delete it to start fresh) and re-run.`,
+      );
+      return;
+    }
+    base = parsed as Profile;
+    console.log(`\n↻ Updating your existing ${LOCAL_PROFILE} — your hand-entered detail is preserved.`);
+  } else {
+    const exampleText = await readFile(join(process.cwd(), EXAMPLE_PROFILE), "utf8").catch(() => null);
+    if (exampleText == null) {
+      console.error(`Could not read ${EXAMPLE_PROFILE} — is it in the repo root?`);
+      return;
+    }
+    base = parseYaml(exampleText) as Profile;
   }
-  const base = parseYaml(exampleText) as Profile;
 
   // Best-effort: pre-fill from the connected integrations BEFORE opening the prompt loop. On any
   // failure we degrade to the existing full manual flow (never crash).
@@ -267,11 +318,14 @@ export async function initProfile(): Promise<void> {
     // Validate the structure/contract (loud) before writing — never persist an invalid profile silently.
     validateProfile(next);
     await writeFile(target, stringifyYaml(next));
-    console.log(`\n✓ Wrote ${target}  (gitignored — never committed).`);
+    console.log(`\n✓ ${existed ? "Updated" : "Wrote"} ${target}  (gitignored — never committed).`);
+    if (existed) {
+      console.log("  Your biomechanics/health/equipment/bike-fit/fuelling detail was preserved — only the integration-sourced fields were refreshed.");
+    }
     if (prefilled && prefilled.races.length > 1) {
       console.log(`  Carried all ${prefilled.races.length} upcoming races from AI Endurance — review them in the file.`);
     }
-    console.log("  Open it to fill in biomechanics, equipment, fuelling and medical context.");
+    if (!existed) console.log("  Open it to fill in biomechanics, equipment, fuelling and medical context.");
     console.log("  Reminder: set swim CSS, FTP and race target times directly in AI Endurance (read-only from here).\n");
   } catch (e) {
     console.error(`\nProfile not written — ${e instanceof Error ? e.message : String(e)}`);
