@@ -11,6 +11,7 @@ import { buildInsights } from "./insights/engine.js";
 import { DecisionLog, suppressedInsightKeys, type DecisionRecord } from "./state/decisionLog.js";
 import { InsightLog } from "./state/insightLog.js";
 import { analyseListening, formatListening } from "./coach/listening.js";
+import { loadEngagementContext } from "./coach/engagementContext.js";
 import { loadModel } from "./insights/metrics.js";
 import { ArchiveStore } from "./archive/store.js";
 import { answerQuestion } from "./coach/ask.js";
@@ -188,7 +189,8 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
       const { state, window } = await buildTodayState();
       if (!state.raw) return fail("No data assembled — nothing to analyse.");
       const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
-      const ins = buildInsights(state, await loadArchive(), { suppressed, history: window });
+      const engagement = await loadEngagementContext(window);
+      const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
       await new InsightLog().recordSurfaced(ins.topFindings, "mcp-insights");
       return ok([insightMetricsSummary(ins), "", insightFindings(ins)].join("\n"));
     },
@@ -310,7 +312,8 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
       if (miss) return fail(miss);
       const { state, window } = await buildTodayState();
       const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
-      const ins = buildInsights(state, await loadArchive(), { suppressed, history: window });
+      const engagement = await loadEngagementContext(window);
+      const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
       const { markdown } = await runDeepDive(new CoachLLM(await loadSystemPrompt(), "deep-dive"), state, ins);
       await writeReport("deep-dive", todayIso(), markdown);
       return ok(markdown);

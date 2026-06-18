@@ -185,6 +185,25 @@ Per the §5 guardrails the whole model is **descriptive, not causal** — engage
 only, form numbers labelled MODEL; no claim that a dismissed finding or a skipped session *caused* a
 downstream result.
 
+**Closing the loop — engagement feeds back into generation (added 2026-06-18).** `coach/listening.ts →
+buildEngagementContext` distils the model into a compact `EngagementContext` (`insights/engagement.ts`),
+passed into `buildInsights` via `BuildOptions.engagement` on the display surfaces (dashboard, `insights`,
+`deep-dive`; loaded by `coach/engagementContext.ts`, best-effort). It does two things:
+
+1. **Safety-preserving re-ranking.** `surfaceFindings` takes optional per-family weights (bounded
+   [0.7, 1.2], derived from act-vs-dismiss rates once a family has ≥2 surfaced + ≥2 reactions). Severity
+   tier ALWAYS wins and `flag` findings are never down-weighted — weights only reorder *within* a tier, so
+   no engagement signal can bury a safety flag or a health early-warning. Omitting the context restores the
+   exact prior score-only sort.
+2. **Engagement-derived findings** (family "Follow-through"): a *recurring signal you've set aside* (a
+   dismissed finding the engine re-surfaced ≥2× since) and *plan adherence is slipping* (<70% of planned
+   hours, or a ≥15-pt drop, on a non-trivial plan block). They flow through the normal
+   surfacing/suppression/feedback path, so each is itself dismissable.
+
+This stays inside §5: still deterministic, still no causal claim (the findings state what happened — "you
+keep setting this aside", "you're at X% of plan" — not why), and it degrades to prior behaviour if the
+history can't be read.
+
 ---
 
 ## 5. Guardrails (carried forward — non-negotiable)

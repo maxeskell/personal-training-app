@@ -195,6 +195,24 @@ recurrence and labels the form numbers a MODEL; it does not claim a finding you 
 result. Note plan edits you make **directly in AI Endurance** are caught by the snapshot diff; there is no
 separate edit feed — the daily snapshots are the record.
 
+### Closing the loop — engagement feeds back into your insights
+
+The engagement model isn't just a mirror; it **feeds back into what the engine surfaces**, on the
+dashboard, `insights` and `deep-dive`:
+
+- **Ranking follows your attention.** Families you consistently dismiss are gently **down-ranked** and the
+  ones you act on are **lifted** — but this is **safety-preserving**: severity always wins (a `flag` can
+  never be buried under a family you like) and flags are never down-weighted. It only reorders *within* a
+  severity tier.
+- **New "Follow-through" findings.** Two insights are now **generated from your own behaviour**: a
+  *recurring signal you've set aside* (something you dismissed that the engine keeps re-raising — surfaced
+  only after it recurs ≥2×) and *plan adherence is slipping* (you're doing <70% of planned hours, or it
+  dropped ≥15 points). Both are ordinary findings with 👍/👎/✕ buttons, so you can dismiss them too.
+
+Still no causal claim and still no LLM — it's a transparent, bounded re-weighting plus two honest,
+behaviour-derived findings. The whole loop degrades silently: if the history can't be read, surfacing
+falls back to exactly what it was before.
+
 ## Deep session feedback
 
 `npm run session` (or the dashboard's **Last session** card → *Deep feedback*) gives coach-quality

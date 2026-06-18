@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { analyseListening, formatListening } from "../src/coach/listening.js";
+import { analyseListening, buildEngagementContext, formatListening } from "../src/coach/listening.js";
 import { snapshotSignature, toSurfaced, type InsightSnapshot, type SurfacedFinding } from "../src/state/insightLog.js";
 import type { DecisionRecord } from "../src/state/decisionLog.js";
 import { emptyState, type AthleteState, type PlannedSession } from "../src/state/types.js";
@@ -123,6 +123,38 @@ test("analyseListening: a planned workout that simply passed is NOT counted as d
   ];
   const m = analyseListening({ snapshots: [], decisions: [], states });
   assert.equal(m.planChanges.removed, 0);
+});
+
+test("buildEngagementContext: weights families by act-vs-dismiss, maps recurring + adherence for the loop", () => {
+  const snapshots = [
+    snap("2026-06-01T07:00:00.000Z", [sf("d1", "Durability", "Run durability slipping"), sf("d2", "Durability", "Cadence drift"), sf("e1", "Load & form", "TSB negative")]),
+    snap("2026-06-05T07:00:00.000Z", [sf("d1", "Durability", "Run durability slipping"), sf("e2", "Load & form", "Monotony high")]),
+    snap("2026-06-09T07:00:00.000Z", [sf("d1", "Durability", "Run durability slipping"), sf("e3", "Load & form", "Ramp steep")]),
+  ];
+  const decisions: DecisionRecord[] = [
+    feedback("d1", "deferred", "2026-06-02T08:00:00.000Z"), // ignored — then recurs 06-05 & 06-09
+    feedback("d2", "deferred", "2026-06-02T08:00:00.000Z"),
+    feedback("e1", "accepted", "2026-06-02T08:00:00.000Z"),
+    feedback("e2", "accepted", "2026-06-06T08:00:00.000Z"),
+    feedback("e3", "accepted", "2026-06-10T08:00:00.000Z"),
+  ];
+  const states = [
+    stateWith("2026-06-01", { adherence: { Endurance: { actualH: 4, prescribedH: 8 } } }),
+    stateWith("2026-06-09", { adherence: { Endurance: { actualH: 7, prescribedH: 8 } } }),
+  ];
+  const ctx = buildEngagementContext(analyseListening({ snapshots, decisions, states, now: new Date("2026-06-11T08:00:00.000Z") }));
+
+  // Durability is dismissed (2/2 surfaced ignored) → down-weighted to the 0.7 floor; Load & form all agreed → 1.2 cap.
+  assert.equal(ctx.familyWeights!.get("Durability"), 0.7);
+  assert.equal(ctx.familyWeights!.get("Load & form"), 1.2);
+
+  // d1 was ignored then resurfaced twice → a recurring signal; d2 (no recurrence) is not.
+  assert.deepEqual(ctx.recurringDismissed!.map((r) => `${r.key}:${r.times}`), ["d1:2"]);
+  assert.equal(ctx.recurringDismissed![0].reaction, "ignore");
+
+  assert.equal(ctx.adherence!.pct, 0.875);
+  assert.equal(ctx.adherence!.priorPct, 0.5);
+  assert.equal(ctx.adherence!.plannedH, 8);
 });
 
 test("analyseListening: empty input is well-formed, and the formatter degrades gracefully", () => {

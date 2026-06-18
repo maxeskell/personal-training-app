@@ -30,6 +30,7 @@ import { trainingStatusFinding, hrvStatusFinding, enduranceScoreFinding, powerCu
 import { garminTrendFindings } from "./garminTrends.js";
 import { analyseHeat, heatFinding } from "./heat.js";
 import { finiteNums, slope } from "./stats.js";
+import { engagementFindings, type EngagementContext } from "./engagement.js";
 import type { FitSummary } from "../archive/store.js";
 
 /** Optional historical archive to widen the metrics beyond the live 40-activity / 60-day window. */
@@ -245,6 +246,9 @@ export interface BuildOptions {
   suppressed?: Set<string>;
   /** Trailing daily states (oldest→newest, incl. today) for cross-day trends (VO2max, prediction). */
   history?: AthleteState[];
+  /** Engagement loop: derived feedback/adherence that GENERATES follow-through findings and reweights
+   *  surfacing toward the families the athlete acts on (coach/listening → buildEngagementContext). */
+  engagement?: EngagementContext;
 }
 
 /** Build the full insight report + detector findings from today's state (+ optional history archive). */
@@ -556,6 +560,10 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   // 6. Cross-day trends from the history window (VO2max engine; race-predictor trajectory).
   findings.push(...historyTrendFindings(opts?.history));
 
+  // 7. Engagement loop — findings GENERATED from the athlete's own feedback + adherence (closes the loop:
+  // a signal you keep dismissing that recurs, or plan adherence slipping). Empty unless engagement is fed in.
+  findings.push(...engagementFindings(opts?.engagement));
+
   // Fill any unset confidence from the per-family defaults (mid value if still unknown).
   for (const f of findings) if (f.confidence == null) f.confidence = FAMILY_CONFIDENCE[f.family] ?? 0.6;
 
@@ -563,8 +571,9 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   const rank = { flag: 0, watch: 1, info: 2 } as const;
   findings.sort((a, b) => rank[a.severity] - rank[b.severity]);
 
-  // Gated + ranked set for surfacing: good-signal only, athlete-dismissed keys removed.
-  const topFindings = surfaceFindings(findings, opts?.suppressed ?? new Set());
+  // Gated + ranked set for surfacing: good-signal only, athlete-dismissed keys removed, and (when an
+  // engagement context is supplied) reweighted toward the families the athlete actually acts on.
+  const topFindings = surfaceFindings(findings, opts?.suppressed ?? new Set(), 0.5, opts?.engagement?.familyWeights);
 
   return {
     date: state.date,

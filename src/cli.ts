@@ -19,6 +19,7 @@ import { buildInsights } from "./insights/engine.js";
 import { alertFindings, loadModel } from "./insights/metrics.js";
 import { InsightLog } from "./state/insightLog.js";
 import { analyseListening, formatListening } from "./coach/listening.js";
+import { loadEngagementContext } from "./coach/engagementContext.js";
 import { ArchiveStore } from "./archive/store.js";
 import { answerQuestion } from "./coach/ask.js";
 import { runSessionFeedback } from "./coach/session.js";
@@ -251,7 +252,8 @@ async function cmdDeepDive(): Promise<void> {
   if (!requireLLM()) process.exit(1);
   const { state, window } = await buildTodayState();
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
-  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window });
+  const engagement = await loadEngagementContext(window);
+  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
   const { markdown, cacheRead, costUsd } = await runDeepDive(new CoachLLM(await loadSystemPrompt(), "deep-dive"), state, ins);
   console.log("\n" + markdown + "\n");
   const path = await writeReport("deep-dive", todayIso(), markdown);

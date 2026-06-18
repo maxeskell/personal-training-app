@@ -7,6 +7,7 @@ import {
 import type { InsightSnapshot } from "../state/insightLog.js";
 import type { LoadModel } from "../insights/metrics.js";
 import type { AthleteState, PlannedSession } from "../state/types.js";
+import type { EngagementContext } from "../insights/engagement.js";
 
 /**
  * "What do I listen to vs ignore" — your engagement model. DETERMINISTIC, pure (no LLM, no network):
@@ -41,6 +42,8 @@ export interface DismissedRecurrence {
   reactedAt: string;
   recurredAt: string;
   daysLater: number;
+  /** How many times the engine re-surfaced this finding AFTER the dismissal (persistence strength). */
+  timesAfter: number;
 }
 
 export interface SuppressedNow {
@@ -285,16 +288,17 @@ export function analyseListening({ snapshots, decisions, states = [], load, now 
     if (reaction === "agree") continue;
     const meta = keyMeta.get(key);
     if (!meta) continue;
-    const after = meta.occurrences.find((ts) => ts > timestamp);
-    if (!after) continue;
+    const afterOccurrences = meta.occurrences.filter((ts) => ts > timestamp);
+    if (!afterOccurrences.length) continue;
     recurredAfterDismissal.push({
       key,
       family: meta.family,
       title: meta.title,
       reaction,
       reactedAt: timestamp,
-      recurredAt: after,
-      daysLater: daysBetween(timestamp, after),
+      recurredAt: afterOccurrences[0],
+      daysLater: daysBetween(timestamp, afterOccurrences[0]),
+      timesAfter: afterOccurrences.length,
     });
   }
   recurredAfterDismissal.sort((a, b) => b.recurredAt.localeCompare(a.recurredAt));
@@ -316,6 +320,46 @@ export function analyseListening({ snapshots, decisions, states = [], load, now 
     planChanges: buildPlanChanges(states),
     form: load ? { ctl: load.ctl, atl: load.atl, tsb: load.tsb, rampPerWeek: load.rampPerWeek } : null,
   };
+}
+
+/** Min surfaced + reactions in a family before its dismiss/agree rate is trusted to weight ranking. */
+const FAMILY_WEIGHT_MIN_SAMPLE = 2;
+
+/**
+ * Derive the engagement hand-off fed back into buildInsights: per-family ranking weights, the
+ * persistently-recurring dismissed findings, and current adherence. Weights are bounded [0.7, 1.2] and
+ * only set once a family has enough feedback to trust (else the family stays at the neutral default).
+ */
+export function buildEngagementContext(model: ListeningModel): EngagementContext {
+  const familyWeights = new Map<string, number>();
+  for (const f of model.byFamily) {
+    const reactions = f.agreed + f.disagreed + f.ignored;
+    if (f.surfaced < FAMILY_WEIGHT_MIN_SAMPLE || reactions < FAMILY_WEIGHT_MIN_SAMPLE) continue;
+    const agreeRate = f.agreed / f.surfaced;
+    const dismissRate = (f.disagreed + f.ignored) / f.surfaced;
+    const w = Math.max(0.7, Math.min(1.2, +(1 + 0.4 * agreeRate - 0.4 * dismissRate).toFixed(3)));
+    if (w !== 1) familyWeights.set(f.family, w);
+  }
+
+  const recurringDismissed = model.recurredAfterDismissal.map((r) => ({
+    key: r.key,
+    family: r.family,
+    title: r.title,
+    times: r.timesAfter,
+    reaction: r.reaction,
+  }));
+
+  const adherence =
+    model.adherence && model.adherence.pct != null
+      ? {
+          pct: model.adherence.pct,
+          priorPct: model.adherence.trend?.priorPct ?? null,
+          deltaPts: model.adherence.trend?.deltaPts ?? null,
+          plannedH: model.adherence.totalPlannedH,
+        }
+      : null;
+
+  return { familyWeights, recurringDismissed, adherence };
 }
 
 function pct(x: number | null): string {

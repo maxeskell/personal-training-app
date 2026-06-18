@@ -8,6 +8,7 @@ import { StateStore } from "./state/store.js";
 import { assembleState } from "./state/assemble.js";
 import { DecisionLog, suppressedInsightKeys, type InsightReaction } from "./state/decisionLog.js";
 import { InsightLog } from "./state/insightLog.js";
+import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { buildInsights } from "./insights/engine.js";
 import { loadArchive } from "./coach/orchestrator.js";
@@ -76,7 +77,8 @@ async function renderLatest(): Promise<string> {
   const decisions = await log.all();
   const suppressed = suppressedInsightKeys(await log.insightReactions());
   const archive = await loadArchive();
-  const insights = latest.raw ? buildInsights(latest, archive, { suppressed, history: window }) : undefined;
+  const engagement = await loadEngagementContext(window); // closes the loop: feedback/adherence reshape surfacing
+  const insights = latest.raw ? buildInsights(latest, archive, { suppressed, history: window, engagement }) : undefined;
   // Record the full surfaced set (not just what gets a reaction) so the "what I listen to" model
   // (npm run listening) can read feedback against everything shown. Best-effort, de-duped, never blocks.
   if (insights) await new InsightLog().recordSurfaced(insights.topFindings, "dashboard");
@@ -159,7 +161,8 @@ async function latestInsights() {
   const state = window[window.length - 1];
   if (!state?.raw) return null;
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
-  const insights = buildInsights(state, await loadArchive(), { suppressed, history: window });
+  const engagement = await loadEngagementContext(window);
+  const insights = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
   return { state, insights };
 }
 

@@ -33,6 +33,7 @@ export function findingKey(f: Pick<Finding, "family" | "title" | "key">): string
 }
 
 const SEVERITY_WEIGHT: Record<Severity, number> = { flag: 1, watch: 0.7, info: 0.45 };
+const SEVERITY_TIER: Record<Severity, number> = { flag: 0, watch: 1, info: 2 };
 
 /** Rank score = severity weight × confidence (defaulting confidence to a mid value when unset). */
 export function findingScore(f: Finding): number {
@@ -42,11 +43,24 @@ export function findingScore(f: Finding): number {
 /**
  * Gate + rank findings for surfacing: drop suppressed keys and anything below the confidence bar,
  * then sort by score. `minConfidence` is the "only show me a good signal" threshold.
+ *
+ * `familyWeights` (optional) closes the engagement loop: a per-family multiplier that sinks families the
+ * athlete habitually dismisses and lifts the ones they act on. It is SAFETY-PRESERVING — severity tier
+ * always wins (a flag can never be buried under a family you engage with) and flags are never
+ * down-weighted; the weight only reorders within a tier. Omitting it keeps the original score-only sort.
  */
-export function surfaceFindings(findings: Finding[], suppressed: Set<string> = new Set(), minConfidence = 0.5): Finding[] {
-  return findings
-    .filter((f) => (f.confidence ?? 0.6) >= minConfidence && !suppressed.has(findingKey(f)))
-    .sort((a, b) => findingScore(b) - findingScore(a));
+export function surfaceFindings(
+  findings: Finding[],
+  suppressed: Set<string> = new Set(),
+  minConfidence = 0.5,
+  familyWeights?: Map<string, number>,
+): Finding[] {
+  const filtered = findings.filter((f) => (f.confidence ?? 0.6) >= minConfidence && !suppressed.has(findingKey(f)));
+  if (!familyWeights || familyWeights.size === 0) {
+    return filtered.sort((a, b) => findingScore(b) - findingScore(a)); // default — unchanged
+  }
+  const weighted = (f: Finding) => findingScore(f) * (f.severity === "flag" ? 1 : familyWeights.get(f.family) ?? 1);
+  return filtered.sort((a, b) => SEVERITY_TIER[a.severity] - SEVERITY_TIER[b.severity] || weighted(b) - weighted(a));
 }
 
 /** Health/safety families worth a proactive tap even at "watch" severity (early-warnings). */
