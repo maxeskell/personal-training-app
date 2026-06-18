@@ -127,6 +127,9 @@ function refreshOnce(): Promise<void> {
 }
 
 async function refresh(): Promise<void> {
+  // TODO(datasource, Phase 3b): route this dashboard background-sync through selectDataSource() too. It's
+  // left on the direct AIE path for now because the degrade-on-connect-fail + Garmin fit-sync + weather
+  // refresh below hold the open clients; cleanest to restructure alongside the first non-AIE adapter.
   const store = new StateStore();
   const garmin = config.garmin.enabled ? new GarminClient() : undefined;
   if (garmin) await garmin.connect();
