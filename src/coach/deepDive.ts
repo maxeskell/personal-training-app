@@ -49,7 +49,7 @@ export function insightMetricsSummary(ins: InsightReport): string {
     `- Regime shifts (change-points): ${ins.changePoints.flatMap((s) => s.points.slice(-1).map((p) => p.date ? `${s.metric} ${p.before}→${p.after} @ ${p.date}` : null)).filter(Boolean).join("; ") || "none dated"}`,
     `- Brick decoupling (Q4): ${ins.brick.decouplingPct != null ? `run EF off-bike ${ins.brick.decouplingPct}% vs fresh (${ins.brick.brickDays} brick days)` : "insufficient power-equipped runs"}`,
     `- Taper target (Q6): ${ins.taper.recommendedTsbLow != null ? `race-day TSB ~${ins.taper.recommendedTsbLow}..${ins.taper.recommendedTsbHigh} (${ins.taper.basis})` : "no past race-day TSB yet"}`,
-    `- Economy vs fitness (Q5): ${ins.efficiency.residualSlopePer30d != null ? `fitness-removed EF residual ${ins.efficiency.residualSlopePer30d}/30d (${ins.efficiency.fitnessExplains ? "gains are fitness, not economy" : "independent economy gain"})` : "insufficient steady runs"}`,
+    `- Economy vs fitness (Q5): ${ins.efficiency.economyPer30d != null ? `EF~CTL+time, time coefficient ${ins.efficiency.economyPer30d}/30d [CI ${ins.efficiency.ciLow}..${ins.efficiency.ciHigh}] (${ins.efficiency.economyReliable ? "apparent economy gain — CI>0, not heat-adjusted" : "no reliable economy gain beyond fitness"})` : "insufficient steady runs"}`,
     `- Race split plans: ${ins.splits.map((p) => `${p.race} ${Math.round(p.predictedSec / 60)}min over ${p.distanceKm}km — ${p.strategy}`).join(" | ") || "no upcoming races with enough data for a plan"}`,
   ].join("\n");
 }

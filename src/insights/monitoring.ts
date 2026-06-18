@@ -53,6 +53,8 @@ export interface MonitoringRuleSet {
   validated: boolean;
   rules: RulePerf[];
   best: RulePerf | null;
+  /** How many candidate rule×lead combos the "best" was selected from (multiplicity the p is adjusted for). */
+  selectedFrom?: number;
 }
 
 /** Rolling z-scores vs a trailing window (each point scored against its own prior history). */
@@ -164,10 +166,12 @@ export function buildMonitoringRuleSet(input: MonitoringInput): MonitoringRuleSe
   // Walk-forward: select on the earlier 60%, evaluate on the held-out later 40%.
   const trainEnd = Math.floor(n * 0.6);
   let bestSel: { cand: Candidate; lead: number; trainJ: number } | null = null;
+  let combosTried = 0; // how many candidate rule×lead combos we choose the best from (selection multiplicity)
   for (const c of cands) {
     for (let lead = 1; lead <= 3; lead++) {
       const tr = score(c.pred, outcomeBad, lead, 0, trainEnd);
       if (tr.fires < 3 || tr.outcomes < 3) continue;
+      combosTried++;
       if (!bestSel || tr.youdenJ > bestSel.trainJ) bestSel = { cand: c, lead, trainJ: tr.youdenJ };
     }
   }
@@ -190,11 +194,14 @@ export function buildMonitoringRuleSet(input: MonitoringInput): MonitoringRuleSe
       pValue,
     };
     rules.push(perf);
-    // Validated only if the holdout has real events, positive skill, and beats the permutation null.
-    if (te.outcomes >= 5 && te.fires >= 3 && te.youdenJ > 0 && pValue < 0.05) best = perf;
+    // Validated only if the holdout has ENOUGH events (≥8 outcomes / ≥4 fires — not a handful), positive
+    // skill, and beats the permutation null AFTER a Bonferroni correction for the best-of-N selection
+    // (a best-of-~12 candidate that scrapes p=0.04 is selection optimism, not a validated rule).
+    const pAdj = Math.min(1, pValue * Math.max(1, combosTried));
+    if (te.outcomes >= 8 && te.fires >= 4 && te.youdenJ > 0 && pAdj < 0.05) best = perf;
   }
 
-  return { ...base, method: "walk-forward + permutation", validated: best != null, rules, best };
+  return { ...base, method: "walk-forward + permutation", validated: best != null, rules, best, selectedFrom: combosTried };
 }
 
 /** In-sample scan (no holdout possible) — for short series; results are exploratory only. */
@@ -256,7 +263,7 @@ export function monitoringFinding(rs: MonitoringRuleSet): Finding | null {
       severity: "info",
       detail:
         `Selected on the earlier part of your history and tested on held-out later days, this fires ~${b.lead} day(s) before a ${rs.outcomeName} dip with a ${Math.round(b.hitRate * 100)}% hit-rate and ${Math.round(b.falseAlarmRate * 100)}% false-alarm rate (held-out; permutation p=${b.pValue}).${depNote} When it trips, cap intensity and re-check the morning signals.`,
-      evidence: `walk-forward holdout + circular-shift permutation over ${rs.days} usable days [${rs.outcomeIndependent ? "independent outcome" : "dependent outcome"}]`,
+      evidence: `walk-forward holdout + circular-shift permutation over ${rs.days} usable days${rs.selectedFrom ? `, best of ${rs.selectedFrom} candidates (p Bonferroni-adjusted)` : ""} [${rs.outcomeIndependent ? "independent outcome" : "dependent outcome"}]`,
       recommendation: "Treat it as amber, not gospel — confirm against how you actually feel before pulling a session.",
       confidence: Math.min(0.85, 0.55 + b.youdenJ / 2),
     };

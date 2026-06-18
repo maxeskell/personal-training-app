@@ -89,6 +89,9 @@ test("zones: derived bands ordered correctly from thresholds", () => {
   const z = deriveZones({ bikeFtpW: 250, runThresholdHr: 170, runThresholdPaceSecPerKm: 240, runThresholdPowerW: 338 });
   assert.equal(z.bike?.power?.bounds[1], Math.round(250 * 0.55));
   assert.ok(z.run?.hr && z.run.hr.bounds[z.run.hr.bounds.length - 1] > z.run.hr.bounds[0]);
+  // HR zones follow the Coggan %-LTHR table: Z1 (recovery) tops out at 81% LTHR, Z2 endurance above it.
+  assert.equal(z.run!.hr!.bounds[1], Math.round(170 * 0.81));
+  assert.equal(z.run!.hr!.labels![0], "Z1 Recovery");
   // pace bounds ascending in sec/km (fastest→slowest)
   const pb = z.run!.pace!.bounds;
   assert.ok(pb.every((v, i) => i === 0 || v >= pb[i - 1]));

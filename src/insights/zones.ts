@@ -3,9 +3,10 @@
  *
  * AI Endurance owns the athlete's configured zones via `getUser`/`setZones`; where those explicit
  * boundaries are exposed we surface them directly. Where only the THRESHOLD markers are available
- * (bike FTP, run threshold pace/HR, swim CSS) we derive standard zone bands from them with the
- * conventional models (Coggan power, %-LTHR heart-rate, %-threshold pace), flagged `source:"derived"`.
- * Deterministic and pure — no model/black-box estimates.
+ * (bike FTP, run threshold pace/HR, swim CSS) we derive standard zone bands from them with NAMED,
+ * citable models — **Coggan power zones** (% FTP) and **Coggan %-LTHR heart-rate zones** — flagged
+ * `source:"derived"`. (Running power reuses the cycling Coggan %-of-threshold model as an approximation;
+ * Stryd-style run-power zones differ, so treat run-power bands as indicative.) Deterministic and pure.
  */
 
 import type { DisciplineThresholds, DisciplineZones, ZoneSet } from "../state/types.js";
@@ -30,9 +31,11 @@ function fromThreshold(
 // Coggan power zones as % of FTP (Z1..Z6; top two merged).
 const POWER_EDGES = [0, 0.55, 0.75, 0.9, 1.05, 1.2, 1.5];
 const POWER_LABELS = ["Z1 Recovery", "Z2 Endurance", "Z3 Tempo", "Z4 Threshold", "Z5 VO2", "Z6 Anaerobic"];
-// Heart-rate zones as % of threshold (lactate-threshold) HR.
-const HR_EDGES = [0, 0.85, 0.9, 0.95, 1.0, 1.06];
-const HR_LABELS = ["Z1 Easy", "Z2 Endurance", "Z3 Tempo", "Z4 Threshold", "Z5 VO2"];
+// Heart-rate zones as % of lactate-threshold HR — Coggan %-LTHR boundaries (recovery <81%, endurance
+// 81–90%, tempo 90–94%, threshold 94–100%, VO2 ≥100%). The old [0.85,0.9,0.95,1.0] edges lumped genuine
+// Z2 endurance into "Z1 Easy"; these separate recovery from endurance so easy stays easy.
+const HR_EDGES = [0, 0.81, 0.9, 0.94, 1.0, 1.06];
+const HR_LABELS = ["Z1 Recovery", "Z2 Endurance", "Z3 Tempo", "Z4 Threshold", "Z5 VO2"];
 // Pace zones as multiples of threshold pace time (higher sec = slower = easier; bounds ascending).
 const PACE_EDGES = [0.9, 0.97, 1.03, 1.1, 1.2, 1.45];
 const PACE_LABELS = ["Z5 VO2", "Z4 Threshold", "Z3 Tempo", "Z2 Endurance", "Z1 Easy"];
