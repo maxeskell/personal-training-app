@@ -223,9 +223,10 @@ fire-only health check), `npm run backfill:install` (history grind).
 - **Garmin is an unofficial client.** It scrapes Garmin Connect via a pinned community MCP, is
   rate-limited and occasionally fragile, and its tokens expire ~6-monthly. It is optional by design —
   treat any Garmin breakage as "degrade to AI Endurance," not an outage.
-- **Single-writer assumption.** State writes are atomic (temp + `rename`) and archive reads dedup, but
-  there is no multi-process locking beyond that. Two dashboards syncing at once share one pull; don't
-  run several writers against the same `data/`.
+- **Concurrent writes.** State writes are atomic (temp + `rename`) AND serialized by a cross-process
+  lock (`proper-lockfile` on the state dir), so the dashboard autosync and a cron `update` can't
+  interleave to last-writer-wins; `load()` also shape-guards each slot, dropping a corrupt/hand-edited
+  one back to `absent()`. The decision log holds its own lock for the confirm critical section.
 - **Demo / no-account mode shipped.** `npm run demo` renders the dashboard on bundled sample data with
   no account or API key, so a stranger can evaluate the app. The live flows still need real accounts.
 - **`npm audit`** flags a high-severity advisory in **esbuild** — a *dev-only* transitive dependency
