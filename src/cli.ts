@@ -1,7 +1,7 @@
 import { AieClient, AIE_READ_TOOLS, AIE_WRITE_TOOLS } from "./mcp/aieClient.js";
 import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
-import { assembleState } from "./state/assemble.js";
+import { selectDataSource } from "./sources/index.js";
 import { config } from "./config.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
@@ -167,9 +167,8 @@ async function cmdState(): Promise<void> {
   const garmin = config.garmin.enabled ? new GarminClient() : undefined;
   if (garmin) await garmin.connect();
 
-  const state = await withAie((aie) =>
-    assembleState(aie, garmin, store, { date: todayIso(), assembledAt: new Date().toISOString() }),
-  );
+  // Assemble via the configured data-source spine (AI Endurance by default; see src/sources/).
+  const state = await selectDataSource().assemble({ store, garmin, date: todayIso(), assembledAt: new Date().toISOString() });
   await garmin?.close();
   await store.save(state);
 

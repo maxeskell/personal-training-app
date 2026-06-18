@@ -153,6 +153,13 @@ export const config = {
 
   /** Where daily AthleteState records are persisted (inside repo, gitignored). */
   dataDir: process.env.COACH_DATA_DIR ?? join(process.cwd(), "data"),
+
+  /**
+   * The training-data SPINE the coach assembles from (see src/sources/). "ai-endurance" is the default
+   * and most capable; the adapter seam lets other sources (e.g. intervals.icu) be added later. An unknown
+   * value falls back to AI Endurance.
+   */
+  source: process.env.COACH_SOURCE ?? "ai-endurance",
 } as const;
 
 export type Config = typeof config;
