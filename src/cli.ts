@@ -12,7 +12,7 @@ import { runTuneUp } from "./coach/tuneUp.js";
 import { runResearchDigest } from "./coach/research.js";
 import { readKnowledge, writePendingDigest, pendingName, approvePending, knowledgeFreshness, listPending } from "./knowledge/store.js";
 import { buildTodayState, gatherReadiness, loadArchive, todayIso, withAie } from "./coach/orchestrator.js";
-import { proposeAdjustments, validateProposals, buildProposerContext } from "./coach/planAdjust.js";
+import { proposeAdjustments, validateProposals, buildProposerContext, writeContextFor } from "./coach/planAdjust.js";
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
@@ -526,7 +526,7 @@ async function cmdPropose(): Promise<void> {
   const ins = buildInsights(state, await loadArchive(), { history: window });
   const llm = new CoachLLM(await loadSystemPrompt(), "propose");
   const { result, cacheRead, costUsd } = await proposeAdjustments(llm, request, state, buildProposerContext(state, ins));
-  const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? []);
+  const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? [], writeContextFor(state));
 
   if (!valid.length) {
     console.log(`\nNo applicable change proposed. ${result.notes}`);
@@ -578,7 +578,7 @@ async function cmdAct(): Promise<void> {
 
   const llm = new CoachLLM(await loadSystemPrompt(), "act");
   const { result, cacheRead, costUsd } = await proposeAdjustments(llm, request, state, ctx);
-  const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? []);
+  const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? [], writeContextFor(state));
   if (!valid.length) {
     console.log(`\nNo applicable plan change proposed. ${result.notes}`);
     if (rejected.length) console.log(rejected.map((r) => `  · ${r}`).join("\n"));

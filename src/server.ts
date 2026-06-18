@@ -20,7 +20,7 @@ import { runSessionFeedback, assembleSession } from "./coach/session.js";
 import { loadSessionDecays, fitStreamsDir } from "./insights/fit.js";
 import { readCostRecords } from "./llm/costLog.js";
 import { syncFitSummaries, downloadFitStream, hasStreamDownloadTool } from "./archive/fitSync.js";
-import { proposeAdjustments, validateProposals, buildProposerContext } from "./coach/planAdjust.js";
+import { proposeAdjustments, validateProposals, buildProposerContext, writeContextFor } from "./coach/planAdjust.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { alertFindings } from "./insights/metrics.js";
 import { getForecast, refreshForecast } from "./weather/store.js";
@@ -304,7 +304,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         "Turn these surfaced signals into minimal, specific plan adjustments with trade-offs (don't restructure the week; smallest change that helps):\n" +
         actionable.map((f) => `- [${f.severity}] ${f.title}: ${f.detail}${f.recommendation ? ` (suggested: ${f.recommendation})` : ""}`).join("\n");
       const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt(), "act"), request, li.state, ctx);
-      const { valid, rejected } = validateProposals(result.proposals, li.state.plannedSessions.value ?? []);
+      const { valid, rejected } = validateProposals(result.proposals, li.state.plannedSessions.value ?? [], writeContextFor(li.state));
       const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
       const proposals = [];
       for (const p of valid) {

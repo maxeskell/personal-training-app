@@ -71,9 +71,16 @@ explicitly `confirm`.
   targets). A standing clinical-boundary clause backs this inside every LLM prompt. A **rapid or unexplained
   weight drop is flagged as a health concern on its own** (never gated behind other signals, never a win),
   and that wellbeing escalation now shows on the **dashboard**, not just the CLI/MCP output.
-- **Trend over single point.** The green/amber/red call applies a code-level floor: a `red` is downgraded
-  to `amber` unless **two** interpretable signals are out of line *or* there's a multi-day deterioration —
-  so one bad night can't flip the call. The morning snapshot also carries your weight as a trend-only line.
+- **Trend over single point — but not blind to a real alarm.** The green/amber/red call applies a
+  code-level floor: a `red` is downgraded to `amber` unless **two** interpretable signals are out of line
+  *or* there's a multi-day deterioration — so one bad night can't flip the call. Two exceptions keep it
+  honest: a lone **high-specificity** signal (a big resting-HR spike, an HRV collapse, an orthopedic crash)
+  stays red, and when the data is **too thin to confirm a one-off** the red is held (missing data never
+  reads as "fine"). Weight rides along as a trend-only line.
+- **Gated plan writes are bounded, not just targeted.** A proposed change must hit a real workout *and*
+  pass safety bounds — no moving a session into the past, more than a year out, or onto/next to a race
+  day; and any coaching-note text is run through the same wellbeing screen, so restriction/medical framing
+  can't be written into the plan. Everything still goes through the explicit propose→confirm gate.
 - **Observable unattended ping.** `ping` is idempotent per day (a re-fire won't double-notify or double-spend),
   records a success heartbeat, and **notifies you if it fails** instead of failing silently; `doctor` warns
   if the scheduled ping hasn't succeeded in over a day.

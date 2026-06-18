@@ -121,15 +121,61 @@ export function adverseSignalCount(window: AthleteState[]): { count: number; mul
 }
 
 /**
+ * High-specificity single signals that are individually meaningful enough to KEEP a red even without a
+ * second corroborating signal: an isolated large resting-HR spike (classic illness signal), an HRV
+ * collapse, an orthopedic-recovery crash (injury), or a very low cardio recovery. The generic "needs a
+ * pattern" floor must not wave these through. Returns a short reason, or null.
+ */
+export function highSpecificityAlarm(today: AthleteState): string | null {
+  const rhr = today.restingHr.value, rhrBase = today.restingHr7dBaseline.value;
+  if (rhr != null && rhrBase != null && rhrBase > 0 && rhr > rhrBase + 10) return `resting HR ${rhr} ≫ baseline ${rhrBase.toFixed(0)} (+${(rhr - rhrBase).toFixed(0)})`;
+  const hrv = today.hrvOvernight.value, hrvBase = today.hrv7dBaseline.value;
+  if (hrv != null && hrvBase != null && hrvBase > 0 && hrv < hrvBase * 0.75) return `HRV ${hrv} collapsed vs baseline ${hrvBase.toFixed(0)}`;
+  const orth = today.recovery.value?.orthopedic;
+  if (orth && [orth.run, orth.bike, orth.swim].some((v) => v != null && v < 30)) return `orthopedic recovery crashed (<30)`;
+  const cardio = today.recovery.value?.cardioRecovery;
+  if (cardio != null && cardio < 30) return `cardio recovery very low (${cardio}/100)`;
+  return null;
+}
+
+/** How many interpretable inputs are actually present today — so a red isn't downgraded on thin data. */
+export function presentInterpretableCount(today: AthleteState): number {
+  let n = 0;
+  if (today.hrvOvernight.value != null && today.hrv7dBaseline.value != null) n++;
+  if (today.restingHr.value != null && today.restingHr7dBaseline.value != null) n++;
+  if (today.sleep.value?.hours != null) n++;
+  if (today.recovery.value?.cardioRecovery != null) n++;
+  const orth = today.recovery.value?.orthopedic;
+  if (orth && [orth.run, orth.bike, orth.swim].some((v) => v != null)) n++;
+  return n;
+}
+
+/**
  * Trend floor (criterion #5): a RED verdict requires a PATTERN. If the model returns red but only one
- * interpretable signal is out of line and there's no multi-day deterioration, downgrade to amber. Never
- * upgrades, never touches amber/green — a deterministic backstop against the LLM overreacting to a single
- * off night.
+ * interpretable signal is out of line and there's no multi-day deterioration, downgrade to amber —
+ * EXCEPT (a) a lone high-specificity signal (illness/injury) stays red, and (b) when too few interpretable
+ * inputs are present we DON'T downgrade (less data must not make the call more permissive — we hold the
+ * model's red with a limited-data caution). Never upgrades, never touches amber/green.
  */
 export function applyTrendFloor(verdict: ReadinessVerdict, window: AthleteState[]): ReadinessVerdict {
   if (verdict.verdict !== "red") return verdict;
+  const today = window[window.length - 1];
   const { count, multiDay } = adverseSignalCount(window);
   if (count >= 2 || multiDay) return verdict; // a real pattern — leave it red
+
+  const alarm = highSpecificityAlarm(today);
+  if (alarm) {
+    return {
+      ...verdict,
+      cautions: [...verdict.cautions, `Kept red on a single high-specificity signal (${alarm}) — individually meaningful enough not to wave through on the "needs a pattern" rule.`],
+    };
+  }
+  if (presentInterpretableCount(today) < 2) {
+    return {
+      ...verdict,
+      cautions: [...verdict.cautions, "Held the model's red despite only one in-range signal: too little interpretable data (HRV/RHR/sleep/recovery mostly missing) to confirm a one-off. Limited-data caution — don't read 'fine' into missing data; re-check with more signal."],
+    };
+  }
   return {
     ...verdict,
     verdict: "amber",
