@@ -4,6 +4,11 @@ Everything the coach can do. Most days you only need the handful in the README's
 [Everyday commands](../README.md#everyday-commands); this is the complete surface, grouped by what
 you're trying to do. All commands are run from the repo root.
 
+The first few groups (**setup → daily coaching → dashboard → plan changes → analysis**) are the product
+you use day to day. The later groups (**device sync, MCP server, hands-free automation, maintenance**) are
+**operations: set up once, then rarely touched** — skip them until you need them. Many `*:install`
+commands are macOS launchd helpers that print a Linux cron/systemd equivalent and no-op elsewhere.
+
 > The LLM flows (readiness, weekly, race, deep-dive, tune, research, ask, session, propose) need
 > `ANTHROPIC_API_KEY`. The deterministic ones (demo, state, dashboard, check, cost, listening, decisions,
 > verify, doctor) make **no LLM call** and need no key.
