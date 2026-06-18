@@ -81,6 +81,10 @@ stray `ftp_w: 223` (or `threshold_w: 240`) anywhere does not.
 - `days_since_dose` — whole days since the most recent dose weekday (0 on dose day).
 - `in_gi_trough` — whether today's weekday falls in the configured GI-trough window.
 
+"Today" (and therefore the dose weekday and your age) is resolved in your timezone: `COACH_TZ` if set,
+otherwise `identity.timezone` from the profile, otherwise `Europe/London`. So setting
+`identity.timezone` is enough — you only need `COACH_TZ` to temporarily override it (e.g. travelling).
+
 It's `null` when no `medication.dose_day` is set. This lets the coach keep the hardest and longest
 sessions off the GI-trough days and stay alert to under-fuelling — **the medication's drug, dose and
 timing are the prescriber's call; the coach works *around* it.** The same context (medication,
