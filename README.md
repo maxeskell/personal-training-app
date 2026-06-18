@@ -103,9 +103,13 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   **`profile.local.yaml`** (gitignored, never shared) and fill in your own values. The app loads
   `profile.local.yaml` if present, else falls back to the example, and validates on load — failing
   loudly with a clear message if anything's malformed.
-- **Setup.** `npm run setup` offers it, or run **`npm run profile:init`** directly — it copies the
-  template and walks you through the required fields (identity, weekly hours, at least one race),
-  validating as it goes. Everything else you fill in by hand.
+- **Setup.** `npm run setup` offers it, or run **`npm run profile:init`** directly. It **pre-fills from
+  your connected integrations** — name and sex from AI Endurance, units/timezone from your `.env`, all
+  upcoming races from your AI Endurance goals, and a **MODEL estimate** of your weekly hours from recent
+  training volume — then asks only for what no integration holds. You confirm each pulled value (Enter
+  keeps it) or override it. **Date of birth is always asked** (AI Endurance exposes your age, not your
+  DOB). If AI Endurance is unreachable (or you haven't authed yet) it degrades cleanly to the full
+  manual flow. Everything else — biomechanics, equipment, fuelling, medical — you fill in by hand.
 - **`dose_cycle`.** If you set `health.medication.dose_day` + `gi_trough_days`, `get_profile` returns a
   computed `dose_cycle` (`days_since_dose`, `in_gi_trough`) so the coach can keep your hardest/longest
   sessions off the GI-trough days and watch under-fuelling — the personalisation a generic endurance

@@ -42,6 +42,39 @@ cd /Users/maxeskell/personal-training-app && npm run profile:init     # copy tem
 Everything else is optional — open `profile.local.yaml` and fill in biomechanics, equipment, fuelling
 and medical context by hand.
 
+### Integration bootstrap — pre-fill from your connected account
+
+`profile:init` doesn't ask cold. It first assembles today's state from your **connected integrations**
+(AI Endurance, plus Garmin if enabled — the same best-effort `buildTodayState()` the coach uses) and
+**pre-fills** the intake, so you only confirm or override what it pulled, and only get *asked* for what
+no integration holds. The pull is best-effort: if AI Endurance is unreachable or you haven't authed
+yet, it **degrades cleanly** to the full manual flow (and says so), never crashing.
+
+| Field | Where it comes from |
+|---|---|
+| `identity.name`, `identity.sex` | **AI Endurance** `getUser` (sex normalised to the `male/female/other` enum) |
+| `identity.units`, `identity.timezone` | your **`.env`** (`COACH_UNITS` mapped to `metric`/`imperial`; `COACH_TZ`) |
+| `races[]` | **AI Endurance** goal calendar — *all upcoming* races, soonest first, with priority, an inferred distance and a readable `target_time` (e.g. `sub 5:00:00`) |
+| `availability.weekly_hours` | **MODEL estimate** from your recent training volume (see below) |
+| `identity.date_of_birth` | **asked** — AI Endurance exposes `age` but not DOB |
+| biomechanics · health · medication · equipment · fuelling | **not pulled** — no integration holds these; hand-edit them after |
+
+Each pre-filled value is shown as the prompt default — **Enter keeps it**, or type to override. A
+transparent summary prints first ("From AI Endurance: name, sex, 3 upcoming races. From your .env:
+units, timezone…") so it's always clear what was pulled and from where. Nothing is invented: a field an
+integration doesn't expose is simply asked instead.
+
+**Weekly hours is a MODEL estimate.** It groups your recent activities (trailing ~8 weeks) by ISO week,
+drops the partial current week and any zero-volume weeks, takes the **median** representative week and
+presents a ±0.5h band (e.g. `10-11`) — labelled a MODEL estimate per the *honest models* convention.
+You accept it with Enter or override. If there isn't at least one full week of data to estimate from,
+it falls back to **asking**. (It's a planning band for `availability.weekly_hours`, never a live number
+— actual load stays live in AI Endurance.)
+
+**Date of birth is always asked.** AI Endurance's `getUser` exposes your `age` but not your date of
+birth, and the profile stores DOB (so age stays correct as time passes). The API-derived age is shown
+next to the prompt as a sanity hint.
+
 ## The schema (stable context only)
 
 Top-level blocks (all optional except `schema_version` and `identity`):

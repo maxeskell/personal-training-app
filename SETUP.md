@@ -131,10 +131,17 @@ last step. To set it up (or redo it) on its own:
 npm run profile:init
 ```
 
+It **pre-fills from your connected integrations** (best-effort): name and sex from AI Endurance,
+units/timezone from the `.env` you just wrote, all upcoming races from your AI Endurance goals, and a
+**MODEL estimate** of weekly hours from recent training volume. You confirm each (Enter keeps it) or
+override it, and are only *asked* for what no integration holds — **date of birth is always asked**
+(AI Endurance exposes age, not DOB). Best run **after Step 4** (AI Endurance auth) so there's an account
+to pull from; before that — or if AI Endurance is unreachable — it degrades to a full manual flow.
+
 This writes `profile.example.yaml` → `profile.local.yaml` and validates the required fields; edit the
-file afterwards to fill in the rest. **Never put live numbers** (FTP, weight, paces, CSS, HRV, load) in
-it — those stay live from AI Endurance/Garmin, and a schema guard rejects them if you try. Full schema
-and privacy detail: [docs/profile.md](docs/profile.md).
+file afterwards to fill in biomechanics/kit/medical/fuelling (no integration holds those). **Never put
+live numbers** (FTP, weight, paces, CSS, HRV, load) in it — those stay live from AI Endurance/Garmin,
+and a schema guard rejects them if you try. Full schema and privacy detail: [docs/profile.md](docs/profile.md).
 
 ## Step 4 — Connect AI Endurance (🧑 user does the browser login)
 
