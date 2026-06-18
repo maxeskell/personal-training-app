@@ -9,6 +9,10 @@ import { buildTodayState, gatherReadiness, loadArchive, todayIso, withAie } from
 import { StateStore } from "./state/store.js";
 import { buildInsights } from "./insights/engine.js";
 import { DecisionLog, suppressedInsightKeys, type DecisionRecord } from "./state/decisionLog.js";
+import { InsightLog } from "./state/insightLog.js";
+import { analyseListening, formatListening } from "./coach/listening.js";
+import { loadEngagementContext } from "./coach/engagementContext.js";
+import { loadModel } from "./insights/metrics.js";
 import { ArchiveStore } from "./archive/store.js";
 import { answerQuestion } from "./coach/ask.js";
 import { runWeeklyReview } from "./coach/weekly.js";
@@ -185,7 +189,9 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
       const { state, window } = await buildTodayState();
       if (!state.raw) return fail("No data assembled — nothing to analyse.");
       const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
-      const ins = buildInsights(state, await loadArchive(), { suppressed, history: window });
+      const engagement = await loadEngagementContext(window);
+      const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
+      await new InsightLog().recordSurfaced(ins.topFindings, "mcp-insights");
       return ok([insightMetricsSummary(ins), "", insightFindings(ins)].join("\n"));
     },
   );
@@ -219,6 +225,21 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
     "View the decision log (audit trail of readiness calls, insight feedback and gated plan proposals). filter='pending' shows only proposals awaiting confirm/decline.",
     { filter: z.enum(["all", "pending"]).optional() },
     async ({ filter }) => ok(formatDecisions(await new DecisionLog().all(), filter ?? "all")),
+  );
+
+  server.tool(
+    "listening",
+    "Your engagement model: which insight families you act on vs dismiss, gated-proposal accept/decline, findings that recurred after you dismissed them, your plan ADHERENCE (AI Endurance plan progress — done vs planned hours, and its trend), and PLAN CHANGES detected from daily snapshots (added/moved/dropped sessions). Deterministic — no LLM cost. Descriptive, not causal.",
+    {},
+    async () => {
+      const snapshots = await new InsightLog().all();
+      const decisions = await new DecisionLog().all();
+      const states = await new StateStore().recent(todayIso(), 90);
+      const latest = states[states.length - 1];
+      const recData = (latest?.raw?.getRecoveryModel as { data?: Parameters<typeof loadModel>[0] } | undefined)?.data;
+      const model = analyseListening({ snapshots, decisions, states, load: loadModel(recData) });
+      return ok(formatListening(model, todayIso()));
+    },
   );
 
   server.tool(
@@ -291,7 +312,8 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
       if (miss) return fail(miss);
       const { state, window } = await buildTodayState();
       const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
-      const ins = buildInsights(state, await loadArchive(), { suppressed, history: window });
+      const engagement = await loadEngagementContext(window);
+      const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
       const { markdown } = await runDeepDive(new CoachLLM(await loadSystemPrompt(), "deep-dive"), state, ins);
       await writeReport("deep-dive", todayIso(), markdown);
       return ok(markdown);
@@ -404,7 +426,7 @@ async function main(): Promise<void> {
   await server.connect(new StdioServerTransport());
   console.error(
     "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/insights/list_reports/" +
-      "read_report/decisions/cost · LLM tools: ask/readiness/weekly/race_prep/deep_dive/session_feedback · " +
+      "read_report/decisions/listening/cost · LLM tools: ask/readiness/weekly/race_prep/deep_dive/session_feedback · " +
       "gated writes: propose_adjustment/confirm/decline.",
   );
 }

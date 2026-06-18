@@ -16,7 +16,10 @@ import { renderDashboard } from "./coach/dashboard.js";
 import { buildDemoWindow } from "./demo/sampleData.js";
 import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact } from "./cli/dataCommands.js";
 import { buildInsights } from "./insights/engine.js";
-import { alertFindings } from "./insights/metrics.js";
+import { alertFindings, loadModel } from "./insights/metrics.js";
+import { InsightLog } from "./state/insightLog.js";
+import { analyseListening, formatListening } from "./coach/listening.js";
+import { loadEngagementContext } from "./coach/engagementContext.js";
 import { ArchiveStore } from "./archive/store.js";
 import { answerQuestion } from "./coach/ask.js";
 import { runSessionFeedback } from "./coach/session.js";
@@ -249,7 +252,8 @@ async function cmdDeepDive(): Promise<void> {
   if (!requireLLM()) process.exit(1);
   const { state, window } = await buildTodayState();
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
-  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window });
+  const engagement = await loadEngagementContext(window);
+  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
   const { markdown, cacheRead, costUsd } = await runDeepDive(new CoachLLM(await loadSystemPrompt(), "deep-dive"), state, ins);
   console.log("\n" + markdown + "\n");
   const path = await writeReport("deep-dive", todayIso(), markdown);
@@ -580,6 +584,24 @@ async function cmdCost(): Promise<void> {
   if (w7.calls) console.log(`\n  ≈ $${((w7.costUsd / 7) * 30).toFixed(2)}/month at the last-7-day rate.\n`);
 }
 
+/**
+ * `listening` — your engagement model: which insight families you act on vs dismiss, proposal
+ * accept/decline, what's currently hidden, and findings that recurred after you dismissed them.
+ * Deterministic (no LLM); prints the markdown and also writes a dated report.
+ */
+async function cmdListening(): Promise<void> {
+  const snapshots = await new InsightLog().all();
+  const decisions = await new DecisionLog().all();
+  const states = await new StateStore().recent(todayIso(), 90);
+  const latest = states[states.length - 1];
+  const recData = (latest?.raw?.getRecoveryModel as { data?: Parameters<typeof loadModel>[0] } | undefined)?.data;
+  const model = analyseListening({ snapshots, decisions, states, load: loadModel(recData) });
+  const markdown = formatListening(model, todayIso());
+  console.log("\n" + markdown);
+  const path = await writeReport("listening-model", todayIso(), markdown);
+  console.log(`Saved → ${path}\n`);
+}
+
 /** `confirm <id>` — the ONLY path that fires a write, and only for a logged proposal. */
 async function cmdConfirm(): Promise<void> {
   const id = process.argv[3];
@@ -669,6 +691,7 @@ const commands: Record<string, () => Promise<void>> = {
   ask: cmdAsk,
   session: cmdSession,
   cost: cmdCost,
+  listening: cmdListening,
   backfill: cmdBackfill,
   "archive-status": cmdArchiveStatus,
   "archive-compact": cmdArchiveCompact,
@@ -699,6 +722,7 @@ if (!run) {
   console.log('  ask "<q>"  free-form question of your data (also a chat box on the dashboard)');
   console.log("  session [date] [--force]  deep feedback on one session (needs its raw .FIT; --force = summary-only)");
   console.log("  cost [days]   local token-cost report (per-flow breakdown + windowed totals)");
+  console.log("  listening  engagement model: act-on-vs-dismiss, plan adherence + plan changes, dismissed-but-recurred → report");
   console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
   console.log("  archive-status  show archived counts + date ranges (distinct records)");
   console.log("  archive-compact  de-duplicate the archive files in place (one record per date/id)");

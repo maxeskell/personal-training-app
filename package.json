@@ -49,6 +49,7 @@
     "ask": "tsx src/cli.ts ask",
     "session": "tsx src/cli.ts session",
     "cost": "tsx src/cli.ts cost",
+    "listening": "tsx src/cli.ts listening",
     "test": "tsx --test test/*.test.ts",
     "probe": "tsx src/cli.ts probe",
     "fit-sync": "tsx src/cli.ts fit-sync",
