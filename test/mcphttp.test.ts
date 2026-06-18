@@ -44,3 +44,27 @@ test("buildServer({ includeWrites: false }) drops the write tools but keeps the 
   for (const w of writeTools) assert.ok(full.includes(w), `${w} is present by default`);
   assert.equal(full.length, ro.length + writeTools.length);
 });
+
+test("update_profile is gated by includeProfileWrite (off by default — opt-in on the remote surface)", async () => {
+  const { buildServer } = await import("../src/mcpServer.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+
+  async function toolNames(opts: { includeWrites?: boolean; includeProfileWrite?: boolean }): Promise<string[]> {
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+    const server = buildServer(opts);
+    await server.connect(serverT);
+    const client = new Client({ name: "t", version: "0" }, { capabilities: {} });
+    await client.connect(clientT);
+    const { tools } = await client.listTools();
+    await client.close();
+    return tools.map((t) => t.name);
+  }
+
+  // Default (and a read-only remote surface) does NOT expose the local-file write tool.
+  assert.ok(!(await toolNames({})).includes("update_profile"), "off by default");
+  assert.ok(!(await toolNames({ includeWrites: false })).includes("update_profile"), "absent on a read-only surface unless opted in");
+  // Opt-in (the local stdio surface passes this) exposes exactly update_profile, independent of AIE writes.
+  assert.ok((await toolNames({ includeProfileWrite: true })).includes("update_profile"), "present when opted in");
+  assert.ok((await toolNames({ includeWrites: false, includeProfileWrite: true })).includes("update_profile"), "opt-in works even on a read-only AIE surface");
+});

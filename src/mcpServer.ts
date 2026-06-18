@@ -31,6 +31,7 @@ import { AieClient } from "./mcp/aieClient.js";
 import { readCostRecords, summarizeCost, type CostRecord } from "./llm/costLog.js";
 import { loadProfile } from "./profile/load.js";
 import { formatProfileForTool } from "./profile/context.js";
+import { updateLocalProfile } from "./profile/update.js";
 import type { AthleteState } from "./state/types.js";
 
 /**
@@ -163,8 +164,11 @@ export function formatReadiness(
  * Build the MCP server with every tool registered (no transport — so tests can introspect it).
  * `includeWrites` (default true) gates the propose/confirm/decline tools — set false for a read-only
  * surface, e.g. an internet-exposed HTTP/Cowork endpoint (COACH_MCP_READONLY=true).
+ * `includeProfileWrite` (default false) gates the local-file `update_profile` tool: always on for the
+ * local stdio surface, opt-in on the remote HTTP/Cowork surface (COACH_MCP_PROFILE_WRITE=true) since it
+ * writes a file on the host from a remote session.
  */
-export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
+export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite?: boolean } = {}): McpServer {
   const server = new McpServer({ name: "endurance-coach", version: "0.1.0" });
 
   // ---- deterministic reads (no LLM, no token cost) ----
@@ -442,11 +446,37 @@ export function buildServer(opts: { includeWrites?: boolean } = {}): McpServer {
     },
   );
 
+  // ---- profile write (local file) — opt-in on remote surfaces, always on locally ----
+  // Writes profile.local.yaml only, through validateProfile (no live numbers). Gated separately from the
+  // AIE write path because it touches the host filesystem, not AI Endurance.
+  if (opts.includeProfileWrite) registerProfileWriteTool(server);
+
   // ---- gated write path (propose → confirm) — the ONLY way to mutate AI Endurance ----
   // Omitted entirely when includeWrites is false (e.g. a read-only HTTP/Cowork surface).
   if (opts.includeWrites !== false) registerWriteTools(server);
 
   return server;
+}
+
+/**
+ * Register the `update_profile` tool — write the STABLE athlete profile by talking to Claude. It
+ * deep-merges a partial patch onto the current profile, validates (schema + no-live-numbers guard), and
+ * writes the gitignored profile.local.yaml. Never mutates AI Endurance; live numbers are rejected.
+ */
+function registerProfileWriteTool(server: McpServer): void {
+  server.tool(
+    "update_profile",
+    "Write to your athlete profile (profile.local.yaml) — the STABLE context: identity, biomechanics, health/medication, availability, equipment, fuelling, race targets. Pass `patch`: a partial profile object (same shape as `get_profile` / profile.example.yaml) holding ONLY the fields to set; it is deep-merged onto your current profile (nested objects merged, arrays/scalars replaced), validated, then written. NO live numbers — FTP, weight, paces, swim CSS, HRV and training load are rejected (they come live from AI Endurance/Garmin). Call `get_profile` first to see the current shape.",
+    { patch: z.record(z.any()).describe("Partial profile object: the fields to set/update. Nested objects are merged; arrays and scalars replace.") },
+    async ({ patch }) => {
+      try {
+        const { path, changed } = await updateLocalProfile(patch);
+        return ok(`✓ Updated ${path}${changed.length ? ` (sections set: ${changed.join(", ")})` : ""}. Validated — no live numbers stored.`);
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
+  );
 }
 
 /** Register the gated write tools. The ONLY path that can mutate AI Endurance (propose → confirm). */
@@ -520,12 +550,13 @@ async function main(): Promise<void> {
   // process.stdout.write, which this override does NOT touch — frames are unaffected.)
   console.log = (...args: unknown[]) => console.error(...args);
 
-  const server = buildServer();
+  // Local stdio is the user's own machine spawning the process, so the local-file profile write is on.
+  const server = buildServer({ includeProfileWrite: true });
   await server.connect(new StdioServerTransport());
   console.error(
     "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/get_profile/insights/react_to_insight/list_reports/" +
       "read_report/decisions/listening/knowledge/cost · LLM tools: ask/readiness/weekly/race_prep/deep_dive/tune/research/session_feedback · " +
-      "gated writes: propose_adjustment/confirm/decline.",
+      "writes: update_profile (local file) · gated AIE writes: propose_adjustment/confirm/decline.",
   );
 }
 

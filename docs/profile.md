@@ -44,6 +44,17 @@ and medical context by hand. For a guided list of those optional fields with a p
 and a one-line *why it helps the coach* for each, run **`npm run profile:questions`** (or read the
 generated [docs/profile-questions.md](profile-questions.md)).
 
+**Three ways to fill it — pick whichever suits you; all are optional and the coach works without any:**
+
+1. **The wizard** — `npm run profile:init` (above), re-runnable any time.
+2. **By hand** — edit `profile.local.yaml` in your editor.
+3. **By talking to Claude** — the MCP `update_profile` tool lets Claude write your answers straight into
+   `profile.local.yaml` (deep-merged onto what's there, validated, live numbers rejected). Tell Claude
+   *"add my medication: 5mg on Sundays, GI trough Tue–Thu"* and it patches the file. Always available to
+   **Claude Desktop / Code** (local); on **Cowork** (cloud) it's off until you set
+   `COACH_MCP_PROFILE_WRITE=true` — since that lets a remote session write a file on your Mac. See
+   [docs/mcp-server.md](mcp-server.md) → `update_profile`.
+
 ### Integration bootstrap — pre-fill from your connected account
 
 `profile:init` doesn't ask cold. It first assembles today's state from your **connected integrations**

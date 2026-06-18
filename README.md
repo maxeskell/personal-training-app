@@ -120,6 +120,10 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   *why it changes your coaching* (e.g. medication timing drives the dose-cycle the coach plans around;
   leg-length/cleat inform run-load and injury notes; fuelling targets feed race advice). Everything
   there stays optional. Also rendered as [docs/profile-questions.md](docs/profile-questions.md).
+- **Three ways to fill it.** The wizard (`npm run profile:init`), editing `profile.local.yaml` by hand,
+  or **by talking to Claude** — the MCP `update_profile` tool patches your answers straight into the file
+  (validated; live numbers rejected). It's on for local **Claude Desktop/Code**; on **Cowork** set
+  `COACH_MCP_PROFILE_WRITE=true` to allow it (it writes a file on your Mac from a remote session).
 - **`dose_cycle`.** If you set `health.medication.dose_day` + `gi_trough_days`, `get_profile` returns a
   computed `dose_cycle` (`days_since_dose`, `in_gi_trough`) so the coach can keep your hardest/longest
   sessions off the GI-trough days and watch under-fuelling — the personalisation a generic endurance
