@@ -46,6 +46,9 @@ const ED_PATTERNS: RegExp[] = [
   /\b(scared|afraid|terrified|anxious)\b[\w\s'’,-]{0,15}?\b(eat(ing)?|food)\b/i,
   /\bout of control\b[\w\s'’,-]{0,15}?\b(eat(ing)?|food)\b|\beat(ing)?\b[\w\s'’,-]{0,15}?\bout of control\b/i,
   /\b(compensate|punish)\b[\w\s'’,-]{0,20}?\b(eat(ing)?|food|calories|binge)\b/i,
+  // Best-effort common-language stems (FR/DE/ES/IT). English-first by design; the model is multilingual,
+  // so a non-English cue is the weak point — these catch the highest-signal verbs, not every phrasing.
+  /\b(vomir|me faire vomir|se faire vomir|vomito|vomitar|erbrechen|purger|purgar)\b/i,
 ];
 const ED_REDIRECT =
   "I'm not able to help with that, and I want to be straight with you: purging, skipping meals to lose " +
@@ -81,6 +84,8 @@ const RESTRICTION_PATTERNS: Array<{ rx: RegExp; label: string }> = [
   { rx: /\b(target|goal|ideal|optimal|racing|race)\s+(body\s?)?weight\b/i, label: "weight target" },
   { rx: /\b(body\s?weight|weight)\s+should\s+i\s+(be|race|aim|target|get|eat)\b/i, label: "weight target" },
   { rx: /\b(on|do|doing|start|starting|put me on)\s+a\s+cut\b/i, label: "a cut" },
+  // Best-effort non-English weight-loss stems (FR/DE/ES/IT) — English-first by design (see ED_PATTERNS note).
+  { rx: /\b(maigrir|perdre du poids|perte de poids|abnehmen|adelgazar|perder peso|dimagrire)\b/i, label: "weight loss (non-English)" },
   { rx: /\b(low[-\s]?carb|keto)\s+to\s+(lose|lean|cut)/i, label: "restrictive diet for weight loss" },
 ];
 const RESTRICTION_REDIRECT =
