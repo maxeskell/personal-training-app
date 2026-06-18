@@ -115,6 +115,11 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   cleanly to the full manual flow. Everything else — biomechanics, equipment, fuelling, medical — you
   fill in by hand. (Height is the only body number stored: stable anthropometry, never weight — weight
   stays a live number pulled from Garmin/AIE, and the schema guard rejects it in the profile.)
+- **Re-running is a safe MERGE, not an overwrite.** If `profile.local.yaml` already exists, `profile:init`
+  **updates it in place** — your hand-entered blocks (biomechanics, medication, equipment, bike-fit,
+  fuelling, notes) are **kept**, and only the integration-sourced fields (identity, races, weekly hours)
+  are refreshed; even hand-written race notes are carried across. It never rebuilds from the blank
+  template, and if it can't parse your existing file it refuses rather than clobber it.
 - **The optional extras, explained.** Run **`npm run profile:questions`** for the list of optional
   profile fields you can fill whenever you like — each with a plain-language question and a one-line
   *why it changes your coaching* (e.g. medication timing drives the dose-cycle the coach plans around;

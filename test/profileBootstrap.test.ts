@@ -266,3 +266,32 @@ test("applyIntake parses a free-text height to a bounded integer and skips an im
   const b = applyIntake(base(), { height: "9000" });
   assert.equal(b.identity?.height_cm, null); // out of range → skipped (the example base's null is preserved, not junk)
 });
+
+test("applyIntake onto an EXISTING rich profile merges — preserves hand-entered blocks and race notes", () => {
+  // Simulates `profile:init` re-run on an already-filled profile: the base is the user's real profile,
+  // and the intake is a refresh from the integrations (identity + the same race, but without the note).
+  const rich = {
+    schema_version: 1,
+    identity: { name: "Old Name", sex: "male", date_of_birth: "1981-10-28", units: "metric", timezone: "Europe/London" },
+    biomechanics: { leg_length_difference: { present: true, shorter_side: "right" } },
+    health: { medication: { name: "tirzepatide", dose_day: "sunday", gi_trough_days: ["tuesday", "wednesday", "thursday"] } },
+    fuelling: { caffeine: "race-day only" },
+    races: [{ name: "Birmingham Triathlon", priority: "A", date: "2026-07-11", distance: "olympic", target_time: "sub 2:00", note: "the one peak" }],
+  } as unknown as Profile;
+
+  const next = applyIntake(rich, {
+    name: "New Name",
+    weekly_hours: "11-12",
+    race: { name: "Birmingham Triathlon", date: "2026-07-11", priority: "A", distance: "olympic", target_time: "sub 2:00" },
+  });
+
+  // Hand-entered blocks survive untouched (the bug: these used to be blanked by rebuilding from template).
+  assert.equal((next.biomechanics as Record<string, any>)?.leg_length_difference?.present, true);
+  assert.equal(next.health?.medication?.name, "tirzepatide");
+  assert.equal((next.fuelling as Record<string, any>)?.caffeine, "race-day only");
+  // Integration-sourced identity is refreshed.
+  assert.equal(next.identity?.name, "New Name");
+  // The hand-written race note is preserved across the refresh (matched by name/date).
+  assert.equal(next.races?.[0].note, "the one peak");
+  assert.doesNotThrow(() => validateProfile(next));
+});

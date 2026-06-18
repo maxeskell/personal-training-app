@@ -46,7 +46,11 @@ generated [docs/profile-questions.md](profile-questions.md)).
 
 **Three ways to fill it — pick whichever suits you; all are optional and the coach works without any:**
 
-1. **The wizard** — `npm run profile:init` (above), re-runnable any time.
+1. **The wizard** — `npm run profile:init` (above), re-runnable any time. On an **existing** profile it's
+   a **merge, not an overwrite**: your hand-entered blocks (biomechanics, medication, equipment, bike-fit,
+   fuelling, notes) are kept and only the integration-sourced fields (identity, races, weekly hours) are
+   refreshed — hand-written race notes are carried across by matching name/date. It never rebuilds from
+   the blank template, and refuses rather than clobber a file it can't parse.
 2. **By hand** — edit `profile.local.yaml` in your editor.
 3. **By talking to Claude** — the MCP `update_profile` tool lets Claude write your answers straight into
    `profile.local.yaml` (deep-merged onto what's there, validated, live numbers rejected). Tell Claude
