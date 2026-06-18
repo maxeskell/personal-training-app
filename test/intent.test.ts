@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { classifyIntent, parseIntentReply, isLastSessionQuestion } from "../src/coach/intent.js";
 import type { ChatCompleter, LocalChatOpts } from "../src/llm/localClient.js";
+import { costUsd } from "../src/llm/costLog.js";
 
 /** A fake completer: returns a canned reply, or throws, and records whether it was called. */
 function fakeLLM(reply: string | (() => never)): ChatCompleter & { called: boolean } {
@@ -73,4 +74,17 @@ test("classifyIntent: a throwing/unavailable local model falls back to general",
   });
   const res = await classifyIntent("break down Tuesday's ride", llm);
   assert.deepEqual(res, { intent: "general", source: "fallback" });
+});
+
+test("classifyIntent: a router's sourceLabel is surfaced (e.g. the Haiku router)", async () => {
+  const llm: ChatCompleter = { sourceLabel: "haiku-model", async chat(): Promise<string> { return "LAST_SESSION"; } };
+  const res = await classifyIntent("break down Tuesday's ride", llm);
+  assert.deepEqual(res, { intent: "last_session", source: "haiku-model" });
+});
+
+test("costUsd prices Haiku from the Haiku table, not Opus (cheap intent calls aren't over-billed)", () => {
+  const u = { input: 1_000_000, output: 0, cacheWrite: 0, cacheRead: 0 };
+  assert.equal(costUsd(u, "claude-haiku-4-5-20251001"), 1); // 1M input × $1/MTok (Haiku default)
+  assert.equal(costUsd(u, "claude-opus-4-8"), 5); // 1M input × $5/MTok (Opus default)
+  assert.equal(costUsd(u), 5); // defaults to Opus when model omitted
 });

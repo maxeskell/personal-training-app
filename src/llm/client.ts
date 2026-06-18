@@ -37,7 +37,7 @@ export class CoachLLM {
       cacheWrite: usageRaw.cache_creation_input_tokens ?? 0,
       cacheRead: usageRaw.cache_read_input_tokens ?? 0,
     };
-    const cost = costUsd(usage);
+    const cost = costUsd(usage, this.model);
     await appendCostRecord({ ts: new Date().toISOString(), operation: this.operation, model: this.model, ...usage, costUsd: cost });
     return { usage, costUsd: cost };
   }

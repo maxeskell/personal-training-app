@@ -1,4 +1,6 @@
+import { config } from "../config.js";
 import { LocalLLM, type ChatCompleter } from "../llm/localClient.js";
+import { HaikuRouter } from "../llm/haikuRouter.js";
 
 /**
  * Question intent for the `ask` flow. `last_session` routes to the deep single-session pipeline
@@ -8,7 +10,23 @@ import { LocalLLM, type ChatCompleter } from "../llm/localClient.js";
 export type Intent = "last_session" | "general";
 
 /** How the verdict was reached — surfaced for transparency/logging. */
-export type IntentSource = "regex" | "local-model" | "fallback";
+export type IntentSource = "regex" | "local-model" | "haiku-model" | "fallback";
+
+/**
+ * The configured model router for a regex miss, or null for regex-only. `haiku` is the recommended
+ * upgrade (a cheap claude-haiku-4-5 call on the existing API key, no server); `local` is the advanced
+ * Ollama path; `regex` (default) returns null. Each returns null when unavailable, so we degrade safely.
+ */
+export function defaultIntentRouter(): ChatCompleter | null {
+  switch (config.intentRouter) {
+    case "haiku":
+      return HaikuRouter.enabled() ? new HaikuRouter() : null;
+    case "local":
+      return LocalLLM.enabled() ? new LocalLLM() : null;
+    default:
+      return null;
+  }
+}
 
 export interface IntentResult {
   intent: Intent;
@@ -53,11 +71,11 @@ export function parseIntentReply(raw: string): Intent | null {
  * timeout, or an unparseable reply — falls back to the regex verdict (general), so the Q&A never
  * blocks on, or is broken by, the local model.
  *
- * `llm` is injectable for tests; by default it's a real LocalLLM only when COACH_LOCAL_INTENT=true.
+ * `llm` is injectable for tests; by default it's the configured router (regex → null, haiku, or local).
  */
 export async function classifyIntent(
   question: string,
-  llm: ChatCompleter | null = LocalLLM.enabled() ? new LocalLLM() : null,
+  llm: ChatCompleter | null = defaultIntentRouter(),
 ): Promise<IntentResult> {
   if (isLastSessionQuestion(question)) return { intent: "last_session", source: "regex" };
   if (!llm) return { intent: "general", source: "regex" };
@@ -69,7 +87,7 @@ export async function classifyIntent(
       ],
     });
     const parsed = parseIntentReply(reply);
-    if (parsed) return { intent: parsed, source: "local-model" };
+    if (parsed) return { intent: parsed, source: llm.sourceLabel ?? "local-model" };
   } catch {
     /* server down / timeout / bad payload — fall through to the safe default */
   }

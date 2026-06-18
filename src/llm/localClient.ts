@@ -16,6 +16,8 @@ export interface LocalChatOpts {
 /** The single capability the intent router needs — kept narrow so tests can supply a fake. */
 export interface ChatCompleter {
   chat(opts: LocalChatOpts): Promise<string>;
+  /** How a model-routed verdict is labelled in the IntentResult (defaults to "local-model"). */
+  readonly sourceLabel?: "local-model" | "haiku-model";
 }
 
 /**
@@ -27,6 +29,7 @@ export interface ChatCompleter {
  * unavailable" and falls back to the regex verdict, mirroring how Garmin is an optional gap-filler.
  */
 export class LocalLLM implements ChatCompleter {
+  readonly sourceLabel = "local-model" as const;
   constructor(
     private readonly baseUrl = config.localLlm.baseUrl,
     private readonly apiKey = config.localLlm.apiKey,

@@ -72,6 +72,30 @@ export const config = {
   },
 
   /**
+   * Pricing for the cheap side-task model (claude-haiku-4-5) used by the optional Haiku intent router.
+   * Published Haiku 4.5 rates ($/MTok) as of the knowledge cutoff; override via env if they change.
+   * The cost log picks this table for any model id containing "haiku" (see costLog.ts).
+   */
+  pricingHaiku: {
+    inputPerMTok: Number(process.env.COACH_PRICE_HAIKU_INPUT ?? 1),
+    outputPerMTok: Number(process.env.COACH_PRICE_HAIKU_OUTPUT ?? 5),
+    cacheWritePerMTok: Number(process.env.COACH_PRICE_HAIKU_CACHE_WRITE ?? 1.25),
+    cacheReadPerMTok: Number(process.env.COACH_PRICE_HAIKU_CACHE_READ ?? 0.1),
+  },
+
+  /**
+   * `ask` intent routing strategy: `regex` (default, zero-cost, no model), `haiku` (a cheap
+   * claude-haiku-4-5 micro-call using your existing ANTHROPIC_API_KEY — no extra server), or `local`
+   * (the separate local-llm-server / Ollama, advanced). Back-compat: COACH_LOCAL_INTENT=true ⇒ `local`.
+   * Any strategy degrades to the regex verdict on error, so routing never blocks the Q&A.
+   */
+  intentRouter: ((): "regex" | "haiku" | "local" => {
+    const v = process.env.COACH_INTENT_ROUTER;
+    if (v === "regex" || v === "haiku" || v === "local") return v;
+    return process.env.COACH_LOCAL_INTENT === "true" ? "local" : "regex";
+  })(),
+
+  /**
    * Local LLM server — OPTIONAL, degradable. An OpenAI-compatible wrapper around Ollama
    * (see the local-llm-server repo). Used only for cheap, low-stakes side tasks (intent
    * routing for `ask`), NEVER for coaching output — that stays on Opus. Off unless
