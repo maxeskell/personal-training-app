@@ -76,6 +76,22 @@ test("insights box: a saved like is highlighted + reversible, snooze is separate
   for (const [i, sc] of [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].entries()) assert.doesNotThrow(() => new Function(sc[1]), `script ${i}`);
 });
 
+test("share view: redacts real race names + dates and shows the banner; normal view offers the toggle", () => {
+  const s = emptyState("2026-06-08", new Date().toISOString());
+  s.raw = { getRaceGoalEvent: { goals: [{ event_name: "Big City Marathon", event_date: "2026-10-11", priority: "A" }] } };
+
+  const normal = renderDashboard({ window: [s], decisions: [] });
+  assert.match(normal, /Big City Marathon/); // real name shown
+  assert.match(normal, /\?share=1/); // toggle link to enter share view
+
+  const shared = renderDashboard({ window: [s], decisions: [], share: true });
+  assert.ok(!shared.includes("Big City Marathon"), "real race name redacted");
+  assert.ok(!shared.includes("2026-10-11"), "exact race date hidden");
+  assert.match(shared, /Race 1/); // generic label instead
+  assert.match(shared, /Share view/); // the redaction banner
+  for (const [i, sc] of [...shared.matchAll(/<script>([\s\S]*?)<\/script>/g)].entries()) assert.doesNotThrow(() => new Function(sc[1]), `script ${i}`);
+});
+
 test("week table uses h:mm, missing swim distance shows — , planned session joins the last-session card", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
   s.actualActivities = {

@@ -30,6 +30,46 @@ export interface RaceSplitPlan {
   predictedSec: number;
   strategy: string;
   segments: Segment[];
+  /** Finish-time RANGE — worst = race it today (current fitness); best = race day if the build goes well. */
+  worstSec?: number;
+  bestSec?: number;
+  rangeBasis?: string;
+}
+
+/** Cap on the best-case improvement we'll project from the trend — no runaway extrapolation. */
+export const MAX_PROJECTED_GAIN = 0.07; // 7%
+
+/**
+ * Project a finish-time RANGE for a race:
+ *  - worst case = your CURRENT prediction (race it today, at today's fitness);
+ *  - best case  = that prediction carried along YOUR OWN recent race-predictor trajectory to race day,
+ *    capped at MAX_PROJECTED_GAIN.
+ * `fracImprovePerDay` is the fractional change in predicted finish time per day (negative = getting
+ * faster); null or non-improving → no projected upside (best = current level). Honest MODEL: the best
+ * case assumes you complete the planned build, stay healthy, adapt well and taper.
+ */
+export function projectRaceDayRange(
+  predictedSec: number,
+  daysToRace: number,
+  fracImprovePerDay: number | null,
+): { worstSec: number; bestSec: number; rangeBasis: string } {
+  const worstSec = Math.round(predictedSec);
+  if (fracImprovePerDay == null || fracImprovePerDay >= 0 || daysToRace <= 0) {
+    return {
+      worstSec,
+      bestSec: worstSec,
+      rangeBasis:
+        daysToRace <= 0
+          ? "Race is here — this is your current level."
+          : "No improving trend to project yet, so best case = your current level. The range opens up once your race predictions start trending faster.",
+    };
+  }
+  const projectedFrac = Math.max(fracImprovePerDay * daysToRace, -MAX_PROJECTED_GAIN); // negative; capped
+  return {
+    worstSec,
+    bestSec: Math.round(predictedSec * (1 + projectedFrac)),
+    rangeBasis: `Best case carries your recent rate of improvement out to race day (capped at ${Math.round(MAX_PROJECTED_GAIN * 100)}%), assuming you complete the planned build, stay healthy, adapt well and taper. Worst case is racing at today's fitness.`,
+  };
 }
 
 function paceClock(secPerKm: number): string {

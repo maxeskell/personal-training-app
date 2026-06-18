@@ -402,6 +402,7 @@ async function cmdDashboard(): Promise<void> {
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,
     weather,
+    share: process.argv.includes("--share"), // redacted view for screenshots (race names + location hidden)
   });
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");

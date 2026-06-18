@@ -64,7 +64,7 @@ function lanUrls(): string[] {
   return out;
 }
 
-async function renderLatest(): Promise<string> {
+async function renderLatest(share = false): Promise<string> {
   const store = new StateStore();
   const today = todayIso();
   const window = await store.recent(today, 14);
@@ -107,6 +107,7 @@ async function renderLatest(): Promise<string> {
     insights,
     reactions,
     firstSeen,
+    share,
     garminDays: archive?.garminDays,
     costRecords: await readCostRecords(),
     fitSummaries: archive?.fitSummaries,
@@ -350,7 +351,8 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       return;
     }
     if (url.pathname === "/" || url.pathname === "/index.html") {
-      const html = await renderLatest();
+      // ?share=1 → redacted view for screenshots (toggle link on the page). Real-time, no state change.
+      const html = await renderLatest(url.searchParams.get("share") === "1");
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
       return;
     }
