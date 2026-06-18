@@ -100,12 +100,16 @@ decade-deep history the trend detectors need. **Every mutation back to AI Endura
 | **AI Endurance** (MCP/OAuth) | **Yes — the spine** | `AIE_MCP_URL` (default `https://aiendurance.com/mcp`); `npm run auth:aie` caches tokens in `~/.endurance-coach` | No state can be assembled; the app has nothing to coach on |
 | **Anthropic API** | **Yes for LLM flows** | `ANTHROPIC_API_KEY` (env/`.env`) | LLM flows (readiness/weekly/race/propose/deep-dive/ask/session) error cleanly; deterministic flows (verify/doctor/state/check/dashboard cards/weather) still work |
 | **Garmin** (unofficial MCP) | Optional, degradable | `GARMIN_ENABLED=true` + one-time `garmin-mcp-auth`; tokens in `~/.garminconnect` (~6-month life) | All Garmin fields null; coach runs on AI Endurance alone; HRV/RHR/thermal insights go quiet |
-| **local-llm-server** (Ollama wrapper) | Optional, degradable | `COACH_LOCAL_INTENT=true` + `LOCAL_LLM_URL` | `ask` intent routing falls back to a zero-cost regex; never blocks Q&A |
+| **`ask` intent routing** | Optional | `COACH_INTENT_ROUTER=regex` (default) `\| haiku \| local` | A model miss/error falls back to the zero-cost regex; never blocks Q&A |
+| **local-llm-server** (Ollama wrapper) | Optional, degradable | `COACH_INTENT_ROUTER=local` (or legacy `COACH_LOCAL_INTENT=true`) + `LOCAL_LLM_URL` | `ask` intent routing falls back to a zero-cost regex; never blocks Q&A |
 | **Open-Meteo** (weather) | Optional, degradable | `COACH_WEATHER_*` (free, no key) | The "Week ahead — plan vs weather" dashboard card is simply omitted |
 
-The **local-llm-server** is a separate repo (`maxeskell/local-llm-server`) — a small OpenAI-compatible
-FastAPI wrapper around Ollama. The coach uses it only for cheap, low-stakes intent routing and treats
-it as best-effort. It is not required and has its own `HANDOVER.md`.
+Intent routing (`src/coach/intent.ts`) has three strategies via `COACH_INTENT_ROUTER`: **`regex`** (default,
+zero-cost), **`haiku`** (a cheap `claude-haiku-4-5` micro-call on the existing `ANTHROPIC_API_KEY` —
+`src/llm/haikuRouter.ts`, cost-logged from the Haiku price table, no extra server — the recommended
+upgrade), and **`local`** (the separate **local-llm-server**, a small OpenAI-compatible FastAPI/Ollama
+wrapper in `maxeskell/local-llm-server`). All degrade to the regex on error; coaching output always stays
+on Opus. The local server is not required and has its own `HANDOVER.md`.
 
 ---
 
@@ -157,7 +161,8 @@ All in `.env` (see `.env.example` for the full, commented set). The ones you wil
 | `ANTHROPIC_API_KEY` | _(unset)_ | Required for LLM flows |
 | `GARMIN_ENABLED` | `false` | Turn on the optional Garmin gap-filler |
 | `GARMIN_MCP_ARGS` | pinned `garmin_mcp` commit | Keep the pin ≥ `d31de79` or raw `.FIT` auto-download degrades to manual export |
-| `COACH_LOCAL_INTENT` | `false` | Use the local LLM for `ask` intent routing |
+| `COACH_INTENT_ROUTER` | `regex` | `ask` intent routing: `regex` (default) · `haiku` (cheap API micro-call) · `local` (local-llm-server) |
+| `COACH_LOCAL_INTENT` | `false` | Legacy alias selecting the `local` router (equivalent to `COACH_INTENT_ROUTER=local`) |
 | `COACH_WEATHER_LAT` / `LON` | `51.5074` / `-0.1278` | Weather base (neutral default — set your own) |
 | `COACH_WATER_TEMP_C` | _(unset)_ | Latest posted open-water temp (no public feed — update by hand) |
 | `COACH_HOST` / `COACH_PORT` | `127.0.0.1` / `3000` | Dashboard bind address/port |

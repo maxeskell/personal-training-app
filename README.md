@@ -204,11 +204,13 @@ joins your **AI Endurance metrics** (power/HR/ESS/durability) with the
 — so a dip in deep fatigue or heat isn't mistaken for lost fitness. It also reads your **upcoming 7 days
 of planned sessions** and says what (if anything) this session should change ahead — suggestions only;
 plan writes stay behind the gated two-step confirm. "What happened in my last run?" in the Ask box routes
-here automatically — by a zero-cost regex fast-path, optionally backstopped by a **local LLM** (an
-OpenAI-compatible Ollama wrapper, see the `local-llm-server` repo) that catches paraphrases the regex
-misses ("break down Tuesday's ride"). Off by default; enable with `COACH_LOCAL_INTENT=true` +
-`LOCAL_LLM_URL` in `.env`. It is used only for this low-stakes routing — coaching output always stays on
-Opus, and any local-server failure falls back to the regex, never blocking the Q&A.
+here automatically. Routing has three strategies via `COACH_INTENT_ROUTER` (all degrade to the regex on
+any error): **`regex`** (default, zero-cost, no model); **`haiku`** — the recommended upgrade — a cheap
+`claude-haiku-4-5` micro-call on your existing `ANTHROPIC_API_KEY` (no extra server) that catches
+paraphrases the regex misses ("break down Tuesday's ride") for a fraction of a cent, cost-logged like any
+call; and **`local`** (advanced) — the separate `local-llm-server` (Ollama) wrapper for zero API cost.
+It is used only for this low-stakes routing — coaching output always stays on Opus, and any failure falls
+back to the regex, never blocking the Q&A.
 
 **The deep dive only runs with the session's raw `.FIT` stream** — without it there are no biomechanics
 to read, so the LLM call is skipped (zero cost). The stream now **auto-downloads**: Sync / `fit-sync`

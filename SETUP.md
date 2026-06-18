@@ -113,8 +113,9 @@ Ask the user, then write the answers into `.env` (uncomment the relevant lines f
 6. **Garmin?** (optional, degradable) — ask if they want device data (HRV, training status, raw `.FIT`
    biomechanics). If yes, do Step 5a; if no, leave `GARMIN_ENABLED=false` (default) and the coach runs
    on AI Endurance alone.
-7. **Local LLM intent routing?** (optional) — almost always leave `COACH_LOCAL_INTENT=false`; it's a
-   micro-optimisation that needs the separate `local-llm-server`. Default off is correct.
+7. **`ask` intent routing** (optional) — `COACH_INTENT_ROUTER`. Leave `regex` (default, zero-cost) for
+   most people. The cheap upgrade is `haiku` (a `claude-haiku-4-5` micro-call on the API key you already
+   set — no extra server). Only pick `local` if you specifically want the separate `local-llm-server`.
 
 ## Step 4 — Connect AI Endurance (🧑 user does the browser login)
 
