@@ -60,6 +60,22 @@ test("applyTrendFloor keeps red when the AI Endurance recovery model is also dow
   assert.equal(applyTrendFloor(RED, w).verdict, "red");
 });
 
+test("applyTrendFloor keeps red on a lone HIGH-SPECIFICITY signal (a big RHR spike = illness)", () => {
+  const w = [day("2026-06-14", { rhr: 60, rhrBase: 45 })]; // +15 over baseline, nothing else present
+  assert.equal(adverseSignalCount(w).count, 1); // only one signal — would normally downgrade…
+  const out = applyTrendFloor(RED, w);
+  assert.equal(out.verdict, "red"); // …but a large isolated RHR spike stands on its own
+  assert.match(out.cautions.join(" "), /high-specificity/i);
+});
+
+test("applyTrendFloor HOLDS red (doesn't downgrade) when data is too thin to confirm a one-off", () => {
+  const w = [day("2026-06-14")]; // no interpretable inputs present — missing data must not read as 'fine'
+  assert.equal(adverseSignalCount(w).count, 0);
+  const out = applyTrendFloor(RED, w);
+  assert.equal(out.verdict, "red");
+  assert.match(out.cautions.join(" "), /limited[- ]data|too little/i);
+});
+
 test("applyTrendFloor never touches amber or green", () => {
   const amber: ReadinessVerdict = { verdict: "amber", why: "x", drivers: [], cautions: [] };
   const green: ReadinessVerdict = { verdict: "green", why: "x", drivers: [], cautions: [] };

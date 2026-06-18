@@ -24,7 +24,7 @@ import { readKnowledge, writePendingDigest, pendingName, knowledgeFreshness, lis
 import { runSessionFeedback } from "./coach/session.js";
 import { loadSessionDecays } from "./insights/fit.js";
 import { writeReport, listReports, readReport } from "./coach/reports.js";
-import { proposeAdjustments, validateProposals, buildProposerContext } from "./coach/planAdjust.js";
+import { proposeAdjustments, validateProposals, buildProposerContext, writeContextFor } from "./coach/planAdjust.js";
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { AieClient } from "./mcp/aieClient.js";
@@ -447,7 +447,7 @@ function registerWriteTools(server: McpServer): void {
       const { state, window } = await buildTodayState();
       const ins = buildInsights(state, await loadArchive(), { history: window });
       const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt(), "propose"), request, state, buildProposerContext(state, ins));
-      const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? []);
+      const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? [], writeContextFor(state));
       if (!valid.length) {
         const tail = rejected.length ? "\n" + rejected.map((r) => `  · ${r}`).join("\n") : "";
         return ok(`No applicable change proposed. ${result.notes ?? ""}${tail}`.trim());

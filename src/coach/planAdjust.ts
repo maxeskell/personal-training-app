@@ -2,8 +2,19 @@ import type { CoachLLM } from "../llm/client.js";
 import type { AthleteState, PlannedSession } from "../state/types.js";
 import type { InsightReport } from "../insights/engine.js";
 import { coachHeadline, tsbBand, rampBand } from "../insights/headline.js";
-import { PROPOSABLE_WRITE_TOOLS, validateWrite } from "../guardrails/writeValidators.js";
+import { PROPOSABLE_WRITE_TOOLS, validateWrite, type WriteContext } from "../guardrails/writeValidators.js";
 import { raceContext, deriveSeasonShape, liveGoals } from "./seasonContext.js";
+
+/** Bounds context (today + race-goal dates) for write validation, derived from the assembled state. */
+export function writeContextFor(state: AthleteState): WriteContext {
+  return {
+    today: state.date,
+    raceDates: liveGoals(state)
+      .map((g) => g.event_date)
+      .filter((d): d is string => typeof d === "string" && d.length >= 10)
+      .map((d) => d.slice(0, 10)),
+  };
+}
 
 // Re-exported so the live race calendar has a single source of truth (see seasonContext).
 export { raceContext };
@@ -157,12 +168,13 @@ export interface GatedProposalInput {
 export function validateProposals(
   raw: RawProposal[],
   planned: PlannedSession[],
+  ctx: WriteContext = {},
 ): { valid: GatedProposalInput[]; rejected: string[] } {
   const valid: GatedProposalInput[] = [];
   const rejected: string[] = [];
   for (const p of raw) {
     const args = parseArgs(p.argsJson);
-    const v = validateWrite(p.tool, args, planned);
+    const v = validateWrite(p.tool, args, planned, ctx);
     if (v.ok) valid.push({ tool: p.tool, args, summary: p.summary, tradeoff: p.tradeoff, human: v.human!, basis: p.basis ?? [] });
     else rejected.push(`"${p.summary}" — not applied: ${v.reason}`);
   }

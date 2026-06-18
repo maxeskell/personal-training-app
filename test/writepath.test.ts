@@ -27,6 +27,20 @@ test("validateWrite: rejects hallucinated id, bad date, empty advice, and non-pr
   assert.ok(!(PROPOSABLE_WRITE_TOOLS as readonly string[]).includes("createRideRunWorkoutAdvanced"));
 });
 
+test("validateWrite: bounds a move — rejects past, far-future, and on/next-to-a-race dates", () => {
+  const ctx = { today: "2026-06-10", raceDates: ["2026-10-11"] };
+  assert.equal(validateWrite("changeWorkoutDate", { workoutId: "8034343", newDate: "2026-06-01" }, planned, ctx).ok, false, "past");
+  assert.equal(validateWrite("changeWorkoutDate", { workoutId: "8034343", newDate: "2028-01-01" }, planned, ctx).ok, false, "far future");
+  assert.equal(validateWrite("changeWorkoutDate", { workoutId: "8034343", newDate: "2026-10-11" }, planned, ctx).ok, false, "race day");
+  assert.equal(validateWrite("changeWorkoutDate", { workoutId: "8034343", newDate: "2026-10-10" }, planned, ctx).ok, false, "race eve");
+  assert.equal(validateWrite("changeWorkoutDate", { workoutId: "8034343", newDate: "2026-06-12" }, planned, ctx).ok, true, "a sane in-window move still passes");
+});
+
+test("validateWrite: a coaching note is screened — restriction framing can't be written into the plan", () => {
+  assert.equal(validateWrite("changeWorkoutAdvice", { workoutId: "8034343", advice: "ride fasted to cut weight before the race" }, planned).ok, false);
+  assert.equal(validateWrite("changeWorkoutAdvice", { workoutId: "8034343", advice: "keep it easy, zone 2 only" }, planned).ok, true);
+});
+
 test("validateProposals: only valid proposals pass; the rest are reported", () => {
   const raw = [
     { summary: "Move threshold run", tradeoff: "two easy days first", tool: "changeWorkoutDate", argsJson: '{"workoutId":"8034343","newDate":"2026-06-12"}' },
