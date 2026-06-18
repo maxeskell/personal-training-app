@@ -258,8 +258,9 @@ export interface AthleteState {
   /**
    * The athlete's STABLE profile (body, kit, medical, availability, fuelling, race targets) from
    * profile.local.yaml — stable context AI Endurance/Garmin don't hold. Attached in-memory by the
-   * orchestrator for the coaching prompts; NOT persisted to the state store (so the medical data never
-   * lands in data/state/*.json), and never live numbers. Absent when no profile is present/valid.
+   * orchestrator for the coaching prompts; stripped by StateStore.save (so the medical data never
+   * lands in data/state/*.json regardless of save ordering), and never live numbers. Absent when no
+   * profile is present/valid.
    */
   profile?: ProfileDoc;
 }

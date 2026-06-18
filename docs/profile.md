@@ -81,7 +81,9 @@ It's `null` when no `medication.dose_day` is set. This lets the coach keep the h
 sessions off the GI-trough days and stay alert to under-fuelling — **the medication's drug, dose and
 timing are the prescriber's call; the coach works *around* it.** The same context (medication,
 biomechanics, availability, fuelling, race targets) is injected into the app's own coaching flows
-(readiness, weekly, race, ask) when a profile is present.
+(readiness, weekly, race, ask) when a profile is present. That injection is **in-memory only** —
+`StateStore.save` strips the profile before writing, so the medical/personal data never lands in
+`data/state/*.json` regardless of when a flow saves.
 
 ## What this app cannot do
 
