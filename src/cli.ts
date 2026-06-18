@@ -39,6 +39,7 @@ import { WriteGate } from "./guardrails/writeGate.js";
 import { DecisionLog, suppressedInsightKeys } from "./state/decisionLog.js";
 import { runSetup } from "./setup.js";
 import { initProfile } from "./profile/setup.js";
+import { renderQuestionsText, renderQuestionsMarkdown } from "./profile/questions.js";
 import { helpText } from "./help.js";
 import type { AthleteState } from "./state/types.js";
 
@@ -50,6 +51,24 @@ async function cmdSetup(): Promise<void> {
 /** `profile-init` — copy profile.example.yaml → profile.local.yaml and walk the required fields. */
 async function cmdProfileInit(): Promise<void> {
   await initProfile();
+}
+
+/**
+ * `profile-questions` — print the OPTIONAL profile fields you can fill whenever you like, each with a
+ * plain-language question and a one-line "why this changes your coaching". Deterministic, no LLM, no
+ * network — just renders the single source of truth in src/profile/questions.ts. `--write-doc`
+ * regenerates docs/profile-questions.md from the same data so the two never drift.
+ */
+async function cmdProfileQuestions(): Promise<void> {
+  if (process.argv.includes("--write-doc")) {
+    const { writeFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const path = join(process.cwd(), "docs", "profile-questions.md");
+    await writeFile(path, renderQuestionsMarkdown());
+    console.log(`\n✓ Wrote ${path} from src/profile/questions.ts\n`);
+    return;
+  }
+  console.log("\n" + renderQuestionsText());
 }
 
 /** `help` — the curated everyday commands (full list in docs/commands.md). */
@@ -752,6 +771,7 @@ const [, , cmd] = process.argv;
 const commands: Record<string, () => Promise<void>> = {
   setup: cmdSetup,
   "profile-init": cmdProfileInit,
+  "profile-questions": cmdProfileQuestions,
   help: cmdHelp,
   auth: cmdAuth,
   verify: cmdVerify,
@@ -790,6 +810,7 @@ if (!run) {
   console.log("Usage: tsx src/cli.ts <command>   (or `npm run help` for the common ones)");
   console.log("  setup      guided wizard: write .env (key, units, location, Garmin)");
   console.log("  profile-init  copy profile.example.yaml → profile.local.yaml and fill the required fields");
+  console.log("  profile-questions  list the OPTIONAL profile fields + why each one helps the coach (--write-doc regenerates the doc)");
   console.log("  help       the curated everyday commands (full list: docs/commands.md)");
   console.log("  auth       run OAuth + confirm the AI Endurance connection");
   console.log("  verify     exercise every read tool, confirm the write-gate");

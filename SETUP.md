@@ -146,6 +146,10 @@ file afterwards to fill in biomechanics/kit/medical/fuelling (no integration hol
 live numbers** (FTP, weight, paces, CSS, HRV, load) in it — those stay live from AI Endurance/Garmin,
 and a schema guard rejects them if you try. Full schema and privacy detail: [docs/profile.md](docs/profile.md).
 
+For the optional fields worth filling in later — each with a plain-language question and a one-line
+*why it helps the coach* — run `npm run profile:questions` (or read
+[docs/profile-questions.md](docs/profile-questions.md)). All of them are optional.
+
 ## Step 4 — Connect AI Endurance (🧑 user does the browser login)
 
 ```bash

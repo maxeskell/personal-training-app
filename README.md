@@ -115,6 +115,11 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   cleanly to the full manual flow. Everything else — biomechanics, equipment, fuelling, medical — you
   fill in by hand. (Height is the only body number stored: stable anthropometry, never weight — weight
   stays a live number pulled from Garmin/AIE, and the schema guard rejects it in the profile.)
+- **The optional extras, explained.** Run **`npm run profile:questions`** for the list of optional
+  profile fields you can fill whenever you like — each with a plain-language question and a one-line
+  *why it changes your coaching* (e.g. medication timing drives the dose-cycle the coach plans around;
+  leg-length/cleat inform run-load and injury notes; fuelling targets feed race advice). Everything
+  there stays optional. Also rendered as [docs/profile-questions.md](docs/profile-questions.md).
 - **`dose_cycle`.** If you set `health.medication.dose_day` + `gi_trough_days`, `get_profile` returns a
   computed `dose_cycle` (`days_since_dose`, `in_gi_trough`) so the coach can keep your hardest/longest
   sessions off the GI-trough days and watch under-fuelling — the personalisation a generic endurance

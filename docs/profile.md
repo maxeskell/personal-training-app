@@ -40,7 +40,9 @@ cd /Users/maxeskell/personal-training-app && npm run profile:init     # copy tem
 - at least one race in `races` (with a name + date)
 
 Everything else is optional — open `profile.local.yaml` and fill in biomechanics, equipment, fuelling
-and medical context by hand.
+and medical context by hand. For a guided list of those optional fields with a plain-language question
+and a one-line *why it helps the coach* for each, run **`npm run profile:questions`** (or read the
+generated [docs/profile-questions.md](profile-questions.md)).
 
 ### Integration bootstrap — pre-fill from your connected account
 
