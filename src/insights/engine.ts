@@ -17,7 +17,7 @@ import {
   type MonotonyStrain,
   type TID,
 } from "./metrics.js";
-import { estimateRunSplits, estimateTriSplits, projectCtl, projectFromFitnessGain, projectFromTrainingLoad, projectRaceDayRange, reliableImprovementPerDay, type RaceSplitPlan, type DurabilityState, type TriRaceType, type TriPerformance } from "./splits.js";
+import { estimateRunSplits, estimateTriSplits, projectRaceDayImprovement, projectRaceDayRange, reliableImprovementPerDay, type RaceSplitPlan, type DurabilityState, type TriRaceType, type TriPerformance } from "./splits.js";
 import { analyseRecoverySeries, sleepVsNextDayLoad, type Correlation, type Anomaly } from "./correlations.js";
 import { buildMonitoringRuleSet, monitoringFinding, type MonitoringRuleSet, type MonitoringInput } from "./monitoring.js";
 import { changePointsOf, changePointFindings, type SeriesChangePoints } from "./changepoint.js";
@@ -521,37 +521,17 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
     })
     .filter((s): s is RaceSplitPlan => s != null);
 
-  // Finish-time RANGE per split: worst = race today; best = a forward projection from the training still
-  // ahead. PRIMARY = the actual PLAN rolled forward to each race date (projected CTL → time); when no
-  // usable plan reaches a race, fall back to the current build ramp, then the athlete's OWN race-predictor
-  // trend, then current level. Honest MODEL — labelled as such in the UI.
-  const ctlNow = load?.ctl ?? null;
-  const ctlSeries = load?.series ?? [];
-  // Turn planned DURATION into load with the athlete's own recent ESS-per-hour (overall intensity).
-  const withLoad = acts.filter((a) => (a.movingSec ?? 0) > 0 && a.ess != null);
-  const recentHours = withLoad.reduce((s, a) => s + a.movingSec! / 3600, 0);
-  const recentEss = withLoad.reduce((s, a) => s + (a.ess ?? 0), 0);
-  const essPerHour = recentHours > 0 ? recentEss / recentHours : null;
-  // Future planned daily load (ESS) keyed by day-offset from today.
-  const plannedFuture = (state.plannedSessions.value ?? [])
-    .map((p) => ({ off: daysTo(state.date, p.date.slice(0, 10)), min: p.durationMin ?? 0 }))
-    .filter((p) => p.off >= 1 && p.min > 0);
-  const plannedByOff = new Map<number, number>();
-  if (essPerHour != null) for (const p of plannedFuture) plannedByOff.set(p.off, (plannedByOff.get(p.off) ?? 0) + (p.min / 60) * essPerHour);
-  const lastPlannedOff = plannedFuture.length ? Math.max(...plannedFuture.map((p) => p.off)) : 0;
-  // Beyond the plan horizon, continue at the plan's average daily load (incl. rest days) — "keep doing the
-  // planned training". CTL rises only if that exceeds today's maintenance, and the Banister roll + 7% cap
-  // bound it. No future plan → contDaily 0 → primary stays null and the ramp/trend fallbacks take over.
-  const contDaily = lastPlannedOff > 0 ? [...plannedByOff.values()].reduce((a, b) => a + b, 0) / lastPlannedOff : 0;
-  // FALLBACK A input: current build ramp from an OLS slope over the last ~21d of CTL (robust to one dip),
-  // floored at 0 so a recovery week can't push it negative.
-  const ctlTail = ctlSeries.slice(-21);
-  let rampPerWeek: number | null = null;
-  if (ctlTail.length >= 8) {
-    const b = slope(ctlTail.map((_, i) => i), ctlTail.map((p) => p.ctl));
-    rampPerWeek = b != null ? Math.max(0, +(b * 7).toFixed(2)) : null;
-  }
-  // FALLBACK B input: prefer the deep prediction trajectory (≥10 pts possible); else the short window.
+  // Finish-time RANGE per split: worst = race today; best = a bounded, horizon-driven projection of doing
+  // the training ahead well (PRIMARY, differs per race by how many weeks there are to build); when there's
+  // nothing to build toward, fall back to the athlete's OWN race-predictor trend, then current level.
+  // Honest MODEL — labelled as such in the UI.
+  // "building" gate: there must be training ahead — an upcoming planned session, or fitness not declining
+  // (a robust ~21d CTL OLS slope ≥ 0) — else a detraining athlete with no plan gets no free upside.
+  const ctlTail = (load?.series ?? []).slice(-21);
+  const ctlSlope = ctlTail.length >= 8 ? slope(ctlTail.map((_, i) => i), ctlTail.map((p) => p.ctl)) : null;
+  const hasFuturePlan = (state.plannedSessions.value ?? []).some((p) => daysTo(state.date, p.date.slice(0, 10)) >= 1 && (p.durationMin ?? 0) > 0);
+  const building = hasFuturePlan || (ctlSlope != null && ctlSlope >= 0);
+  // FALLBACK input: prefer the deep prediction trajectory (≥10 pts possible); else the short window.
   const predTrajectory =
     opts?.predictionTrajectory ??
     (opts?.history ?? [])
@@ -564,14 +544,7 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   const fracImprovePerDay = reliableImprovementPerDay(predTrajectory, nearestPredicted);
   for (const plan of splits) {
     const dTo = plan.date ? daysTo(state.date, plan.date) : 0;
-    // PRIMARY: roll the plan forward to this race's date → projected CTL → time.
-    let fromPlan: ReturnType<typeof projectFromFitnessGain> = null;
-    if (ctlNow != null && essPerHour != null && lastPlannedOff > 0 && dTo > 0) {
-      const future: number[] = [];
-      for (let d = 1; d <= dTo; d++) future.push(d <= lastPlannedOff ? plannedByOff.get(d) ?? 0 : contDaily);
-      fromPlan = projectFromFitnessGain(ctlNow, projectCtl(ctlNow, future), dTo);
-    }
-    const planned = fromPlan ?? projectFromTrainingLoad(ctlNow, rampPerWeek, dTo);
+    const planned = projectRaceDayImprovement(dTo, building);
     const r = projectRaceDayRange(plan.predictedSec, dTo, fracImprovePerDay, planned);
     plan.worstSec = r.worstSec;
     plan.bestSec = r.bestSec;

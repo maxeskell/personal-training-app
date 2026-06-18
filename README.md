@@ -226,18 +226,20 @@ projection, and the dashboard carries an **API cost** card. To keep it down, the
   low estimate is a floor, not a downgrade — your **configured FTP** is what drives the zones.
 - **Estimated race splits** for every upcoming race — shown as a **finish-time range**, not a single number:
   - **The range** is *race-day best → race-it-today*. The worst case is your current prediction (racing at
-    today's fitness). The best case is **predicted from doing the planned training well**, by three bases in
-    order of preference: (1) *PRIMARY* — your **actual plan** rolled forward to each race date: planned
-    session durations become training load (at your own recent intensity), projected into a race-day
-    **fitness (CTL)** level, then mapped to a faster finish; (2) *FALLBACK*, when no plan reaches a race —
-    your current **build ramp** (a robust ~21-day CTL slope) carried forward; (3) *last resort* — **your own
-    recent rate of improvement** in race predictions, extrapolated out only when that trend is statistically
-    reliable. All are capped (~7%) and assume you stay healthy, adapt well and taper. Both ends are labelled
-    a MODEL with the assumptions stated, and the range collapses to your current level only when there's no
-    build, plan, or improving trend to project — never an empty promise. **Both estimates are always shown**
-    (race-day best and race-it-today, side by side), even when they currently match. Because each race is a
-    different distance out, the best case differs per race even at identical current fitness. Times are
-    rounded to the minute; each card leads with the race **date + countdown** and a plain-English glossary.
+    today's fitness). The best case is **predicted from doing the planned training well** — a bounded,
+    horizon-driven MODEL: the more **weeks you have to build** before a race, the larger the realistic
+    improvement, with diminishing returns and a hard ceiling (~7%, even for a long season). It's gated on
+    actually having training ahead (an upcoming plan, or fitness not in decline), so a detraining athlete
+    with nothing planned gets no free upside. When there's nothing to build toward, it falls back to **your
+    own recent rate of improvement** in race predictions (only when that trend is statistically reliable),
+    and otherwise the range collapses to your current level — never an empty promise. Both ends are labelled
+    a MODEL with the assumptions stated. **Both estimates are always shown** (race-day best and
+    race-it-today, side by side), even when they currently match. Because each race is a different number of
+    weeks out, the best case **differs per race** — a race months away has more room than one in a fortnight.
+    Times are rounded to the minute; each card leads with the race **date + countdown** and a glossary.
+    (Earlier versions tried to roll your plan's load forward into a projected fitness/CTL number; that was
+    too sensitive to plan-data quirks and over-projected, so it was replaced by this bounded curve. Tune the
+    ceiling and time-constant via `MAX_PROJECTED_GAIN` / `BUILD_TAU_WEEKS` in `src/insights/splits.ts`.)
   - **The per-segment table** shows both the **Split** (time for that segment alone) and the **Cumulative**
     (running total), so you can pace each leg/kilometre as well as see the overall clock. Splits sum exactly
     to the finish.
