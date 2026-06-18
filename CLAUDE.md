@@ -25,6 +25,26 @@
   never a bare `npm run update` that assumes a working directory. The repo lives at
   `/Users/maxeskell/personal-training-app` on the user's Mac.
 
+## Running the server (ONE canonical model — never give conflicting commands)
+
+The dashboard runs as a **single always-on macOS launchd service** (`com.endurance-coach.dashboard`,
+port 3000), installed once with `npm run serve:install`. That service — not an open terminal — serves
+the site: it starts at login, restarts on crash (RunAtLoad + KeepAlive), and a `post-merge` git hook
+restarts it after a pull. This is the everyday model; treat it as the default in all advice.
+
+- **Deploying an update is ONE command:** `cd /Users/maxeskell/personal-training-app && npm run update`.
+  It pulls `COACH_DEPLOY_BRANCH` (default `main`) and restarts the service. Never tell the user to *also*
+  run `npm start` / `npm run serve` afterwards.
+- **`npm start` / `npm run serve` is DEV-ONLY** (foreground, dies with the terminal). Running it while
+  the service is up starts a second instance fighting for port 3000. Never present it as an alternative
+  way to "run the server", and never in the same breath as the service.
+- **Don't guess which runner is active — look, or have the user paste this ONE diagnostic:**
+  `lsof -nP -iTCP:3000 -sTCP:LISTEN; launchctl list | grep -i endurance`. If you can't see the machine,
+  ask for that output instead of inferring (you cannot tell launchd from pm2 from a log line alone).
+- **Advise with exactly ONE command for the user's setup.** No menus of co-equal run methods, no
+  "or pm2 also works" alongside the canonical path. pm2 is a fallback *instead of* launchd, never
+  alongside it — the two must never both manage the dashboard.
+
 ## Project conventions (read before writing code)
 
 - **One athlete, local-first.** Plan data comes from AI Endurance (MCP, OAuth in
