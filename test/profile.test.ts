@@ -96,6 +96,20 @@ test("the live-number guard catches synonyms and numeric strings, but not substr
   assert.doesNotThrow(() => assertNoLiveNumbers({ biomechanics: { paceline_position: 2 } }));
 });
 
+test("identity.height_cm (stable anthropometry) validates as a number — but a planted weight still throws", () => {
+  // Height is stable body data the profile is allowed to hold: a numeric identity.height_cm passes both
+  // the schema and the no-live-numbers guard.
+  const withHeight = { schema_version: 1, identity: { name: "Tall Test", height_cm: 184 } };
+  assert.doesNotThrow(() => validateProfile(withHeight));
+  assert.equal(validateProfile(withHeight).identity?.height_cm, 184);
+  assert.doesNotThrow(() => assertNoLiveNumbers(withHeight));
+  // Weight, by contrast, IS a live number — a numeric weight in identity must still trip the guard.
+  assert.throws(() => validateProfile({ schema_version: 1, identity: { height_cm: 184, weight_kg: 72 } }), /live performance number/i);
+  assert.throws(() => assertNoLiveNumbers({ identity: { weight: 72 } }), /live performance number/i);
+  // A non-positive height is rejected by the schema (positive constraint).
+  assert.throws(() => validateProfile({ schema_version: 1, identity: { height_cm: 0 } }));
+});
+
 test("requiredFieldsMissing flags the blank example and clears on a filled profile", () => {
   const blank = validateProfile(parseYaml(exampleText));
   const missing = requiredFieldsMissing(blank);

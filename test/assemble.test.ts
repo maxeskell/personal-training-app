@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { extractJson, garminInner, mapGarminThresholds } from "../src/state/assemble.js";
+import { extractJson, garminInner, mapGarminThresholds, mapGarminIdentity, normalizeDob, normalizeHeightCm } from "../src/state/assemble.js";
 import { emptyState } from "../src/state/types.js";
 
 /**
@@ -51,4 +51,56 @@ test("mapGarminThresholds keeps the higher test-based FTP and surfaces the confl
   const t = s.thresholds.value!;
   assert.equal(t.bikeFtpW, 280, "the higher test-based value keeps driving zones");
   assert.match(t.bikeFtpNote ?? "", /keeping the higher test-based 280/);
+});
+
+// --- Garmin stable identity (get_user_profile → DOB + height) ----------------
+
+test("normalizeDob accepts YYYY-MM-DD (and datetime variants), rejects junk / out-of-range years", () => {
+  assert.equal(normalizeDob("1985-07-02"), "1985-07-02");
+  assert.equal(normalizeDob("1985-07-02T00:00:00.0"), "1985-07-02"); // strips the time component
+  assert.equal(normalizeDob(""), undefined);
+  assert.equal(normalizeDob("02/07/1985"), undefined); // not ISO
+  assert.equal(normalizeDob("1850-01-01"), undefined); // implausible year
+  assert.equal(normalizeDob("1985-13-40"), undefined); // out-of-range month/day
+  assert.equal(normalizeDob(19850702 as unknown), undefined); // non-string
+});
+
+test("normalizeHeightCm passes cm through, lifts metres, and bounds to a plausible human range", () => {
+  assert.equal(normalizeHeightCm(178), 178); // cm as Garmin reports it
+  assert.equal(normalizeHeightCm("184.4"), 184); // numeric string, rounded
+  assert.equal(normalizeHeightCm(1.78), 178); // metres → cm
+  assert.equal(normalizeHeightCm(0), undefined);
+  assert.equal(normalizeHeightCm(40), undefined); // below the human floor
+  assert.equal(normalizeHeightCm(500), undefined); // above the ceiling
+  assert.equal(normalizeHeightCm(undefined), undefined);
+});
+
+test("mapGarminIdentity reads DOB + height from userData and keeps the AIE-sourced name/age/sex", () => {
+  const s = emptyState("2026-06-14", "2026-06-14T06:00:00Z");
+  s.athleteProfile = { value: { name: "Sam Tri", age: 41, sex: "male" }, source: "ai-endurance" };
+  mapGarminIdentity(s, { userData: { birthDate: "1985-03-09", height: 182, weight: 74000 } });
+  const v = s.athleteProfile.value!;
+  assert.equal(v.name, "Sam Tri"); // AIE identity preserved
+  assert.equal(v.age, 41);
+  assert.equal(v.sex, "male");
+  assert.equal(v.dateOfBirth, "1985-03-09"); // from Garmin
+  assert.equal(v.heightCm, 182); // from Garmin
+  assert.equal((v as Record<string, unknown>).weight, undefined, "weight is NEVER taken (it's a live number)");
+  assert.equal((v as Record<string, unknown>).weightKg, undefined);
+  assert.equal(s.athleteProfile.source, "garmin");
+});
+
+test("mapGarminIdentity reads top-level keys too and degrades when Garmin exposes neither", () => {
+  const s = emptyState("2026-06-14", "2026-06-14T06:00:00Z");
+  // No userData wrapper — probe the flat shape.
+  mapGarminIdentity(s, { birthDate: "1990-12-01" });
+  assert.equal(s.athleteProfile.value?.dateOfBirth, "1990-12-01");
+  assert.equal(s.athleteProfile.value?.heightCm, undefined);
+
+  // Nothing usable → the slot is left exactly as it was (absent here).
+  const s2 = emptyState("2026-06-14", "2026-06-14T06:00:00Z");
+  mapGarminIdentity(s2, { userData: { gender: "MALE" } });
+  assert.equal(s2.athleteProfile.value, null);
+  mapGarminIdentity(s2, null);
+  assert.equal(s2.athleteProfile.value, null);
 });

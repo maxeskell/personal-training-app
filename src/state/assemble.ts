@@ -115,7 +115,16 @@ export async function assembleState(
     const endurance = await callG("get_endurance_score", { start_date: monthAgo, end_date: opts.date });
     const hill = await callG("get_hill_score", { start_date: monthAgo, end_date: opts.date });
     const racePred = await callG("get_race_predictions", {});
-    raw.garmin = { sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv, pdc, endurance, hill, racePred };
+    // STABLE identity Garmin holds that AIE doesn't: date of birth + standing height. (Verified tool
+    // name `get_user_profile` against Taxuspt/garmin_mcp's user_profile module → python-garminconnect
+    // get_user_profile(); birthDate/height live under a `userData` object.) Weight/FTP/HRV are NOT taken
+    // here — they're live numbers pulled live elsewhere and rejected by the profile's no-live-numbers
+    // guard. Best-effort + inside the wall-clock budget like every other Garmin read.
+    const userProfile = await callG("get_user_profile", {});
+    raw.garmin = { sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv, pdc, endurance, hill, racePred, userProfile };
+
+    // Enrich the AIE-derived identity with Garmin's stable DOB + height (only fills gaps / adds anthropometry).
+    mapGarminIdentity(state, userProfile);
 
     // Thresholds + zones from Garmin's own FTP/LT tools (verified shapes) — these win over the
     // AIE getUser-derived values mapped earlier, since they're the device's current numbers.
@@ -312,6 +321,52 @@ function mapAthleteProfile(state: AthleteState, payload: unknown): void {
 
   if (name == null && age == null && sex == null) return; // platform exposed nothing → leave absent
   state.athleteProfile = { value: { name, age: age != null && age > 0 && age < 120 ? age : undefined, sex }, source: "ai-endurance" };
+}
+
+/** Normalise a Garmin birthDate (e.g. "1985-07-02" or "1985-07-02T00:00:00.0") to YYYY-MM-DD, or undefined. */
+export function normalizeDob(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const m = raw.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return undefined;
+  const [, y, mo, d] = m;
+  const yr = Number(y);
+  if (yr < 1900 || yr > 2100) return undefined; // sanity-bound a junk year
+  if (Number(mo) < 1 || Number(mo) > 12 || Number(d) < 1 || Number(d) > 31) return undefined;
+  return `${y}-${mo}-${d}`;
+}
+
+/**
+ * Normalise a Garmin height to whole centimetres. Garmin/Connect reports height in cm (e.g. 178), but
+ * defend against a metres-valued source (e.g. 1.78): a value below 3 is treated as metres → ×100. Only
+ * a plausible human height (50–260 cm) is accepted; anything else degrades to undefined.
+ */
+export function normalizeHeightCm(raw: unknown): number | undefined {
+  const n = asNumber(raw);
+  if (n == null || n <= 0) return undefined;
+  const cm = n < 3 ? n * 100 : n;
+  const rounded = Math.round(cm);
+  return rounded >= 50 && rounded <= 260 ? rounded : undefined;
+}
+
+/**
+ * Map Garmin's `get_user_profile` payload (the stable identity Garmin holds: date of birth + standing
+ * height) onto the athleteProfile slot. python-garminconnect nests anthropometry under a `userData`
+ * object, but we probe both `userData.*` and top-level keys so a shape change degrades a field rather
+ * than crashing. NEVER takes weight/FTP/HRV — those are live numbers pulled live elsewhere. Best-effort:
+ * adds DOB/height with source "garmin" when present; leaves the AIE-derived name/age/sex untouched.
+ */
+export function mapGarminIdentity(state: AthleteState, userProfile: unknown): void {
+  const data = get(userProfile, "userData") ?? userProfile; // anthropometry lives under userData
+  const dob = normalizeDob(get(data, "birthDate") ?? get(data, "birth_date") ?? get(data, "dateOfBirth") ?? get(data, "date_of_birth"));
+  const heightCm = normalizeHeightCm(get(data, "height") ?? get(data, "height_cm") ?? get(data, "heightInCm"));
+  if (dob == null && heightCm == null) return; // Garmin exposed neither → leave the slot as AIE set it
+
+  const prior = state.athleteProfile.value ?? {};
+  state.athleteProfile = {
+    value: { ...prior, dateOfBirth: dob ?? prior.dateOfBirth, heightCm: heightCm ?? prior.heightCm },
+    source: "garmin",
+    note: "name/age/sex from AI Endurance; DOB/height from Garmin get_user_profile (stable identity)",
+  };
 }
 
 /**

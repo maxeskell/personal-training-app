@@ -105,11 +105,16 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   loudly with a clear message if anything's malformed.
 - **Setup.** `npm run setup` offers it, or run **`npm run profile:init`** directly. It **pre-fills from
   your connected integrations** — name and sex from AI Endurance, units/timezone from your `.env`, all
-  upcoming races from your AI Endurance goals, and a **MODEL estimate** of your weekly hours from recent
-  training volume — then asks only for what no integration holds. You confirm each pulled value (Enter
-  keeps it) or override it. **Date of birth is always asked** (AI Endurance exposes your age, not your
-  DOB). If AI Endurance is unreachable (or you haven't authed yet) it degrades cleanly to the full
-  manual flow. Everything else — biomechanics, equipment, fuelling, medical — you fill in by hand.
+  upcoming races from your AI Endurance goals, a **MODEL estimate** of your weekly hours from recent
+  training volume, and — when **Garmin is enabled** — your **date of birth and height** from Garmin's
+  `get_user_profile` (stable identity AI Endurance doesn't hold). It then prints a summary and asks
+  **"Does this look right? [Y/n]"**: **Y** keeps everything pulled and only prompts for the fields still
+  genuinely missing; **n** drops you into the per-field flow (each prompt shows the pulled value as the
+  default — Enter keeps it). **Date of birth is only asked when Garmin didn't supply it** (AI Endurance
+  exposes your age, not your DOB). If AI Endurance is unreachable (or you haven't authed yet) it degrades
+  cleanly to the full manual flow. Everything else — biomechanics, equipment, fuelling, medical — you
+  fill in by hand. (Height is the only body number stored: stable anthropometry, never weight — weight
+  stays a live number pulled from Garmin/AIE, and the schema guard rejects it in the profile.)
 - **`dose_cycle`.** If you set `health.medication.dose_day` + `gi_trough_days`, `get_profile` returns a
   computed `dose_cycle` (`days_since_dose`, `in_gi_trough`) so the coach can keep your hardest/longest
   sessions off the GI-trough days and watch under-fuelling — the personalisation a generic endurance

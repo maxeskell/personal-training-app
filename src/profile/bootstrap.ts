@@ -12,20 +12,25 @@ import type { ProfileIntake } from "./setup.js";
  * setup.ts (the IO seam); this module just maps.
  *
  * Generic by construction: nothing reads the original author's data — it maps whatever the connected
- * account exposes. Two fields are deliberately NOT auto-filled:
- *   - date of birth: AIE exposes `age` but not DOB, so we still ASK (the api age is shown as a hint).
+ * account exposes. What's auto-filled vs asked:
+ *   - date of birth: AIE exposes `age` but not DOB. When GARMIN is enabled and supplies a birthDate it's
+ *     AUTO-FILLED; otherwise still ASKED (the api age is shown as a hint).
+ *   - height: STABLE anthropometry held by Garmin — auto-filled from `get_user_profile` when present.
  *   - weekly hours: ESTIMATED from recent training volume and labelled a MODEL — the user confirms.
  * Biomechanics / health / medication / equipment / fuelling are held by NO integration, so they're
  * left as the blank template for the user to hand-edit (the profile's whole reason to exist).
  */
 
-/** Identity (name, sex) from AIE getUser, mapped into the intake shape. Pure. */
+/** Identity (name, sex, and — when Garmin supplied them — DOB + height) from state, into the intake shape. Pure. */
 export function athleteToIntake(state: AthleteState): Partial<ProfileIntake> {
   const p = state.athleteProfile.value;
   const out: Partial<ProfileIntake> = {};
   if (p?.name && p.name.trim()) out.name = p.name.trim();
   // getUser's sex is already normalised to male/female/<raw> in assemble.ts; only pass the enum values.
   if (p?.sex && /^(male|female|other)$/i.test(p.sex.trim())) out.sex = p.sex.trim().toLowerCase();
+  // DOB + height come from Garmin's get_user_profile (stable identity) when enabled; absent otherwise.
+  if (p?.dateOfBirth && /^\d{4}-\d{2}-\d{2}$/.test(p.dateOfBirth.trim())) out.date_of_birth = p.dateOfBirth.trim();
+  if (typeof p?.heightCm === "number" && Number.isFinite(p.heightCm) && p.heightCm > 0) out.height = String(Math.round(p.heightCm));
   return out;
 }
 
@@ -174,10 +179,14 @@ export interface BootstrapSummary {
   raceCount: number;
   /** Fields sourced from the local .env/config. */
   fromConfig: string[];
+  /** Identity fields sourced from Garmin's get_user_profile (stable: DOB and/or height). */
+  fromGarmin: string[];
   /** The weekly-hours MODEL estimate, when one could be made (else null → asked). */
   weeklyEstimate: { band: string; weeks: number } | null;
   /** API-derived age (from getUser) shown as a sanity hint next to the DOB prompt; null if absent. */
   ageHint: number | null;
+  /** Whether DOB was auto-filled (Garmin) — when false, DOB is still asked. */
+  dobAutofilled: boolean;
 }
 
 export interface PrefilledIntake {
@@ -191,7 +200,8 @@ export interface PrefilledIntake {
 /**
  * Assemble a fully pre-filled `ProfileIntake` from (state, config, today) plus the live goals.
  * Pure — the caller (setup.ts) passes in `liveGoals(state)` so this module never touches the raw
- * payload shape directly. DOB is deliberately left undefined (always asked).
+ * payload shape directly. DOB + height are auto-filled when GARMIN supplied them (get_user_profile);
+ * DOB is otherwise left undefined (asked), and height left undefined (no integration → hand-edit/ask).
  */
 export function buildPrefilledIntake(
   state: AthleteState,
@@ -212,10 +222,15 @@ export function buildPrefilledIntake(
   if (cfg.units) fromConfig.push("units");
   if (cfg.timezone) fromConfig.push("timezone");
 
+  // DOB + height come from Garmin's get_user_profile (stable identity) when enabled.
+  const fromGarmin: string[] = [];
+  if (ath.date_of_birth) fromGarmin.push("date of birth");
+  if (ath.height) fromGarmin.push("height");
+
   const intake: ProfileIntake = {
     ...ath,
     ...cfg,
-    // DOB intentionally omitted — always asked.
+    // DOB carried from `ath` when Garmin supplied it; undefined (→ asked) otherwise.
     weekly_hours: weekly ? weekly.band : undefined,
     race: races[0]
       ? {
@@ -243,8 +258,33 @@ export function buildPrefilledIntake(
       fromAie,
       raceCount: races.length,
       fromConfig,
+      fromGarmin,
       weeklyEstimate: weekly,
       ageHint: state.athleteProfile.value?.age ?? null,
+      dobAutofilled: Boolean(ath.date_of_birth),
     },
   };
+}
+
+/**
+ * Decide which REQUIRED fields still genuinely need asking after a pre-fill — the input to the
+ * confirm-step's "Y → only prompt for the gaps" branch. Pure: takes the pre-filled intake and returns
+ * the ordered list of field keys whose value is still missing (so a confirmed pre-fill skips the rest).
+ * `date_of_birth` drops off the list once Garmin supplies it; `height` is optional so it's never here.
+ */
+export type AskableField = "name" | "sex" | "date_of_birth" | "units" | "timezone" | "weekly_hours" | "race";
+
+export function fieldsStillNeeded(intake: ProfileIntake): AskableField[] {
+  const need: AskableField[] = [];
+  const filled = (v: string | undefined): boolean => typeof v === "string" && v.trim().length > 0;
+  if (!filled(intake.name)) need.push("name");
+  if (!filled(intake.sex)) need.push("sex");
+  if (!filled(intake.date_of_birth)) need.push("date_of_birth");
+  if (!filled(intake.units)) need.push("units");
+  if (!filled(intake.timezone)) need.push("timezone");
+  if (!filled(intake.weekly_hours)) need.push("weekly_hours");
+  // A race counts as present only if it carries at least a name or a date (matches applyIntake's filter).
+  const hasRace = Boolean(intake.race && (filled(intake.race.name) || filled(intake.race.date)));
+  if (!hasRace) need.push("race");
+  return need;
 }

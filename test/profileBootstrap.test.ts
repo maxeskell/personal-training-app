@@ -9,6 +9,7 @@ import {
   formatTargetTime,
   configToIntake,
   buildPrefilledIntake,
+  fieldsStillNeeded,
 } from "../src/profile/bootstrap.js";
 import { applyIntake } from "../src/profile/setup.js";
 import { validateProfile, type Profile } from "../src/profile/schema.js";
@@ -45,6 +46,33 @@ test("athleteToIntake omits an unmappable sex and absent name", () => {
 
 test("athleteToIntake returns {} when the platform exposed no identity", () => {
   assert.deepEqual(athleteToIntake(stateWith({})), {});
+});
+
+test("athleteToIntake carries Garmin-supplied DOB + height (height stringified), ignoring an invalid DOB", () => {
+  const s = stateWith({
+    athleteProfile: { value: { name: "Sam Tri", sex: "male", age: 41, dateOfBirth: "1985-03-09", heightCm: 182 }, source: "garmin" },
+  });
+  assert.deepEqual(athleteToIntake(s), { name: "Sam Tri", sex: "male", date_of_birth: "1985-03-09", height: "182" });
+  // A malformed DOB from the integration is dropped (stays asked); height still carries.
+  const s2 = stateWith({ athleteProfile: { value: { dateOfBirth: "09/03/1985", heightCm: 179 }, source: "garmin" } });
+  assert.deepEqual(athleteToIntake(s2), { height: "179" });
+});
+
+// --- fieldsStillNeeded -------------------------------------------------------
+
+test("fieldsStillNeeded drops DOB once Garmin supplied it, and never lists optional height", () => {
+  // A fully pre-filled intake (Garmin gave DOB) — nothing required is still missing.
+  const full = {
+    name: "Sam", sex: "male", date_of_birth: "1985-03-09", height: "182",
+    units: "metric", timezone: "Europe/London", weekly_hours: "10-11",
+    race: { name: "Autumn 70.3", date: "2026-09-20" },
+  };
+  assert.deepEqual(fieldsStillNeeded(full), []);
+  // No Garmin DOB and no race → exactly those two are still needed (height never appears).
+  const gappy = { name: "Sam", sex: "male", units: "metric", timezone: "Europe/London", weekly_hours: "10-11" };
+  assert.deepEqual(fieldsStillNeeded(gappy), ["date_of_birth", "race"]);
+  // A race with only a date counts as present (matches applyIntake's name-or-date filter).
+  assert.ok(!fieldsStillNeeded({ ...gappy, date_of_birth: "1985-03-09", race: { date: "2026-09-20" } }).includes("race"));
 });
 
 // --- formatTargetTime -------------------------------------------------------
@@ -178,7 +206,7 @@ test("buildPrefilledIntake assembles intake + summary, always leaving DOB to ask
 
   assert.equal(out.intake.name, "Sam Tri");
   assert.equal(out.intake.sex, "male");
-  assert.equal(out.intake.date_of_birth, undefined); // always asked
+  assert.equal(out.intake.date_of_birth, undefined); // no Garmin DOB → still asked
   assert.equal(out.intake.units, "metric");
   assert.equal(out.intake.timezone, "Europe/London");
   assert.ok(out.intake.weekly_hours, "weekly hours estimated");
@@ -187,6 +215,8 @@ test("buildPrefilledIntake assembles intake + summary, always leaving DOB to ask
   assert.deepEqual(out.summary.fromAie, ["name", "sex"]);
   assert.equal(out.summary.raceCount, 2);
   assert.deepEqual(out.summary.fromConfig, ["units", "timezone"]);
+  assert.deepEqual(out.summary.fromGarmin, []); // Garmin not present in this fixture
+  assert.equal(out.summary.dobAutofilled, false);
   assert.equal(out.summary.ageHint, 41);
   assert.ok(out.summary.weeklyEstimate);
 
@@ -202,8 +232,37 @@ test("buildPrefilledIntake degrades fields cleanly when integrations expose litt
   assert.deepEqual(out.summary.fromAie, []);
   assert.equal(out.summary.raceCount, 0);
   assert.deepEqual(out.summary.fromConfig, []);
+  assert.deepEqual(out.summary.fromGarmin, []);
+  assert.equal(out.summary.dobAutofilled, false);
   assert.equal(out.summary.weeklyEstimate, null); // no data → ask
   assert.equal(out.summary.ageHint, null);
   assert.equal(out.intake.weekly_hours, undefined);
   assert.equal(out.intake.race, undefined);
+});
+
+test("buildPrefilledIntake auto-fills DOB + height when Garmin supplied them, and writes height_cm as a number", () => {
+  const s = stateWith({
+    athleteProfile: { value: { name: "Sam Tri", sex: "male", age: 41, dateOfBirth: "1985-03-09", heightCm: 182 }, source: "garmin" },
+  });
+  const cfg = { athlete: { units: "metric, UK", timezone: "Europe/London" } } as unknown as Config;
+  const out = buildPrefilledIntake(s, GOALS, cfg, TODAY);
+
+  assert.equal(out.intake.date_of_birth, "1985-03-09"); // auto-filled, not asked
+  assert.equal(out.intake.height, "182");
+  assert.deepEqual(out.summary.fromGarmin, ["date of birth", "height"]);
+  assert.equal(out.summary.dobAutofilled, true);
+
+  // The applied intake validates and stores height as a NUMBER under identity.height_cm.
+  const next = applyIntake(base(), out.intake);
+  assert.equal(next.identity?.height_cm, 182);
+  assert.equal(typeof next.identity?.height_cm, "number");
+  assert.equal(next.identity?.date_of_birth, "1985-03-09");
+  assert.doesNotThrow(() => validateProfile(next));
+});
+
+test("applyIntake parses a free-text height to a bounded integer and skips an implausible one", () => {
+  const a = applyIntake(base(), { name: "T", sex: "male", date_of_birth: "1990-01-01", units: "metric", timezone: "Europe/London", weekly_hours: "8-9", race: { name: "R", date: "2026-09-01" }, height: "179.6 cm" });
+  assert.equal(a.identity?.height_cm, 180); // stripped + rounded
+  const b = applyIntake(base(), { height: "9000" });
+  assert.equal(b.identity?.height_cm, null); // out of range → skipped (the example base's null is preserved, not junk)
 });

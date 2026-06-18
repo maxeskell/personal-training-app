@@ -59,6 +59,10 @@ export const ProfileSchema = z
         name: optStr,
         sex: z.enum(["male", "female", "other"]).nullable().optional(),
         date_of_birth: optDate,
+        // Stable anthropometry (NOT a live number): standing height in cm. Garmin/Connect holds this and
+        // it barely changes, so it's pre-filled like DOB. Weight, by contrast, IS a live number and stays
+        // out of the profile (it's pulled live and the no-live-numbers guard rejects it).
+        height_cm: z.number().positive().nullable().optional(),
         location: optStr,
         units: z.enum(["metric", "imperial"]).nullable().optional(),
         timezone: optStr,
@@ -95,6 +99,11 @@ export type Profile = z.infer<typeof ProfileSchema>;
  * `ai_endurance_todo.ftp_w: unresolved` / `swim_css: not_set` stay fine, but a live number snuck in as
  * text doesn't slip past. Equipment/fit/fuelling numbers (crank_length_mm, carb_target_g_per_hour,
  * saddle_height_mm, …) are NOT caught.
+ *
+ * Anthropometry note: `weight` IS a live number (changes daily, pulled live) so it stays denied, but
+ * HEIGHT is stable body data the profile is allowed to hold — `height`/`height_cm` is in neither
+ * LIVE_TOKENS nor LIVE_KEY_PATTERNS, so a numeric `identity.height_cm` validates while a numeric weight
+ * anywhere still throws.
  */
 
 /** Normalise a key to lowercase snake_case (so camelCase humps become segment boundaries). */
