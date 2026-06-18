@@ -1,109 +1,61 @@
 # personal-training-app — Endurance Coach
 
-A personal AI endurance coach for one triathlete/runner. It reads the plan, **race goals and season
-calendar live from AI Endurance** (`getRaceGoalEvent`/`getUser`) and (optionally) device data from
-**Garmin**, interprets rather than re-plots, and gives evidence-based, individualised coaching. Nothing
-about the calendar is hard-coded: change your goals in AI Endurance and the coaching follows on the next
-Sync — the season shape (taper windows, don't-stack-peaks, a B-race that should be a capped tempo, the
-injury window when a run goal sits off a triathlon base) is **derived from whatever races are set**.
+A personal AI coach for one triathlete/runner. It reads your plan, races and season calendar **live from
+your AI Endurance account** (and optionally device data from **Garmin**), then *interprets* the data —
+readiness, trends, race prep, small fixes — instead of just re-plotting it. Nothing about your calendar is
+hard-coded: change your goals and the coaching follows on the next sync, with the season shape (taper
+windows, don't-stack-peaks, a B-race that should be a capped tempo, the injury window when a run goal sits
+off a triathlon base) **derived from whatever races you've set**.
 
-## Try it first (no account needed)
+## See it in 30 seconds — no account, no key
 
 ```bash
 npm install && npm run demo
 ```
 
-`npm run demo` renders the glanceable dashboard from **built-in sample data** — a fictional athlete,
-**no AI Endurance account, no Garmin, no API key, no network**. It's the fastest way to see what the
-coach produces (readiness, trends, zones, race calendar) before wiring up your own accounts.
+`npm run demo` renders the full dashboard from **built-in sample data** — a fictional athlete, no account,
+no Garmin, no API key, no network. The fastest way to see what the coach produces before you wire up
+anything of your own.
 
-## Run your own instance
+<!-- A dashboard screenshot/GIF belongs here — the single highest-impact thing for a first impression.
+     Generate the view with `npm run demo`, then drop an image in docs/ and link it from here. -->
+> 📸 _For sharing: run `npm run demo` and screenshot the dashboard — it's the quickest pitch._
 
-Want this set up for yourself? **Point your AI coding assistant (Claude Code or similar) at this repo
-and tell it to "follow [SETUP.md](./SETUP.md)"** — a step-by-step playbook it can execute end-to-end,
-stopping to ask you for your own accounts, units and training base. Doing it by hand works too: SETUP.md
-and the [Prerequisites](#prerequisites) below are written for both.
+## What you need to run it for real
 
-## Approach
+| | |
+|---|---|
+| **Node.js 20+** | `node --version` (from https://nodejs.org). |
+| **An AI Endurance account** | the data spine — the coach reads your plan, races and metrics from it. Today this is **required**; more data sources (e.g. intervals.icu) are on the roadmap. https://aiendurance.com |
+| **An Anthropic API key** | only for the **AI write-ups** (readiness / weekly / race / ask / …). The **dashboard, zones and health checks run with no key.** Pay-as-you-go and usually pennies a day — `npm run cost` shows your spend. https://console.anthropic.com |
+| **Optional, all degradable** | Garmin device data, free Open-Meteo weather, a local LLM for cheap routing. Each is best-effort: if it's absent the matching card is simply omitted, never an error. |
 
-Per the [Build Spec](docs/specs/Endurance_Coach_BUILD_SPEC_for_Claude_Code.md) §1 decision gate:
+**Setting it up:** the easy path is to point an AI assistant (Claude Code or similar) at the repo and say
+*"follow SETUP.md"* — it runs the steps and stops to ask you for your accounts, units and training base.
+By hand works too — [SETUP.md](./SETUP.md) is written for both. *(A one-command `npm run setup` wizard is
+on the roadmap.)* Developed on macOS; the CLI + dashboard also run on Linux (only desktop notifications and
+the auto-start installers are macOS-specific, and they no-op elsewhere).
 
-- **Path A first (current step):** a Claude Project + AI Endurance MCP + coach persona — ~80% of the
-  value, zero code. See **[docs/setup-path-a.md](docs/setup-path-a.md)**.
-- **Path B (queued):** a small local-first orchestrator, justified because all three §1 needs apply
-  (scheduling, dashboard, decision log). See **[docs/path-b-plan.md](docs/path-b-plan.md)**.
+## Everyday commands
 
-## Prerequisites
-
-- **Node.js ≥ 20** (`node --version`).
-- **An AI Endurance account** — the required data spine. The coach reads your plan, races and metrics
-  from it over MCP/OAuth; without it there is no state to coach on. (See https://aiendurance.com.)
-- **An Anthropic API key** (`ANTHROPIC_API_KEY`) — required for the LLM coaching flows (readiness,
-  weekly, race, propose, deep-dive, ask, session). The deterministic flows (verify, doctor, state,
-  check, dashboard cards, weather) make no LLM calls and need no key.
-- **Optional, all degradable:** Garmin (device data — see `.env.example`), a local LLM server (cheap
-  intent routing — see the `local-llm-server` repo), Open-Meteo weather (free, no key). Each is
-  best-effort: if it is absent or slow the matching card/field is simply omitted, never an error.
-- **Platform:** developed on macOS; the CLI and dashboard run on Linux too. Only the desktop
-  notifications and the `*:install` scheduler helpers are macOS-specific — they print a cron/systemd
-  equivalent and no-op elsewhere.
-
-> The shell examples below that start a service use `/path/to/personal-training-app` — substitute the
-> directory where you cloned the repo.
-
-## Running the code
+After the one-time setup, this is all most days need:
 
 ```bash
-npm install
-cp .env.example .env          # defaults are fine for AI Endurance
-
-npm run auth:aie              # one-time OAuth (opens browser); caches tokens in ~/.endurance-coach
-npm run verify:reads          # exercises every read tool; confirms the write-gate
-npm run state:today           # assembles + persists + summarises today's AthleteState
-
-export ANTHROPIC_API_KEY=sk-ant-...   # for the LLM coaching flows (M3+M4)
-npm run readiness             # green/amber/red verdict with cited drivers + wellbeing check
-npm run weekly                # weekly review (takeaway-led) → dated report in reports/
-npm run race                  # race-specific prep for the next race → dated report
-npm run race -- "<race name>"  # …or target a named race from your live AI Endurance goals
-npm run propose -- "move my long run off race week"   # gated plan-adjustment proposals
-npm run act                   # surfaced (gated, feedback-aware) findings → grounded gated proposals
-npm run confirm -- <id>       # apply a proposal (the ONLY path that writes to AI Endurance)
-npm run decline -- <id>       # dismiss a proposal
-
-npm run ping                  # unattended morning readiness: verdict + report + desktop notification
-npm run dashboard             # one-off glanceable HTML, opened in your browser
-npm run deep-dive             # insight-engine analysis (load/EF/durability/ramp/goal) → report
-npm run tune                  # weekly marginal gains: the smaller, easy-to-action tweaks (not "train more") → report
-npm run research              # monthly web-grounded digest of new training/gear thinking → review proposal (gated)
-npm run knowledge             # knowledge-layer freshness + pending digests (npm run knowledge -- approve <file>)
-npm run ask -- "how were my long rides this month?"   # free-form Q&A over your data
-npm run mcp                   # expose the coach over MCP (stdio) for Claude Desktop / Claude Code — see docs/mcp-server.md
-npm run mcp:http              # …or over HTTP (localhost + auth) for Claude Cowork via an HTTPS tunnel — see docs/mcp-server.md
-npm run session               # deep feedback on your last session — needs its raw .FIT, --force for summary-only (or: npm run session 2026-06-09)
-npm run cost                  # token-cost report by flow (today/7d/30d/all + monthly projection); npm run cost 14 for a window
-npm run probe                 # Phase-2: dump live Garmin tool surface + AIE detail samples → reports/ (for mapping)
-npm run fit-sync              # archive recent Garmin activity *summaries* (temp/effort) — also runs automatically on dashboard Sync
-npm run backfill              # archive full history (AIE + Garmin activities/daily) → data/archive/ (resumable)
-npm run backfill:status       # archived counts + date ranges (distinct records, one per date/id)
-npm run backfill:compact      # de-duplicate the archive files in place (housekeeping; safe to re-run)
-npm run decisions             # view the decision log (audit trail)
-npm run decisions -- retro <id> "how it held up"   # add a retrospective to a decision
-npm run listening             # engagement model: act-on-vs-dismiss + plan adherence + plan changes (+ dismissed-but-recurred) → report
-npm test                      # unit tests for the insight/stat modules (node:test, no extra deps)
-npm run check                 # fire-only health watch: macOS alert ONLY if a flag/early-warning fires
-
-# Schedule the 06:00 ping (macOS launchd; cron fallback on Linux):
-npm run schedule:install      # optional HH MM args, e.g. -- 6 30
-npm run schedule:uninstall
-
-# Proactive daily watch (fit-sync + fire-only check; notifies only when something fires):
-npm run watch:install         # optional HH MM args, e.g. -- 7 30
-npm run watch:uninstall
+npm run demo                 # see the dashboard on sample data (no account/key)
+npm run dashboard            # your glanceable Today / Week / Trends / Race view
+npm run readiness            # today's green / amber / red verdict, with cited reasons
+npm run weekly               # weekly review → a saved report
+npm run tune                 # the small, easy wins to apply this week
+npm run ask -- "how were my long rides this month?"   # ask your own data
+npm run serve                # always-on dashboard you can open on your phone (same Wi-Fi)
 ```
 
-The four flows (readiness / weekly / propose+confirm / race) are the product. Every write goes
-through the gate: `propose` only logs proposals + trade-offs; nothing changes until you `confirm`.
+**→ Full command reference** — race prep, gated plan changes, deep dives, the research/knowledge
+refresh, the MCP server for Claude, archiving, scheduling and the rest: **[docs/commands.md](docs/commands.md).**
+
+The core loop (readiness / weekly / race / propose→confirm) is the product, and **every plan write is
+gated**: `propose` only logs a change + its trade-off; nothing is written to AI Endurance until you
+explicitly `confirm`.
 
 **Deterministic safety guardrails (not just prompt instructions):**
 - **Fuel to train.** Restriction / deficit / "race weight" / "cut" / weight-target phrasings are screened
