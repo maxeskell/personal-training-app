@@ -155,6 +155,20 @@ export const config = {
   dataDir: process.env.COACH_DATA_DIR ?? join(process.cwd(), "data"),
 
   /**
+   * intervals.icu — an alternative training-data spine (Phase 3b). A free, popular platform with an
+   * API-key'd REST API. Used only when COACH_SOURCE=intervals. Read-only here.
+   */
+  intervals: {
+    apiKey: process.env.COACH_INTERVALS_API_KEY ?? "",
+    /** Athlete id, e.g. "i123456" (or just the number — normalised). */
+    athleteId: process.env.COACH_INTERVALS_ATHLETE_ID ?? "",
+    baseUrl: (process.env.COACH_INTERVALS_URL ?? "https://intervals.icu/api/v1").replace(/\/+$/, ""),
+    /** Trailing days of activities/wellness to pull (the analysis window). */
+    windowDays: Number(process.env.COACH_INTERVALS_WINDOW_DAYS ?? 60),
+    timeoutMs: Number(process.env.COACH_INTERVALS_TIMEOUT_MS ?? 15000),
+  },
+
+  /**
    * The training-data SPINE the coach assembles from (see src/sources/). "ai-endurance" is the default
    * and most capable; the adapter seam lets other sources (e.g. intervals.icu) be added later. An unknown
    * value falls back to AI Endurance.

@@ -5,7 +5,7 @@ import { loadDashboardToken, isAuthorized, hostAllowed, COOKIE, timingSafeEqualS
 import { AieClient } from "./mcp/aieClient.js";
 import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
-import { assembleState } from "./state/assemble.js";
+import { selectDataSource } from "./sources/index.js";
 import { DecisionLog, suppressedInsightKeys, reactionFromLabel } from "./state/decisionLog.js";
 import { InsightLog } from "./state/insightLog.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
@@ -127,25 +127,13 @@ function refreshOnce(): Promise<void> {
 }
 
 async function refresh(): Promise<void> {
-  // TODO(datasource, Phase 3b): route this dashboard background-sync through selectDataSource() too. It's
-  // left on the direct AIE path for now because the degrade-on-connect-fail + Garmin fit-sync + weather
-  // refresh below hold the open clients; cleanest to restructure alongside the first non-AIE adapter.
   const store = new StateStore();
   const garmin = config.garmin.enabled ? new GarminClient() : undefined;
   if (garmin) await garmin.connect();
-  const aie = new AieClient();
   try {
-    await aie.connect();
-  } catch (err) {
-    // Degrade, don't crash: a missing/expired token or unreachable spine leaves the last good state in
-    // place rather than tearing down the refresh loop (which serves the dashboard hands-free).
-    await garmin?.close();
-    console.warn(`refresh skipped — AI Endurance unavailable: ${err instanceof Error ? err.message : String(err)}`);
-    return;
-  }
-  try {
+    // Assemble via the configured spine (AI Endurance or intervals.icu — see src/sources/).
     const today = todayIso();
-    const state = await assembleState(aie, garmin, store, { date: today, assembledAt: new Date().toISOString() });
+    const state = await selectDataSource().assemble({ store, garmin, date: today, assembledAt: new Date().toISOString() });
     await store.save(state);
     // Keep the thermal layer (session card + heat confounder) current, hands-free. fit-sync dedups
     // against the archive, so steady-state this fetches ~0–1 new activities; only the first run is slow.
@@ -158,8 +146,11 @@ async function refresh(): Promise<void> {
       }
     }
     if (config.weather.enabled) await refreshForecast(); // best-effort inside — never fails a refresh
+  } catch (err) {
+    // Degrade, don't crash: an unreachable/unauthenticated spine leaves the last good state in place
+    // rather than tearing down the refresh loop (which serves the dashboard hands-free).
+    console.warn(`refresh skipped — data source unavailable: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
-    await aie.close();
     await garmin?.close();
   }
 }

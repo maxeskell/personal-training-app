@@ -4,7 +4,7 @@
  * tell a real signal from a black-box tiebreak or a degraded/absent source.
  */
 
-export type Source = "ai-endurance" | "garmin" | "derived" | "manual";
+export type Source = "ai-endurance" | "intervals" | "garmin" | "derived" | "manual";
 
 /** A value plus where it came from. `null` value = known-absent (e.g. Garmin down). */
 export interface Provenanced<T> {
