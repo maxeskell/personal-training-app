@@ -358,12 +358,12 @@ runs on your Mac, so it also sees the Garmin/archive/insight data a remote AI En
 can't. There are **two transports**, because clients differ:
 
 ```bash
-cd /Users/maxeskell/personal-training-app && npm run mcp        # stdio — Claude Desktop / Claude Code (local, no port)
-cd /Users/maxeskell/personal-training-app && npm run mcp:http   # HTTP  — Claude Cowork (needs a remote URL; bind localhost + tunnel)
+cd /path/to/personal-training-app && npm run mcp        # stdio — Claude Desktop / Claude Code (local, no port)
+cd /path/to/personal-training-app && npm run mcp:http   # HTTP  — Claude Cowork (needs a remote URL; bind localhost + tunnel)
 ```
 
 - **Claude Desktop / Code (stdio, recommended):** add it to `claude_desktop_config.json` as
-  `command: npm`, `args: ["run","mcp"]`, `cwd: /Users/maxeskell/personal-training-app`. No port, no exposure.
+  `command: npm`, `args: ["run","mcp"]`, `cwd: /path/to/personal-training-app`. No port, no exposure.
 - **Claude Cowork (HTTP + OAuth):** Cowork's sandboxed cloud VM can't reach a local process and
   authenticates connectors via **OAuth, not a static token**. Open an **authenticated HTTPS tunnel**
   (cloudflared / Tailscale Funnel) to `127.0.0.1:8787`, then run the server in OAuth mode pointed at the
@@ -391,8 +391,8 @@ re-auth* — the exact ambiguity that otherwise looks like "the whole connector 
 expired token:
 
 ```bash
-cd /Users/maxeskell/personal-training-app && npm run health-remote                       # one-shot probe of COACH_MCP_PUBLIC_URL
-cd /Users/maxeskell/personal-training-app && npm run healthcheck:install -- https://<tunnel>   # run it every 20 min at login
+cd /path/to/personal-training-app && npm run health-remote                       # one-shot probe of COACH_MCP_PUBLIC_URL
+cd /path/to/personal-training-app && npm run healthcheck:install -- https://<tunnel>   # run it every 20 min at login
 ```
 
 **Re-auth is now explicit and never hangs.** Only `npm run auth:aie` opens the browser to (re)authorize

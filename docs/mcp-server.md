@@ -35,7 +35,7 @@ cost-logged to `data/cost-log.jsonl`).
 ## Run it
 
 ```bash
-cd /Users/maxeskell/personal-training-app && npm run mcp
+cd /path/to/personal-training-app && npm run mcp
 ```
 
 It prints a readiness banner to **stderr** (stdout is the MCP protocol channel) and then waits for a
@@ -51,7 +51,7 @@ Add it to `claude_desktop_config.json` (Desktop → Settings → Developer → E
     "endurance-coach": {
       "command": "npm",
       "args": ["run", "mcp"],
-      "cwd": "/Users/maxeskell/personal-training-app"
+      "cwd": "/path/to/personal-training-app"
     }
   }
 }
@@ -59,7 +59,7 @@ Add it to `claude_desktop_config.json` (Desktop → Settings → Developer → E
 
 Fully quit and reopen Desktop. If the tools don't appear, it's almost always PATH: a GUI app may not
 find `npm` — run `which npm` and put the absolute path (e.g. `/opt/homebrew/bin/npm`) in `command`.
-For Claude Code: `claude mcp add endurance-coach -- npm --prefix /Users/maxeskell/personal-training-app run mcp`.
+For Claude Code: `claude mcp add endurance-coach -- npm --prefix /path/to/personal-training-app run mcp`.
 
 ### B. Claude Cowork (HTTP + OAuth over an authenticated HTTPS tunnel)
 
@@ -85,7 +85,7 @@ and therefore the OAuth issuer, is stable.)
 
 **2. Start the server in OAuth mode, pointing it at that public URL** (read-only recommended):
 ```bash
-cd /Users/maxeskell/personal-training-app && \
+cd /path/to/personal-training-app && \
   COACH_MCP_AUTH=oauth \
   COACH_MCP_PUBLIC_URL=https://<your-tunnel>.trycloudflare.com \
   COACH_MCP_READONLY=true \
@@ -132,7 +132,7 @@ Cloudflare named tunnels work too if you own a domain — same idea, stable host
 **2. Auto-start the server** at login (and restart on crash) pointed at that URL — stop any manual
 `mcp:http` first (it holds port 8787):
 ```bash
-cd /Users/maxeskell/personal-training-app && npm run mcp:install -- https://<your-mac>.<tailnet>.ts.net
+cd /path/to/personal-training-app && npm run mcp:install -- https://<your-mac>.<tailnet>.ts.net
 # read-only by default; append --allow-writes to also expose the gated write tools
 npm run mcp:logs        # tail the service log
 npm run mcp:uninstall   # stop auto-starting
@@ -155,8 +155,8 @@ answers an **unauthenticated** `GET /health` (info-only — no secrets):
 
 ```bash
 curl https://<your-mac>.<tailnet>.ts.net/health?deep=1     # one curl tells you which hop is broken
-cd /Users/maxeskell/personal-training-app && npm run health-remote                          # same probe + a macOS alert on trouble
-cd /Users/maxeskell/personal-training-app && npm run healthcheck:install -- https://<your-mac>.<tailnet>.ts.net   # every 20 min
+cd /path/to/personal-training-app && npm run health-remote                          # same probe + a macOS alert on trouble
+cd /path/to/personal-training-app && npm run healthcheck:install -- https://<your-mac>.<tailnet>.ts.net   # every 20 min
 npm run healthcheck:uninstall   # stop watching
 ```
 
