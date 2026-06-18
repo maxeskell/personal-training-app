@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { projectFromTrainingLoad, projectRaceDayRange, reliableImprovementPerDay, MAX_PROJECTED_GAIN } from "../src/insights/splits.js";
+import { projectCtl, projectFromFitnessGain, projectFromTrainingLoad, projectRaceDayRange, reliableImprovementPerDay, MAX_PROJECTED_GAIN } from "../src/insights/splits.js";
 
 test("projectRaceDayRange: an improving trend opens a faster best-case end (diminishing returns)", () => {
   // 6000s, ~0.05%/day faster, 30 days out. Linear gain would be 1.5%; the damped curve saturates it to
@@ -43,7 +43,35 @@ test("projectRaceDayRange: race day is here (daysToRace ≤ 0) → current level
   assert.match(r.rangeBasis, /Race is here/);
 });
 
-// ---- PRIMARY basis: forward projection from the planned training (CTL ramp) ----
+// ---- PRIMARY basis: forward projection from the actual plan (projected CTL → time) ----
+
+test("projectCtl: a load above current CTL raises it toward that load; rest decays it", () => {
+  // Sustained daily load of 60 for 120 days pulls a CTL of 40 upward (toward 60), but not all the way.
+  const up = projectCtl(40, Array(120).fill(60));
+  assert.ok(up > 45 && up < 60, `expected CTL to climb toward 60, got ${up}`);
+  // All rest days → CTL decays below where it started.
+  assert.ok(projectCtl(40, Array(30).fill(0)) < 40);
+});
+
+test("projectFromFitnessGain: a real CTL gain opens a faster best-case, below the cap", () => {
+  const r = projectFromFitnessGain(40, 48, 80); // +20% CTL
+  assert.ok(r != null && r.projectedFrac > 0 && r.projectedFrac < MAX_PROJECTED_GAIN);
+  assert.match(r!.basis, /planned training well/);
+  assert.match(r!.basis, /CTL\) from 40 to ~48/);
+});
+
+test("projectFromFitnessGain: no gain (plan only maintains/detrains, or race here) → null", () => {
+  assert.equal(projectFromFitnessGain(40, 40, 80), null); // maintains
+  assert.equal(projectFromFitnessGain(40, 35, 80), null); // detrains
+  assert.equal(projectFromFitnessGain(40, 48, 0), null); // race is here
+  assert.equal(projectFromFitnessGain(null, 48, 80), null); // no CTL
+});
+
+test("projectFromFitnessGain: a large CTL gain saturates at the time cap", () => {
+  assert.equal(projectFromFitnessGain(40, 200, 80)!.projectedFrac, MAX_PROJECTED_GAIN);
+});
+
+// ---- FALLBACK basis: forward projection from the current build ramp ----
 
 test("projectFromTrainingLoad: a positive build ramp opens a faster best-case, below the cap", () => {
   const r = projectFromTrainingLoad(50, 2, 80); // CTL 50, +2/wk, 80 days out

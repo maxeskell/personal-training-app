@@ -56,13 +56,13 @@ export const FITNESS_TIME_ELASTICITY = 0.25;
 const MIN_MEANINGFUL_GAIN = 0.003; // 0.3%
 
 /**
- * PRIMARY race-day basis — "predicted from the training between now and the race." Projects the
- * athlete's current fitness (CTL) ramp forward to race day and maps the fitness gain to a finish-time
- * gain. Returns null (→ caller falls back) when there's no usable build ahead: no CTL, a flat/negative
- * ramp (maintaining or tapering, not building), the race is here, or the upside is negligible.
+ * FALLBACK race-day basis (used when there's no usable PLAN reaching the race — see projectFromFitnessGain
+ * for the primary). Projects the athlete's CURRENT build ramp forward to race day and maps the fitness
+ * gain to a finish-time gain. Returns null (→ caller falls back further) when there's no usable build: no
+ * CTL, a flat/non-positive ramp (maintaining or tapering), the race is here, or the upside is negligible.
  *
- * `rampPerWeek` should be a SMOOTHED ΔCTL/week (e.g. over ~28d) — steadier than the 7-day ramp for a
- * multi-week projection. Honest MODEL: assumes you hold the build, stay healthy, adapt well and taper.
+ * `rampPerWeek` should be a ROBUST current ΔCTL/week (e.g. an OLS slope over ~21d, floored at 0) — steady
+ * against a single recovery week. Honest MODEL: assumes you hold the build, stay healthy, adapt and taper.
  */
 export function projectFromTrainingLoad(
   ctlNow: number | null | undefined,
@@ -85,10 +85,46 @@ export function projectFromTrainingLoad(
   };
 }
 
+/** Banister chronic-load decay (τ = 42d) — the same constant the load model uses. */
+const CTL_K = 1 - Math.exp(-1 / 42);
+
+/**
+ * Roll fitness (CTL) forward over a future daily-load (ESS) series, day by day, with the Banister 42-day
+ * impulse-response. Rest days (load 0) let CTL decay; training days lift it toward the applied load. Pure.
+ */
+export function projectCtl(ctlNow: number, futureDailyLoad: number[]): number {
+  let ctl = ctlNow;
+  for (const load of futureDailyLoad) ctl = load * CTL_K + ctl * (1 - CTL_K);
+  return ctl;
+}
+
+/**
+ * PRIMARY race-day basis — "predicted from doing the PLANNED training well." Maps a projected fitness
+ * (CTL) gain — `projectedCtl` rolled forward from the athlete's plan to race day — into a finish-time
+ * improvement fraction via the performance elasticity, hard-capped at MAX_PROJECTED_GAIN. Returns null
+ * (→ caller falls back) when there's no usable gain: no CTL, the race is here, the plan only maintains or
+ * detrains (projectedCtl ≤ ctlNow), or the upside is negligible.
+ */
+export function projectFromFitnessGain(
+  ctlNow: number | null | undefined,
+  projectedCtl: number | null | undefined,
+  daysToRace: number,
+): { projectedFrac: number; basis: string } | null {
+  if (ctlNow == null || !(ctlNow > 0) || projectedCtl == null || daysToRace <= 0) return null;
+  const ctlGainFrac = Math.max(0, (projectedCtl - ctlNow) / ctlNow);
+  const projectedFrac = Math.min(MAX_PROJECTED_GAIN, FITNESS_TIME_ELASTICITY * ctlGainFrac);
+  if (projectedFrac < MIN_MEANINGFUL_GAIN) return null;
+  const pct = +(projectedFrac * 100).toFixed(1);
+  return {
+    projectedFrac,
+    basis: `Best case assumes you do the planned training well: it carries your plan forward to race day, lifting your fitness (CTL) from ${Math.round(ctlNow)} to ~${Math.round(projectedCtl)} (+${Math.round(ctlGainFrac * 100)}%), mapped to ~${pct}% faster (capped near ${Math.round(MAX_PROJECTED_GAIN * 100)}%). It assumes you stay healthy, adapt well and taper. Worst case is racing at today's fitness.`,
+  };
+}
+
 /**
  * Project a finish-time RANGE for a race (worst = race it today, at today's fitness):
- *  - best case PRIMARY = `planned`, a forward projection from the training still ahead (see
- *    projectFromTrainingLoad);
+ *  - best case PRIMARY = `planned`, a forward projection from the training still ahead — preferring the
+ *    actual plan (projectFromFitnessGain), else the current build ramp (projectFromTrainingLoad);
  *  - best case FALLBACK (when there's no usable build ahead) = today's prediction carried along YOUR OWN
  *    recent race-predictor trajectory to race day, capped at MAX_PROJECTED_GAIN, and only when that trend
  *    is statistically reliable (`fracImprovePerDay` < 0).
