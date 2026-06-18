@@ -82,17 +82,20 @@ public HTTPS URL to reach it.
 
 **1. Open a tunnel first, so you know your public URL** (OAuth needs the issuer URL up front):
 ```bash
-cloudflared tunnel --url http://127.0.0.1:8787      # → prints https://<random>.trycloudflare.com
+tailscale funnel --bg 8787      # serves 127.0.0.1:8787 publicly, in the background
+tailscale funnel status         # prints your stable URL: https://<your-mac>.<tailnet>.ts.net
 ```
-(Tailscale alternative: `tailscale funnel 8787`. The free cloudflared "quick tunnel" URL is temporary
-— it changes on restart; for a permanent setup use a **named tunnel** on your own domain so the URL,
-and therefore the OAuth issuer, is stable.)
+**Tailscale Funnel** is the recommended tunnel: free, no domain needed, and the URL is **stable
+across reboots** — which matters because Cowork's OAuth issuer URL must not change between restarts.
+(If you own a domain, a cloudflared **named tunnel** works the same way. The free cloudflared *quick*
+tunnel — `cloudflared tunnel --url http://127.0.0.1:8787` — is fine for a throwaway test, but its URL
+rotates on restart, which breaks the saved OAuth issuer, so don't use it for a lasting setup.)
 
 **2. Start the server in OAuth mode, pointing it at that public URL** (read-only recommended):
 ```bash
 cd /path/to/personal-training-app && \
   COACH_MCP_AUTH=oauth \
-  COACH_MCP_PUBLIC_URL=https://<your-tunnel>.trycloudflare.com \
+  COACH_MCP_PUBLIC_URL=https://<your-mac>.<tailnet>.ts.net \
   COACH_MCP_READONLY=true \
   npm run mcp:http
 ```
@@ -100,7 +103,7 @@ It prints the connector URL to use (`https://<your-tunnel>/mcp`) and your coach-
 (`~/.endurance-coach/mcp.token`, or set `COACH_MCP_TOKEN=...`).
 
 **3. Add the connector in Cowork** → **Customize → Connectors → Add custom connector**:
-- **URL:** `https://<your-tunnel>.trycloudflare.com/mcp` (from step 2).
+- **URL:** `https://<your-mac>.<tailnet>.ts.net/mcp` (from step 2).
 - **Auth:** leave it to do OAuth automatically (no client ID needed — the server supports dynamic
   registration). Click **Connect**.
 
@@ -121,9 +124,9 @@ re-authorization, delete that file (and the access tokens it holds) and reconnec
 
 ### C. Always-on (no terminals to babysit)
 
-The quick-tunnel + manual `mcp:http` works, but you have to restart both each session and the
-quick-tunnel URL rotates. For a permanent, hands-off setup: a **stable tunnel URL** + the server as a
-**launchd service**.
+Section B gets you connected, but you still start the server by hand each session. For a permanent,
+hands-off setup, pair the stable **Tailscale Funnel** URL with the server as a **launchd service** so
+both survive reboots with no terminal open.
 
 **1. Stable URL via Tailscale Funnel** (free, no domain needed):
 ```bash

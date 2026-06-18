@@ -14,8 +14,8 @@ import { baseHealth, aieHealthProbe } from "./health.js";
 /**
  * HTTP (Streamable HTTP) transport for the coach MCP server. For clients that can only reach a remote
  * URL — notably Claude Cowork, whose sandboxed cloud VM can't spawn a local stdio server. Run this
- * locally and expose it through an AUTHENTICATED HTTPS tunnel (cloudflared / Tailscale Funnel); see
- * docs/mcp-server.md. Bound to localhost; the body is capped.
+ * locally and expose it through an AUTHENTICATED HTTPS tunnel (Tailscale Funnel recommended, or a
+ * cloudflared named tunnel); see docs/mcp-server.md. Bound to localhost; the body is capped.
  *
  * Two auth modes (COACH_MCP_AUTH):
  *  - "token" (default): a static `Authorization: Bearer <token>` — good for scripts / a self-hosted
@@ -169,7 +169,7 @@ async function runHttpOAuth(): Promise<void> {
   const publicUrl = config.mcp.publicUrl;
   if (!publicUrl) {
     console.error("COACH_MCP_AUTH=oauth requires COACH_MCP_PUBLIC_URL — set it to your public HTTPS tunnel URL");
-    console.error("(e.g. COACH_MCP_PUBLIC_URL=https://xxxx.trycloudflare.com). Aborting.");
+    console.error("(e.g. COACH_MCP_PUBLIC_URL=https://<your-mac>.<tailnet>.ts.net). Aborting.");
     process.exit(1);
   }
   const issuer = new URL(publicUrl);
@@ -181,7 +181,7 @@ async function runHttpOAuth(): Promise<void> {
 
   const app = express();
   app.disable("x-powered-by");
-  app.set("trust proxy", 1); // behind a tunnel (cloudflared/Tailscale) — trust one proxy hop for req.ip
+  app.set("trust proxy", 1); // behind a tunnel (Tailscale/cloudflared) — trust one proxy hop for req.ip
   // Unauthenticated liveness probe (before the auth router so it's reachable through the tunnel without a
   // token) — info-only, no secrets. `?deep=1` also reports the AI Endurance spine's reachability.
   app.get("/health", async (req, res) => {
