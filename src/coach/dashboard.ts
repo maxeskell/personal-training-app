@@ -1,6 +1,7 @@
 import type { AthleteState, ActualActivity, PlannedSession, ZoneSet } from "../state/types.js";
 import type { DecisionRecord, InsightReaction } from "../state/decisionLog.js";
 import type { FitSummary } from "../archive/store.js";
+import type { SessionFeedbackRecord } from "./sessionFeedbackStore.js";
 import type { InsightReport } from "../insights/engine.js";
 import { findingKey } from "../insights/metrics.js";
 import { selectMarginalGains } from "../insights/marginalGains.js";
@@ -111,19 +112,31 @@ export interface DashboardInput {
    */
   suppressed?: Set<string>;
   /**
-   * Leading date (YYYY-MM-DD) of the most recent persisted weekly-review report, if any — feeds the
-   * "Set up & improve → This week" group a "review saved Nd ago" pointer that drops when stale. The card
-   * reads only this date, never re-runs the (LLM) weekly flow.
+   * Latest persisted weekly review (from `reports/`): its date + the action bullets parsed from the
+   * "## Next week" section. Feeds the "This week" group with real, as-of-tagged actions (falling back to
+   * a "revisit the review" pointer when there's no parseable section); drops when stale. Read-only — the
+   * card never re-runs the (LLM) weekly flow.
    */
-  weeklyReviewDate?: string;
+  weeklyReview?: { date: string; actions: string[] };
   /**
    * Latest persisted research digest (from `knowledge/pending/`): its date + the topic headlines parsed
    * from the markdown. Feeds the "Worth considering" group as-of-tagged items; drops when stale. Read
    * only — the card never re-runs the (LLM + web-search) research flow.
    */
   researchDigest?: { date: string; topics: string[] };
+  /**
+   * Tool/integration health (computed in the IO layer): drives operational "Finish setup" nudges — a
+   * missing API key, a long-stale sync, an unset open-water temperature.
+   */
+  setupHealth?: { lastSyncAgeHours?: number; hasApiKey?: boolean; waterTempSet?: boolean };
   /** Clock for deterministic "as of N days ago" staleness (defaults to Date.now()); injectable in tests. */
   now?: number;
+  /**
+   * Persisted deep session-feedback records — the "Last session" card shows the one matching the latest
+   * session inline (no LLM on render, no button). Auto-generated at sync; absent → a "generates next sync"
+   * note. Read-only here.
+   */
+  sessionFeedbacks?: SessionFeedbackRecord[];
 }
 
 const TONE_COLOR: Record<Tone, string> = { good: "#1a8a3a", neutral: "#777", warn: "#c98a00", bad: "#c0392b" };
@@ -269,7 +282,27 @@ function plannedFor(window: AthleteState[], date: string, sport: string): Planne
 }
 
 /** "Last session" card: the most recent activity at a glance, what it was MEANT to be, + deep LLM feedback. */
-function renderLastSession(window: AthleteState[], insights: InsightReport | undefined, fitSummaries?: FitSummary[], canFetchFit?: boolean): string {
+/**
+ * Minimal, escape-FIRST markdown → HTML for stored feedback rendered server-side (mirrors the client
+ * `mdToHtml`): headers, bold, inline code, bullets. Everything is escaped before any formatting, so
+ * injected markup can't break out (dashboard escaping convention). Pure.
+ */
+export function mdLite(md: string): string {
+  let h = escapeHtml(md);
+  h = h.replace(/^#{1,3} (.*)$/gm, '<b style="font-size:15px">$1</b>');
+  h = h.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+  h = h.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  h = h.replace(/^- /gm, "• ");
+  return h;
+}
+
+function renderLastSession(
+  window: AthleteState[],
+  insights: InsightReport | undefined,
+  fitSummaries?: FitSummary[],
+  canFetchFit?: boolean,
+  sessionFeedbacks?: SessionFeedbackRecord[],
+): string {
   const today = window[window.length - 1];
   const d = assembleSession(today, insights, { decays: insights?.sessionDecays, fitSummaries });
   if (!d) return "";
@@ -294,20 +327,21 @@ function renderLastSession(window: AthleteState[], insights: InsightReport | und
   const planLine = plan
     ? `<div style="font-size:13px;color:#666;margin-bottom:10px">📋 Planned: <b>${escapeHtml(planBits)}</b></div>`
     : `<div class="k" style="margin-bottom:10px">📋 No planned workout matched this date/sport — unscheduled, or swapped from the plan.</div>`;
-  // Deep feedback costs an LLM call and is only worth it with the raw .FIT joined in (user ask):
-  // show the button when the stream is local OR the server can fetch it on demand (Garmin enabled +
-  // the archive knows this activity's id); otherwise say exactly how to unlock it manually.
-  const fetchable = !!canFetchFit && !!d.fit?.activityId;
-  const deep = d.decay
-    ? `<button class="actbtn" onclick="sessionFeedback()">🔍 Deep feedback on this session</button>`
-    : fetchable
-      ? `<button class="actbtn" onclick="sessionFeedback()">🔍 Deep feedback on this session</button> <span class="k">fetches this session's raw .FIT from Garmin first (~10s)</span>`
-      : `<div class="k">🔍 Deep feedback unlocks when this session's raw .FIT is in data/fit-streams/ — it couldn't be fetched automatically (Garmin off, or no archived activity id yet — try Sync), so export it from Garmin Connect → activity → ⚙ → Export Original. Without the per-second stream there are no biomechanics to analyse and the LLM call is skipped.</div>`;
+  // Deep feedback is auto-generated at sync (no button) and persisted; show the stored readout for THIS
+  // session inline. No LLM on render. Absent → say it generates on the next sync (+ how to unlock the
+  // .FIT if Garmin can't fetch it). The stored markdown leads with its own H1 — strip it (the card
+  // heading already names the session).
+  const stored = (sessionFeedbacks ?? [])
+    .filter((f) => f.date === d.date)
+    .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0];
+  const feedback = stored
+    ? `<div class="k" style="margin:8px 0 4px">🔍 Session feedback <span class="muted">(${stored.deep ? "deep analysis" : "summary"} · ${escapeHtml(fmtSince(Date.now() - new Date(stored.generatedAt).getTime()))})</span></div>
+      <div style="font-size:14px;color:#333;white-space:pre-wrap">${mdLite(stored.markdown.replace(/^# .*\n+/, ""))}</div>`
+    : `<div class="k">🔍 Deep feedback generates automatically on the next sync, once this session's raw .FIT is downloaded. No .FIT yet? Export it from Garmin Connect → activity → ⚙ → Export Original into data/fit-streams/.</div>`;
   return `<div class="card"><h2>Last session — ${d.date} ${d.sport}</h2>
     <div style="font-size:14px;margin-bottom:6px">${escapeHtml(bits)}</div>
     ${planLine}
-    ${deep}
-    <div id="sessionfb" style="margin-top:12px;font-size:14px;color:#333;white-space:pre-wrap"></div>
+    ${feedback}
   </div>`;
 }
 
@@ -458,13 +492,13 @@ export function aieTodoCopy(key: string, value: string): { label: string; why: s
 }
 
 /** Where an item is actioned — shown as a tag so the source can be trusted/weighted at a glance. */
-export type SetupRoute = "in AI Endurance" | "edit profile" | "discuss with coach";
+export type SetupRoute = "in AI Endurance" | "edit profile" | "discuss with coach" | "in your setup";
 
 /** The three sections of the card (issue #112). Finish setup first, then time-bound advice. */
 export type SetupGroup = "finish_setup" | "this_week" | "worth_considering";
 
 /** Which producer an item came from (used for tagging, dedupe ordering and the dismissal key). */
-export type SetupSource = "ai_endurance" | "open_item" | "profile_question" | "tune" | "weekly" | "research";
+export type SetupSource = "ai_endurance" | "open_item" | "profile_question" | "tune" | "weekly" | "research" | "health" | "race";
 
 /** One actionable item on the "Set up & improve" card, tagged by its source and where to act on it. */
 export interface SetupItem {
@@ -497,6 +531,8 @@ const SOURCE_TAG: Record<SetupSource, string> = {
   tune: "tune",
   weekly: "weekly",
   research: "research",
+  health: "health",
+  race: "race",
 };
 function setupKey(source: SetupSource, id: string): string {
   return `setup:${SOURCE_TAG[source]}:${id}`;
@@ -543,13 +579,41 @@ export function parseResearchTopics(markdown: string, limit = 4): string[] {
 }
 
 /**
+ * Extract the bullet actions under the first heading matching `headingRe` (e.g. the weekly review's
+ * "## Next week" section), stripping markdown emphasis. Pure + tolerant: a missing/renamed section just
+ * yields fewer (or no) items, so the caller falls back to a "revisit the review" pointer. Deduped, capped.
+ */
+export function parseActionBullets(markdown: string, headingRe: RegExp, limit = 4): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  let inSection = false;
+  for (const line of markdown.split("\n")) {
+    const heading = /^#{1,4}\s+(.*)$/.exec(line);
+    if (heading) {
+      inSection = headingRe.test(heading[1]); // entering the matched section ends at the next heading
+      continue;
+    }
+    if (!inSection) continue;
+    const m = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (!m) continue;
+    const text = m[1].replace(/\*\*/g, "").replace(/`/g, "").replace(/[:.]+$/, "").trim();
+    const k = text.toLowerCase();
+    if (!text || seen.has(k)) continue;
+    seen.add(k);
+    out.push(text);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/**
  * Per-source ranking weights (higher = surfaces first) so the ~5 cap keeps the highest-VALUE items, not
  * just the first ones in catalogue order. AI-Endurance gaps block a whole discipline model / zones, and
  * open items are actions the athlete explicitly flagged, so both outrank profile questions; among
  * questions, a field the coach actually READS beats a reference-only one (so "what's your height?" never
  * crowds out a real gap).
  */
-const SETUP_PRIORITY = { ai_endurance: 100, open_item: 70, question_coach: 50, question_reference: 20, tune: 60, weekly: 40, research: 30 } as const;
+const SETUP_PRIORITY = { health: 90, race: 80, ai_endurance: 100, open_item: 70, question_coach: 50, question_reference: 20, health_low: 60, tune: 60, weekly: 40, research: 30 } as const;
 
 /**
  * A profile question is "reference-only" (lower priority) when its `why` follows the questions.ts honesty
@@ -613,10 +677,12 @@ export interface SetupOptions {
   /** Finding keys already shown in the Top-insights box — excluded from "This week" so a recommendation
    *  the athlete has already seen (and can react to) above isn't restated here. */
   surfacedInsightKeys?: Set<string>;
-  /** Date of the latest persisted weekly-review report (drops from "This week" once stale). */
-  weeklyReviewDate?: string;
+  /** Latest persisted weekly review (date + the parsed "## Next week" action bullets); drops when stale. */
+  weeklyReview?: { date: string; actions: string[] };
   /** Latest research digest (date + parsed topics) for the "Worth considering" group (drops when stale). */
   researchDigest?: { date: string; topics: string[] };
+  /** Tool/integration health signals (computed in the IO layer) → operational "Finish setup" nudges. */
+  setupHealth?: { lastSyncAgeHours?: number; hasApiKey?: boolean; waterTempSet?: boolean };
   /** Clock for staleness (defaults to Date.now()). */
   now?: number;
 }
@@ -662,8 +728,25 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
     if (!isBlank(valueAtPath(profile, q.field))) continue;
     items.push({ key: setupKey("profile_question", q.field), label: `Answer: ${q.question}`, why: q.why, source: "profile_question", group: "finish_setup", route: "edit profile", priority: questionPriority(q) });
   }
+  // 4) Tool/integration health (operational nudges) — things that block the app doing its best work.
+  const h = opts.setupHealth;
+  if (h?.hasApiKey === false) {
+    items.push({ key: setupKey("health", "apikey"), label: "Add your ANTHROPIC_API_KEY", why: "unlocks the AI write-ups — readiness, weekly, ask and session feedback", source: "health", group: "finish_setup", route: "in your setup", priority: SETUP_PRIORITY.health });
+  }
+  if (h?.lastSyncAgeHours != null && h.lastSyncAgeHours >= 72) {
+    items.push({ key: setupKey("health", "sync"), label: "Sync your training data", why: `last synced ${Math.round(h.lastSyncAgeHours / 24)}d ago — the cards are reading stale data`, source: "health", group: "finish_setup", route: "in your setup", priority: SETUP_PRIORITY.health });
+  }
+  if (h?.waterTempSet === false) {
+    items.push({ key: setupKey("health", "watertemp"), label: "Set your open-water temperature", why: "COACH_WATER_TEMP_C has no public feed — set it when the venue posts a reading", source: "health", group: "finish_setup", route: "in your setup", priority: SETUP_PRIORITY.health_low });
+  }
+  // 5) Incomplete race entries — a named race with no date can't drive the countdown/taper/race-day plan.
+  for (const r of (profile.races ?? []).slice(0, 4)) {
+    const name = typeof r?.name === "string" ? r.name.trim() : "";
+    if (!name || r?.date) continue;
+    items.push({ key: setupKey("race", dedupeKey(name)), label: `Add the date for ${name}`, why: "so the countdown, periodisation and race-day plan line up", source: "race", group: "finish_setup", route: "edit profile", priority: SETUP_PRIORITY.race });
+  }
 
-  // --- This week (Phase 2: marginal gains + last weekly review, read-only/LLM-free) -----------------
+  // --- This week (Phase 2: marginal gains + last weekly review's actions, read-only/LLM-free) --------
   // Skip any gain already surfaced in the Top-insights box above — it's shown (and reactable) there, so
   // restating its recommendation here is the dedupe the dashboard most needs. Select a few extra (the
   // per-group cap trims later) so a filtered-out one frees its slot for the next-best gain.
@@ -674,10 +757,19 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
       items.push({ key: setupKey("tune", findingKey(f)), label: f.recommendation ?? f.title, why: f.title, source: "tune", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.tune });
     }
   }
-  if (opts.weeklyReviewDate) {
-    const age = ageDaysFrom(opts.weeklyReviewDate, now);
+  if (opts.weeklyReview) {
+    const age = ageDaysFrom(opts.weeklyReview.date, now);
     if (age != null && age <= WEEKLY_FRESH_DAYS) {
-      items.push({ key: setupKey("weekly", "review"), label: "Revisit this week's training review", why: `weekly review saved — ${asOf(age)}`, source: "weekly", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.weekly });
+      const acts = opts.weeklyReview.actions.slice(0, GROUP_CAP.this_week);
+      if (acts.length) {
+        // The weekly review's own "Next week" action items.
+        for (const a of acts) {
+          items.push({ key: setupKey("weekly", dedupeKey(a)), label: a, why: `from this week's review — ${asOf(age)}`, source: "weekly", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.weekly });
+        }
+      } else {
+        // The report had no parseable action section → fall back to a pointer.
+        items.push({ key: setupKey("weekly", "review"), label: "Revisit this week's training review", why: `weekly review saved — ${asOf(age)}`, source: "weekly", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.weekly });
+      }
     }
   }
 
@@ -1012,7 +1104,7 @@ function freshnessLine(today: AthleteState): string {
   return line;
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReviewDate, researchDigest, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // One synthesised "Today" call, computed once and shared: the header leads on it, the Top-insights box
@@ -1166,7 +1258,7 @@ function autoSync(min){ sync('Data is '+min+' min old — auto-refreshing:'); }
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
 ${insights ? renderHeader(today, hl, decisions, garminDays) : ""}
 
-${renderLastSession(window, insights, fitSummaries, canFetchFit)}
+${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks)}
 
 <div class="card"><h2>This week — load by sport</h2>
   <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows || '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
@@ -1199,10 +1291,6 @@ async function ask(e){e.preventDefault();var q=document.getElementById('q').valu
   try{var r=await fetch('/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:q})});
     var j=await r.json();a.innerHTML=mdToHtml(j.answer||'(no answer)');}catch(err){a.textContent='Error: '+err;}
   return false;}
-async function sessionFeedback(){
-  var box=document.getElementById('sessionfb'); box.textContent='Analysing this session… (fetching the .FIT first if needed)';
-  try{var r=await fetch('/session-feedback',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
-    var j=await r.json(); box.innerHTML=mdToHtml(j.markdown||'(no feedback)');}catch(err){box.textContent='Error: '+err;}}
 function setReactionState(box,state){
   box.setAttribute('data-reaction-state',state);
   var like=box.querySelector('.agree');var dislike=box.querySelector('.disagree');
@@ -1253,7 +1341,7 @@ async function declineProposal(btn){var box=btn.closest('.proposal');var id=box.
     box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='dismissed';box.style.opacity=0.5;}catch(e){s.textContent='error';}}
 </script>
 
-${renderSetupImprove(profile, share, { suppressed, insights, surfacedInsightKeys, weeklyReviewDate, researchDigest })}
+${renderSetupImprove(profile, share, { suppressed, insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth })}
 
 ${insights ? renderSignals(insights) : ""}
 

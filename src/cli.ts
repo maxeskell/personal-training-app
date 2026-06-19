@@ -16,7 +16,8 @@ import { proposeAdjustments, validateProposals, buildProposerContext, writeConte
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
-import { latestWeeklyReviewDate, latestResearchDigest } from "./coach/setupSources.js";
+import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
+import { loadSessionFeedbacks, saveSessionFeedback } from "./coach/sessionFeedbackStore.js";
 import { buildDemoWindow, buildDemoGarminDays, demoCostRecords, demoProfile } from "./demo/sampleData.js";
 import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact } from "./cli/dataCommands.js";
 import { buildInsights } from "./insights/engine.js";
@@ -401,8 +402,18 @@ async function cmdSession(): Promise<void> {
     return;
   }
   const path = await writeReport("session-feedback", feedback.detail.date, feedback.markdown);
+  // Persist to the session-feedback store too, so the dashboard surfaces it inline and the history is
+  // kept for analysis (same store the auto-at-sync generation writes to).
+  await saveSessionFeedback({
+    date: feedback.detail.date,
+    sport: String(feedback.detail.sport),
+    deep: !!feedback.detail.decay,
+    generatedAt: new Date().toISOString(),
+    costUsd: feedback.costUsd,
+    markdown: feedback.markdown,
+  });
   console.log("\n" + feedback.markdown + "\n");
-  console.log(`(report → ${path}; ${costNote(feedback.costUsd, feedback.cacheRead)})`);
+  console.log(`(report → ${path}; saved to the session-feedback store; ${costNote(feedback.costUsd, feedback.cacheRead)})`);
 }
 
 /** `dashboard` — generate the glanceable Today/Week/Trends/Race HTML and open it. */
@@ -432,8 +443,14 @@ async function cmdDashboard(): Promise<void> {
     weather,
     profile: (await loadProfileSafe())?.profile,
     suppressed,
-    weeklyReviewDate: await latestWeeklyReviewDate(), // "This week" pointer — reads the persisted report
+    weeklyReview: await latestWeeklyReview(), // "This week" actions — reads the persisted report
     researchDigest: await latestResearchDigest(), // "Worth considering" — reads the persisted digest
+    sessionFeedbacks: await loadSessionFeedbacks(), // auto-generated at sync; shown inline on the card
+    setupHealth: {
+      hasApiKey: CoachLLM.hasApiKey(),
+      waterTempSet: config.weather.waterTempC != null,
+      lastSyncAgeHours: (Date.now() - new Date(state.assembledAt).getTime()) / 3_600_000,
+    },
     share: process.argv.includes("--share"), // redacted view for screenshots (race names + location hidden)
   });
   const { mkdir, writeFile } = await import("node:fs/promises");
@@ -452,19 +469,51 @@ async function cmdDemo(): Promise<void> {
   const today = todayIso();
   const window = buildDemoWindow(today, 42); // 42d → CTL/ATL/TSB trends + a non-empty Load card
   const state = window[window.length - 1];
-  const insights = state.raw ? buildInsights(state, undefined, { history: window }) : undefined;
-  // Rich sample inputs so the demo is a compelling hero: Garmin trends, API-cost card, and the
-  // full three-section "Set up & improve" card (This week / Worth considering).
+  const garminDays = buildDemoGarminDays(today);
+  // Feed the demo's Garmin history into the engine too (not just the Trends card) so monitoring /
+  // fuelling / sleep-correlation analyse real sample data instead of an empty series.
+  const insights = state.raw ? buildInsights(state, { garminDays }, { history: window }) : undefined;
+  const yd = new Date(`${today}T00:00:00Z`);
+  yd.setUTCDate(yd.getUTCDate() - 1);
+  const lastSessionDate = yd.toISOString().slice(0, 10); // the demo's most recent activity (a run)
+  // Sample stored feedback so the "Last session" card showcases the auto-generated deep dive inline.
+  const sessionFeedbacks = [
+    {
+      schemaVersion: 1,
+      date: lastSessionDate,
+      sport: "Run",
+      deep: true,
+      generatedAt: new Date().toISOString(),
+      costUsd: 0.21,
+      markdown: [
+        `# Session feedback — ${lastSessionDate} Run`,
+        "## Verdict",
+        "**A controlled aerobic run that landed right where it should** — efficiency a touch above your recent norm on slightly fresher legs.",
+        "## What went well",
+        "- Power-to-HR held steady through the back half — no late aerobic drift.",
+        "- Ran it on a mild positive TSB, so the quality came cheap.",
+        "## Watch",
+        "- Cadence dipped ~2% in the final 15 min — stay tall when fatigue creeps in.",
+        "## Takeaways",
+        "- Keep these as your bread-and-butter aerobic volume into the Olympic build.",
+        "- No change needed to the next two planned sessions.",
+      ].join("\n"),
+    },
+  ];
+  // Rich sample inputs so the demo is a compelling hero: Garmin trends, API-cost card, the full
+  // three-section "Set up & improve" card, and the auto session-feedback shown inline.
   const html = renderDashboard({
     window,
     decisions: [],
     insights,
-    garminDays: buildDemoGarminDays(today),
+    garminDays,
     costRecords: demoCostRecords(today),
     canFetchFit: false,
     profile: demoProfile,
-    weeklyReviewDate: today,
+    weeklyReview: { date: today, actions: ["Cut one grey-zone ride", "Move the long run off your GI-trough day"] },
     researchDigest: { date: today, topics: ["90 g/h carb intake for long course", "165 mm cranks change the fit"] },
+    setupHealth: { hasApiKey: true, waterTempSet: false, lastSyncAgeHours: 2 },
+    sessionFeedbacks,
   });
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");

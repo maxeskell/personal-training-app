@@ -48,21 +48,66 @@ const DEMO_THRESHOLDS: DisciplineThresholds = {
 const WEEK_SPORTS: Array<NonNullable<PlannedSession["sport"]>> = ["Run", "Ride", "Swim", "Run", "Ride", "Run", "Strength"];
 
 /**
+ * Rich per-activity payloads (the `getRunningActivity` / `getCyclingActivity` shape `richActivities`
+ * parses) so the demo populates the data-rich cards that an empty activity feed leaves blank: the **Last
+ * session** card, run economy (EF), the run-load ramp, and the **brick decoupling** proxy (which needs
+ * power-equipped runs). Runs carry running power, so some land on ride days (brick) and some don't
+ * (fresh) — brick runs sit a touch lower in EF, a realistic "holds up off the bike" read. Deterministic.
+ */
+function demoActivities(today: string): { runs: Record<string, unknown>[]; rides: Record<string, unknown>[] } {
+  const rides = [2, 5, 9, 12, 16, 19, 23, 26].map((d, k) => ({
+    activity_date_local: isoShift(today, -d),
+    activity_movingtime: 3600 + (k % 3) * 900,
+    activity_avwatts: Math.round(196 + 12 * wob(k, 11)),
+    activity_avhr: Math.round(142 + 5 * wob(k, 12)),
+    external_stress_score: Math.round(72 + 15 * wob(k, 13)),
+  }));
+  const mkRun = (d: number, k: number, brick: boolean) => ({
+    activity_date_local: isoShift(today, -d),
+    activity_movingtime: 2700 + (k % 3) * 600, // ≥45 min → counts for EF (needs ≥20 min)
+    activity_avhr: Math.round((brick ? 153 : 150) + 3 * wob(k, 14)),
+    activity_avwatts: Math.round((brick ? 281 : 287) + 6 * wob(k, 15)), // brick EF a touch lower
+    external_stress_score: Math.round(55 + 12 * wob(k, 16)),
+    aerobic_durability_according_to_dfa_alpha1_running_power_in_percent: Math.round(90 + 4 * wob(k, 17)),
+    aerobic_threshold_dfa_alpha1_heart_rate_cluster: Math.round(150 + 3 * wob(k, 18)),
+    aerobic_threshold_dfa_alpha1_watts_cluster: Math.round(256 + 8 * wob(k, 19)),
+  });
+  const brickRuns = [2, 9, 16, 23].map((d, k) => mkRun(d, k, true)); // same day as a ride
+  const freshRuns = [1, 4, 7, 11, 14, 18, 21].map((d, k) => mkRun(d, k, false));
+  return { runs: [...freshRuns, ...brickRuns], rides };
+}
+
+/**
  * A 42-day daily-ESS series for `getRecoveryModel.data` — the parallel `date[]` + `external_stress_score[]`
  * arrays that `loadModel` reads (it needs ≥14) to derive CTL/ATL/TSB + the weekly ramp. A gentle upward
  * build with a weekly easy/rest-day dip → a realistic Load & trends card (not a wall of "—"). Deterministic.
  */
-function demoRecoveryData(today: string, days = 42): { date: string[]; external_stress_score: number[] } {
+function demoRecoveryData(today: string, days = 42): {
+  date: string[];
+  external_stress_score: number[];
+  rMSSD: number[];
+  resting_heart_rate: number[];
+  recovery: number[];
+} {
   const date: string[] = [];
   const external_stress_score: number[] = [];
+  const rMSSD: number[] = [];
+  const resting_heart_rate: number[] = [];
+  const recovery: number[] = [];
   for (let k = days - 1; k >= 0; k--) {
     const i = days - 1 - k; // 0..days-1 ascending (oldest → today)
     date.push(isoShift(today, -k));
     const restDay = i % 7 === 6; // one easy/rest day a week
     const base = restDay ? 12 : 66 + i * 0.3; // gentle block build
     external_stress_score.push(Math.max(0, Math.round(base + 16 * wob(i, 7))));
+    // HRV/RHR series + a recovery score that genuinely LAGS yesterday's HRV (low HRV → lower recovery
+    // the next day). That real lead-1 relationship lets the monitoring backtest surface an *exploratory*
+    // (clearly-labelled, not validated) watch rule instead of an empty "0d history". Honest sample data.
+    rMSSD.push(Math.round(45 + 6 * wob(i)));
+    resting_heart_rate.push(Math.round(48 + 3 * wob(i, 1)));
+    recovery.push(Math.round(64 + 10 * wob(i - 1) + 4 * wob(i, 21))); // mostly tracks prior-day HRV, with noise
   }
-  return { date, external_stress_score };
+  return { date, external_stress_score, rMSSD, resting_heart_rate, recovery };
 }
 
 /** Build a `days`-long AthleteState window (ascending) ending on `today`, populated with sample data. */
@@ -136,8 +181,16 @@ export function buildDemoWindow(today: string, days = 21): AthleteState[] {
     ],
   };
   const prediction = { marathon_seconds: 3 * 3600 + 25 * 60, "10k_seconds": 42 * 60 };
-  // Daily ESS series drives the Load & trends card (CTL/ATL/TSB + ramp) via loadModel.
-  t.raw = { getRaceGoalEvent: races, getPrediction: prediction, getRecoveryModel: { data: demoRecoveryData(today) } };
+  // Daily ESS series drives the Load & trends card (CTL/ATL/TSB + ramp) via loadModel; the rich activity
+  // payloads drive the Last-session card, run economy, run-load ramp and the brick decoupling proxy.
+  const { runs, rides } = demoActivities(today);
+  t.raw = {
+    getRaceGoalEvent: races,
+    getPrediction: prediction,
+    getRecoveryModel: { data: demoRecoveryData(today) },
+    getRunningActivity: { activities: runs },
+    getCyclingActivity: { activities: rides },
+  };
   t.prediction = p(prediction, "ai-endurance", "demo sample data");
 
   // Garmin model scores → the "Garmin scores" + "Estimated race times" cards. The power-curve FTP

@@ -140,16 +140,18 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   `ai_endurance_todo` block is a reminder, not a write path. (Race *target times* aren't on it — AIE has
   no field for them; they live in `races[].target_time` and the coach reads them from the profile.)
 - **A "Set up & improve" card on the dashboard.** A small, deterministic (no-AI) action hub in three
-  sections: **Finish setup** (actionable AI-Endurance gaps, your free-text `open_items`, and any unfilled
-  optional profile questions), **This week** (the marginal-gains tweaks *not already in Top insights* + a
-  pointer to your last weekly review) and **Worth considering** (the topics from your last research digest).
-  An `open_items` entry that just restates a setup gap (e.g. a hand-written "swim CSS not set" alongside the
-  `swim_css` gap) folds into the canonical item, so each gap is listed once. The time-bound sections
-  **read your last saved reports** — they never re-run the weekly/research LLM flows — and each carries an
-  *"as of …"* tag, dropping once the report goes stale. Every item is tagged with where to action it
-  (*in AI Endurance* / *edit profile* / *discuss with coach*), **ranked by value**, deduped and capped, and
-  has a **✕ dismiss** that hides it for ~2 weeks (reusing the insights' snooze machinery — a calm hub, not
-  a nag). Display-only; hidden from the shared/screenshot view.
+  sections: **Finish setup** (actionable AI-Endurance gaps, your free-text `open_items`, unfilled optional
+  profile questions, a few **integration-health** nudges — missing API key, long-stale sync, unset
+  open-water temp — and any **race with no date yet**), **This week** (the marginal-gains tweaks *not
+  already in Top insights* + the action items parsed from your last weekly review) and **Worth considering**
+  (the topics from your last research digest). An `open_items` entry that just restates a setup gap (e.g. a
+  hand-written "swim CSS not set" alongside the `swim_css` gap) folds into the canonical item, so each gap
+  is listed once. The time-bound sections **read your last saved reports** — they never re-run the
+  weekly/research LLM flows — and each carries an *"as of …"* tag, dropping once the report goes stale.
+  Every item is tagged with where to action it (*in AI Endurance* / *edit profile* / *discuss with coach*
+  / *in your setup*), **ranked by value**, deduped and capped, and has a **✕ dismiss** that hides it for
+  ~2 weeks (reusing the insights' snooze machinery — a calm hub, not a nag). Display-only; hidden from the
+  shared/screenshot view.
 - **The coaching brief ships as a default prompt.** [`coach-instructions.md`](coach-instructions.md)
   is the default system prompt a fresh clone gets (a prompt, *not* data — kept separate from the
   profile); edit it to taste. Full schema + privacy detail: [docs/profile.md](docs/profile.md).
@@ -175,8 +177,13 @@ plan changes diffed from daily snapshots.
 
 ## Deep session feedback
 
-`npm run session` (or the dashboard's **Last session** card → *Deep feedback*) gives coach-quality
-feedback on a single session. The card also shows what the session was **meant to be** — the matching
+Deep feedback is **generated automatically at sync for every session** (no button) and **persisted** — so
+the dashboard's **Last session** card shows it **inline** (no LLM call on page load), and the history is
+kept for later analysis (`data/session-feedback.jsonl`). Generation is best-effort and cost-aware: it runs
+once per session after `fit-sync` has pulled the raw **.FIT** (so it's a real deep dive), is API-key-gated,
+cost-logged, and capped per sync; a session without its .FIT yet is picked up on a later sync (skipped
+cheaply, no tokens). `npm run session` still produces an on-demand readout (and writes to the same store).
+The card also shows what the session was **meant to be** — the matching
 planned workout (title, planned vs done time), or an explicit note when nothing in the plan matched. It
 joins your **AI Endurance metrics** (power/HR/ESS/durability) with the
 **.FIT biomechanics** (in-session cadence/GCT/vertical-osc drift, aerobic decoupling, temperature) and the
