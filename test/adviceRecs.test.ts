@@ -24,8 +24,9 @@ test("recsToFindings: keys + family-tags each rec; off-list family → General; 
   assert.match(fs[0].evidence, /readiness — coach recommendation/);
 });
 
-test("recsToFindings: deep-dive source namespaces the key, and an empty list is well-formed", () => {
+test("recsToFindings: source namespaces the key (deep-dive + ask), and an empty list is well-formed", () => {
   assert.equal(recsToFindings([{ text: "Ease the Wednesday long run", family: "Load & form" }], "deep-dive")[0].key, "advice:deep-dive:ease-the-wednesday-long-run");
+  assert.equal(recsToFindings([{ text: "Add a second gel after 90 min", family: "Fuelling & body comp" }], "ask")[0].key, "advice:ask:add-a-second-gel-after-90-min");
   assert.deepEqual(recsToFindings(undefined, "readiness"), []);
 });
 
@@ -39,10 +40,11 @@ test("latestAdviceFindings: takes the LATEST snapshot per advice surface, merges
     snap("2026-06-01T07:00:00Z", "readiness", [sf("advice:readiness:old")]),
     snap("2026-06-10T07:00:00Z", "readiness", [sf("advice:readiness:a"), sf("advice:readiness:b")]), // latest readiness wins
     snap("2026-06-09T07:00:00Z", "deep-dive", [sf("advice:deep-dive:c")]),
+    snap("2026-06-11T07:00:00Z", "ask", [sf("advice:ask:d")]), // ask is an advice surface too
     snap("2026-06-05T07:00:00Z", "dashboard", [sf("ignored-non-advice-surface")]), // not an advice surface
   ];
   const out = latestAdviceFindings(snapshots, new Set(["advice:readiness:b"]));
-  assert.deepEqual(out.map((f) => f.key), ["advice:readiness:a", "advice:deep-dive:c"]); // old readiness gone, b suppressed, dashboard ignored
+  assert.deepEqual(out.map((f) => f.key), ["advice:readiness:a", "advice:deep-dive:c", "advice:ask:d"]); // old readiness gone, b suppressed, dashboard ignored
 });
 
 test("renderCoachRecs: reactable cards carry key + family + the four actions; hidden when empty or shared", () => {

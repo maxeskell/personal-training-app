@@ -218,9 +218,10 @@ digest** read the same signal: they're told which families you set aside and sto
 can record a **retrospective** on any insight (`retrospect` MCP tool) — *did it hold up?* — which `listening`
 joins back into an **"Outcomes you recorded"** view (insight → your reaction → outcome), so the loop answers
 "what advice did I get, what did I do, and did it work" — not just "what was I shown". The LLM write-ups join
-the loop too: **readiness and deep-dive each tag a short list of family-labelled recommendations**, surfaced
-as individually reactable cards on the dashboard's **Coach's recommendations** card (and reactable by key via
-MCP) — so a 👍/👎/🚫 on a coaching suggestion shapes the same family weights and is retrospect-able like any finding.
+the loop too: **readiness, deep-dive and `ask` each tag a short list of family-labelled recommendations**,
+surfaced as individually reactable cards on the dashboard's **Coach's recommendations** card (and reactable by
+key via MCP) — so a 👍/👎/🚫 on a coaching suggestion shapes the same family weights and is retrospect-able like
+any finding. (`ask` emits the prose answer and its recommendations in one structured call, so there's no extra cost.)
 
 **→ Full detail — the Q1–Q7 methods, the like/dislike/snooze mechanics and the engagement loop:
 [docs/insight-engine.md](docs/insight-engine.md).**
