@@ -297,12 +297,44 @@ export function mdLite(md: string): string {
   return h;
 }
 
+/**
+ * Which state the "Last session" feedback area renders, given what's locally available. Pure — the
+ * testable core of the card's "show stored / fetch live / honest note" decision (see renderLastSession):
+ *  - `stored`     a persisted deep dive exists → render it inline (no network, no LLM).
+ *  - `auto`       it can be produced now → render a live placeholder that fetches on page load and swaps
+ *                 the result in. `needsDownload` = the raw .FIT isn't local yet but is fetchable, so the
+ *                 fetch downloads it first (the card says "Downloading…" vs "Generating…").
+ *  - `manual`     no local .FIT and no automatic way to get one → tell the athlete to export it.
+ *  - `no-api-key` generation is impossible without the key → say so rather than imply it's coming.
+ */
+export type SessionFeedbackCardState =
+  | { kind: "stored" }
+  | { kind: "auto"; needsDownload: boolean }
+  | { kind: "manual" }
+  | { kind: "no-api-key" };
+
+export function sessionFeedbackCardState(opts: {
+  hasStored: boolean;
+  hasApiKey: boolean;
+  hasLocalFit: boolean;
+  canFetchFit: boolean;
+  hasActivityId: boolean;
+}): SessionFeedbackCardState {
+  if (opts.hasStored) return { kind: "stored" };
+  if (!opts.hasApiKey) return { kind: "no-api-key" };
+  if (opts.hasLocalFit) return { kind: "auto", needsDownload: false };
+  if (opts.canFetchFit && opts.hasActivityId) return { kind: "auto", needsDownload: true };
+  return { kind: "manual" };
+}
+
 function renderLastSession(
   window: AthleteState[],
   insights: InsightReport | undefined,
   fitSummaries?: FitSummary[],
   canFetchFit?: boolean,
   sessionFeedbacks?: SessionFeedbackRecord[],
+  hasApiKey?: boolean,
+  share?: boolean,
 ): string {
   const today = window[window.length - 1];
   const d = assembleSession(today, insights, { decays: insights?.sessionDecays, fitSummaries });
@@ -328,17 +360,45 @@ function renderLastSession(
   const planLine = plan
     ? `<div style="font-size:13px;color:#666;margin-bottom:10px">📋 Planned: <b>${escapeHtml(planBits)}</b></div>`
     : `<div class="k" style="margin-bottom:10px">📋 No planned workout matched this date/sport — unscheduled, or swapped from the plan.</div>`;
-  // Deep feedback is auto-generated at sync (no button) and persisted; show the stored readout for THIS
-  // session inline. No LLM on render. Absent → say it generates on the next sync (+ how to unlock the
-  // .FIT if Garmin can't fetch it). The stored markdown leads with its own H1 — strip it (the card
-  // heading already names the session).
+  // Deep feedback is persisted (auto-generated at sync) and shown inline — no LLM on render. When it's
+  // not stored yet, the card reflects the LIVE state instead of a static "on the next sync" line: if we
+  // can produce it now it renders a placeholder + fetches it on load (downloading the raw .FIT first when
+  // needed); otherwise it says exactly why it can't (no key, or no .FIT and no way to fetch one). The
+  // stored markdown leads with its own H1 — strip it (the card heading already names the session).
   const stored = (sessionFeedbacks ?? [])
     .filter((f) => f.date === d.date)
     .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0];
-  const feedback = stored
-    ? `<div class="k" style="margin:8px 0 4px">🔍 Session feedback <span class="muted">(${stored.deep ? "deep analysis" : "summary"} · ${escapeHtml(fmtSince(Date.now() - new Date(stored.generatedAt).getTime()))})</span></div>
-      <div style="font-size:14px;color:#333;white-space:pre-wrap">${mdLite(stored.markdown.replace(/^# .*\n+/, ""))}</div>`
-    : `<div class="k">🔍 Deep feedback generates automatically on the next sync, once this session's raw .FIT is downloaded. No .FIT yet? Export it from Garmin Connect → activity → ⚙ → Export Original into data/fit-streams/.</div>`;
+  const cardState = sessionFeedbackCardState({
+    hasStored: !!stored,
+    hasApiKey: !!hasApiKey,
+    hasLocalFit: !!d.decay,
+    canFetchFit: !!canFetchFit,
+    hasActivityId: !!d.fit?.activityId,
+  });
+  let feedback: string;
+  switch (cardState.kind) {
+    case "stored":
+      feedback = `<div class="k" style="margin:8px 0 4px">🔍 Session feedback <span class="muted">(${stored.deep ? "deep analysis" : "summary"} · ${escapeHtml(fmtSince(Date.now() - new Date(stored.generatedAt).getTime()))})</span></div>
+      <div style="font-size:14px;color:#333;white-space:pre-wrap">${mdLite(stored.markdown.replace(/^# .*\n+/, ""))}</div>`;
+      break;
+    case "auto":
+      // A screenshot can't run the fetch (and would freeze on "Downloading…"), so share view degrades to
+      // a static line; the live page renders the placeholder the on-load loadSessionFeedback() swaps out.
+      feedback = share
+        ? `<div class="k">🔍 Deep feedback generates automatically on sync.</div>`
+        : `<div id="sessfb" data-date="${escapeHtml(d.date)}"><div class="k">🔍 ${escapeHtml(
+            cardState.needsDownload
+              ? "Downloading this session's .FIT and generating deep feedback…"
+              : "Generating deep feedback for this session…",
+          )} <span class="muted">this runs once, then it's saved.</span></div></div>`;
+      break;
+    case "no-api-key":
+      feedback = `<div class="k">🔍 Deep feedback needs ANTHROPIC_API_KEY set on the server — once it is, it generates automatically.</div>`;
+      break;
+    default: // "manual"
+      feedback = `<div class="k">🔍 No raw .FIT for this session and no automatic way to fetch it (Garmin off, an old garmin_mcp build, or no archived activity id). Export it from Garmin Connect → activity → ⚙ → Export Original into data/fit-streams/ and it'll be analysed on the next sync.</div>`;
+      break;
+  }
   return `<div class="card"><h2>Last session — ${d.date} ${d.sport}</h2>
     <div style="font-size:14px;margin-bottom:6px">${escapeHtml(bits)}</div>
     ${planLine}
@@ -1394,7 +1454,7 @@ function autoSync(min){ sync('Data is '+min+' min old — auto-refreshing:'); }
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
 ${insights ? renderHeader(today, hl, decisions, garminDays) : ""}
 
-${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks)}
+${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks, setupHealth?.hasApiKey, share)}
 
 <div class="card"><h2>This week — load by sport</h2>
   <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows || '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
@@ -1428,6 +1488,22 @@ async function ask(e){e.preventDefault();var q=document.getElementById('q').valu
   try{var r=await fetch('/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:q})});
     var j=await r.json();a.innerHTML=mdToHtml(j.answer||'(no answer)');}catch(err){a.textContent='Error: '+err;}
   return false;}
+// Last-session deep feedback, fetched on load when it isn't stored yet: the server downloads this
+// session's raw .FIT if needed, generates the readout, persists it (so the next open is inline), and
+// returns it. The H1 is stripped (the card heading already names the session).
+async function loadSessionFeedback(){
+  var box=document.getElementById('sessfb'); if(!box) return;
+  var date=box.getAttribute('data-date');
+  try{
+    var r=await fetch('/session-feedback',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({date:date})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    var j=await r.json(); var md=String(j.markdown||'').replace(/^# .*\\n+/,'');
+    if(j.status==='ready'){
+      box.innerHTML='<div class="k" style="margin:8px 0 4px">🔍 Session feedback <span class="muted">('+(j.deep?'deep analysis':'summary')+' · just now)</span></div>'
+        +'<div style="font-size:14px;color:#333;white-space:pre-wrap">'+mdToHtml(md)+'</div>';
+    } else { box.innerHTML='<div class="k">'+mdToHtml(md||'No feedback available.')+'</div>'; }
+  }catch(e){ box.innerHTML='<div class="k">Could not fetch feedback for this session ('+esc(''+e)+'). Hit 🔄 Sync to retry.</div>'; }
+}
 function setReactionState(box,state){
   box.setAttribute('data-reaction-state',state);
   var like=box.querySelector('.agree');var dislike=box.querySelector('.disagree');
@@ -1508,7 +1584,16 @@ ${renderCost(costRecords)}
   Not medical advice. This is a personal training tool, not a medical professional — estimates are labelled MODEL.
   For pain, injury, illness or any acute symptom, stop and consult a doctor or sports physician.
 </footer>
-${!share && autoSyncStaleMin != null ? `<script>autoSync(${Math.round(autoSyncStaleMin)})</script>` : ""}
+${
+  // Stale → a full background Sync (which downloads .FITs + backfills feedback, then reloads). Fresh →
+  // just fetch the latest session's feedback if it's missing (no-op when there's no #sessfb placeholder),
+  // so opening the page doesn't wait on a full sync. Never in share view (a screenshot runs nothing).
+  share
+    ? ""
+    : autoSyncStaleMin != null
+      ? `<script>autoSync(${Math.round(autoSyncStaleMin)})</script>`
+      : `<script>if(document.getElementById('sessfb'))loadSessionFeedback();</script>`
+}
 </body></html>`;
 }
 

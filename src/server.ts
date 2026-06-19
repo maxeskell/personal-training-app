@@ -11,7 +11,7 @@ import { InsightLog } from "./state/insightLog.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
-import { loadSessionFeedbacks } from "./coach/sessionFeedbackStore.js";
+import { loadSessionFeedbacks, saveSessionFeedback, latestByDate } from "./coach/sessionFeedbackStore.js";
 import { backfillSessionFeedback } from "./coach/autoSessionFeedback.js";
 import { buildInsights } from "./insights/engine.js";
 import { loadArchive } from "./coach/orchestrator.js";
@@ -277,22 +277,29 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       return;
     }
 
-    // Deep feedback on a single session (the dashboard "Last session" card posts here).
+    // Deep feedback on a single session — the dashboard "Last session" card fetches this on page load
+    // when no readout is stored yet (it downloads the raw .FIT on demand, generates, and persists, so the
+    // next open is inline). Returns a `status` the card branches on: ready | no-fit | no-api-key | no-data.
     if (url.pathname === "/session-feedback" && req.method === "POST") {
       const json = (b: object) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(b));
-      if (!CoachLLM.hasApiKey()) return json({ markdown: "ANTHROPIC_API_KEY isn't set on the server, so I can't analyse sessions yet." });
+      if (!CoachLLM.hasApiKey()) return json({ status: "no-api-key", markdown: "ANTHROPIC_API_KEY isn't set on the server, so I can't analyse sessions yet." });
       const li = await latestInsights();
-      if (!li) return json({ markdown: "No data assembled yet — hit ↻ Sync first." });
+      if (!li) return json({ status: "no-data", markdown: "No data assembled yet — hit ↻ Sync first." });
       const body = JSON.parse((await readBody(req)) || "{}") as { date?: string; force?: boolean };
       const reqDate = String(body.date ?? "");
       const date = /^\d{4}-\d{2}-\d{2}$/.test(reqDate) ? reqDate : undefined;
       let decays = loadSessionDecays();
       const fitSummaries = await new ArchiveStore().loadFitSummaries();
-      // On-demand stream fetch (user ask): if the target session's raw .FIT isn't local but the archive
-      // knows its Garmin id, pull it now (~seconds) so the deep dive runs with biomechanics instead of
-      // skipping. Best-effort — on any failure the no-fit gate below still protects the LLM spend.
       const probe = assembleSession(li.state, li.insights, { date, decays, fitSummaries });
-      if (probe && !probe.decay && probe.fit?.activityId && config.garmin.enabled) {
+      if (!probe) return json({ status: "no-data", markdown: "No recent activity found to analyse." });
+      // Already generated (e.g. a sync produced it between render and this fetch) — serve the stored one,
+      // never re-spend tokens.
+      const existing = latestByDate(await loadSessionFeedbacks()).get(probe.date);
+      if (existing) return json({ status: "ready", markdown: existing.markdown, deep: existing.deep });
+      // On-demand stream fetch: if the target session's raw .FIT isn't local but the archive knows its
+      // Garmin id, pull it now (~seconds) so the deep dive runs with biomechanics instead of skipping.
+      // Best-effort — on any failure the no-fit gate below still protects the LLM spend.
+      if (!probe.decay && probe.fit?.activityId && config.garmin.enabled) {
         const g = new GarminClient();
         if (await g.connect()) {
           try {
@@ -310,7 +317,19 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         decays,
         fitSummaries,
       });
-      return json({ markdown: feedback?.markdown ?? "No recent activity found to analyse.", skippedNoFit: feedback?.skippedNoFit === true });
+      if (!feedback) return json({ status: "no-data", markdown: "No recent activity found to analyse." });
+      if (feedback.skippedNoFit) return json({ status: "no-fit", markdown: feedback.markdown });
+      // Persist so subsequent page loads serve it inline (no LLM on render) — same store the auto-backfill
+      // writes to. Best-effort inside saveSessionFeedback; a logging failure never blocks the response.
+      await saveSessionFeedback({
+        date: feedback.detail.date,
+        sport: String(feedback.detail.sport),
+        deep: !!feedback.detail.decay,
+        generatedAt: new Date().toISOString(),
+        costUsd: feedback.costUsd,
+        markdown: feedback.markdown,
+      });
+      return json({ status: "ready", markdown: feedback.markdown, deep: !!feedback.detail.decay });
     }
 
     // Insight feedback (the insights box posts like/dislike/snooze/clear here). The UI vocabulary maps to
