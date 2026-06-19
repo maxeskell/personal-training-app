@@ -17,7 +17,7 @@ import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { latestWeeklyReviewDate, latestResearchDigest } from "./coach/setupSources.js";
-import { buildDemoWindow, demoProfile } from "./demo/sampleData.js";
+import { buildDemoWindow, buildDemoGarminDays, demoCostRecords, demoProfile } from "./demo/sampleData.js";
 import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact } from "./cli/dataCommands.js";
 import { buildInsights } from "./insights/engine.js";
 import { alertFindings, loadModel } from "./insights/metrics.js";
@@ -450,15 +450,17 @@ async function cmdDashboard(): Promise<void> {
  *  key, no network. Lets anyone see the coach working before setting up their own accounts. */
 async function cmdDemo(): Promise<void> {
   const today = todayIso();
-  const window = buildDemoWindow(today, 21);
+  const window = buildDemoWindow(today, 42); // 42d → CTL/ATL/TSB trends + a non-empty Load card
   const state = window[window.length - 1];
   const insights = state.raw ? buildInsights(state, undefined, { history: window }) : undefined;
-  // Sample "This week" / "Worth considering" inputs so the demo showcases the full three-section card.
+  // Rich sample inputs so the demo is a compelling hero: Garmin trends, API-cost card, and the
+  // full three-section "Set up & improve" card (This week / Worth considering).
   const html = renderDashboard({
     window,
     decisions: [],
     insights,
-    costRecords: [],
+    garminDays: buildDemoGarminDays(today),
+    costRecords: demoCostRecords(today),
     canFetchFit: false,
     profile: demoProfile,
     weeklyReviewDate: today,

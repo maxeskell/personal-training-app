@@ -1,6 +1,8 @@
 import { emptyState, type AthleteState, type PlannedSession, type ActualActivity, type DisciplineThresholds, type Source } from "../state/types.js";
 import { deriveZones } from "../insights/zones.js";
 import type { Profile } from "../profile/schema.js";
+import type { GarminDay } from "../archive/store.js";
+import type { CostRecord } from "../llm/costLog.js";
 
 /** A fictional profile for the demo — just enough to show the "Set up & improve" card (actionable AIE
  *  gaps + a free-text open item + unfilled profile questions) so the feature is discoverable in
@@ -44,6 +46,24 @@ const DEMO_THRESHOLDS: DisciplineThresholds = {
 };
 
 const WEEK_SPORTS: Array<NonNullable<PlannedSession["sport"]>> = ["Run", "Ride", "Swim", "Run", "Ride", "Run", "Strength"];
+
+/**
+ * A 42-day daily-ESS series for `getRecoveryModel.data` — the parallel `date[]` + `external_stress_score[]`
+ * arrays that `loadModel` reads (it needs ≥14) to derive CTL/ATL/TSB + the weekly ramp. A gentle upward
+ * build with a weekly easy/rest-day dip → a realistic Load & trends card (not a wall of "—"). Deterministic.
+ */
+function demoRecoveryData(today: string, days = 42): { date: string[]; external_stress_score: number[] } {
+  const date: string[] = [];
+  const external_stress_score: number[] = [];
+  for (let k = days - 1; k >= 0; k--) {
+    const i = days - 1 - k; // 0..days-1 ascending (oldest → today)
+    date.push(isoShift(today, -k));
+    const restDay = i % 7 === 6; // one easy/rest day a week
+    const base = restDay ? 12 : 66 + i * 0.3; // gentle block build
+    external_stress_score.push(Math.max(0, Math.round(base + 16 * wob(i, 7))));
+  }
+  return { date, external_stress_score };
+}
 
 /** Build a `days`-long AthleteState window (ascending) ending on `today`, populated with sample data. */
 export function buildDemoWindow(today: string, days = 21): AthleteState[] {
@@ -116,8 +136,95 @@ export function buildDemoWindow(today: string, days = 21): AthleteState[] {
     ],
   };
   const prediction = { marathon_seconds: 3 * 3600 + 25 * 60, "10k_seconds": 42 * 60 };
-  t.raw = { getRaceGoalEvent: races, getPrediction: prediction };
+  // Daily ESS series drives the Load & trends card (CTL/ATL/TSB + ramp) via loadModel.
+  t.raw = { getRaceGoalEvent: races, getPrediction: prediction, getRecoveryModel: { data: demoRecoveryData(today) } };
   t.prediction = p(prediction, "ai-endurance", "demo sample data");
 
+  // Garmin model scores → the "Garmin scores" + "Estimated race times" cards. The power-curve FTP
+  // estimate sits BELOW the configured 250 W FTP so the gap note shows; endurance/hill are mid-range.
+  t.powerCurve = p(
+    {
+      ftpEstimateW: 235,
+      activitiesAnalyzed: 24,
+      bests: [
+        { duration: "5 s", watts: 920, date: isoShift(today, -9) },
+        { duration: "1 min", watts: 545, date: isoShift(today, -16) },
+        { duration: "5 min", watts: 332, date: isoShift(today, -5) },
+        { duration: "20 min", watts: 268, date: isoShift(today, -12) },
+        { duration: "60 min", watts: 235, date: isoShift(today, -12) },
+      ],
+    },
+    "garmin",
+    "demo sample data",
+  );
+  t.enduranceScore = p({ current: 7420, classification: "Trained", periodAvg: 7180, periodMax: 7600, nextThresholdLabel: "Expert", nextThresholdGap: 580 }, "garmin", "demo sample data");
+  t.hillScore = p({ overall: 57, strength: 53, endurance: 61 }, "garmin", "demo sample data");
+  t.racePredictions = p(
+    {
+      date: today,
+      predictions: [
+        { label: "5K", timeSeconds: 19 * 60 + 30 },
+        { label: "10K", timeSeconds: 40 * 60 + 45 },
+        { label: "Half", timeSeconds: 90 * 60 + 20 },
+        { label: "Marathon", timeSeconds: 3 * 3600 + 12 * 60 },
+      ],
+    },
+    "garmin",
+    "demo sample data",
+  );
+
   return window;
+}
+
+/**
+ * 42-day Garmin daily series (HRV / resting-HR / sleep / stress) → the multi-week **Trends** card. Mirrors
+ * the healthy per-state wobble so the sparklines read as one coherent (fictional) athlete. Deterministic.
+ */
+export function buildDemoGarminDays(today: string, days = 42): GarminDay[] {
+  const out: GarminDay[] = [];
+  for (let k = days - 1; k >= 0; k--) {
+    const i = days - 1 - k;
+    out.push({
+      date: isoShift(today, -k),
+      hrvMs: Math.round(45 + 5 * wob(i)),
+      restingHr: Math.round(48 + 2 * wob(i, 1)),
+      sleepScore: Math.round(82 + 6 * wob(i, 3)),
+      sleepHours: +(7.4 + 0.4 * wob(i, 4)).toFixed(1),
+      avgStressLevel: Math.round(32 + 8 * wob(i, 8)),
+      bodyBatteryChange: Math.round(45 + 10 * wob(i, 9)),
+      deepSleepSec: Math.round((75 + 10 * wob(i, 10)) * 60),
+    });
+  }
+  return out;
+}
+
+/**
+ * A handful of fictional API-cost records over the last ~3 weeks → the **API cost** card, so the demo
+ * shows the coach is cheap to run (≈ the README's ~$5–10/month). Deterministic; not real spend. Dated
+ * relative to `today` so they land in the card's 7- and 30-day windows.
+ */
+export function demoCostRecords(today: string): CostRecord[] {
+  const recs: Array<{ dayAgo: number; operation: string; model: string; input: number; output: number; cacheRead: number; costUsd: number }> = [
+    { dayAgo: 0, operation: "readiness", model: "claude-opus-4-8", input: 5200, output: 900, cacheRead: 2600, costUsd: 0.142 },
+    { dayAgo: 1, operation: "ask", model: "claude-opus-4-8", input: 4100, output: 700, cacheRead: 2600, costUsd: 0.104 },
+    { dayAgo: 1, operation: "readiness", model: "claude-opus-4-8", input: 5100, output: 880, cacheRead: 2600, costUsd: 0.139 },
+    { dayAgo: 2, operation: "intent", model: "claude-haiku-4-5-20251001", input: 700, output: 60, cacheRead: 0, costUsd: 0.001 },
+    { dayAgo: 3, operation: "readiness", model: "claude-opus-4-8", input: 5200, output: 910, cacheRead: 2600, costUsd: 0.143 },
+    { dayAgo: 4, operation: "session", model: "claude-opus-4-8", input: 8200, output: 1500, cacheRead: 2600, costUsd: 0.231 },
+    { dayAgo: 6, operation: "weekly", model: "claude-opus-4-8", input: 9100, output: 1800, cacheRead: 2600, costUsd: 0.268 },
+    { dayAgo: 9, operation: "race", model: "claude-opus-4-8", input: 8800, output: 1700, cacheRead: 2600, costUsd: 0.254 },
+    { dayAgo: 13, operation: "deep-dive", model: "claude-opus-4-8", input: 11000, output: 2400, cacheRead: 2600, costUsd: 0.341 },
+    { dayAgo: 21, operation: "research", model: "claude-opus-4-8", input: 14000, output: 3200, cacheRead: 0, costUsd: 0.612 },
+  ];
+  return recs.map((r) => ({
+    ts: `${isoShift(today, -r.dayAgo)}T07:30:00Z`,
+    operation: r.operation,
+    model: r.model,
+    input: r.input,
+    output: r.output,
+    cacheWrite: 0,
+    cacheRead: r.cacheRead,
+    costUsd: r.costUsd,
+    schemaVersion: 1,
+  }));
 }
