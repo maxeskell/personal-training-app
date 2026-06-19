@@ -298,6 +298,24 @@ async function cmdIngestFit(): Promise<void> {
   console.log("\n" + lines.join("\n") + "\n");
 }
 
+/**
+ * `ftp-check` — bike-FTP source diagnostic: configured FTP vs Garmin's power-duration estimate, the gap,
+ * recent power coverage, and how to resolve a gap with power rides. Read-only; reads the last snapshot
+ * (run `npm run state` / the `sync` tool first to refresh). Deterministic, no LLM.
+ */
+async function cmdFtpCheck(): Promise<void> {
+  const { diagnoseFtp, formatFtpDiagnosis } = await import("./insights/ftpSource.js");
+  const { richActivities } = await import("./insights/metrics.js");
+  const state = (await new StateStore().recent(todayIso(), 1))[0];
+  if (!state) {
+    console.error("\nNo state assembled yet — run `npm run state` (or the MCP `sync` tool) first.\n");
+    process.exit(1);
+  }
+  const archive = await loadArchive();
+  const rides = archive?.activities ?? richActivities(state.raw);
+  console.log("\n" + formatFtpDiagnosis(diagnoseFtp(state, rides)).join("\n") + "\n");
+}
+
 function printReadiness(v: { verdict: string; why: string; drivers: Array<{ signal: string; reading: string; source: string }>; cautions: string[] }, risk: ReturnType<typeof assessHealthRisk>): void {
   if (risk.level !== "none") console.log(`\n⚠ Wellbeing (${risk.level}): ${risk.message}\n`);
   const dot = v.verdict === "green" ? "🟢" : v.verdict === "amber" ? "🟡" : "🔴";
@@ -920,6 +938,7 @@ const commands: Record<string, () => Promise<void>> = {
   state: cmdState,
   splits: cmdSplits,
   "ingest-fit": cmdIngestFit,
+  "ftp-check": cmdFtpCheck,
   readiness: cmdReadiness,
   ping: cmdPing,
   weekly: cmdWeekly,
