@@ -47,8 +47,13 @@ FDR — otherwise it's labelled exploratory.
 
 ## Top insights box — like, dislike, snooze (and how old each signal is)
 
-The dashboard leads with a **Top insights** card: the five strongest findings ranked by signal strength,
-each with **👍 Like / 👎 Dislike / 💤 Snooze**.
+The **Top insights** card lists the five strongest findings ranked by signal strength, each with
+**👍 Like / 👎 Dislike / 💤 Snooze**. It sits *after* the daily-loop cards (last session, this week, week
+ahead) — the single most important call has already been synthesised into the **Today** header (verdict +
+one action), so the box is the supporting detail, not a second copy of it. The finding the header leads on
+is still shown here (so you can react to it) but is marked **"today's call ↑"** and **omits its
+recommendation line** — the action lives once, in the Today card. Findings already shown here are likewise
+not repeated in **Set up & improve → This week**, so a given recommendation appears in exactly one place.
 
 - **Like / Dislike is a saved, visible opinion** — your choice is rendered back on every reload (the button
   shows as active), and it's **reversible**: click it again to clear, or click the other to switch. Both are

@@ -5,7 +5,7 @@ import type { InsightReport } from "../insights/engine.js";
 import { findingKey } from "../insights/metrics.js";
 import { selectMarginalGains } from "../insights/marginalGains.js";
 import { paceStr } from "../insights/zones.js";
-import { coachHeadline, tsbBand, rampBand, type Tone } from "../insights/headline.js";
+import { coachHeadline, tsbBand, rampBand, type Tone, type Headline } from "../insights/headline.js";
 import { assembleSession } from "./session.js";
 import type { Profile } from "../profile/schema.js";
 import { PROFILE_QUESTIONS, type ProfileQuestion } from "../profile/questions.js";
@@ -209,15 +209,19 @@ function ageLabel(firstSeenIso: string | undefined, now: number): { badge: strin
  * Snooze that hides it for ~2 weeks; dislike stays visible (just down-ranked). A NEW badge + "first seen"
  * line flag freshness so a new signal isn't missed. Posts to /insight-feedback.
  */
-function renderInsightsBox(ins: InsightReport, reactions?: Map<string, InsightReaction>, firstSeen?: Map<string, string>): string {
+function renderInsightsBox(ins: InsightReport, reactions?: Map<string, InsightReaction>, firstSeen?: Map<string, string>, leadKey?: string): string {
   const sevColor = (s: string) => (s === "flag" ? "#c0392b" : s === "watch" ? "#c98a00" : "#1a8a3a");
   const now = Date.now();
   const top = ins.topFindings.slice(0, 5);
   const newCount = top.filter((f) => (ageDays(firstSeen?.get(findingKey(f)), now) ?? 0) < 1).length;
   if (!top.length) return `<div class="card"><h2>Top insights</h2><div class="muted">No strong signals right now — nothing worth your attention today.</div></div>`;
+  // The lead finding is already the "Today" headline + action above, so here we keep it reactable but
+  // drop its recommendation line (no verbatim repeat) and mark it as the call shown up top.
+  const headlineInTop = leadKey != null && top.some((f) => findingKey(f) === leadKey);
   const rows = top
     .map((f) => {
       const key = findingKey(f);
+      const isLead = key === leadKey;
       const conf = Math.round((f.confidence ?? 0.6) * 100);
       const saved = reactions?.get(key); // "agree" | "disagree" (snoozed items are suppressed, never here)
       const state = saved === "agree" ? "like" : saved === "disagree" ? "dislike" : "";
@@ -225,9 +229,9 @@ function renderInsightsBox(ins: InsightReport, reactions?: Map<string, InsightRe
       const { badge, line } = ageLabel(firstSeen?.get(key), now);
       return `<div class="insight sev-${f.severity}" data-key="${escapeHtml(key)}" data-summary="${escapeHtml(f.title)}" data-reaction-state="${state}">
         <div><span class="badge" style="background:${sevColor(f.severity)}">${f.severity}</span>${badge}
-          <b style="${f.severity === "flag" ? "font-size:15px" : ""}">${escapeHtml(f.title)}</b> <span class="muted">· ${conf}% conf · ${escapeHtml(f.family)}</span></div>
+          <b style="${f.severity === "flag" ? "font-size:15px" : ""}">${escapeHtml(f.title)}</b> <span class="muted">· ${conf}% conf · ${escapeHtml(f.family)}${isLead ? ` · today's call ↑` : ""}</span></div>
         <div class="fdetail">${escapeHtml(f.detail)}</div>
-        ${f.recommendation ? `<div class="ev">→ ${escapeHtml(f.recommendation)}</div>` : ""}
+        ${f.recommendation && !isLead ? `<div class="ev">→ ${escapeHtml(f.recommendation)}</div>` : ""}
         <div class="ev">${escapeHtml(f.evidence)}</div>
         <div class="age">${line}</div>
         <div class="acts">
@@ -241,7 +245,7 @@ function renderInsightsBox(ins: InsightReport, reactions?: Map<string, InsightRe
     .join("");
   const newNote = newCount ? ` · <b>${newCount} new</b>` : " · nothing new";
   return `<div class="card insights"><h2>Top insights — your call</h2>
-    <div class="k" style="margin-bottom:8px">Ranked by signal strength${newNote}. Like/dislike is saved and reversible (dislike stays visible, just down-ranked); Snooze hides it for ~2 weeks.</div>
+    <div class="k" style="margin-bottom:8px">Ranked by signal strength${newNote}.${headlineInTop ? " Today's headline call is the one marked ↑." : ""} Like/dislike is saved and reversible (dislike stays visible, just down-ranked); Snooze hides it for ~2 weeks.</div>
     ${rows}
   </div>`;
 }
@@ -582,6 +586,22 @@ function dedupeKey(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+/**
+ * The unmissable training-setup topics that get restated under different wording (an `ai_endurance_todo`
+ * gap AND a hand-written `open_item` describing the same gap). Verbatim dedupe misses them because the
+ * copy differs ("Set your swim CSS" vs "Swim CSS not set in AI Endurance: …"), so within Finish-setup we
+ * also fold by topic: CSS and FTP are unambiguous in this domain, so any two items naming the same one
+ * collapse to the highest-value phrasing (AIE gap sorts first → it wins). Scoped to these two on purpose.
+ */
+const SETUP_TOPIC_PATTERNS: Array<[RegExp, string]> = [
+  [/\bswim\s*css\b|\bcss\b/i, "swim-css"],
+  [/\bftp\b/i, "ftp"],
+];
+function setupTopic(label: string): string | null {
+  for (const [re, topic] of SETUP_TOPIC_PATTERNS) if (re.test(label)) return topic;
+  return null;
+}
+
 /** Options for {@link buildSetupItems} / {@link renderSetupImprove}. */
 export interface SetupOptions {
   /** Profile-question catalogue (defaults to the real one; injectable for tests). */
@@ -590,6 +610,9 @@ export interface SetupOptions {
   suppressed?: Set<string>;
   /** Already-built insight report — its deterministic marginal-gains feed the "This week" group (no LLM). */
   insights?: InsightReport;
+  /** Finding keys already shown in the Top-insights box — excluded from "This week" so a recommendation
+   *  the athlete has already seen (and can react to) above isn't restated here. */
+  surfacedInsightKeys?: Set<string>;
   /** Date of the latest persisted weekly-review report (drops from "This week" once stale). */
   weeklyReviewDate?: string;
   /** Latest research digest (date + parsed topics) for the "Worth considering" group (drops when stale). */
@@ -641,8 +664,13 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
   }
 
   // --- This week (Phase 2: marginal gains + last weekly review, read-only/LLM-free) -----------------
+  // Skip any gain already surfaced in the Top-insights box above — it's shown (and reactable) there, so
+  // restating its recommendation here is the dedupe the dashboard most needs. Select a few extra (the
+  // per-group cap trims later) so a filtered-out one frees its slot for the next-best gain.
   if (opts.insights) {
-    for (const f of selectMarginalGains(opts.insights, GROUP_CAP.this_week)) {
+    const surfaced = opts.surfacedInsightKeys ?? new Set<string>();
+    for (const f of selectMarginalGains(opts.insights)) {
+      if (surfaced.has(findingKey(f))) continue;
       items.push({ key: setupKey("tune", findingKey(f)), label: f.recommendation ?? f.title, why: f.title, source: "tune", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.tune });
     }
   }
@@ -677,12 +705,16 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
     .sort((a, b) => GROUP_ORDER[a.item.group] - GROUP_ORDER[b.item.group] || b.item.priority - a.item.priority || a.i - b.i)
     .map((d) => d.item);
   const seen = new Set<string>();
+  const seenTopics = new Set<string>(); // CSS/FTP folding, Finish-setup only (see SETUP_TOPIC_PATTERNS)
   const perGroup: Record<SetupGroup, number> = { finish_setup: 0, this_week: 0, worth_considering: 0 };
   const out: SetupItem[] = [];
   for (const item of ranked) {
     const k = dedupeKey(item.label);
     if (seen.has(k)) continue;
+    const topic = item.group === "finish_setup" ? setupTopic(item.label) : null;
+    if (topic && seenTopics.has(topic)) continue; // a restatement of an already-listed setup gap
     seen.add(k);
+    if (topic) seenTopics.add(topic);
     if (perGroup[item.group] >= GROUP_CAP[item.group]) continue;
     perGroup[item.group] += 1;
     out.push(item);
@@ -868,8 +900,7 @@ function renderHealthBanner(risk: HealthRiskAssessment | null): string {
  * The "Today" decision header (#1) — leads with one synthesised call + the single action, corroborating
  * drivers, an always-visible health strip (#8), the LLM readiness narrative, and the key metrics.
  */
-function renderHeader(today: AthleteState, insights: InsightReport | undefined, decisions: DecisionRecord[], gar: DashboardInput["garminDays"]): string {
-  const hl = insights ? coachHeadline(insights, today) : null;
+function renderHeader(today: AthleteState, hl: Headline | null, decisions: DecisionRecord[], gar: DashboardInput["garminDays"]): string {
   const lastReadiness = [...decisions].reverse().find((d) => d.kind === "readiness");
   const verdictWord = lastReadiness?.summary.split(":")[0]?.trim().toLowerCase();
   const sev = hl?.severity ?? (verdictWord === "green" || verdictWord === "amber" || verdictWord === "red" ? verdictWord : "green");
@@ -879,16 +910,24 @@ function renderHeader(today: AthleteState, insights: InsightReport | undefined, 
   const ts = today.trainingStatus.value;
   const latestGar = gar && gar.length ? gar[gar.length - 1] : undefined;
 
-  // Health strip — always visible so "quiet" is distinguishable from "not computed".
+  // Health strip — always visible so "quiet" is distinguishable from "not computed". Signals the drivers
+  // line already states (Acute:chronic, recovery limiter, an off-baseline HRV status) are dropped here so
+  // the same fact isn't shown twice in one card; the drivers line keeps them with their interpretive band.
+  const showDrivers = !!hl && hl.drivers.length > 0;
+  const limiter = r?.limiterToday ?? null;
+  const hrvStatus = today.hrvStatus.value?.status;
+  const acwrInDrivers = showDrivers && ts?.loadRatio != null;
+  const limiterInDrivers = showDrivers && !!limiter;
+  const hrvInDrivers = showDrivers && !!hrvStatus && hrvStatus.toUpperCase() !== "BALANCED";
   const stress = latestGar?.avgStressLevel;
   const recharge = latestGar?.bodyBatteryChange;
   const chips = [
     today.sleep.value?.score != null ? chip("Sleep", `${today.sleep.value.score}`, today.sleep.value.score >= 70 ? "good" : today.sleep.value.score >= 50 ? "warn" : "bad") : "",
-    today.hrvStatus.value?.status ? chip("HRV", today.hrvStatus.value.status, /balanced/i.test(today.hrvStatus.value.status) ? "good" : "warn") : "",
-    ts?.acwrStatus ? chip("Acute:chronic", `${ts.loadRatio ?? "?"} ${ts.acwrStatus}`, ts.acwrStatus.toUpperCase() === "HIGH" ? "bad" : "good") : "",
+    hrvStatus && !hrvInDrivers ? chip("HRV", hrvStatus, /balanced/i.test(hrvStatus) ? "good" : "warn") : "",
+    ts?.acwrStatus && !acwrInDrivers ? chip("Acute:chronic", `${ts.loadRatio ?? "?"} ${ts.acwrStatus}`, ts.acwrStatus.toUpperCase() === "HIGH" ? "bad" : "good") : "",
     stress != null ? chip("Day stress", `${Math.round(stress)}`, stress >= 50 ? "warn" : "good") : "",
     recharge != null ? chip("Overnight recharge", `+${Math.round(recharge)}`, recharge >= 40 ? "good" : "warn") : "",
-    r?.limiterToday ? chip("Limiter", String(r.limiterToday), "warn") : "",
+    limiter && !limiterInDrivers ? chip("Limiter", String(limiter), "warn") : "",
   ].filter(Boolean).join("");
 
   return `<div class="card" style="border-top:4px solid ${color}">
@@ -976,6 +1015,15 @@ function freshnessLine(today: AthleteState): string {
 export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReviewDate, researchDigest, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
+  // One synthesised "Today" call, computed once and shared: the header leads on it, the Top-insights box
+  // marks the same finding (without repeating its recommendation), and "Set up & improve → This week"
+  // excludes every finding already shown in the box — so a recommendation appears in exactly one place.
+  const hl = insights ? coachHeadline(insights, today) : null;
+  const leadFinding = insights ? insights.topFindings.find((f) => f.severity === "flag") ?? insights.topFindings.find((f) => f.severity === "watch") : undefined;
+  const leadKey = leadFinding ? findingKey(leadFinding) : undefined;
+  const surfacedInsightKeys = new Set<string>(insights ? insights.topFindings.slice(0, 5).map((f) => findingKey(f)) : []);
+  if (leadKey) surfacedInsightKeys.add(leadKey);
+
   // Week: load by sport. Time in h:mm (user ask); a zero distance renders "—" not a misleading 0.0 km.
   const load = activitiesLast7(today);
   const loadRows = [...load.entries()]
@@ -1016,8 +1064,17 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
   // Humanised activity log — plain labels, status icon, dev ids stripped from the summary.
   const KIND_LABEL: Record<string, string> = { readiness: "Readiness", "plan-adjust": "Plan change", "insight-feedback": "Your feedback", note: "Note" };
   const STATUS_LABEL: Record<string, string> = { accepted: "✓ agreed", declined: "✕ dismissed", deferred: "○ ignored", proposed: "• proposed", executed: "✓ applied", note: "" };
+  // Dedupe by kind+summary keeping the most recent — re-reacting to the same insight (👍 then 👍 again,
+  // or flip-flopping) logs a fresh row each time, which otherwise listed the same signal 2–3× here.
+  const seenDecision = new Set<string>();
   const recentDecisions = [...decisions]
     .reverse()
+    .filter((d) => {
+      const dk = `${d.kind}|${(d.summary ?? "").toLowerCase().replace(/\s+/g, " ").trim()}`;
+      if (seenDecision.has(dk)) return false;
+      seenDecision.add(dk);
+      return true;
+    })
     .slice(0, 8)
     .map((d) => {
       const summary = (d.summary ?? "").replace(/\s*\(?id=\d+\)?/g, "").replace(/^[a-z]+:\s*/i, "").trim();
@@ -1107,9 +1164,17 @@ function autoSync(min){ sync('Data is '+min+' min old — auto-refreshing:'); }
 }
 
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
-${insights ? renderHeader(today, insights, decisions, garminDays) : ""}
-${insights ? renderInsightsBox(insights, reactions, firstSeen) : ""}
+${insights ? renderHeader(today, hl, decisions, garminDays) : ""}
+
 ${renderLastSession(window, insights, fitSummaries, canFetchFit)}
+
+<div class="card"><h2>This week — load by sport</h2>
+  <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows || '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
+</div>
+
+${share ? "" : renderWeather(weather)}
+
+${insights ? renderInsightsBox(insights, reactions, firstSeen, leadKey) : ""}
 
 <div class="card" id="askcard"><h2>Ask your data</h2>
   <form id="askform" onsubmit="return ask(event)">
@@ -1188,13 +1253,9 @@ async function declineProposal(btn){var box=btn.closest('.proposal');var id=box.
     box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='dismissed';box.style.opacity=0.5;}catch(e){s.textContent='error';}}
 </script>
 
+${renderSetupImprove(profile, share, { suppressed, insights, surfacedInsightKeys, weeklyReviewDate, researchDigest })}
+
 ${insights ? renderSignals(insights) : ""}
-
-<div class="card"><h2>This week — load by sport</h2>
-  <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows || '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
-</div>
-
-${share ? "" : renderWeather(weather)}
 
 <div class="card"><h2>${trendsHeading(gar.length)}</h2>
   ${trendRows ? `<table>${trendRows}</table>` : '<div class="muted">Backfill the Garmin daily archive to populate trends (npm run backfill).</div>'}
@@ -1204,8 +1265,6 @@ ${share ? "" : renderWeather(weather)}
 ${renderZones(today)}
 
 ${renderScores(today)}
-
-${renderSetupImprove(profile, share, { suppressed, insights, weeklyReviewDate, researchDigest })}
 
 <div class="card"><h2>Race</h2>
   <table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>
