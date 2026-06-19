@@ -173,8 +173,13 @@ plan changes diffed from daily snapshots.
 
 ## Deep session feedback
 
-`npm run session` (or the dashboard's **Last session** card → *Deep feedback*) gives coach-quality
-feedback on a single session. The card also shows what the session was **meant to be** — the matching
+Deep feedback is **generated automatically at sync for every session** (no button) and **persisted** — so
+the dashboard's **Last session** card shows it **inline** (no LLM call on page load), and the history is
+kept for later analysis (`data/session-feedback.jsonl`). Generation is best-effort and cost-aware: it runs
+once per session after `fit-sync` has pulled the raw **.FIT** (so it's a real deep dive), is API-key-gated,
+cost-logged, and capped per sync; a session without its .FIT yet is picked up on a later sync (skipped
+cheaply, no tokens). `npm run session` still produces an on-demand readout (and writes to the same store).
+The card also shows what the session was **meant to be** — the matching
 planned workout (title, planned vs done time), or an explicit note when nothing in the plan matched. It
 joins your **AI Endurance metrics** (power/HR/ESS/durability) with the
 **.FIT biomechanics** (in-session cadence/GCT/vertical-osc drift, aerobic decoupling, temperature) and the

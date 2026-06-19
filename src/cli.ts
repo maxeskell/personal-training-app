@@ -17,6 +17,7 @@ import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { latestWeeklyReviewDate, latestResearchDigest } from "./coach/setupSources.js";
+import { loadSessionFeedbacks, saveSessionFeedback } from "./coach/sessionFeedbackStore.js";
 import { buildDemoWindow, buildDemoGarminDays, demoCostRecords, demoProfile } from "./demo/sampleData.js";
 import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact } from "./cli/dataCommands.js";
 import { buildInsights } from "./insights/engine.js";
@@ -401,8 +402,18 @@ async function cmdSession(): Promise<void> {
     return;
   }
   const path = await writeReport("session-feedback", feedback.detail.date, feedback.markdown);
+  // Persist to the session-feedback store too, so the dashboard surfaces it inline and the history is
+  // kept for analysis (same store the auto-at-sync generation writes to).
+  await saveSessionFeedback({
+    date: feedback.detail.date,
+    sport: String(feedback.detail.sport),
+    deep: !!feedback.detail.decay,
+    generatedAt: new Date().toISOString(),
+    costUsd: feedback.costUsd,
+    markdown: feedback.markdown,
+  });
   console.log("\n" + feedback.markdown + "\n");
-  console.log(`(report → ${path}; ${costNote(feedback.costUsd, feedback.cacheRead)})`);
+  console.log(`(report → ${path}; saved to the session-feedback store; ${costNote(feedback.costUsd, feedback.cacheRead)})`);
 }
 
 /** `dashboard` — generate the glanceable Today/Week/Trends/Race HTML and open it. */
@@ -434,6 +445,7 @@ async function cmdDashboard(): Promise<void> {
     suppressed,
     weeklyReviewDate: await latestWeeklyReviewDate(), // "This week" pointer — reads the persisted report
     researchDigest: await latestResearchDigest(), // "Worth considering" — reads the persisted digest
+    sessionFeedbacks: await loadSessionFeedbacks(), // auto-generated at sync; shown inline on the card
     share: process.argv.includes("--share"), // redacted view for screenshots (race names + location hidden)
   });
   const { mkdir, writeFile } = await import("node:fs/promises");
