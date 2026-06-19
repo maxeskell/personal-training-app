@@ -622,12 +622,18 @@ test("Data changes card: surfaces an auto-detected metric change with agree/disa
   assert.match(html, /<b>Bike FTP<\/b>: 250 W → <b>262 W<\/b>/);
   assert.match(html, /Garmin/);
   assert.match(html, /data-key="change:bikeFtpW:262"/);
-  assert.match(html, /data-reaction="like" onclick="feedback\(this\)"/); // reuses the insight-feedback machinery
-  // A saved disagree shows; snoozing (suppressed) hides the change entirely.
-  const reacted = renderDashboard({ window, decisions: [], reactions: new Map([["change:bikeFtpW:262", "disagree"]]) });
-  assert.match(reacted, /👎 disagreed/);
+  assert.match(html, /data-reaction="like" onclick="feedback\(this\)"/); // agree reuses insight-feedback
+  // Disagree is a PIN button carrying the metric + the value to keep (the prior reading).
+  assert.match(html, /data-metric="bikeFtpW" data-when="262" data-use="250"/);
+  assert.match(html, /onclick="pinOverride\(this\)"/);
+  // Snoozing (suppressed) hides the change entirely.
   const snoozed = renderDashboard({ window, decisions: [], suppressed: new Set(["change:bikeFtpW:262"]) });
   assert.doesNotMatch(snoozed, /Data changes — your call/);
+  // An active override is listed (not as a change) with an un-pin control, and hides its change.
+  const pinned = renderDashboard({ window, decisions: [], metricOverrides: { bikeFtpW: { when: 262, use: 250, ts: "2026-06-14T00:00:00Z" } } });
+  assert.match(pinned, /📌 <b>Bike FTP<\/b>: using <b>250 W<\/b>/);
+  assert.match(pinned, /onclick="unpinOverride\(this\)"/);
+  assert.doesNotMatch(pinned, /250 W → <b>262 W/); // the change is suppressed while pinned
   // No card when nothing changed.
   assert.doesNotMatch(renderDashboard({ window: [mk(todayIso(), 250)], decisions: [] }), /Data changes — your call/);
 });

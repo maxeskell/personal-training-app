@@ -16,6 +16,8 @@ export interface MetricChange {
   label: string;
   from: string; // formatted previous value
   to: string; // formatted new value
+  fromValue: number; // raw previous value (what "disagree" pins as your override)
+  toValue: number; // raw new value (the auto-detected number being rejected)
   source: Source;
   /** Date (YYYY-MM-DD) the new value first appeared in the snapshots. */
   date: string;
@@ -41,6 +43,19 @@ const TRACKED: Tracked[] = [
   { metric: "swimCssSecPer100", label: "Swim CSS", pick: (s) => s.thresholds.value?.swimCssSecPer100, src: (s) => s.thresholds.source, fmt: (n) => paceFmt(n, "/100m") },
   { metric: "vo2max", label: "VO₂max", pick: (s) => s.vo2max.value, src: (s) => s.vo2max.source, fmt: (n) => `${n}` },
 ];
+
+/** The metrics the change-feed + overrides track (the override store validates against this). */
+export const TRACKED_METRICS: ReadonlySet<string> = new Set(TRACKED.map((t) => t.metric));
+
+/** Format a raw value for a tracked metric (e.g. bikeFtpW 262 → "262 W"); identity for unknown metrics. */
+export function formatMetricValue(metric: string, value: number): string {
+  return (TRACKED.find((t) => t.metric === metric)?.fmt ?? ((n: number) => `${n}`))(value);
+}
+
+/** Human label for a tracked metric (e.g. "Bike FTP"); the metric name itself for unknown ones. */
+export function metricLabel(metric: string): string {
+  return TRACKED.find((t) => t.metric === metric)?.label ?? metric;
+}
 
 function ageDays(date: string, now: number): number | null {
   const t = Date.parse(`${date}T00:00:00Z`);
@@ -79,6 +94,8 @@ export function detectMetricChanges(window: AthleteState[], opts: { now?: number
       label: t.label,
       from: t.fmt(prev.v as number),
       to: t.fmt(latest.v as number),
+      fromValue: prev.v as number,
+      toValue: latest.v as number,
       source: latest.src,
       date,
       ageDays: age,

@@ -14,6 +14,7 @@ import {
   type RecoveryModel,
 } from "./types.js";
 import { deriveZones } from "../insights/zones.js";
+import { applyMetricOverrides, loadMetricOverrides } from "./metricOverrides.js";
 import { config } from "../config.js";
 import { extractJson, garminInner, asNumber, lastNum, lastVal, lastEl, daysAgoIso, get } from "./payload.js";
 
@@ -194,6 +195,10 @@ export async function assembleState(
     garminActivities: undefined,
     garminStale,
   });
+
+  // Athlete overrides for auto-detected metrics ("👎 disagree" on the Data-changes card): where the
+  // platform still reports the value you rejected, use yours instead. Last word, after all source mapping.
+  applyMetricOverrides(state, await loadMetricOverrides());
 
   state.raw = raw;
   return state;
