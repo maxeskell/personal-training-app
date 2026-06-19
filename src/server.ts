@@ -191,7 +191,7 @@ async function refresh(): Promise<void> {
   }
 }
 
-/** Latest state + its insights (gated, feedback-aware) — shared by /act. */
+/** Latest state + its insights (gated, feedback-aware) — shared by /act and /act-item. */
 async function latestInsights() {
   const store = new StateStore();
   const today = todayIso();
@@ -209,6 +209,26 @@ type SessionFeedbackResult = { status: string; markdown: string; deep?: boolean 
 
 /** In-flight session-feedback generations, keyed by `${date}:${force}` — see the /session-feedback route. */
 const sessionFeedbackInFlight = new Map<string, Promise<SessionFeedbackResult>>();
+
+/**
+ * Draft a free-text request into concrete, validated, GATED plan-adjustment proposals (no write here —
+ * confirming one is the only path that writes). Shared by /act (acts on the surfaced alerts) and /act-item
+ * (acts on one specific "This week" recommendation). The proposer is re-validated against the athlete's
+ * real scheduled sessions, so anything un-targetable degrades to a `notes` explanation, never a bad write.
+ */
+async function draftGatedProposals(li: LatestInsights, request: string) {
+  const ctx = buildProposerContext(li.state, li.insights); // full picture: load/form + health + races + taper
+  const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt(), "act"), request, li.state, ctx);
+  const { valid, rejected } = validateProposals(result.proposals, li.state.plannedSessions.value ?? [], writeContextFor(li.state));
+  const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
+  const proposals = [];
+  for (const p of valid) {
+    const pr = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human });
+    proposals.push({ id: pr.id, human: p.human, summary: p.summary, tradeoff: p.tradeoff, basis: p.basis });
+  }
+  const notes = [result.notes, rejected.length ? `Not applied: ${rejected.join("; ")}` : ""].filter(Boolean).join(" ");
+  return { proposals, notes };
+}
 
 /**
  * Generate + persist deep feedback for ONE session — the expensive path: an optional on-demand .FIT
@@ -392,20 +412,28 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       if (!li) return json({ proposals: [], notes: "No data assembled yet — hit Sync first." });
       const actionable = alertFindings(li.insights.topFindings);
       if (!actionable.length) return json({ proposals: [], notes: "Nothing above the alert bar needs a plan change." });
-      const ctx = buildProposerContext(li.state, li.insights); // full picture: load/form + health + races + taper
       const request =
         "Turn these surfaced signals into minimal, specific plan adjustments with trade-offs (don't restructure the week; smallest change that helps):\n" +
         actionable.map((f) => `- [${f.severity}] ${f.title}: ${f.detail}${f.recommendation ? ` (suggested: ${f.recommendation})` : ""}`).join("\n");
-      const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt(), "act"), request, li.state, ctx);
-      const { valid, rejected } = validateProposals(result.proposals, li.state.plannedSessions.value ?? [], writeContextFor(li.state));
-      const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
-      const proposals = [];
-      for (const p of valid) {
-        const pr = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human });
-        proposals.push({ id: pr.id, human: p.human, summary: p.summary, tradeoff: p.tradeoff, basis: p.basis });
-      }
-      const notes = [result.notes, rejected.length ? `Not applied: ${rejected.join("; ")}` : ""].filter(Boolean).join(" ");
-      return json({ proposals, notes });
+      return json(await draftGatedProposals(li, request));
+    }
+
+    // "Make this change" on a "This week" training card: draft ONE specific recommendation into a concrete,
+    // gated plan edit (same propose→confirm machinery as /act). No matching session → notes with the steps.
+    if (url.pathname === "/act-item" && req.method === "POST") {
+      const json = (b: object) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(b));
+      if (!CoachLLM.hasApiKey()) return json({ proposals: [], notes: "ANTHROPIC_API_KEY isn't set on the server." });
+      const body = JSON.parse((await readBody(req)) || "{}") as { recommendation?: string };
+      const recommendation = String(body.recommendation ?? "").slice(0, 300).trim();
+      if (!recommendation) return json({ proposals: [], notes: "No recommendation provided." });
+      const li = await latestInsights();
+      if (!li) return json({ proposals: [], notes: "No data assembled yet — hit Sync first." });
+      const request =
+        "Turn THIS one recommendation from the weekly review into the smallest concrete plan edit that delivers it " +
+        "(don't restructure the week). If it can't be tied to a specific scheduled session, propose nothing and use " +
+        "`notes` to say — in plain English — exactly how to make it yourself in AI Endurance or Garmin:\n- " +
+        recommendation;
+      return json(await draftGatedProposals(li, request));
     }
 
     // Confirm a proposal — the ONLY path that WRITES to AI Endurance (gated; two-step from /act).

@@ -145,16 +145,24 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   sections: **Finish setup** (actionable AI-Endurance gaps, your free-text `open_items`, unfilled optional
   profile questions, a few **integration-health** nudges — missing API key, long-stale sync, unset
   open-water temp — and any **race with no date yet**), **This week** (the marginal-gains tweaks *not
-  already in Top insights* + the action items parsed from your last weekly review) and **Worth considering**
-  (the topics from your last research digest). An `open_items` entry that just restates a setup gap (e.g. a
-  hand-written "swim CSS not set" alongside the `swim_css` gap) folds into the canonical item, so each gap
-  is listed once. The time-bound sections **read your last saved reports** — they never re-run the
-  weekly/research LLM flows — and each carries an *"as of …"* tag, dropping once the report goes stale.
-  Every item is tagged with where to action it (*in AI Endurance* / *edit profile* / *discuss with coach*
-  / *in your setup*), **ranked by value**, deduped and capped, and has a **✕ dismiss** that hides it for
-  ~2 weeks (reusing the insights' snooze machinery — a calm hub, not a nag). **Click any item to expand a
-  concrete, copy-pasteable proposed action** — exactly how to do it, no need to leave the page.
-  Display-only; hidden from the shared/screenshot view.
+  already in Top insights* + the action items from your last weekly review) and **Worth considering**
+  (the topics from your last research digest). **Everything in "This week" is actioned right on the card —
+  it never points you at a saved report.** Each advice item leads with the plain-English action (the tech
+  detail sits muted underneath) and carries a category chip (*Training / Fuelling / Gear / Recovery*):
+  - a **fuelling, gear or recovery** change gets **👍 Agree / 👎 Disagree / 💤 Snooze** (the same logged,
+    reversible feedback the Top-insights box uses — your reactions feed the listening model);
+  - a **training plan edit** gets **➡️ Make this change**, which drafts the concrete edit and applies it to
+    your plan in AI Endurance through the **gated propose→confirm write** (you confirm the exact change
+    first; it's logged and reversible). If it can't be tied to a scheduled session, you get the **precise
+    steps** to make it yourself in AI Endurance or Garmin instead — never a dead end.
+
+  An `open_items` entry that just restates a setup gap (e.g. a hand-written "swim CSS not set" alongside the
+  `swim_css` gap) folds into the canonical item, so each gap is listed once. The time-bound sections
+  **read your last saved reports** — they never re-run the weekly/research LLM flows — and each carries an
+  *"as of …"* tag, dropping once the report goes stale. **Finish-setup** tasks stay plain `<details>`
+  rows tagged with where to action them (*in AI Endurance* / *edit profile* / *in your setup*), each
+  expandable to a concrete, copy-pasteable how-to. Everything is **ranked by value**, deduped, capped, and
+  snoozable for ~2 weeks (a calm hub, not a nag). Display-only; hidden from the shared/screenshot view.
 - **A "Data changes — your call" card.** When AI Endurance or Garmin **auto-update** a number the coach
   relies on — bike FTP, threshold HR/pace, swim CSS, VO₂max — the dashboard surfaces it (*"Bike FTP 250 →
   262 W · Garmin · as of 3d ago"*) so it isn't a silent change. Neither platform exposes a notification

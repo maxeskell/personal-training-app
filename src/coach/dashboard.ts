@@ -7,6 +7,7 @@ import { findingKey } from "../insights/metrics.js";
 import { detectMetricChanges, formatMetricValue, metricLabel } from "./metricChanges.js";
 import type { MetricOverrides } from "../state/metricOverrides.js";
 import { selectMarginalGains } from "../insights/marginalGains.js";
+import { categorize, isPlanEdit, CATEGORY_LABEL, type ActionCategory } from "./weeklyActions.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone, type Headline } from "../insights/headline.js";
 import { assembleSession } from "./session.js";
@@ -551,8 +552,10 @@ const AIE_TODO_ACTION_FALLBACK = "Set this directly in AI Endurance, then hit �
 // Self-serve action copy for the non-AIE sources (shown in each item's dropdown).
 const OPEN_ITEM_ACTION =
   "A free-text note you (or the coach) logged. Do it, then clear it — remove the line from `open_items` in profile.local.yaml, or ask Claude to update your profile.";
-const WEEKLY_ITEM_ACTION =
-  "From your latest weekly review (saved under reports/, …-weekly-review.md). Open that report for the full reasoning, or ask the coach to expand on it.";
+// Helper line under a training plan-edit card, shown before/instead of an auto-drafted change: plain
+// English first, the where-to-do-it spelled out. No "open the report" — the reasoning is on the card.
+const TRAINING_MANUAL_HINT =
+  "Hit “Make this change” to apply it to your plan in AI Endurance (you’ll confirm the exact edit first). If it can’t be tied to a scheduled session, you’ll get the precise steps to make it yourself in AI Endurance or Garmin.";
 const RESEARCH_ITEM_ACTION =
   "From your latest research digest (knowledge/pending/). Review it; to adopt it into the coach's priors run `npm run knowledge -- approve <file>`, or ask the coach what it means for you. A prompt to weigh — your own data outranks the textbook.";
 /** Proposed action for an unfilled profile question: the field + the canonical three ways to answer. */
@@ -578,7 +581,7 @@ export function aieTodoCopy(key: string, value: string): { label: string; why: s
 }
 
 /** Where an item is actioned — shown as a tag so the source can be trusted/weighted at a glance. */
-export type SetupRoute = "in AI Endurance" | "edit profile" | "discuss with coach" | "in your setup";
+export type SetupRoute = "in AI Endurance" | "edit profile" | "discuss with coach" | "in your setup" | "your call";
 
 /** The three sections of the card (issue #112). Finish setup first, then time-bound advice. */
 export type SetupGroup = "finish_setup" | "this_week" | "worth_considering";
@@ -609,6 +612,23 @@ export interface SetupItem {
   action: string;
   /** Ranking weight (higher = surfaces first); the per-group cap keeps the highest-value items. */
   priority: number;
+  /**
+   * For advice cards (weekly review + marginal gains): the KIND of change, shown as a chip. Drives the
+   * plain-English framing; absent for the plain "go do this elsewhere" setup tasks (which stay `<details>`).
+   */
+  category?: ActionCategory;
+  /**
+   * Render this as a "your call" card with 👍 Agree / 👎 Disagree / 💤 Snooze (the logged, reversible
+   * insight-feedback machinery) instead of a dismiss-only `<details>`. For fuelling/gear/recovery/general.
+   */
+  reactable?: boolean;
+  /**
+   * Render a "Make this change" button that drafts the concrete edit through the gated propose→confirm
+   * write to AI Endurance (training plan edits only). `rec` is the recommendation text the drafter acts on.
+   */
+  applyable?: boolean;
+  /** The raw recommendation text an applyable card sends to the drafter (data-rec); set with `applyable`. */
+  rec?: string;
 }
 
 /** Stable dismissal key for a setup item — namespaced (by source tag) so it never collides with an insight key. */
@@ -830,6 +850,8 @@ export interface SetupOptions {
   questions?: ProfileQuestion[];
   /** Item keys the athlete dismissed (snoozed) within the cool-off window — dropped before the cap. */
   suppressed?: Set<string>;
+  /** Saved agree/disagree per key — so a "your call" advice card shows its persisted reaction state. */
+  reactions?: Map<string, InsightReaction>;
   /** Already-built insight report — its deterministic marginal-gains feed the "This week" group (no LLM). */
   insights?: InsightReport;
   /** Finding keys already shown in the Top-insights box — excluded from "This week" so a recommendation
@@ -908,26 +930,40 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
   // Skip any gain already surfaced in the Top-insights box above — it's shown (and reactable) there, so
   // restating its recommendation here is the dedupe the dashboard most needs. Select a few extra (the
   // per-group cap trims later) so a filtered-out one frees its slot for the next-best gain.
+  // Each "This week" item is an in-app "your call" card: lead with the plain-English action, the tech detail
+  // sits muted underneath, and the buttons ARE the call to action. Fuelling/gear/recovery/general get
+  // agree/disagree/snooze; a training PLAN edit gets "Make this change" (the gated propose→confirm write).
   if (opts.insights) {
     const surfaced = opts.surfacedInsightKeys ?? new Set<string>();
     for (const f of selectMarginalGains(opts.insights)) {
       if (surfaced.has(findingKey(f))) continue;
-      const action = `${f.detail}\n\nDo: ${f.recommendation ?? f.title}${f.evidence ? `\nEvidence: ${f.evidence}` : ""}`;
-      items.push({ key: setupKey("tune", findingKey(f)), label: f.recommendation ?? f.title, why: f.title, source: "tune", group: "this_week", route: "discuss with coach", action, priority: SETUP_PRIORITY.tune });
+      const action = `${f.detail}${f.evidence ? ` (${f.evidence})` : ""}`;
+      // Marginal gains are execution cues, not schedule edits → always agree/disagree/snooze.
+      items.push({ key: setupKey("tune", findingKey(f)), label: f.recommendation ?? f.title, why: f.title, source: "tune", group: "this_week", route: "your call", action, priority: SETUP_PRIORITY.tune, category: categorize(`${f.family} ${f.title} ${f.recommendation ?? ""}`), reactable: true });
     }
   }
   if (opts.weeklyReview) {
     const age = ageDaysFrom(opts.weeklyReview.date, now);
     if (age != null && age <= WEEKLY_FRESH_DAYS) {
-      const acts = opts.weeklyReview.actions.slice(0, GROUP_CAP.this_week);
-      if (acts.length) {
-        // The weekly review's own "Next week" action items.
-        for (const a of acts) {
-          items.push({ key: setupKey("weekly", dedupeKey(a)), label: a, why: `from this week's review — ${asOf(age)}`, source: "weekly", group: "this_week", route: "discuss with coach", action: WEEKLY_ITEM_ACTION, priority: SETUP_PRIORITY.weekly });
-        }
-      } else {
-        // The report had no parseable action section → fall back to a pointer.
-        items.push({ key: setupKey("weekly", "review"), label: "Revisit this week's training review", why: `weekly review saved — ${asOf(age)}`, source: "weekly", group: "this_week", route: "discuss with coach", action: WEEKLY_ITEM_ACTION, priority: SETUP_PRIORITY.weekly });
+      // The weekly review's own "Next week" actions, each typed + given the right in-app interaction.
+      // No items → nothing to show (no "revisit the report" pointer; the reasoning lives on the cards).
+      for (const a of opts.weeklyReview.actions.slice(0, GROUP_CAP.this_week)) {
+        const category = categorize(a);
+        const planEdit = isPlanEdit(a);
+        items.push({
+          key: setupKey("weekly", dedupeKey(a)),
+          label: a,
+          why: `from this week’s review — ${asOf(age)}`,
+          source: "weekly",
+          group: "this_week",
+          route: "your call",
+          action: planEdit ? TRAINING_MANUAL_HINT : "",
+          priority: SETUP_PRIORITY.weekly,
+          category,
+          reactable: !planEdit, // a plan edit applies; everything else is agree/disagree/snooze
+          applyable: planEdit,
+          rec: planEdit ? a : undefined,
+        });
       }
     }
   }
@@ -980,27 +1016,94 @@ const GROUP_HEADING: Record<SetupGroup, string> = {
   worth_considering: "Worth considering",
 };
 
+/** Small category chip (Training / Fuelling / Gear / …) shown on a "your call" advice card. */
+function categoryChip(c: ActionCategory | undefined): string {
+  return c ? `<span class="cat cat-${c}">${escapeHtml(CATEGORY_LABEL[c])}</span> ` : "";
+}
+
+/** The saved-reaction "state" + button-highlight class for a keyed card (mirrors renderInsightsBox). */
+function reactionState(key: string, reactions?: Map<string, InsightReaction>): { state: string; reacted: string } {
+  const saved = reactions?.get(key); // "agree" | "disagree" — snoozed items are filtered out before render
+  const state = saved === "agree" ? "like" : saved === "disagree" ? "dislike" : "";
+  const reacted = state === "like" ? "👍 agreed" : state === "dislike" ? "👎 disagreed (still shown)" : "";
+  return { state, reacted };
+}
+
 /**
- * One expandable `<details>` for a setup item: the summary line (label · why · route tag · dismiss ✕),
- * and — on expand — the **proposed action** (self-serve "how to do it" so you never leave the page). The
- * ✕ carries the stable key and stops propagation so a dismiss click doesn't toggle the dropdown.
+ * A "your call" advice card (fuelling / gear / recovery / general): plain-English action first, the tech
+ * detail muted underneath, then 👍 Agree / 👎 Disagree / 💤 Snooze — the same logged, reversible
+ * insight-feedback machinery the Top-insights box uses (so a reaction here is read by the listening model).
  */
-function setupItemHtml(it: SetupItem): string {
+function reactableCardHtml(it: SetupItem, reactions?: Map<string, InsightReaction>): string {
+  const { state, reacted } = reactionState(it.key, reactions);
+  const on = (which: string) => (state === which ? " on" : "");
+  const why = it.why ? `<div class="age">${escapeHtml(it.why)}</div>` : "";
+  const detail = it.action ? `<div class="ev">${escapeHtml(it.action)}</div>` : "";
+  return `<div class="insight" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-reaction-state="${state}">
+    <div>${categoryChip(it.category)}<b>${escapeHtml(it.label)}</b></div>
+    ${detail}${why}
+    <div class="acts">
+      <button class="agree${on("like")}" data-reaction="like" onclick="feedback(this)">👍 Agree</button>
+      <button class="disagree${on("dislike")}" data-reaction="dislike" onclick="feedback(this)">👎 Disagree</button>
+      <button class="ignore" data-reaction="snooze" onclick="feedback(this)">💤 Snooze</button>
+      <span class="reacted">${reacted}</span>
+    </div>
+  </div>`;
+}
+
+/**
+ * An applyable training card: "Make this change" drafts the concrete plan edit through the gated
+ * propose→confirm write to AI Endurance (you confirm the exact edit), rendered inline. When it can't be
+ * tied to a scheduled session, the drafter returns the precise manual steps instead. Plus 💤 Snooze.
+ */
+function applyableCardHtml(it: SetupItem): string {
+  const why = it.why ? `<div class="age">${escapeHtml(it.why)}</div>` : "";
+  const hint = it.action ? `<div class="ev">${escapeHtml(it.action)}</div>` : "";
+  return `<div class="insight" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-rec="${escapeHtml(it.rec ?? it.label)}">
+    <div>${categoryChip(it.category)}<b>${escapeHtml(it.label)}</b></div>
+    ${hint}${why}
+    <div class="item-proposals"></div>
+    <div class="acts">
+      <button class="agree" onclick="actItem(this)">➡️ Make this change</button>
+      <button class="ignore" data-reaction="snooze" onclick="feedback(this)">💤 Snooze</button>
+      <span class="reacted"></span>
+    </div>
+  </div>`;
+}
+
+/**
+ * One expandable `<details>` for a plain setup TASK (an AI-Endurance gap, a profile question, a config
+ * nudge): the summary line (label · why · route tag · dismiss ✕), and — on expand — the **proposed
+ * action** (self-serve "how to do it"). The ✕ carries the stable key and stops propagation so a dismiss
+ * click doesn't toggle the dropdown.
+ */
+function setupTaskHtml(it: SetupItem): string {
   const note = it.why ? ` — <span class="muted">${escapeHtml(it.why)}</span>` : "";
   const body = it.action ? `<div class="setup-action">${escapeHtml(it.action)}</div>` : "";
   return `<details class="setup-item" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><summary><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> <button class="dismiss" title="Dismiss — hide this for ~2 weeks" onclick="event.stopPropagation();dismissSetup(this)">✕</button></summary>${body}</details>`;
 }
 
-const setupListHtml = (its: SetupItem[]): string => `<div class="setup">${its.map(setupItemHtml).join("")}</div>`;
+/** Dispatch a setup item to the right surface: an applyable training card, a "your call" reaction card, or
+ *  the plain `<details>` task. */
+function setupItemHtml(it: SetupItem, reactions?: Map<string, InsightReaction>): string {
+  if (it.applyable) return applyableCardHtml(it);
+  if (it.reactable) return reactableCardHtml(it, reactions);
+  return setupTaskHtml(it);
+}
+
+const setupListHtml = (its: SetupItem[], reactions?: Map<string, InsightReaction>): string =>
+  `<div class="setup">${its.map((it) => setupItemHtml(it, reactions)).join("")}</div>`;
 
 /**
  * "Set up & improve" — the dashboard's deterministic, LLM-free action hub (issue #112). Three sections:
- * **Finish setup** (AI-Endurance gaps · open items · unfilled profile questions), **This week** (the
- * marginal-gains selection + a recent weekly-review pointer) and **Worth considering** (the last research
- * digest's topics). The time-bound groups READ persisted reports (never re-run the LLM flows) and carry
- * an "as of …" tag. Each item is dismissable (the ✕ snoozes it via the same insight-feedback machinery,
- * so it stays gone ~2wk — a calm hub, not a nag). The group headings only appear when more than one
- * section is present. Omitted in share/screenshot mode and whenever there's nothing outstanding.
+ * **Finish setup** (AI-Endurance gaps · open items · unfilled profile questions) renders as plain
+ * `<details>` tasks; **This week** (the marginal-gains selection + the latest weekly review's "Next week"
+ * actions) and **Worth considering** (research) render as in-app "your call" cards — agree/disagree/snooze
+ * on fuelling/gear/recovery, and a gated "Make this change" on a training plan edit. Nothing points the
+ * athlete at a saved report. The time-bound groups READ persisted reports (never re-run the LLM flows) and
+ * carry an "as of …" tag. Each item is dismissable/snoozable via the same insight-feedback machinery, so it
+ * stays gone ~2wk — a calm hub, not a nag. The group headings only appear when more than one section is
+ * present. Omitted in share/screenshot mode and whenever there's nothing outstanding.
  */
 export function renderSetupImprove(profile: Profile | undefined, share = false, opts: SetupOptions = {}): string {
   if (share) return "";
@@ -1008,12 +1111,13 @@ export function renderSetupImprove(profile: Profile | undefined, share = false, 
   if (!items.length) return "";
   const groups: SetupGroup[] = ["finish_setup", "this_week", "worth_considering"];
   const present = groups.filter((g) => items.some((it) => it.group === g));
+  const reactions = opts.reactions;
   const body =
     present.length <= 1
-      ? setupListHtml(items)
-      : present.map((g) => `<h3 class="setup-group">${GROUP_HEADING[g]}</h3>${setupListHtml(items.filter((it) => it.group === g))}`).join("");
+      ? setupListHtml(items, reactions)
+      : present.map((g) => `<h3 class="setup-group">${GROUP_HEADING[g]}</h3>${setupListHtml(items.filter((it) => it.group === g), reactions)}`).join("");
   return `<div class="card"><h2>Set up &amp; improve</h2>
-  <div class="k" style="margin-bottom:6px">What to do next — from your profile and your last saved coach reports (no AI call here). <b>Click any item</b> for exactly how to do it; the tag says where; dismiss (✕) hides one for ~2 weeks.</div>
+  <div class="k" style="margin-bottom:6px">What to do next — all actioned right here. <b>This week</b> cards are your call: 👍 Agree / 👎 Disagree / 💤 Snooze on fuelling, gear and recovery; a training change has <b>Make this change</b> (applies it in AI Endurance after you confirm the exact edit, or hands you the precise steps). <b>Finish setup</b> tasks open for exactly how to do them.</div>
   ${body}</div>`;
 }
 
@@ -1415,6 +1519,9 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .newbadge{background:#1558d6;color:#fff;font-size:9px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:9px;margin-right:6px;vertical-align:middle}
 .age{font-size:11px;color:#bbb;margin-top:4px}
 .route{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.02em;color:#6b5b45;background:#f4f1ea;border:1px solid #e7d9c6;border-radius:9px;padding:1px 7px;margin-left:4px;white-space:nowrap}
+.cat{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border-radius:9px;padding:1px 7px;margin-right:6px;vertical-align:middle;white-space:nowrap}
+.cat-training{background:#e7eefb;color:#1558d6}.cat-fuelling{background:#fdeede;color:#b45309}.cat-gear{background:#eef0f2;color:#475569}.cat-recovery{background:#e6f5ea;color:#1a8a3a}.cat-general{background:#f3f3f3;color:#666}
+.item-proposals:not(:empty){margin:6px 0}
 details.setup-item{border-bottom:1px solid #f0ede5;padding:5px 0}details.setup-item:last-child{border-bottom:0}
 details.setup-item>summary{cursor:pointer;line-height:1.5;list-style:none}
 details.setup-item>summary::-webkit-details-marker{display:none}
@@ -1560,19 +1667,31 @@ async function unpinOverride(btn){
   }catch(err){s.textContent='error';}
 }
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function proposalHtml(p){return '<div class="proposal" data-id="'+esc(p.id)+'"><b>'+esc(p.human||p.summary)+'</b>'
+  +'<div class="k">✓ exact change, validated against your real plan — this is what gets written</div>'
+  +'<div class="fdetail">'+esc(p.summary)+'</div>'
+  +'<div class="ev">trade-off: '+esc(p.tradeoff)+'</div>'
+  +((p.basis&&p.basis.length)?'<div class="ev">because: '+esc(p.basis.join('; '))+'</div>':'')
+  +'<div class="ev" style="color:#bbb">the bold line is validated; the rationale above is AI-generated — read the bold line before applying</div>'
+  +'<div class="acts"><button class="agree" onclick="confirmProposal(this)">✓ Apply to AI Endurance</button>'
+  +'<button class="ignore" onclick="declineProposal(this)">✕ Dismiss</button><span class="reacted"></span></div></div>';}
 async function actPlan(){
   var box=document.getElementById('proposals'); box.innerHTML='<div class="k">Drafting a plan change…</div>';
   try{var r=await fetch('/act',{method:'POST'}); var j=await r.json();
     if(!j.proposals||!j.proposals.length){box.innerHTML='<div class="k">'+esc(j.notes||'No change proposed.')+'</div>';return;}
-    box.innerHTML=j.proposals.map(function(p){return '<div class="proposal" data-id="'+esc(p.id)+'"><b>'+esc(p.human||p.summary)+'</b>'
-      +'<div class="k">✓ exact change, validated against your real plan — this is what gets written</div>'
-      +'<div class="fdetail">'+esc(p.summary)+'</div>'
-      +'<div class="ev">trade-off: '+esc(p.tradeoff)+'</div>'
-      +((p.basis&&p.basis.length)?'<div class="ev">because: '+esc(p.basis.join('; '))+'</div>':'')
-      +'<div class="ev" style="color:#bbb">the bold line is validated; the rationale above is AI-generated — read the bold line before applying</div>'
-      +'<div class="acts"><button class="agree" onclick="confirmProposal(this)">✓ Apply to AI Endurance</button>'
-      +'<button class="ignore" onclick="declineProposal(this)">✕ Dismiss</button><span class="reacted"></span></div></div>';}).join('');
+    box.innerHTML=j.proposals.map(proposalHtml).join('');
   }catch(e){box.innerHTML='<div class="k">Error: '+esc(''+e)+'</div>';}
+}
+// "Make this change" on a training card: draft THIS specific recommendation into a concrete, validated plan
+// edit (gated propose→confirm — confirming writes to AI Endurance). No match → the precise manual steps.
+async function actItem(btn){
+  var card=btn.closest('.insight');var box=card.querySelector('.item-proposals');var rec=card.getAttribute('data-rec');
+  btn.disabled=true;box.innerHTML='<div class="k">Drafting the change…</div>';
+  try{var r=await fetch('/act-item',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({recommendation:rec})});
+    var j=await r.json();
+    if(!j.proposals||!j.proposals.length){box.innerHTML='<div class="setup-action">'+esc(j.notes||'No automatic edit fits this — make the change in AI Endurance, then ↻ Sync.')+'</div>';btn.disabled=false;return;}
+    box.innerHTML=j.proposals.map(proposalHtml).join('');
+  }catch(e){box.innerHTML='<div class="k">Error: '+esc(''+e)+'</div>';btn.disabled=false;}
 }
 async function confirmProposal(btn){var box=btn.closest('.proposal');var id=box.getAttribute('data-id');var s=box.querySelector('.reacted');s.textContent='Applying…';
   try{var r=await fetch('/confirm-proposal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})});var j=await r.json();
@@ -1583,7 +1702,7 @@ async function declineProposal(btn){var box=btn.closest('.proposal');var id=box.
     box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='dismissed';box.style.opacity=0.5;}catch(e){s.textContent='error';}}
 </script>
 
-${renderSetupImprove(profile, share, { suppressed, insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth })}
+${renderSetupImprove(profile, share, { suppressed, reactions, insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth })}
 
 ${insights ? renderSignals(insights) : ""}
 
