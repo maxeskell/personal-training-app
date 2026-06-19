@@ -10,14 +10,17 @@ import { config } from "../config.js";
  * chat history. Stored as JSONL so it's append-cheap and inspectable.
  */
 
-export type DecisionStatus = "proposed" | "accepted" | "declined" | "deferred" | "executing" | "executed" | "note" | "cleared";
+export type DecisionStatus = "proposed" | "accepted" | "declined" | "deferred" | "executing" | "executed" | "completed" | "dismissed" | "note" | "cleared";
 
 /**
- * How the athlete reacted to a surfaced insight. like/dislike (agree/disagree) are persistent, visible
- * OPINIONS — neither hides the insight; dislike just down-ranks it. snooze (ignore) is the hide action
- * (~2-week cool-off). clear removes a previous opinion (back to neutral). Maps to the statuses below.
+ * How the athlete reacted to a surfaced insight or setup task. like/dislike (agree/disagree) are
+ * persistent, visible OPINIONS — neither hides the item; dislike just down-ranks it. snooze (ignore) is
+ * the timed hide (~2-week cool-off, then it can resurface). done and dismiss are the two PERMANENT hides
+ * on a Finish-setup task: done = "I've done this" (and, for an AI-Endurance gap, it's written `resolved`
+ * back to the profile), dismiss = "ignore this advice, don't show it again". clear removes a previous
+ * opinion (back to neutral). Maps to the statuses below.
  */
-export type InsightReaction = "agree" | "disagree" | "ignore" | "clear";
+export type InsightReaction = "agree" | "disagree" | "ignore" | "done" | "dismiss" | "clear";
 
 export interface DecisionRecord {
   id: string;
@@ -38,6 +41,8 @@ const REACTION_STATUS: Record<InsightReaction, DecisionStatus> = {
   agree: "accepted",
   disagree: "declined",
   ignore: "deferred",
+  done: "completed",
+  dismiss: "dismissed",
   clear: "cleared",
 };
 
@@ -117,9 +122,17 @@ export class DecisionLog {
   }
 }
 
-/** Map a stored insight-feedback status back to the athlete's reaction. */
+/** Map a stored insight-feedback status back to the athlete's reaction (inverse of REACTION_STATUS;
+ *  any unexpected status falls back to "ignore" so an old/unknown record is treated as a benign hide). */
+const STATUS_REACTION: Partial<Record<DecisionStatus, InsightReaction>> = {
+  accepted: "agree",
+  declined: "disagree",
+  deferred: "ignore",
+  completed: "done",
+  dismissed: "dismiss",
+};
 export function reactionOf(status: DecisionStatus): InsightReaction {
-  return status === "accepted" ? "agree" : status === "declined" ? "disagree" : "ignore";
+  return STATUS_REACTION[status] ?? "ignore";
 }
 
 /**
@@ -130,6 +143,7 @@ export function reactionOf(status: DecisionStatus): InsightReaction {
 const REACTION_LABELS: Record<string, InsightReaction> = {
   like: "agree", dislike: "disagree", snooze: "ignore", clear: "clear",
   agree: "agree", disagree: "disagree", ignore: "ignore",
+  done: "done", dismiss: "dismiss",
 };
 export function reactionFromLabel(label: string): InsightReaction | undefined {
   return REACTION_LABELS[label];
@@ -152,10 +166,11 @@ export function latestInsightReactions(
 }
 
 /**
- * Keys the athlete SNOOZED within `withinDays` — suppressed from surfacing. Only snooze (ignore) hides:
- * like/dislike are visible opinions (dislike just down-ranks), so they never suppress. A snooze older than
- * the window lapses and the insight can surface again (and re-snooze, which is how "it keeps coming back"
- * is detected).
+ * Keys the athlete chose to HIDE — suppressed from surfacing. Three reactions hide; the rest don't:
+ *   • done / dismiss → PERMANENT (a completed or ignored setup task never resurfaces);
+ *   • ignore (snooze) → TIMED — hidden only within `withinDays`, then it lapses and can surface again
+ *     (and re-snooze, which is how "it keeps coming back" is detected);
+ *   • like/dislike are visible opinions (dislike just down-ranks), so they never suppress.
  */
 export function suppressedInsightKeys(
   reactions: Map<string, { reaction: InsightReaction; timestamp: string }>,
@@ -164,7 +179,11 @@ export function suppressedInsightKeys(
 ): Set<string> {
   const out = new Set<string>();
   for (const [key, { reaction, timestamp }] of reactions) {
-    if (reaction !== "ignore") continue; // only snooze hides; like/dislike stay visible
+    if (reaction === "done" || reaction === "dismiss") {
+      out.add(key); // permanent — completed or explicitly ignored, never lapses
+      continue;
+    }
+    if (reaction !== "ignore") continue; // like/dislike stay visible
     const ageDays = (now.getTime() - new Date(timestamp).getTime()) / 86_400_000;
     if (ageDays <= withinDays) out.add(key);
   }

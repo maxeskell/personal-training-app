@@ -159,12 +159,24 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
     steps** to make it yourself in AI Endurance or Garmin instead — never a dead end.
 
   An `open_items` entry that just restates a setup gap (e.g. a hand-written "swim CSS not set" alongside the
-  `swim_css` gap) folds into the canonical item, so each gap is listed once. The time-bound sections
-  **read your last saved reports** — they never re-run the weekly/research LLM flows — and each carries an
-  *"as of …"* tag, dropping once the report goes stale. **Finish-setup** tasks stay plain `<details>`
-  rows tagged with where to action them (*in AI Endurance* / *edit profile* / *in your setup*), each
-  expandable to a concrete, copy-pasteable how-to. Everything is **ranked by value**, deduped, capped, and
-  snoozable for ~2 weeks (a calm hub, not a nag). Display-only; hidden from the shared/screenshot view.
+  `swim_css` gap) folds into the canonical item, so each gap is listed once. **A gap the live data already
+  satisfies auto-clears** — once your **swim CSS** is set in AI Endurance and synced, the "Set your swim CSS"
+  task (and any open-item restatement of it) just disappears, no click needed. (FTP is deliberately *not*
+  auto-cleared: its gap is a Garmin-vs-AIE *disagreement*, not an absence, so a value being present doesn't
+  mean it's resolved.) The time-bound sections **read your last saved reports** — they never re-run the
+  weekly/research LLM flows — and each carries an *"as of …"* tag, dropping once the report goes stale.
+  **Finish-setup** tasks stay plain `<details>` rows tagged with where to action them (*in AI Endurance* /
+  *edit profile* / *in your setup*), each expandable to a concrete, copy-pasteable how-to, and each carries
+  **three distinct actions** (the old single ✕ only ever snoozed):
+  - **✓ Done** — "I've done this": hidden for good, and remembered. For an **AI-Endurance gap** the server
+    also writes it `resolved` back into your `profile.local.yaml`, so it stays gone across rebuilds — not
+    just suppressed in the log.
+  - **💤 Snooze** — "not now": hidden ~2 weeks, then it can resurface (re-snoozing it is how the coach
+    notices a task that keeps coming back).
+  - **🚫 Ignore** — "ignore this advice": dropped for good, without touching your profile.
+
+  Everything is **ranked by value**, deduped and capped (a calm hub, not a nag). Display-only; hidden from
+  the shared/screenshot view.
 - **A "Data changes — your call" card.** When AI Endurance or Garmin **auto-update** a number the coach
   relies on — bike FTP, threshold HR/pace, swim CSS, **max HR**, VO₂max — the dashboard surfaces it (*"Bike
   FTP 250 → 262 W · Garmin · as of 3d ago"*) so it isn't a silent change. Neither platform exposes a

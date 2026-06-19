@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { emptyState } from "../src/state/types.js";
 import { todayIso } from "../src/util/today.js";
 import { buildInsights } from "../src/insights/engine.js";
-import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, parseResearchItems, parseActionBullets, mdLite, commonTrailingSentences, sessionFeedbackCardState, renderResearchDigestPage } from "../src/coach/dashboard.js";
+import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, aieGapKeyFromSetupKey, parseResearchItems, parseActionBullets, mdLite, commonTrailingSentences, sessionFeedbackCardState, renderResearchDigestPage } from "../src/coach/dashboard.js";
 import type { ProfileQuestion } from "../src/profile/questions.js";
 import type { InsightReport } from "../src/insights/engine.js";
 import type { Finding } from "../src/insights/metrics.js";
@@ -408,7 +408,7 @@ test("buildSetupItems: ranks by value so high-impact gaps win the cap (coach-rea
   assert.ok(items[0].priority > items[items.length - 1].priority, "priority is monotonic across the ranked list");
 });
 
-test("renderSetupImprove: renders the card, tags routes + dismiss control, hides in share mode, escapes values", () => {
+test("renderSetupImprove: renders the card, tags routes + the three task actions, hides in share mode, escapes values", () => {
   const profile = {
     schema_version: 1,
     identity: {},
@@ -421,10 +421,12 @@ test("renderSetupImprove: renders the card, tags routes + dismiss control, hides
   assert.match(html, /Shim the cleat/);
   assert.match(html, /in AI Endurance/);
   assert.match(html, /discuss with coach/);
-  // Each item is an expandable <details> carrying its stable dismissal key, a ✕ (whose click stops the
-  // dropdown toggling), and a self-serve proposed action in the body.
+  // Each item is an expandable <details> carrying its stable key, the three distinct actions (each click
+  // stops the dropdown toggling), and a self-serve proposed action in the body.
   assert.match(html, /<details class="setup-item" data-key="setup:aie:swim_css"/);
-  assert.match(html, /class="dismiss"[^>]*onclick="event\.stopPropagation\(\);dismissSetup\(this\)"/);
+  assert.match(html, /class="su-act su-done"[^>]*onclick="event\.stopPropagation\(\);completeSetup\(this\)"/);
+  assert.match(html, /class="su-act su-snooze"[^>]*onclick="event\.stopPropagation\(\);dismissSetup\(this\)"/);
+  assert.match(html, /class="su-act su-ignore"[^>]*onclick="event\.stopPropagation\(\);ignoreSetup\(this\)"/);
   assert.match(html, /<div class="setup-action">[^<]*Profile → Thresholds/, "the swim-CSS proposed action is in the dropdown");
   // Redacted screenshot view and the empty cases produce nothing.
   assert.equal(renderSetupImprove(profile, true), "", "hidden in share mode");
@@ -464,6 +466,33 @@ test("buildSetupItems: stable keys + a dismissed (snoozed) key is dropped, freei
   const freed = buildSetupItems({ schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile, { questions: many, suppressed: new Set(["setup:aie:swim_css"]) });
   assert.equal(freed.length, 5);
   assert.ok(freed.some((i) => i.key === "setup:q:health.q4"), "dismissing one item lets the next-best fill the freed slot");
+});
+
+test("buildSetupItems: live synced data auto-resolves a gap — a swim CSS in thresholds clears the task", () => {
+  // Profile still carries the hand-written swim_css gap AND an open-item restatement of it; once CSS is
+  // present in the live thresholds, BOTH drop (the value is the truth; the marker is just stale). FTP is a
+  // disagreement, not an absence, so it is NOT auto-resolved by a present value.
+  const profile = {
+    schema_version: 1,
+    identity: {},
+    ai_endurance_todo: { swim_css: "not_set", ftp_w: "unresolved" },
+    open_items: ["Swim CSS not set in AI Endurance: no swim model"],
+  } as Profile;
+  const before = buildSetupItems(profile, { questions: [] }).map((i) => i.key);
+  assert.ok(before.includes("setup:aie:swim_css"), "shown while CSS is unset");
+
+  const after = buildSetupItems(profile, { questions: [], liveThresholds: { swimCssSecPer100: 95 } });
+  assert.ok(!after.some((i) => i.key === "setup:aie:swim_css"), "the AIE swim-CSS gap auto-clears once synced");
+  assert.ok(!after.some((i) => /swim css/i.test(i.label)), "the open-item restatement of it clears too");
+  assert.ok(after.some((i) => i.key === "setup:aie:ftp_w"), "FTP (a disagreement, not an absence) is NOT auto-resolved");
+});
+
+test("aieGapKeyFromSetupKey: maps an AI-Endurance setup key back to its todo key, else null", () => {
+  assert.equal(aieGapKeyFromSetupKey("setup:aie:swim_css"), "swim_css");
+  assert.equal(aieGapKeyFromSetupKey("setup:aie:ftp_w"), "ftp_w");
+  assert.equal(aieGapKeyFromSetupKey("setup:open:shim the cleat"), null); // open items have no profile field
+  assert.equal(aieGapKeyFromSetupKey("setup:q:health.q1"), null);
+  assert.equal(aieGapKeyFromSetupKey("cad"), null); // a bare insight key
 });
 
 // --- Phase 2/3: "This week" (marginal gains + weekly pointer) and "Worth considering" (research) ---

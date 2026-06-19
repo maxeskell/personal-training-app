@@ -9,7 +9,8 @@ import { selectDataSource } from "./sources/index.js";
 import { DecisionLog, suppressedInsightKeys, reactionFromLabel } from "./state/decisionLog.js";
 import { InsightLog } from "./state/insightLog.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
-import { renderDashboard, renderResearchDigestPage } from "./coach/dashboard.js";
+import { renderDashboard, renderResearchDigestPage, aieGapKeyFromSetupKey } from "./coach/dashboard.js";
+import { updateLocalProfile } from "./profile/update.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
 import { listPending, readPending } from "./knowledge/store.js";
 import { loadSessionFeedbacks, saveSessionFeedback, latestByDate } from "./coach/sessionFeedbackStore.js";
@@ -374,9 +375,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       return json(await coalesce(sessionFeedbackInFlight, `${probe.date}:${force ? "force" : ""}`, () => produceSessionFeedback(li, probe.date, force)));
     }
 
-    // Insight feedback (the insights box posts like/dislike/snooze/clear here). The UI vocabulary maps to
-    // the persisted reactions: like→agree, dislike→disagree (still shown, just down-ranked), snooze→ignore
-    // (hides ~2wk), clear→neutral. Canonical names are still accepted for back-compat.
+    // Insight feedback (the insights box + the Set-up card's task buttons post here). The UI vocabulary
+    // maps to the persisted reactions: like→agree, dislike→disagree (still shown, just down-ranked),
+    // snooze→ignore (hides ~2wk), done→completed and dismiss→dismissed (both hide forever), clear→neutral.
+    // Canonical names are still accepted for back-compat.
     if (url.pathname === "/insight-feedback" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)) || "{}") as { key?: string; reaction?: string; summary?: string };
       const reaction = reactionFromLabel(String(body.reaction));
@@ -385,7 +387,21 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         return;
       }
       await new DecisionLog().recordInsightFeedback(body.key, reaction, body.summary ?? body.key);
-      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
+      // "✓ Done" on an AI-Endurance setup gap is also written `resolved` into profile.local.yaml, so the
+      // gap stays cleared across rebuilds — not just suppressed in the decision log. Other item sources
+      // have no profile field, so they're recorded only. Best-effort: a profile-write failure (e.g. the
+      // no-live-numbers guard, missing file) must not fail the reaction the athlete already gave.
+      let profileWritten = false;
+      const gap = reaction === "done" ? aieGapKeyFromSetupKey(body.key) : null;
+      if (gap) {
+        try {
+          await updateLocalProfile({ ai_endurance_todo: { [gap]: "resolved" } });
+          profileWritten = true;
+        } catch (e) {
+          console.warn(`[insight-feedback] could not mark ${gap} resolved in profile:`, e);
+        }
+      }
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, profileWritten }));
       return;
     }
 

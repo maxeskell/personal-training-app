@@ -1,4 +1,4 @@
-import type { AthleteState, ActualActivity, PlannedSession, ZoneSet } from "../state/types.js";
+import type { AthleteState, ActualActivity, PlannedSession, ZoneSet, DisciplineThresholds } from "../state/types.js";
 import type { DecisionRecord, InsightReaction } from "../state/decisionLog.js";
 import type { FitSummary } from "../archive/store.js";
 import type { SessionFeedbackRecord } from "./sessionFeedbackStore.js";
@@ -717,6 +717,17 @@ function setupKey(source: SetupSource, id: string): string {
   return `setup:${SOURCE_TAG[source]}:${id}`;
 }
 
+/**
+ * Inverse of {@link setupKey} for AI-Endurance gaps only: given a setup item key, return the
+ * `ai_endurance_todo` key it represents (`setup:aie:swim_css` → `swim_css`), else null. Lets the server's
+ * "✓ Done" handler write that one gap `resolved` back into profile.local.yaml. Other item sources
+ * (open-item / question / health / advice) have no profile field, so they return null (suppressed only).
+ */
+export function aieGapKeyFromSetupKey(key: string): string | null {
+  const prefix = `setup:${SOURCE_TAG.ai_endurance}:`;
+  return key.startsWith(prefix) ? key.slice(prefix.length) : null;
+}
+
 /** Per-group caps keep the hub calm: a handful of setup gaps, a couple of timely nudges. */
 const GROUP_CAP: Record<SetupGroup, number> = { finish_setup: 5, this_week: 3, worth_considering: 2 };
 
@@ -1005,6 +1016,19 @@ function setupTopic(label: string): string | null {
   return null;
 }
 
+/**
+ * Finish-setup TOPICS that the live, synced data already satisfies — so the hand-maintained `not_set`
+ * marker (and any `open_item` restatement of it) is just stale and should auto-clear, no click needed:
+ * a swim CSS set in AI Endurance lands in `thresholds.swimCssSecPer100` on the next sync and removes the
+ * "Set your swim CSS" task. Only unambiguous, PRESENCE-based gaps qualify. FTP is deliberately excluded —
+ * its gap is a source DISAGREEMENT (Garmin vs AIE), not an absence, so a present value isn't "resolved".
+ */
+function resolvedSetupTopics(t: DisciplineThresholds | undefined): Set<string> {
+  const out = new Set<string>();
+  if ((t?.swimCssSecPer100 ?? 0) > 0) out.add("swim-css");
+  return out;
+}
+
 /** Options for {@link buildSetupItems} / {@link renderSetupImprove}. */
 export interface SetupOptions {
   /** Profile-question catalogue (defaults to the real one; injectable for tests). */
@@ -1024,6 +1048,12 @@ export interface SetupOptions {
   researchDigest?: { date: string; file: string; items: ResearchTopic[] };
   /** Tool/integration health signals (computed in the IO layer) → operational "Finish setup" nudges. */
   setupHealth?: { lastSyncAgeHours?: number; hasApiKey?: boolean; waterTempSet?: boolean };
+  /**
+   * Today's live, synced thresholds — used to AUTO-RESOLVE a Finish-setup gap the data already satisfies
+   * (a synced swim CSS clears the swim-CSS task), so a value set in AI Endurance picks up on the next sync
+   * without a manual edit or click. See {@link resolvedSetupTopics}. Omitted → nothing auto-resolves.
+   */
+  liveThresholds?: DisciplineThresholds;
   /** Clock for staleness (defaults to Date.now()). */
   now?: number;
 }
@@ -1155,12 +1185,14 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
     .map((d) => d.item);
   const seen = new Set<string>();
   const seenTopics = new Set<string>(); // CSS/FTP folding, Finish-setup only (see SETUP_TOPIC_PATTERNS)
+  const resolvedTopics = resolvedSetupTopics(opts.liveThresholds); // live data already satisfies these
   const perGroup: Record<SetupGroup, number> = { finish_setup: 0, this_week: 0, worth_considering: 0 };
   const out: SetupItem[] = [];
   for (const item of ranked) {
     const k = dedupeKey(item.label);
     if (seen.has(k)) continue;
     const topic = item.group === "finish_setup" ? setupTopic(item.label) : null;
+    if (topic && resolvedTopics.has(topic)) continue; // synced data already satisfies this gap → auto-clear
     if (topic && seenTopics.has(topic)) continue; // a restatement of an already-listed setup gap
     seen.add(k);
     if (topic) seenTopics.add(topic);
@@ -1235,15 +1267,28 @@ function applyableCardHtml(it: SetupItem): string {
 
 /**
  * One expandable `<details>` for a plain setup TASK (an AI-Endurance gap, a profile question, a config
- * nudge): the summary line (label · why · route tag · dismiss ✕), and — on expand — the **proposed
- * action** (self-serve "how to do it"). The ✕ carries the stable key and stops propagation so a dismiss
- * click doesn't toggle the dropdown.
+ * nudge): the summary line (label · why · route tag · the three actions), and — on expand — the
+ * **proposed action** (self-serve "how to do it"). Each action carries the stable key and stops
+ * propagation so a click doesn't toggle the dropdown. The actions are deliberately distinct (the old
+ * single ✕ only ever snoozed): **✓ Done** marks it complete and remembers forever (for an AI-Endurance
+ * gap the server also writes it `resolved` into the profile); **💤 Snooze** hides it ~2 weeks then it can
+ * resurface; **🚫 Ignore** drops the advice for good.
  */
 function setupTaskHtml(it: SetupItem): string {
   const note = it.why ? ` — <span class="muted">${escapeHtml(it.why)}</span>` : "";
   const body = it.action ? `<div class="setup-action">${escapeHtml(it.action)}</div>` : "";
   const links = it.links?.length ? `<div class="setup-links">${it.links.map(setupLinkHtml).join("")}</div>` : "";
-  return `<details class="setup-item" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><summary><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> <button class="dismiss" title="Dismiss — hide this for ~2 weeks" onclick="event.stopPropagation();dismissSetup(this)">✕</button></summary>${body}${links}</details>`;
+  const doneTitle =
+    it.source === "ai_endurance"
+      ? "I've done this — marks it resolved in your profile so it stays gone"
+      : "I've done this — hide it for good";
+  const acts =
+    `<span class="setup-acts">` +
+    `<button class="su-act su-done" title="${escapeHtml(doneTitle)}" onclick="event.stopPropagation();completeSetup(this)">✓ Done</button>` +
+    `<button class="su-act su-snooze" title="Not now — hide this for ~2 weeks" onclick="event.stopPropagation();dismissSetup(this)">💤 Snooze</button>` +
+    `<button class="su-act su-ignore" title="Ignore this advice — don't show it again" onclick="event.stopPropagation();ignoreSetup(this)">🚫 Ignore</button>` +
+    `</span>`;
+  return `<details class="setup-item" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><summary><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> ${acts}</summary>${body}${links}</details>`;
 }
 
 /** One safe anchor in a setup item's dropdown. Only renders `/`-relative (in-app) or http(s) hrefs — an
@@ -1289,7 +1334,7 @@ export function renderSetupImprove(profile: Profile | undefined, share = false, 
       ? setupListHtml(items, reactions)
       : present.map((g) => `<h3 class="setup-group">${GROUP_HEADING[g]}</h3>${setupListHtml(items.filter((it) => it.group === g), reactions)}`).join("");
   return `<div class="card"><h2>Set up &amp; improve</h2>
-  <div class="k" style="margin-bottom:6px">What to do next — all actioned right here. <b>This week</b> cards are your call: 👍 Agree / 👎 Disagree / 💤 Snooze on fuelling, gear and recovery; a training change has <b>Make this change</b> (applies it in AI Endurance after you confirm the exact edit, or hands you the precise steps). <b>Finish setup</b> tasks open for exactly how to do them.</div>
+  <div class="k" style="margin-bottom:6px">What to do next — all actioned right here. <b>This week</b> cards are your call: 👍 Agree / 👎 Disagree / 💤 Snooze on fuelling, gear and recovery; a training change has <b>Make this change</b> (applies it in AI Endurance after you confirm the exact edit, or hands you the precise steps). <b>Finish setup</b> tasks open for exactly how to do them, and each carries <b>✓ Done</b> (mark it complete — an AI-Endurance gap is also written back to your profile so it stays gone), <b>💤 Snooze</b> (hide ~2 weeks) and <b>🚫 Ignore</b> (don't show again). A gap you've already filled in AI Endurance clears itself on the next sync.</div>
   ${body}</div>`;
 }
 
@@ -1635,7 +1680,7 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
 
   // Humanised activity log — plain labels, status icon, dev ids stripped from the summary.
   const KIND_LABEL: Record<string, string> = { readiness: "Readiness", "plan-adjust": "Plan change", "insight-feedback": "Your feedback", note: "Note" };
-  const STATUS_LABEL: Record<string, string> = { accepted: "✓ agreed", declined: "✕ dismissed", deferred: "○ ignored", proposed: "• proposed", executed: "✓ applied", note: "" };
+  const STATUS_LABEL: Record<string, string> = { accepted: "✓ agreed", declined: "✕ dismissed", deferred: "○ ignored", completed: "✓ done", dismissed: "🚫 ignored", proposed: "• proposed", executed: "✓ applied", note: "" };
   // Dedupe by kind+summary keeping the most recent — re-reacting to the same insight (👍 then 👍 again,
   // or flip-flopping) logs a fresh row each time, which otherwise listed the same signal 2–3× here.
   const seenDecision = new Set<string>();
@@ -1702,7 +1747,9 @@ details.setup-item[open]>summary::before{content:"▾"}
 .setup-action{margin:6px 0 8px 14px;padding:8px 11px;background:#faf8f3;border-left:2px solid #e7d9c6;border-radius:4px;font-size:13px;line-height:1.55;color:#444;white-space:pre-wrap}
 .setup-links{margin:0 0 9px 14px;display:flex;flex-wrap:wrap;gap:14px}
 .setup-link{font-size:12px;font-weight:600;color:#c8642d;text-decoration:none}.setup-link:hover{text-decoration:underline}
-.setup-item .dismiss{font-size:11px;line-height:1;color:#b9aa93;background:none;border:0;cursor:pointer;padding:0 3px;margin-left:2px}.setup-item .dismiss:hover{color:#c0392b}
+.setup-acts{margin-left:4px;white-space:nowrap}
+.setup-item .su-act{font-size:11px;line-height:1;color:#b9aa93;background:none;border:0;cursor:pointer;padding:0 3px}
+.setup-item .su-done:hover{color:#1a8a3a}.setup-item .su-snooze:hover{color:#9a8a72}.setup-item .su-ignore:hover{color:#c0392b}
 .setup-group{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#9a8a72;margin:10px 0 3px}
 .actbtn{font-size:13px;padding:7px 14px;border:1px solid #c8642d;border-radius:8px;background:#fff;color:#c8642d;cursor:pointer}.actbtn:hover{background:#c8642d;color:#fff}
 code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
@@ -1818,13 +1865,18 @@ async function feedback(btn){
     setReactionState(box,send);span.textContent=send==='like'?'👍 liked':'👎 disliked (still shown)';
   }catch(err){span.textContent='error';}
 }
-async function dismissSetup(btn){
-  var li=btn.closest('.setup-item');btn.disabled=true;
+// The three Finish-setup actions share one POST; only the reaction differs. done/dismiss hide forever,
+// snooze hides ~2wk (server-side). done on an AI-Endurance gap ALSO writes it resolved into the profile.
+async function setupAction(btn,reaction){
+  var li=btn.closest('.setup-item');li.querySelectorAll('button').forEach(function(b){b.disabled=true;});
   try{await fetch('/insight-feedback',{method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({key:li.getAttribute('data-key'),reaction:'snooze',summary:li.getAttribute('data-summary')})});
+    body:JSON.stringify({key:li.getAttribute('data-key'),reaction:reaction,summary:li.getAttribute('data-summary')})});
     li.style.opacity=0.4;li.style.textDecoration='line-through';
-  }catch(err){btn.disabled=false;}
+  }catch(err){li.querySelectorAll('button').forEach(function(b){b.disabled=false;});}
 }
+function completeSetup(btn){return setupAction(btn,'done');}   // ✓ Done — remembered forever
+function dismissSetup(btn){return setupAction(btn,'snooze');}  // 💤 Snooze — hidden ~2 weeks
+function ignoreSetup(btn){return setupAction(btn,'dismiss');}  // 🚫 Ignore — don't show again
 async function pinOverride(btn){
   var box=btn.closest('.insight');var s=box.querySelector('.reacted');s.textContent='Pinning…';
   try{await fetch('/metric-override',{method:'POST',headers:{'content-type':'application/json'},
@@ -1876,7 +1928,7 @@ async function declineProposal(btn){var box=btn.closest('.proposal');var id=box.
     box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='dismissed';box.style.opacity=0.5;}catch(e){s.textContent='error';}}
 </script>
 
-${renderSetupImprove(profile, share, { suppressed, reactions, insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth })}
+${renderSetupImprove(profile, share, { suppressed, reactions, insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined })}
 
 ${insights ? renderSignals(insights) : ""}
 

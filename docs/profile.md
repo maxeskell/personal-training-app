@@ -168,8 +168,12 @@ biomechanics, availability, fuelling, race targets) is injected into the app's o
 This connector is **read-only to AI Endurance**. It cannot set your **swim CSS or FTP** there — set
 those directly in the AI Endurance app. The `ai_endurance_todo` block is a reminder of what's unset,
 not a write path; any entry with a non-empty value (e.g. `swim_css: not_set`) surfaces on the
-dashboard's **Set up & improve** card (display-only, hidden from the shared view), and clears once you
-set it to `resolved` or remove it. **Race target times are NOT an `ai_endurance_todo` item** — AI
+dashboard's **Set up & improve** card (display-only, hidden from the shared view), and clears once it's
+set to `resolved` or removed. Two things set it to `resolved` for you: clicking **✓ Done** on the card
+(see below), or the **auto-resolve** — once the matching live number is synced from AI Endurance (a
+**swim CSS** lands in `thresholds.swimCssSecPer100`), the task drops on the next sync without any edit.
+(FTP is **not** auto-resolved: its `ftp_w` gap is a Garmin-vs-AIE *disagreement*, not an absence, so a
+present value doesn't mean it's settled.) **Race target times are NOT an `ai_endurance_todo` item** — AI
 Endurance has no field for them, so they can't be "set" there; they live in `races[].target_time` and
 the coach reads them from the profile, so the card only ever shows things you can actually action.
 
@@ -195,9 +199,12 @@ stale (≈10 days for the weekly review, ≈45 for research). Everything is dedu
 restates a setup item collapses, finish-setup winning) and capped per section, so the card stays a calm
 prompt, not a backlog. **Each item expands to a concrete, copy-pasteable proposed action** — exactly how
 to do it (set it in AI Endurance, the dot-path + the three ways to fill a profile field, the `.env` line
-to add, etc.) — so the card is self-serve without opening other docs. Each item also has a **✕ dismiss**
-that snoozes it for ~2 weeks via the same insight-feedback machinery (the decision log), so a dismissed
-item stays gone (and the freed slot is taken by the next-best item in that section).
+to add, etc.) — so the card is self-serve without opening other docs. Each Finish-setup task carries
+**three distinct actions** (recorded in the decision log, the same machinery as insight feedback):
+**✓ Done** (hidden for good — and for an AI-Endurance gap it's also written `resolved` back into
+`profile.local.yaml`, so it survives rebuilds), **💤 Snooze** (hidden ~2 weeks, then it can resurface)
+and **🚫 Ignore** (dropped for good, profile untouched). A dismissed item stays gone and the freed slot
+is taken by the next-best item in that section.
 
 ## The coaching brief is separate
 
