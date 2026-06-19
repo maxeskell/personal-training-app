@@ -39,6 +39,7 @@ import { WriteGate } from "./guardrails/writeGate.js";
 import { DecisionLog, suppressedInsightKeys } from "./state/decisionLog.js";
 import { runSetup } from "./setup.js";
 import { initProfile } from "./profile/setup.js";
+import { loadProfileSafe } from "./profile/load.js";
 import { renderQuestionsText, renderQuestionsMarkdown } from "./profile/questions.js";
 import { helpText } from "./help.js";
 import type { AthleteState } from "./state/types.js";
@@ -427,6 +428,7 @@ async function cmdDashboard(): Promise<void> {
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,
     weather,
+    profile: (await loadProfileSafe())?.profile,
     share: process.argv.includes("--share"), // redacted view for screenshots (race names + location hidden)
   });
   const { mkdir, writeFile } = await import("node:fs/promises");

@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyState } from "../src/state/types.js";
 import { buildInsights } from "../src/insights/engine.js";
-import { renderDashboard, ftpEstimateGapNote, trendsHeading } from "../src/coach/dashboard.js";
+import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderAieTodo, aieTodoCopy } from "../src/coach/dashboard.js";
+import type { Profile } from "../src/profile/schema.js";
 import type { Finding } from "../src/insights/metrics.js";
 import type { SessionDecay } from "../src/insights/fit.js";
 import type { InsightReaction } from "../src/state/decisionLog.js";
@@ -248,6 +249,51 @@ test("trends heading drops the window suffix until there are ≥2 days to trend 
   const html = renderDashboard({ window: [emptyState("2026-06-18", new Date().toISOString())], decisions: [] });
   assert.doesNotMatch(html, /last 0 days|last 1 days/, "no broken window label on a single-snapshot dashboard");
   assert.match(html, /<h2>Trends<\/h2>/, "shows a clean 'Trends' heading instead");
+});
+
+test("aieTodoCopy: status tokens get the curated 'why', free text passes through, unknown keys title-case", () => {
+  assert.deepEqual(aieTodoCopy("swim_css", "not_set"), {
+    label: "Set your swim CSS",
+    why: "without it there's no swim model for your races — the highest-value fix for a triathlete",
+  });
+  assert.equal(aieTodoCopy("ftp_w", "unresolved").label, "Resolve your cycling FTP");
+  assert.equal(aieTodoCopy("race_targets", "set the three target times").why, "set the three target times");
+  assert.equal(aieTodoCopy("some_new_field", "todo").label, "Some New Field");
+  assert.equal(aieTodoCopy("some_new_field", "todo").why, "needs setting in AI Endurance");
+});
+
+test("renderAieTodo: surfaces ai_endurance_todo as a card, drops resolved items, hides in share mode, escapes values", () => {
+  const profile = {
+    schema_version: 1,
+    identity: {},
+    ai_endurance_todo: { swim_css: "not_set", ftp_w: "unresolved", race_targets: "set the three target times", legacy: "resolved" },
+  } as Profile;
+  const html = renderAieTodo(profile);
+  assert.match(html, /Fix these in AI Endurance/);
+  assert.match(html, /Set your swim CSS/);
+  assert.match(html, /Resolve your cycling FTP/);
+  assert.match(html, /Set your race target times/);
+  assert.match(html, /set the three target times/, "a descriptive value passes through as the note");
+  assert.doesNotMatch(html, /legacy|resolved/, "an item marked 'resolved' is dropped");
+  // Redacted screenshot view and the empty cases produce nothing.
+  assert.equal(renderAieTodo(profile, true), "", "hidden in share mode");
+  assert.equal(renderAieTodo(undefined), "");
+  assert.equal(renderAieTodo({ schema_version: 1, identity: {} } as Profile), "", "no card when there's nothing to do");
+  // Interpolated values are escaped (dashboard escaping convention).
+  const nasty = renderAieTodo({ schema_version: 1, identity: {}, ai_endurance_todo: { x: `<script>bad()</script>` } } as Profile);
+  assert.doesNotMatch(nasty, /<script>bad/);
+  assert.match(nasty, /&lt;script&gt;/);
+});
+
+test("dashboard shows the AIE-todo card only when a profile with outstanding items is supplied", () => {
+  const s = emptyState("2026-06-18", new Date().toISOString());
+  const withTodo = renderDashboard({
+    window: [s],
+    decisions: [],
+    profile: { schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile,
+  });
+  assert.match(withTodo, /Fix these in AI Endurance/);
+  assert.doesNotMatch(renderDashboard({ window: [s], decisions: [] }), /Fix these in AI Endurance/);
 });
 
 test("API cost card renders windowed totals + a monthly projection when records are present", () => {

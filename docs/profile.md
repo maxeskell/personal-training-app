@@ -167,7 +167,9 @@ biomechanics, availability, fuelling, race targets) is injected into the app's o
 
 This connector is **read-only to AI Endurance**. It cannot set your **swim CSS, FTP or race target
 times** there — set those directly in the AI Endurance app. The `ai_endurance_todo` block is a
-reminder of what's unset, not a write path.
+reminder of what's unset, not a write path; any entry with a non-empty value (e.g. `swim_css: not_set`)
+surfaces on the dashboard as a **Fix these in AI Endurance** card (display-only, hidden from the shared
+view), and clears from the card once you set it to `resolved` or remove it.
 
 ## The coaching brief is separate
 
