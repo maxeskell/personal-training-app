@@ -268,7 +268,11 @@ projection, and the dashboard carries an **API cost** card. To keep it down, the
   When Garmin's **power-duration FTP *estimate*** (in the Garmin scores card) sits materially below your
   configured bike FTP, the card flags the gap rather than leaving two conflicting numbers on the page:
   the MMP curve only sees power-equipped rides and revises up only on hard, sustained power efforts, so a
-  low estimate is a floor, not a downgrade — your **configured FTP** is what drives the zones.
+  low estimate is a floor, not a downgrade — your **configured FTP** is what drives the zones. To dig into
+  that gap (e.g. **223 W configured vs ~183 W estimated**), run **`npm run ftp-check`** (or the `ftp_check`
+  MCP tool): it lays the two figures side by side with your recent **power-meter coverage** and recommends
+  closing the gap with power-equipped rides — and is honest that, read-only, it can't see *which* engine
+  set AI Endurance's FTP, so it asks you to verify the source rather than guessing.
 - **Estimated race splits** for every upcoming race — shown as a **finish-time range**, not a single number:
   - **The range** is *race-day best → race-it-today*. The worst case is your current prediction (racing at
     today's fitness). The best case is **predicted from doing the planned training well** — a bounded,
@@ -446,6 +450,7 @@ see and blocking for minutes (which used to surface in Cowork as a mystery timeo
 | `sync` / `get_state` | assemble (or read) today's AthleteState — plan, recovery, HRV/RHR, weight, thresholds, zones. `sync` also **auto-fetches recent raw `.FIT` streams** (parity with the dashboard Sync) and both surface a **granular-data completeness** readout — which recent sessions are missing their raw `.FIT` (so their per-interval splits / biomechanics are unreachable) and *why* (Garmin off / not reachable / download capability missing / a download that failed), never a silent zero | none |
 | `splits` | per-interval splits (laps/lengths) for a session from its raw `.FIT` — run/bike reps, swim lengths — **and a swim CSS estimate** by the 400/200 method with a maximal-effort confidence check. Pass `t400`/`t200` (sec or m:ss) to compute CSS from times with no `.FIT` needed; else it auto-detects the 400/200 pair from the FIT laps. Read-only: computes & recommends — you set CSS in AI Endurance | none |
 | `ingest_fit` | the manual-export fallback for raw `.FIT` streams: with no args, report the watched streams dir (each file's validity + summary) and confirm the path/convention; with `path`, validate an exported `.FIT` (Garmin Connect → Export Original) and copy it in so `splits` / `session_feedback` can read it | none |
+| `ftp_check` | bike-FTP source diagnostic — configured FTP (used for zones) vs Garmin's power-duration estimate, the gap, and recent power-meter coverage, with a recommendation to close a gap (e.g. 223 W vs ~183 W) via power-equipped rides. Honest: read-only, so it flags that it can't see *which* engine set AI Endurance's FTP — verify it yourself | none |
 | `get_profile` | the validated athlete profile (stable context: body, kit, medical, availability, race targets) + a computed `dose_cycle` (days_since_dose, in_gi_trough). NO live numbers — those are in `get_state` | none |
 | `insights` | run the n=1 insight engine: CTL/ATL/TSB & ramp, EF, durability, correlations, change-points, taper target, validated monitoring rules — each top finding annotated with its **key, age (NEW/Nd old) and your saved reaction** | none |
 | `react_to_insight` | like / dislike / snooze / clear a surfaced insight by `key` — full parity with the dashboard buttons (persists, reshapes surfacing); a local decision-log write, **available even on the read-only Cowork surface** | none |

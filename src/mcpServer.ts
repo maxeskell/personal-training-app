@@ -10,6 +10,8 @@ import { formatCompleteness } from "./state/dataCompleteness.js";
 import { loadActivityFits } from "./insights/fit.js";
 import { formatSplits, formatCss, computeCss, detectCssEffortsFromLaps, parseClock } from "./insights/sessionSplits.js";
 import { reportStreamsDir, ingestFitFile, formatStreamsReport, formatIngest } from "./archive/fitIngest.js";
+import { diagnoseFtp, formatFtpDiagnosis } from "./insights/ftpSource.js";
+import { richActivities } from "./insights/metrics.js";
 import { StateStore } from "./state/store.js";
 import { buildInsights } from "./insights/engine.js";
 import { DecisionLog, suppressedInsightKeys, reactionFromLabel, type DecisionRecord } from "./state/decisionLog.js";
@@ -253,6 +255,19 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
     async ({ path }) => {
       if (path) return ok(formatIngest(ingestFitFile(path)).join("\n"));
       return ok(formatStreamsReport(reportStreamsDir()).join("\n"));
+    },
+  );
+
+  server.tool(
+    "ftp_check",
+    "Bike-FTP source diagnostic — lays the configured FTP (used for zones), Garmin's power-duration (MMP) estimate, the gap between them, and your recent power-meter coverage side by side, then recommends how to resolve a gap (e.g. 223 W configured vs ~183 W estimated) with power-equipped rides rather than guessing. HONEST: this connector is read-only and can't see which engine set AI Endurance's FTP — it says so. Deterministic, no LLM cost; never writes.",
+    {},
+    async () => {
+      const state = (await new StateStore().recent(todayIso(), 1))[0];
+      if (!state) return fail("No state assembled yet — call the `sync` tool first.");
+      const archive = await loadArchive();
+      const rides = archive?.activities ?? richActivities(state.raw);
+      return ok(formatFtpDiagnosis(diagnoseFtp(state, rides)).join("\n"));
     },
   );
 
@@ -620,7 +635,7 @@ async function main(): Promise<void> {
   const server = buildServer({ includeProfileWrite: true });
   await server.connect(new StdioServerTransport());
   console.error(
-    "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/splits/ingest_fit/get_profile/insights/react_to_insight/list_reports/" +
+    "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/splits/ingest_fit/ftp_check/get_profile/insights/react_to_insight/list_reports/" +
       "read_report/decisions/listening/knowledge/cost · LLM tools: ask/readiness/weekly/race_prep/deep_dive/tune/research/session_feedback · " +
       "writes: update_profile (local file) · gated AIE writes: propose_adjustment/confirm/decline.",
   );

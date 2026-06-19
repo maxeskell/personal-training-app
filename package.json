@@ -57,6 +57,7 @@
     "session": "tsx src/cli.ts session",
     "splits": "tsx src/cli.ts splits",
     "ingest-fit": "tsx src/cli.ts ingest-fit",
+    "ftp-check": "tsx src/cli.ts ftp-check",
     "cost": "tsx src/cli.ts cost",
     "listening": "tsx src/cli.ts listening",
     "tune": "tsx src/cli.ts tune",
