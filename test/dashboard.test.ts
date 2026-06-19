@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyState } from "../src/state/types.js";
 import { buildInsights } from "../src/insights/engine.js";
-import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, parseResearchTopics, parseActionBullets, mdLite } from "../src/coach/dashboard.js";
+import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, parseResearchTopics, parseActionBullets, mdLite, commonTrailingSentences } from "../src/coach/dashboard.js";
 import type { ProfileQuestion } from "../src/profile/questions.js";
 import type { InsightReport } from "../src/insights/engine.js";
 import type { Finding } from "../src/insights/metrics.js";
@@ -629,6 +629,35 @@ test("recent decisions: re-reacting to the same insight is listed once (latest),
   const html = renderDashboard({ window: [s], decisions });
   assert.equal((html.match(/Grey-zone creep/g) || []).length, 1, "the repeated reaction is shown once");
   assert.match(html, /Cadence fades late in long runs/);
+});
+
+test("commonTrailingSentences: returns the longest identical trailing run shared by all strings", () => {
+  assert.equal(
+    commonTrailingSentences(["A x. Shared one. Shared two.", "B y. Shared one. Shared two."]),
+    "Shared one. Shared two.",
+  );
+  assert.equal(commonTrailingSentences(["only one string"]), "", "a single string shares nothing");
+  assert.equal(commonTrailingSentences(["a. b.", "c. d."]), "", "no common tail → empty");
+  assert.equal(commonTrailingSentences([]), "");
+});
+
+test("race splits: caveats every race repeats are hoisted into one shared note, stripped from each block", () => {
+  const s = emptyState("2026-06-19", new Date().toISOString());
+  const ins = buildInsights(s, undefined, {});
+  const tail = "It assumes you stay healthy and taper. Worst case is racing at current fitness.";
+  const stratTail = "Transitions are fixed estimates. Durability is trending up — wind it up.";
+  ins.splits = [
+    { race: "Race A", distanceKm: 50, predictedSec: 7740, worstSec: 7740, bestSec: 7560, rangeBasis: `With ~3 weeks to build, ~1.9%. ${tail}`, strategy: `Olympic plan: bike 83% FTP. ${stratTail}`, segments: [] },
+    { race: "Race B", distanceKm: 50, predictedSec: 7800, worstSec: 7800, bestSec: 7400, rangeBasis: `With ~11 weeks to build, ~4.7%. ${tail}`, strategy: `Olympic plan: bike 83% FTP. ${stratTail}`, segments: [] },
+  ] as never;
+  const html = renderDashboard({ window: [s], decisions: [], insights: ins });
+  // The shared caveats appear exactly once, under an "Applies to all races" note.
+  assert.match(html, /Applies to all races:/);
+  assert.equal((html.match(/Worst case is racing at current fitness\./g) || []).length, 1, "range caveat hoisted, not repeated");
+  assert.equal((html.match(/Transitions are fixed estimates\./g) || []).length, 1, "strategy caveat hoisted, not repeated");
+  // The race-specific lead of each block is kept.
+  assert.match(html, /~1\.9%/);
+  assert.match(html, /~4\.7%/);
 });
 
 test("API cost card renders windowed totals + a monthly projection when records are present", () => {

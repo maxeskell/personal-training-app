@@ -892,8 +892,44 @@ function renderRacePredictions(today: AthleteState): string {
 }
 
 /** Estimated race splits dependent on training: a finish-time RANGE + per-segment pacing. */
+/** Split a caveat string into sentences, keeping terminators. Splits on a period followed by
+ *  whitespace, so a decimal like "1.9%" (no following space) stays one token. */
+function splitSentences(s: string): string[] {
+  return s.split(/(?<=\.)\s+/).map((x) => x.trim()).filter(Boolean);
+}
+
+/**
+ * Longest run of identical TRAILING sentences shared by every (non-empty) string — the boilerplate the
+ * race-splits blocks repeat verbatim (the "…stay healthy, adapt well and taper. Worst case is racing at
+ * today's fitness." / "Transitions are fixed estimates. …No estimate for swim…" tails). Returns "" when
+ * fewer than two strings share anything, so a single race (or all-different bases) hoists nothing.
+ */
+export function commonTrailingSentences(strings: string[]): string {
+  const split = strings.filter(Boolean).map(splitSentences);
+  if (split.length < 2) return "";
+  const minLen = Math.min(...split.map((a) => a.length));
+  const shared: string[] = [];
+  for (let k = 1; k <= minLen; k++) {
+    const candidate = split[0][split[0].length - k];
+    if (split.every((a) => a[a.length - k] === candidate)) shared.unshift(candidate);
+    else break;
+  }
+  return shared.join(" ");
+}
+
+/** Drop a known trailing-sentence run from a caveat string (leaving the race-specific lead). */
+function stripTrailingSentences(s: string | undefined, trailing: string): string {
+  if (!s) return "";
+  if (!trailing) return s;
+  const t = s.trimEnd();
+  return (t.endsWith(trailing) ? t.slice(0, t.length - trailing.length) : t).trim();
+}
+
 function renderSplits(ins: InsightReport, share = false): string {
   if (!ins.splits.length) return "";
+  // Hoist the caveats every race repeats verbatim into one shared note below, stripped from each block.
+  const sharedBasis = commonTrailingSentences(ins.splits.map((p) => p.rangeBasis ?? ""));
+  const sharedStrategy = commonTrailingSentences(ins.splits.map((p) => p.strategy));
   const blocks = ins.splits
     .map((p, idx) => {
       const rows = p.segments
@@ -911,18 +947,23 @@ function renderSplits(ins: InsightReport, share = false): string {
       const worst = p.worstSec ?? p.predictedSec;
       const best = p.bestSec ?? worst;
       const finish = `<b style="font-size:16px">${clockMin(best)}</b> <span class="muted">race-day best (projected)</span> → <b style="font-size:16px">${clockMin(worst)}</b> <span class="muted">race it today (current level)</span> <span class="muted">· over ${p.distanceKm} km</span>`;
-      const basis = p.rangeBasis ? `<div class="ev" style="margin:3px 0">${escapeHtml(p.rangeBasis)}</div>` : "";
+      const basisText = stripTrailingSentences(p.rangeBasis, sharedBasis);
+      const basis = basisText ? `<div class="ev" style="margin:3px 0">${escapeHtml(basisText)}</div>` : "";
+      const strategyText = stripTrailingSentences(p.strategy, sharedStrategy);
+      const strategy = strategyText ? `<div class="ev" style="margin:4px 0">Pacing for the current prediction — ${escapeHtml(strategyText)}</div>` : "";
       return `<div style="margin-bottom:16px">
         <div style="font-size:15px"><b>${raceLabel}</b>${when}</div>
         <div style="margin:5px 0">${finish}</div>
         ${basis}
-        <div class="ev" style="margin:4px 0">Pacing for the current prediction — ${escapeHtml(p.strategy)}</div>
+        ${strategy}
         <table><tr class="k"><td>Segment</td><td>Target</td><td>Split</td><td>Cumulative</td></tr>${rows}</table>
       </div>`;
     })
     .join("");
+  const shared = [sharedBasis, sharedStrategy].filter(Boolean).join(" ");
+  const sharedNote = shared ? `<div class="ev" style="margin:0 0 8px"><b>Applies to all races:</b> ${escapeHtml(shared)}</div>` : "";
   return `<div class="card"><h2>Estimated race splits</h2>${blocks}
-    <div class="k">Run races build from AI Endurance's predicted finish shaped by your durability trend; triathlon legs are modelled from your current CSS / FTP / run predictions at standard race intensities. <b>A MODEL — a range and a pacing plan, not a guarantee.</b></div>
+    ${sharedNote}<div class="k">Run races build from AI Endurance's predicted finish shaped by your durability trend; triathlon legs are modelled from your current CSS / FTP / run predictions at standard race intensities. <b>A MODEL — a range and a pacing plan, not a guarantee.</b></div>
     ${raceGlossary()}
   </div>`;
 }
