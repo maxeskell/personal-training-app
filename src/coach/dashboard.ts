@@ -104,6 +104,11 @@ export interface DashboardInput {
    * which has no /refresh endpoint behind it.
    */
   autoSyncStaleMin?: number;
+  /**
+   * Keys the athlete snoozed within the cool-off window (same set used to suppress insights). Lets the
+   * "Set up & improve" card drop items dismissed via its ✕ control. Omitted → nothing is suppressed.
+   */
+  suppressed?: Set<string>;
 }
 
 const TONE_COLOR: Record<Tone, string> = { good: "#1a8a3a", neutral: "#777", warn: "#c98a00", bad: "#c0392b" };
@@ -438,6 +443,13 @@ export type SetupRoute = "in AI Endurance" | "edit profile" | "discuss with coac
 
 /** One actionable item on the "Set up & improve" card, tagged by its source and where to act on it. */
 export interface SetupItem {
+  /**
+   * Stable per-item key (`setup:<tag>:<id>`) used to persist a dismissal in the SAME decision-log
+   * machinery as insight feedback. Derived from the item's IDENTITY (todo key / field / normalised
+   * text), not its display copy, so rewording a `why` doesn't lose a dismissal. The `setup:` namespace
+   * keeps these distinct from insight finding keys in the shared log.
+   */
+  key: string;
   /** Short title / the action. */
   label: string;
   /** One line: why it's worth doing (or, for a free-text open item, empty). */
@@ -448,6 +460,12 @@ export interface SetupItem {
   route: SetupRoute;
   /** Ranking weight (higher = surfaces first); the ~5-item cap keeps the highest-value items. */
   priority: number;
+}
+
+/** Stable dismissal key for a setup item — namespaced so it never collides with an insight key. */
+function setupKey(source: SetupItem["source"], id: string): string {
+  const tag = source === "ai_endurance" ? "aie" : source === "open_item" ? "open" : "q";
+  return `setup:${tag}:${id}`;
 }
 
 /** ~5 keeps the card a calm hub, not a backlog (issue #112). */
@@ -497,6 +515,14 @@ function dedupeKey(label: string): string {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+/** Options for {@link buildSetupItems} / {@link renderSetupImprove}. */
+export interface SetupOptions {
+  /** Profile-question catalogue (defaults to the real one; injectable for tests). */
+  questions?: ProfileQuestion[];
+  /** Item keys the athlete dismissed (snoozed) within the cool-off window — dropped before the cap. */
+  suppressed?: Set<string>;
+}
+
 /**
  * Build the ranked, deduped, capped list of "Set up & improve" items from data the dashboard ALREADY
  * loads (the profile) — no LLM, no new flow wiring (issue #112, Phase 1). Three sources, each tagged +
@@ -504,11 +530,14 @@ function dedupeKey(label: string): string {
  *   • `ai_endurance_todo` → things only you can set in AI Endurance (non-actionable keys dropped).
  *   • `open_items`        → your running list of unresolved actions → talk them through with the coach.
  *   • unfilled profile    → optional profile questions you haven't answered → edit profile.
- * Items are ranked by value (see SETUP_PRIORITY) so the cap keeps the highest-impact gaps, deduped by
- * normalised label (highest-priority duplicate wins), and capped so the card stays a calm hub. Pure.
+ * Dismissed items (snoozed via the shared insight-feedback machinery) are dropped, the rest are ranked
+ * by value (see SETUP_PRIORITY) so the cap keeps the highest-impact gaps, deduped by normalised label
+ * (highest-priority duplicate wins), and capped so the card stays a calm hub. Pure.
  */
-export function buildSetupItems(profile: Profile | undefined, questions: ProfileQuestion[] = PROFILE_QUESTIONS): SetupItem[] {
+export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions = {}): SetupItem[] {
   if (!profile) return [];
+  const questions = opts.questions ?? PROFILE_QUESTIONS;
+  const suppressed = opts.suppressed ?? new Set<string>();
   const items: SetupItem[] = [];
 
   // 1) Actionable AI-Endurance gaps (skip resolved/blank values and the non-actionable keys).
@@ -517,25 +546,27 @@ export function buildSetupItems(profile: Profile | undefined, questions: Profile
     const v = value == null ? "" : String(value).trim();
     if (v === "" || v.toLowerCase() === "resolved") continue;
     const { label, why } = aieTodoCopy(key, v);
-    items.push({ label, why, source: "ai_endurance", route: "in AI Endurance", priority: SETUP_PRIORITY.ai_endurance });
+    items.push({ key: setupKey("ai_endurance", key), label, why, source: "ai_endurance", route: "in AI Endurance", priority: SETUP_PRIORITY.ai_endurance });
   }
 
   // 2) Free-text open items (a running list of unresolved actions) → raise them with the coach.
   for (const raw of profile.open_items ?? []) {
     const text = typeof raw === "string" ? raw.trim() : "";
     if (!text) continue;
-    items.push({ label: text, why: "", source: "open_item", route: "discuss with coach", priority: SETUP_PRIORITY.open_item });
+    items.push({ key: setupKey("open_item", dedupeKey(text)), label: text, why: "", source: "open_item", route: "discuss with coach", priority: SETUP_PRIORITY.open_item });
   }
 
   // 3) Unfilled optional profile questions → fill them in (or tell Claude via update_profile).
   for (const q of questions) {
     if (!isBlank(valueAtPath(profile, q.field))) continue;
-    items.push({ label: `Answer: ${q.question}`, why: q.why, source: "profile_question", route: "edit profile", priority: questionPriority(q) });
+    items.push({ key: setupKey("profile_question", q.field), label: `Answer: ${q.question}`, why: q.why, source: "profile_question", route: "edit profile", priority: questionPriority(q) });
   }
 
-  // Rank by priority (stable: original order breaks ties, so catalogue / source order is preserved
-  // within a tier), then dedupe across sources (highest-priority duplicate wins) and cap the list.
+  // Drop dismissed items, then rank by priority (stable: original order breaks ties, so catalogue /
+  // source order is preserved within a tier), dedupe across sources (highest-priority duplicate wins)
+  // and cap. Filtering before the cap means a dismissal lets the next-best item take the freed slot.
   const ranked = items
+    .filter((item) => !suppressed.has(item.key))
     .map((item, i) => ({ item, i }))
     .sort((a, b) => b.item.priority - a.item.priority || a.i - b.i)
     .map((d) => d.item);
@@ -553,21 +584,23 @@ export function buildSetupItems(profile: Profile | undefined, questions: Profile
 /**
  * "Set up & improve" — the dashboard's deterministic, LLM-free action hub (issue #112, Phase 1).
  * Surfaces what to do next from data already loaded with the profile: actionable AI-Endurance gaps, your
- * running `open_items`, and any unfilled profile questions — each tagged with where to action it. Omitted
- * in share/screenshot mode (it's personal setup) and whenever there's nothing outstanding.
+ * running `open_items`, and any unfilled profile questions — each tagged with where to action it, and
+ * each dismissable (the ✕ snoozes it via the same insight-feedback machinery, so it stays gone ~2wk —
+ * a calm hub, not a nag). Omitted in share/screenshot mode (it's personal setup, and the dismiss control
+ * is interactive) and whenever there's nothing outstanding.
  */
-export function renderSetupImprove(profile: Profile | undefined, share = false, questions: ProfileQuestion[] = PROFILE_QUESTIONS): string {
+export function renderSetupImprove(profile: Profile | undefined, share = false, opts: SetupOptions = {}): string {
   if (share) return "";
-  const items = buildSetupItems(profile, questions);
+  const items = buildSetupItems(profile, opts);
   if (!items.length) return "";
   const rows = items
     .map((it) => {
       const note = it.why ? ` — ${escapeHtml(it.why)}` : "";
-      return `<li><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span></li>`;
+      return `<li class="setup-item" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><div><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> <button class="dismiss" title="Dismiss — hide this for ~2 weeks" onclick="dismissSetup(this)">✕</button></div></li>`;
     })
     .join("");
   return `<div class="card"><h2>Set up &amp; improve</h2>
-  <div class="k" style="margin-bottom:6px">What to do next — pulled from your profile, no AI call. Each item is tagged with where to action it.</div>
+  <div class="k" style="margin-bottom:6px">What to do next — pulled from your profile, no AI call. Each item is tagged with where to action it; dismiss (✕) hides one for ~2 weeks.</div>
   <ul class="setup" style="margin:0;padding-left:18px;line-height:1.6">${rows}</ul></div>`;
 }
 
@@ -814,7 +847,7 @@ function freshnessLine(today: AthleteState): string {
   return line;
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Week: load by sport. Time in h:mm (user ask); a zero distance renders "—" not a misleading 0.0 km.
@@ -903,6 +936,7 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .newbadge{background:#1558d6;color:#fff;font-size:9px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:9px;margin-right:6px;vertical-align:middle}
 .age{font-size:11px;color:#bbb;margin-top:4px}
 .setup li{margin-bottom:4px}.route{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.02em;color:#6b5b45;background:#f4f1ea;border:1px solid #e7d9c6;border-radius:9px;padding:1px 7px;margin-left:4px;white-space:nowrap}
+.setup-item .dismiss{font-size:11px;line-height:1;color:#b9aa93;background:none;border:0;cursor:pointer;padding:0 3px;margin-left:2px}.setup-item .dismiss:hover{color:#c0392b}
 .actbtn{font-size:13px;padding:7px 14px;border:1px solid #c8642d;border-radius:8px;background:#fff;color:#c8642d;cursor:pointer}.actbtn:hover{background:#c8642d;color:#fff}
 code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 .proposal{border:1px solid #e7d9c6;border-radius:8px;padding:10px 12px;margin-top:10px}
@@ -996,6 +1030,13 @@ async function feedback(btn){
     setReactionState(box,send);span.textContent=send==='like'?'👍 liked':'👎 disliked (still shown)';
   }catch(err){span.textContent='error';}
 }
+async function dismissSetup(btn){
+  var li=btn.closest('.setup-item');btn.disabled=true;
+  try{await fetch('/insight-feedback',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({key:li.getAttribute('data-key'),reaction:'snooze',summary:li.getAttribute('data-summary')})});
+    li.style.opacity=0.4;li.style.textDecoration='line-through';
+  }catch(err){btn.disabled=false;}
+}
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 async function actPlan(){
   var box=document.getElementById('proposals'); box.innerHTML='<div class="k">Drafting a plan change…</div>';
@@ -1037,7 +1078,7 @@ ${renderZones(today)}
 
 ${renderScores(today)}
 
-${renderSetupImprove(profile, share)}
+${renderSetupImprove(profile, share, { suppressed })}
 
 <div class="card"><h2>Race</h2>
   <table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>

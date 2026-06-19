@@ -284,7 +284,7 @@ test("buildSetupItems: drops race_targets, tags + routes each source, dedupes an
     fuelling: { carb_target_g_per_hour: { long: 80 } }, // filled → its question is NOT surfaced
     // availability.rest_day is absent → its question IS surfaced
   } as Profile;
-  const items = buildSetupItems(profile, TEST_QUESTIONS);
+  const items = buildSetupItems(profile, { questions: TEST_QUESTIONS });
 
   // race_targets and resolved are gone; only actionable items remain.
   assert.ok(!items.some((i) => /race target/i.test(i.label)), "the non-actionable race_targets item is dropped");
@@ -324,7 +324,7 @@ test("buildSetupItems: dedupes across sources (first/higher-value wins) and caps
     question: `Question ${i}?`,
     why: "why",
   }));
-  const capped = buildSetupItems({ schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set", ftp_w: "unresolved" } } as Profile, many);
+  const capped = buildSetupItems({ schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set", ftp_w: "unresolved" } } as Profile, { questions: many });
   assert.equal(capped.length, 5, "the card is capped to keep it a calm hub");
   assert.equal(capped[0].source, "ai_endurance", "AIE gaps lead the list");
 });
@@ -338,7 +338,7 @@ test("buildSetupItems: ranks by value so high-impact gaps win the cap (coach-rea
   ];
   const items = buildSetupItems(
     { schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" }, open_items: ["Shim the cleat"] } as Profile,
-    questions,
+    { questions },
   );
   assert.deepEqual(
     items.map((i) => i.source),
@@ -351,27 +351,60 @@ test("buildSetupItems: ranks by value so high-impact gaps win the cap (coach-rea
   assert.ok(items[0].priority > items[items.length - 1].priority, "priority is monotonic across the ranked list");
 });
 
-test("renderSetupImprove: renders the card, tags routes, hides in share mode, escapes values", () => {
+test("renderSetupImprove: renders the card, tags routes + dismiss control, hides in share mode, escapes values", () => {
   const profile = {
     schema_version: 1,
     identity: {},
     ai_endurance_todo: { swim_css: "not_set" },
     open_items: ["Shim the cleat"],
   } as Profile;
-  const html = renderSetupImprove(profile, false, []);
+  const html = renderSetupImprove(profile, false, { questions: [] });
   assert.match(html, /Set up &amp; improve/);
   assert.match(html, /Set your swim CSS/);
   assert.match(html, /Shim the cleat/);
   assert.match(html, /in AI Endurance/);
   assert.match(html, /discuss with coach/);
+  // Each item carries its stable dismissal key + a ✕ that posts to the shared insight-feedback machinery.
+  assert.match(html, /data-key="setup:aie:swim_css"/);
+  assert.match(html, /class="dismiss"[^>]*onclick="dismissSetup\(this\)"/);
   // Redacted screenshot view and the empty cases produce nothing.
   assert.equal(renderSetupImprove(profile, true), "", "hidden in share mode");
   assert.equal(renderSetupImprove(undefined), "");
-  assert.equal(renderSetupImprove({ schema_version: 1, identity: {} } as Profile, false, []), "", "no card when there's nothing to do");
+  assert.equal(renderSetupImprove({ schema_version: 1, identity: {} } as Profile, false, { questions: [] }), "", "no card when there's nothing to do");
   // Interpolated values are escaped (dashboard escaping convention).
-  const nasty = renderSetupImprove({ schema_version: 1, identity: {}, ai_endurance_todo: { x: `<script>bad()</script>` } } as Profile, false, []);
+  const nasty = renderSetupImprove({ schema_version: 1, identity: {}, ai_endurance_todo: { x: `<script>bad()</script>` } } as Profile, false, { questions: [] });
   assert.doesNotMatch(nasty, /<script>bad/);
   assert.match(nasty, /&lt;script&gt;/);
+});
+
+test("buildSetupItems: stable keys + a dismissed (snoozed) key is dropped, freeing its slot", () => {
+  const profile = {
+    schema_version: 1,
+    identity: {},
+    ai_endurance_todo: { swim_css: "not_set", ftp_w: "unresolved" },
+    open_items: ["Shim the cleat"],
+  } as Profile;
+  // Keys are namespaced + derived from identity (todo key / normalised open text), not display copy.
+  const keys = buildSetupItems(profile, { questions: [] }).map((i) => i.key);
+  assert.deepEqual(keys, ["setup:aie:swim_css", "setup:aie:ftp_w", "setup:open:shim the cleat"]);
+  // The same item yields the same key across renders (so a dismissal sticks).
+  assert.deepEqual(buildSetupItems(profile, { questions: [] }).map((i) => i.key), keys);
+
+  // Dismiss the FTP item → it drops, and the others remain (in order).
+  const after = buildSetupItems(profile, { questions: [], suppressed: new Set(["setup:aie:ftp_w"]) });
+  assert.deepEqual(after.map((i) => i.key), ["setup:aie:swim_css", "setup:open:shim the cleat"]);
+
+  // Dismissal frees a slot before the ~5 cap: with 6 unfilled questions + 1 AIE gap, dismissing the
+  // AIE gap lets a 6th question (otherwise cut) surface.
+  // 1 AIE gap + 6 questions, cap 5 → shown = [swim, q0..q3]; q4 and q5 are cut.
+  const many: ProfileQuestion[] = Array.from({ length: 6 }, (_, i) => ({ area: "health", field: `health.q${i}`, question: `Q${i}?`, why: "why" }));
+  const full = buildSetupItems({ schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile, { questions: many });
+  assert.equal(full.length, 5);
+  assert.ok(!full.some((i) => i.key === "setup:q:health.q4"), "q4 is cut by the cap");
+  // Dismiss the AIE gap → shown = [q0..q4], so q4 (previously cut) takes the freed slot.
+  const freed = buildSetupItems({ schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile, { questions: many, suppressed: new Set(["setup:aie:swim_css"]) });
+  assert.equal(freed.length, 5);
+  assert.ok(freed.some((i) => i.key === "setup:q:health.q4"), "dismissing one item lets the next-best fill the freed slot");
 });
 
 test("dashboard shows the Set-up-&-improve card only when a profile with outstanding items is supplied", () => {

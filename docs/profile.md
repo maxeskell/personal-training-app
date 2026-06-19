@@ -178,6 +178,8 @@ your free-text `open_items` (tagged *discuss with coach*) and any unfilled optio
 (tagged *edit profile*). Items are **ranked by value** — AI-Endurance gaps and open items outrank
 profile questions, and a field the coach actually reads outranks a reference-only one — then deduped and
 capped to ~5, so the slots go to the highest-impact gaps and the card stays a calm prompt, not a backlog.
+Each item has a **✕ dismiss** that snoozes it for ~2 weeks via the same insight-feedback machinery (the
+decision log), so a dismissed item stays gone (and the freed slot is taken by the next-best item).
 
 ## The coaching brief is separate
 

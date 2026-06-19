@@ -408,6 +408,7 @@ async function cmdSession(): Promise<void> {
 async function cmdDashboard(): Promise<void> {
   const { window, state } = await buildTodayState();
   const decisions = await new DecisionLog().all();
+  const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions()); // for the Set-up-&-improve card's dismissals
   const archive = await loadArchive();
   const predictionTrajectory = state.raw ? await loadPredictionTrajectory(state) : undefined;
   const insights = state.raw ? buildInsights(state, archive, { history: window, predictionTrajectory }) : undefined;
@@ -429,6 +430,7 @@ async function cmdDashboard(): Promise<void> {
     canFetchFit: config.garmin.enabled,
     weather,
     profile: (await loadProfileSafe())?.profile,
+    suppressed,
     share: process.argv.includes("--share"), // redacted view for screenshots (race names + location hidden)
   });
   const { mkdir, writeFile } = await import("node:fs/promises");

@@ -145,7 +145,9 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   from data already loaded with your profile: actionable AI-Endurance gaps, your free-text `open_items`,
   and any unfilled optional profile questions — each tagged with where to action it (*in AI Endurance* /
   *edit profile* / *discuss with coach*), **ranked by value** (so the ~5 slots go to the highest-impact
-  gaps, not whatever's first), deduped and capped. Display-only; hidden from the shared/screenshot view.
+  gaps, not whatever's first), deduped and capped. Each item has a **✕ dismiss** that hides it for ~2
+  weeks (it reuses the insights' snooze machinery, so it's a calm hub, not a nag). Display-only; hidden
+  from the shared/screenshot view.
 - **The coaching brief ships as a default prompt.** [`coach-instructions.md`](coach-instructions.md)
   is the default system prompt a fresh clone gets (a prompt, *not* data — kept separate from the
   profile); edit it to taste. Full schema + privacy detail: [docs/profile.md](docs/profile.md).

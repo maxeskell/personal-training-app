@@ -116,6 +116,7 @@ async function renderLatest(share = false): Promise<string> {
     weather,
     profile: (await loadProfileSafe())?.profile,
     autoSyncStaleMin,
+    suppressed, // dismissed "Set up & improve" items (shares the insight snooze machinery)
   });
 }
 
