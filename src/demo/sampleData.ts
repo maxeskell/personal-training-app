@@ -141,6 +141,8 @@ export function buildDemoWindow(today: string, days = 21): AthleteState[] {
     const ctl = +(60 + i * 0.5).toFixed(1);
     const atl = +(ctl + 6 * wob(i, 6)).toFixed(1);
     s.load = p({ ctl, atl, tsb: +(ctl - atl).toFixed(1) }, "ai-endurance");
+    // A recent VO₂max bump (53 → 55 two days ago) so the demo showcases the "Data changes" card.
+    s.vo2max = p(i >= days - 2 ? 55 : 53, "garmin", "demo sample data");
 
     window.push(s);
   }

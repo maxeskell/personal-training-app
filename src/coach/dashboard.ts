@@ -4,6 +4,7 @@ import type { FitSummary } from "../archive/store.js";
 import type { SessionFeedbackRecord } from "./sessionFeedbackStore.js";
 import type { InsightReport } from "../insights/engine.js";
 import { findingKey } from "../insights/metrics.js";
+import { detectMetricChanges } from "./metricChanges.js";
 import { selectMarginalGains } from "../insights/marginalGains.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone, type Headline } from "../insights/headline.js";
@@ -579,6 +580,41 @@ function ageDaysFrom(date: string, now: number): number | null {
 /** "as of today" / "as of 3d ago" — the freshness tag the issue asks every time-bound item to carry. */
 function asOf(ageDays: number): string {
   return ageDays <= 0 ? "as of today" : `as of ${ageDays}d ago`;
+}
+
+const SOURCE_LABEL: Record<string, string> = { "ai-endurance": "AI Endurance", garmin: "Garmin", intervals: "intervals.icu", derived: "derived", manual: "you" };
+
+/**
+ * "Data changes — your call": when AI Endurance / Garmin have changed an auto-detected number (FTP,
+ * threshold HR/pace, swim CSS, VO₂max), surface it with 👍 agree / 👎 disagree / 💤 snooze — reusing the
+ * insight-feedback machinery (same keys, same `feedback()` handler, same snooze cool-off). Detected by
+ * diffing the snapshot window; no LLM. Snoozed changes are hidden; a saved agree/disagree is shown.
+ * Omitted when nothing changed recently.
+ */
+function renderDataChanges(window: AthleteState[], reactions?: Map<string, InsightReaction>, suppressed?: Set<string>, now?: number): string {
+  const changes = detectMetricChanges(window, { now }).filter((c) => !suppressed?.has(c.key)).slice(0, 5);
+  if (!changes.length) return "";
+  const rows = changes
+    .map((c) => {
+      const saved = reactions?.get(c.key); // "agree" | "disagree" (snoozed are filtered out above)
+      const state = saved === "agree" ? "like" : saved === "disagree" ? "dislike" : "";
+      const on = (which: string) => (state === which ? " on" : "");
+      const summary = `${c.label}: ${c.from} → ${c.to}`;
+      return `<div class="insight" data-key="${escapeHtml(c.key)}" data-summary="${escapeHtml(summary)}" data-reaction-state="${state}">
+        <div><b>${escapeHtml(c.label)}</b>: ${escapeHtml(c.from)} → <b>${escapeHtml(c.to)}</b> <span class="muted">· ${escapeHtml(SOURCE_LABEL[c.source] ?? c.source)} · ${asOf(c.ageDays)}</span></div>
+        <div class="acts">
+          <button class="agree${on("like")}" data-reaction="like" onclick="feedback(this)">👍 Agree</button>
+          <button class="disagree${on("dislike")}" data-reaction="dislike" onclick="feedback(this)">👎 Disagree</button>
+          <button class="ignore" data-reaction="snooze" onclick="feedback(this)">💤 Snooze</button>
+          <span class="reacted">${state === "like" ? "👍 agreed" : state === "dislike" ? "👎 disagreed" : ""}</span>
+        </div>
+      </div>`;
+    })
+    .join("");
+  return `<div class="card insights"><h2>Data changes — your call</h2>
+    <div class="k" style="margin-bottom:8px">AI Endurance / Garmin updated these auto-detected numbers (the coach now uses the new value). 👍 to acknowledge, 👎 if it looks wrong, 💤 to hide it. Zones follow from these thresholds.</div>
+    ${rows}
+  </div>`;
 }
 
 /**
@@ -1367,6 +1403,7 @@ ${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedback
 ${share ? "" : renderWeather(weather)}
 
 ${insights ? renderInsightsBox(insights, reactions, firstSeen, leadKey) : ""}
+${renderDataChanges(window, reactions, suppressed)}
 
 <div class="card" id="askcard"><h2>Ask your data</h2>
   <form id="askform" onsubmit="return ask(event)">

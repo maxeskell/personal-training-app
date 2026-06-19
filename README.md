@@ -155,6 +155,12 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   ~2 weeks (reusing the insights' snooze machinery — a calm hub, not a nag). **Click any item to expand a
   concrete, copy-pasteable proposed action** — exactly how to do it, no need to leave the page.
   Display-only; hidden from the shared/screenshot view.
+- **A "Data changes — your call" card.** When AI Endurance or Garmin **auto-update** a number the coach
+  relies on — bike FTP, threshold HR/pace, swim CSS, VO₂max — the dashboard surfaces it (*"Bike FTP 250 →
+  262 W · Garmin · as of 3d ago"*) so it isn't a silent change. Neither platform exposes a notification
+  feed, so this is **diffed from your own daily snapshots** (deterministic, no LLM). Each change carries
+  **👍 agree / 👎 disagree / 💤 snooze**, reusing the insights' feedback machinery (zones follow from the
+  thresholds). *(Disagree currently flags it; a later phase pins your own value as an override.)*
 - **The coaching brief ships as a default prompt.** [`coach-instructions.md`](coach-instructions.md)
   is the default system prompt a fresh clone gets (a prompt, *not* data — kept separate from the
   profile); edit it to taste. Full schema + privacy detail: [docs/profile.md](docs/profile.md).
