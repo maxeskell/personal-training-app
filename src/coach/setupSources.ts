@@ -1,6 +1,6 @@
-import { listReports } from "./reports.js";
+import { listReports, readReport } from "./reports.js";
 import { listPending, readPending } from "../knowledge/store.js";
-import { parseResearchTopics } from "./dashboard.js";
+import { parseResearchTopics, parseActionBullets } from "./dashboard.js";
 
 /**
  * IO loaders for the "Set up & improve" card's time-bound groups (issue #112 Phases 2–3). These READ the
@@ -9,11 +9,12 @@ import { parseResearchTopics } from "./dashboard.js";
  * "nothing to show" (a missing group, never a broken dashboard).
  */
 
-/** Date (YYYY-MM-DD) of the most recently saved weekly-review report, or undefined if none exists. */
-export async function latestWeeklyReviewDate(): Promise<string | undefined> {
+/** The most recent weekly review: its date + the action bullets parsed from its "## Next week" section. */
+export async function latestWeeklyReview(): Promise<{ date: string; actions: string[] } | undefined> {
   try {
     const r = (await listReports()).find((i) => i.name.endsWith("-weekly-review.md"));
-    return r?.date || undefined;
+    if (!r?.date) return undefined;
+    return { date: r.date, actions: parseActionBullets(await readReport(r.name), /next week|focus for next week/i) };
   } catch {
     return undefined;
   }

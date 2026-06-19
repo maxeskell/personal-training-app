@@ -16,7 +16,7 @@ import { proposeAdjustments, validateProposals, buildProposerContext, writeConte
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
-import { latestWeeklyReviewDate, latestResearchDigest } from "./coach/setupSources.js";
+import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
 import { loadSessionFeedbacks, saveSessionFeedback } from "./coach/sessionFeedbackStore.js";
 import { buildDemoWindow, buildDemoGarminDays, demoCostRecords, demoProfile } from "./demo/sampleData.js";
 import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact } from "./cli/dataCommands.js";
@@ -443,9 +443,14 @@ async function cmdDashboard(): Promise<void> {
     weather,
     profile: (await loadProfileSafe())?.profile,
     suppressed,
-    weeklyReviewDate: await latestWeeklyReviewDate(), // "This week" pointer — reads the persisted report
+    weeklyReview: await latestWeeklyReview(), // "This week" actions — reads the persisted report
     researchDigest: await latestResearchDigest(), // "Worth considering" — reads the persisted digest
     sessionFeedbacks: await loadSessionFeedbacks(), // auto-generated at sync; shown inline on the card
+    setupHealth: {
+      hasApiKey: CoachLLM.hasApiKey(),
+      waterTempSet: config.weather.waterTempC != null,
+      lastSyncAgeHours: (Date.now() - new Date(state.assembledAt).getTime()) / 3_600_000,
+    },
     share: process.argv.includes("--share"), // redacted view for screenshots (race names + location hidden)
   });
   const { mkdir, writeFile } = await import("node:fs/promises");
@@ -505,8 +510,9 @@ async function cmdDemo(): Promise<void> {
     costRecords: demoCostRecords(today),
     canFetchFit: false,
     profile: demoProfile,
-    weeklyReviewDate: today,
+    weeklyReview: { date: today, actions: ["Cut one grey-zone ride", "Move the long run off your GI-trough day"] },
     researchDigest: { date: today, topics: ["90 g/h carb intake for long course", "165 mm cranks change the fit"] },
+    setupHealth: { hasApiKey: true, waterTempSet: false, lastSyncAgeHours: 2 },
     sessionFeedbacks,
   });
   const { mkdir, writeFile } = await import("node:fs/promises");

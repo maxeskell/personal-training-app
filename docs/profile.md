@@ -176,18 +176,20 @@ the coach reads them from the profile, so the card only ever shows things you ca
 That card is a small, deterministic (no-AI) action hub in three sections:
 
 - **Finish setup** — the AI-Endurance gaps above, your free-text `open_items` (tagged *discuss with
-  coach*) and any unfilled optional profile questions (tagged *edit profile*). **Ranked by value** —
-  AI-Endurance gaps and open items outrank profile questions, and a field the coach actually reads
-  outranks a reference-only one.
+  coach*), any unfilled optional profile questions (tagged *edit profile*), a few **integration-health**
+  nudges (tagged *in your setup* — a missing `ANTHROPIC_API_KEY`, a long-stale sync, an unset
+  `COACH_WATER_TEMP_C`) and any **named race that has no date yet** (tagged *edit profile*). **Ranked by
+  value** — AI-Endurance gaps and open items outrank profile questions, and a field the coach actually
+  reads outranks a reference-only one.
 - **This week** — the deterministic *marginal-gains* tweaks (the same selection the `tune` flow phrases
-  up, computed live so it's always current and LLM-free), plus a pointer to your most recent weekly
-  review if one was saved lately.
+  up, computed live so it's always current and LLM-free), plus the **action items parsed from your most
+  recent weekly review's "Next week" section** (or a pointer to it when there's no parseable section).
 - **Worth considering** — the topic headlines from your most recent **research digest**
   (`knowledge/pending/`).
 
 The last two sections **read your last saved reports** — the dashboard never re-runs the weekly or
 research (LLM) flows — so each of their items carries an *"as of …"* tag and drops once the report is
-stale (≈10 days for the weekly pointer, ≈45 for research). Everything is deduped (a weekly tweak that
+stale (≈10 days for the weekly review, ≈45 for research). Everything is deduped (a weekly tweak that
 restates a setup item collapses, finish-setup winning) and capped per section, so the card stays a calm
 prompt, not a backlog. Each item has a **✕ dismiss** that snoozes it for ~2 weeks via the same
 insight-feedback machinery (the decision log), so a dismissed item stays gone (and the freed slot is
