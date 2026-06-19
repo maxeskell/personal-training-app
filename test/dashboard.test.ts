@@ -7,7 +7,7 @@ import type { ProfileQuestion } from "../src/profile/questions.js";
 import type { InsightReport } from "../src/insights/engine.js";
 import type { Finding } from "../src/insights/metrics.js";
 import type { Profile } from "../src/profile/schema.js";
-import type { InsightReaction } from "../src/state/decisionLog.js";
+import type { InsightReaction, DecisionRecord } from "../src/state/decisionLog.js";
 
 const NASTY = `O'Brien "5x3'" \\ </script><b>x</b>`; // apostrophe, quote, backslash, tag, </script>
 
@@ -561,6 +561,74 @@ test("share view omits the interactive Sync card (no empty card in a screenshot/
   assert.match(renderDashboard({ window: [s], decisions: [] }), /Sync latest data/, "present in the interactive view");
   assert.doesNotMatch(renderDashboard({ window: [s], decisions: [], share: true }), /Sync latest data/, "dropped in share view");
   assert.match(renderDashboard({ window: [s], decisions: [] }), /\.syncbar\{display:none/, "and its card is print-hidden via .syncbar");
+});
+
+// --- De-dupe: each signal/recommendation appears in exactly one place ---
+
+test("headline finding: shown once — the box marks it 'today's call', drops the repeated recommendation, stays reactable", () => {
+  const s = emptyState("2026-06-08", new Date().toISOString());
+  const ins = buildInsights(s, undefined, {});
+  ins.topFindings = [
+    { family: "Intensity distribution", title: "Grey-zone creep", severity: "watch", detail: "d", evidence: "e", confidence: 0.65, key: "grey", recommendation: "Slow the easy sessions down." } as Finding,
+    { family: "Aerobic efficiency", title: "Run EF slipping", severity: "watch", detail: "d2", evidence: "e2", confidence: 0.6, key: "ef", recommendation: "Watch EF vs fatigue." } as Finding,
+  ];
+  const html = renderDashboard({ window: [s], decisions: [], insights: ins });
+  // The lead recommendation appears exactly once (the Today action box) — not again in the insights box.
+  assert.equal((html.match(/Slow the easy sessions down\./g) || []).length, 1, "lead recommendation is not duplicated");
+  // The lead is marked in the box and still carries its feedback buttons (it stays reactable).
+  assert.match(html, /today's call ↑/);
+  assert.match(html, /data-key="grey"[\s\S]*?data-reaction="like"/);
+  // A non-lead finding keeps its own recommendation arrow.
+  assert.match(html, /→ Watch EF vs fatigue\./);
+});
+
+test("Today card shows each readiness signal once: Acute:chronic + limiter live in the drivers line, not also as chips", () => {
+  const s = emptyState("2026-06-08", new Date().toISOString());
+  s.trainingStatus = { value: { loadRatio: 1.0, acwrStatus: "OPTIMAL" }, source: "garmin" } as never;
+  s.recovery = { value: { limiterToday: "ess" }, source: "ai-endurance" } as never;
+  s.hrvStatus = { value: { status: "BALANCED" }, source: "garmin" } as never;
+  const ins = buildInsights(s, undefined, {});
+  ins.load = { ctl: 40, atl: 44, tsb: -4, rampPerWeek: 2, series: [{ date: "a", ctl: 38 }] } as never;
+  const html = renderDashboard({ window: [s], decisions: [], insights: ins });
+  assert.match(html, /Recovery limiter: ess/); // stated once, with context, in the drivers line
+  assert.equal((html.match(/Acute:chronic/g) || []).length, 1, "ACWR shown once (drivers), not also a chip");
+  assert.ok(!/<b>ess<\/b>/.test(html), "no standalone limiter chip duplicating the drivers line");
+});
+
+test("buildSetupItems: a gain already in the Top-insights box is dropped from This week (no cross-card repeat)", () => {
+  const profile = { schema_version: 1, identity: {} } as Profile;
+  const insights = insightsWith([F({ family: "Biomechanics", title: "Cadence fades", recommendation: "Add late-run cadence cues", key: "cad" })]);
+  const shown = buildSetupItems(profile, { questions: [], insights });
+  assert.ok(shown.some((i) => i.label === "Add late-run cadence cues"), "surfaces when NOT shown above");
+  const hidden = buildSetupItems(profile, { questions: [], insights, surfacedInsightKeys: new Set(["cad"]) });
+  assert.ok(!hidden.some((i) => i.label === "Add late-run cadence cues"), "dropped once it is in the box above");
+});
+
+test("buildSetupItems: a differently-worded restatement of the swim-CSS / FTP gap folds into the AIE item", () => {
+  const items = buildSetupItems(
+    {
+      schema_version: 1,
+      identity: {},
+      ai_endurance_todo: { swim_css: "not_set", ftp_w: "unresolved" },
+      open_items: ["Swim CSS not set in AI Endurance: no swim model", "FTP discrepancy: Garmin ~183 W vs AIE 223 W"],
+    } as Profile,
+    { questions: [] },
+  );
+  assert.equal(items.filter((i) => /css/i.test(i.label)).length, 1, "one swim-CSS item, not two");
+  assert.equal(items.filter((i) => /ftp/i.test(i.label)).length, 1, "one FTP item, not two");
+  assert.ok(items.every((i) => i.source !== "open_item"), "the open-item restatements folded into the AIE gaps");
+});
+
+test("recent decisions: re-reacting to the same insight is listed once (latest), not 2-3 times", () => {
+  const s = emptyState("2026-06-08", new Date().toISOString());
+  const decisions = [
+    { kind: "insight-feedback", status: "accepted", summary: "Grey-zone creep" },
+    { kind: "insight-feedback", status: "accepted", summary: "Cadence fades late in long runs" },
+    { kind: "insight-feedback", status: "accepted", summary: "Grey-zone creep" },
+  ] as unknown as DecisionRecord[];
+  const html = renderDashboard({ window: [s], decisions });
+  assert.equal((html.match(/Grey-zone creep/g) || []).length, 1, "the repeated reaction is shown once");
+  assert.match(html, /Cadence fades late in long runs/);
 });
 
 test("API cost card renders windowed totals + a monthly projection when records are present", () => {

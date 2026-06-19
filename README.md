@@ -142,9 +142,11 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
 - **A "Set up & improve" card on the dashboard.** A small, deterministic (no-AI) action hub in three
   sections: **Finish setup** (actionable AI-Endurance gaps, your free-text `open_items`, unfilled optional
   profile questions, a few **integration-health** nudges — missing API key, long-stale sync, unset
-  open-water temp — and any **race with no date yet**), **This week** (the marginal-gains tweaks + the
-  action items parsed from your last weekly review) and **Worth considering** (the topics from your last
-  research digest). The time-bound sections **read your last saved reports** — they never re-run the
+  open-water temp — and any **race with no date yet**), **This week** (the marginal-gains tweaks *not
+  already in Top insights* + the action items parsed from your last weekly review) and **Worth considering**
+  (the topics from your last research digest). An `open_items` entry that just restates a setup gap (e.g. a
+  hand-written "swim CSS not set" alongside the `swim_css` gap) folds into the canonical item, so each gap
+  is listed once. The time-bound sections **read your last saved reports** — they never re-run the
   weekly/research LLM flows — and each carries an *"as of …"* tag, dropping once the report goes stale.
   Every item is tagged with where to action it (*in AI Endurance* / *edit profile* / *discuss with coach*
   / *in your setup*), **ranked by value**, deduped and capped, and has a **✕ dismiss** that hides it for
