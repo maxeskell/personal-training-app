@@ -90,10 +90,14 @@ races:
     target_time:            # e.g. "sub 2:00"
     note:
 
-# Values that must be set directly in AI Endurance (read-only from here):
+# Values that must be set directly in AI Endurance (read-only from here). Any non-empty value here
+# surfaces on the dashboard's "Set up & improve" card. NOTE: don't add a race-targets reminder — AI
+# Endurance has no field for per-race target times; they live in races[].target_time above and the
+# coach reads them from there, so the card only shows things that are actionable somewhere.
 ai_endurance_todo:
   swim_css:                 # not_set until you set it in AIE
   ftp_w:                    # set/resolve in AIE
-  race_targets:             # set target_time for each race in AIE
 
-open_items: []              # running list of unresolved actions
+# Running list of free-text unresolved actions (e.g. "shim bike cleat after Birmingham"). These also
+# surface on the "Set up & improve" card, tagged "discuss with coach"; clear an item once it's done.
+open_items: []

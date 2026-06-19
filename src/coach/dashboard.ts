@@ -7,6 +7,7 @@ import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone } from "../insights/headline.js";
 import { assembleSession } from "./session.js";
 import type { Profile } from "../profile/schema.js";
+import { PROFILE_QUESTIONS, type ProfileQuestion } from "../profile/questions.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
 import { weekday, type WeekWeather } from "../weather/assess.js";
 import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
@@ -85,9 +86,10 @@ export interface DashboardInput {
   /** Week-ahead weather joined to the upcoming plan (omitted when the forecast is unavailable). */
   weather?: WeekWeather;
   /**
-   * The athlete profile (loaded best-effort) — drives the "Fix these in AI Endurance" card from its
-   * `ai_endurance_todo`. Omitted/absent → the card is simply not shown. NOT persisted in snapshots, so
-   * the render paths load it explicitly rather than read it off state.
+   * The athlete profile (loaded best-effort) — drives the "Set up & improve" card from its actionable
+   * `ai_endurance_todo` gaps, `open_items`, and any unfilled profile questions. Omitted/absent → the
+   * card is simply not shown. NOT persisted in snapshots, so the render paths load it explicitly rather
+   * than read it off state.
    */
   profile?: Profile;
   /**
@@ -407,14 +409,20 @@ export function trendsHeading(days: number): string {
 const AIE_TODO_LABELS: Record<string, string> = {
   swim_css: "Set your swim CSS",
   ftp_w: "Resolve your cycling FTP",
-  race_targets: "Set your race target times",
 };
 const AIE_TODO_WHY: Record<string, string> = {
   swim_css: "without it there's no swim model for your races — the highest-value fix for a triathlete",
   ftp_w: "your power sources disagree, so bike zones and race predictions stay uncertain until reconciled",
-  race_targets: "predictions can't track against a goal until the target times are entered",
 };
 const AIE_TODO_STATUS = new Set(["not_set", "unresolved", "todo", "missing", "none", "pending", "unset"]);
+
+/**
+ * `ai_endurance_todo` keys that aren't actionable ANYWHERE, so they must never reach the card (issue
+ * #112: only surface items you can actually do something about). AI Endurance has no field for per-race
+ * target times — they live in `profile.races[].target_time`, which the coach already reads — so a
+ * `race_targets` nag would point at a setting that can't be set.
+ */
+const NON_ACTIONABLE_AIE = new Set(["race_targets"]);
 
 /** Map one `ai_endurance_todo` entry to a display label + a why-it-matters note. A status token
  *  ("not_set"/"unresolved"/…) uses the curated note; any other value is itself the descriptive note. */
@@ -425,27 +433,114 @@ export function aieTodoCopy(key: string, value: string): { label: string; why: s
   return { label, why };
 }
 
+/** Where an item is actioned — shown as a tag so the source can be trusted/weighted at a glance. */
+export type SetupRoute = "in AI Endurance" | "edit profile" | "discuss with coach";
+
+/** One actionable item on the "Set up & improve" card, tagged by its source and where to act on it. */
+export interface SetupItem {
+  /** Short title / the action. */
+  label: string;
+  /** One line: why it's worth doing (or, for a free-text open item, empty). */
+  why: string;
+  /** Which profile source produced it — used for ordering + dedupe. */
+  source: "ai_endurance" | "open_item" | "profile_question";
+  /** Where the athlete actions it. */
+  route: SetupRoute;
+}
+
+/** ~5 keeps the card a calm hub, not a backlog (issue #112). */
+const SETUP_ITEM_CAP = 5;
+
+/** Treat null / blank string / empty collection as "not filled in" when scanning for open questions. */
+function isBlank(v: unknown): boolean {
+  if (v == null) return true;
+  if (typeof v === "string") return v.trim() === "";
+  if (Array.isArray(v)) return v.length === 0;
+  if (typeof v === "object") return Object.keys(v as Record<string, unknown>).length === 0;
+  return false;
+}
+
+/** Resolve a dot-path (e.g. "health.medication.dose_day") against the profile; undefined if absent. */
+function valueAtPath(obj: unknown, dotPath: string): unknown {
+  let cur: unknown = obj;
+  for (const part of dotPath.split(".")) {
+    if (cur && typeof cur === "object" && !Array.isArray(cur)) cur = (cur as Record<string, unknown>)[part];
+    else return undefined;
+  }
+  return cur;
+}
+
+/** Normalised key for dedup — collapses case/punctuation so a restated item doesn't show twice. */
+function dedupeKey(label: string): string {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
 /**
- * "Fix these in AI Endurance" — surfaces the profile's `ai_endurance_todo`: data only the athlete can
- * set in AI Endurance, that the coach can't fill itself but which changes what it can model (e.g. swim
- * CSS unset → no swim model; an unresolved FTP source). Display-only, deterministic, no LLM. Omitted in
- * share/screenshot mode (it's personal setup) and whenever there's nothing outstanding.
+ * Build the deduped, capped list of "Set up & improve" items from data the dashboard ALREADY loads (the
+ * profile) — no LLM, no new flow wiring (issue #112, Phase 1). Three sources, each tagged + routed:
+ *   • `ai_endurance_todo` → things only you can set in AI Endurance (non-actionable keys dropped).
+ *   • `open_items`        → your running list of unresolved actions → talk them through with the coach.
+ *   • unfilled profile    → optional profile questions you haven't answered → edit profile.
+ * Higher-value sources lead (AIE gaps, then open items, then profile questions); items are deduped by
+ * normalised label and the list is capped so the card stays a calm hub. Pure.
  */
-export function renderAieTodo(profile: Profile | undefined, share = false): string {
-  if (share || !profile?.ai_endurance_todo) return "";
-  const entries = Object.entries(profile.ai_endurance_todo).filter(
-    ([, v]) => v != null && String(v).trim() !== "" && String(v).trim().toLowerCase() !== "resolved",
-  );
-  if (!entries.length) return "";
-  const rows = entries
-    .map(([key, value]) => {
-      const { label, why } = aieTodoCopy(key, String(value));
-      return `<li><strong>${escapeHtml(label)}</strong>${why ? ` — ${escapeHtml(why)}` : ""}</li>`;
+export function buildSetupItems(profile: Profile | undefined, questions: ProfileQuestion[] = PROFILE_QUESTIONS): SetupItem[] {
+  if (!profile) return [];
+  const items: SetupItem[] = [];
+
+  // 1) Actionable AI-Endurance gaps (skip resolved/blank values and the non-actionable keys).
+  for (const [key, value] of Object.entries(profile.ai_endurance_todo ?? {})) {
+    if (NON_ACTIONABLE_AIE.has(key)) continue;
+    const v = value == null ? "" : String(value).trim();
+    if (v === "" || v.toLowerCase() === "resolved") continue;
+    const { label, why } = aieTodoCopy(key, v);
+    items.push({ label, why, source: "ai_endurance", route: "in AI Endurance" });
+  }
+
+  // 2) Free-text open items (a running list of unresolved actions) → raise them with the coach.
+  for (const raw of profile.open_items ?? []) {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (!text) continue;
+    items.push({ label: text, why: "", source: "open_item", route: "discuss with coach" });
+  }
+
+  // 3) Unfilled optional profile questions → fill them in (or tell Claude via update_profile).
+  for (const q of questions) {
+    if (!isBlank(valueAtPath(profile, q.field))) continue;
+    items.push({ label: `Answer: ${q.question}`, why: q.why, source: "profile_question", route: "edit profile" });
+  }
+
+  // Dedupe across sources (first wins → the higher-value source is kept) and cap to keep the card calm.
+  const seen = new Set<string>();
+  const deduped: SetupItem[] = [];
+  for (const item of items) {
+    const k = dedupeKey(item.label);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    deduped.push(item);
+  }
+  return deduped.slice(0, SETUP_ITEM_CAP);
+}
+
+/**
+ * "Set up & improve" — the dashboard's deterministic, LLM-free action hub (issue #112, Phase 1).
+ * Surfaces what to do next from data already loaded with the profile: actionable AI-Endurance gaps, your
+ * running `open_items`, and any unfilled profile questions — each tagged with where to action it. Omitted
+ * in share/screenshot mode (it's personal setup) and whenever there's nothing outstanding.
+ */
+export function renderSetupImprove(profile: Profile | undefined, share = false, questions: ProfileQuestion[] = PROFILE_QUESTIONS): string {
+  if (share) return "";
+  const items = buildSetupItems(profile, questions);
+  if (!items.length) return "";
+  const rows = items
+    .map((it) => {
+      const note = it.why ? ` — ${escapeHtml(it.why)}` : "";
+      return `<li><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span></li>`;
     })
     .join("");
-  return `<div class="card"><h2>Fix these in AI Endurance</h2>
-  <div class="k" style="margin-bottom:6px">Data only you can set in AI Endurance — each one the coach can't fill itself, but that changes what it can model.</div>
-  <ul style="margin:0;padding-left:18px;line-height:1.6">${rows}</ul></div>`;
+  return `<div class="card"><h2>Set up &amp; improve</h2>
+  <div class="k" style="margin-bottom:6px">What to do next — pulled from your profile, no AI call. Each item is tagged with where to action it.</div>
+  <ul class="setup" style="margin:0;padding-left:18px;line-height:1.6">${rows}</ul></div>`;
 }
 
 /** Garmin model scores: endurance score, hill score, and the power-duration curve (MMP). */
@@ -779,6 +874,7 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .acts .agree.on{background:#e6f5ea;border-color:#1a8a3a;font-weight:600}.acts .disagree.on{background:#fdeaea;border-color:#c0392b;font-weight:600}
 .newbadge{background:#1558d6;color:#fff;font-size:9px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:9px;margin-right:6px;vertical-align:middle}
 .age{font-size:11px;color:#bbb;margin-top:4px}
+.setup li{margin-bottom:4px}.route{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.02em;color:#6b5b45;background:#f4f1ea;border:1px solid #e7d9c6;border-radius:9px;padding:1px 7px;margin-left:4px;white-space:nowrap}
 .actbtn{font-size:13px;padding:7px 14px;border:1px solid #c8642d;border-radius:8px;background:#fff;color:#c8642d;cursor:pointer}.actbtn:hover{background:#c8642d;color:#fff}
 code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 .proposal{border:1px solid #e7d9c6;border-radius:8px;padding:10px 12px;margin-top:10px}
@@ -913,7 +1009,7 @@ ${renderZones(today)}
 
 ${renderScores(today)}
 
-${renderAieTodo(profile, share)}
+${renderSetupImprove(profile, share)}
 
 <div class="card"><h2>Race</h2>
   <table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>

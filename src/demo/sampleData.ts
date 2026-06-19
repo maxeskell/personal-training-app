@@ -2,16 +2,17 @@ import { emptyState, type AthleteState, type PlannedSession, type ActualActivity
 import { deriveZones } from "../insights/zones.js";
 import type { Profile } from "../profile/schema.js";
 
-/** A fictional profile for the demo — just enough to show the "Fix these in AI Endurance" card so the
- *  feature is discoverable in `npm run demo`. Not a real athlete; no live numbers (none belong here). */
+/** A fictional profile for the demo — just enough to show the "Set up & improve" card (actionable AIE
+ *  gaps + a free-text open item + unfilled profile questions) so the feature is discoverable in
+ *  `npm run demo`. Not a real athlete; no live numbers (none belong here). */
 export const demoProfile: Profile = {
   schema_version: 1,
   identity: { name: "Sample Athlete", units: "metric" },
   ai_endurance_todo: {
     swim_css: "not_set",
     ftp_w: "unresolved",
-    race_targets: "set the target_time for each race so predictions track",
   },
+  open_items: ["Shim the bike cleat after the next race"],
 };
 
 /**

@@ -138,9 +138,14 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   sessions off the GI-trough days and watch under-fuelling — the personalisation a generic endurance
   MCP can't do. (Medication boundaries are the prescriber's call; the coach works *around* it.)
 - **What this app can't set for you.** This connector is **read-only to AI Endurance**, so it can't
-  write your **swim CSS, FTP or race target times** there — set those directly in the AI Endurance app.
-  The profile's `ai_endurance_todo` block is a reminder, not a write path — it surfaces on the dashboard
-  as a **Fix these in AI Endurance** card (display-only; hidden from the shared/screenshot view).
+  write your **swim CSS or FTP** there — set those directly in the AI Endurance app. The profile's
+  `ai_endurance_todo` block is a reminder, not a write path. (Race *target times* aren't on it — AIE has
+  no field for them; they live in `races[].target_time` and the coach reads them from the profile.)
+- **A "Set up & improve" card on the dashboard.** A small, deterministic (no-AI) action hub that pulls
+  from data already loaded with your profile: actionable AI-Endurance gaps, your free-text `open_items`,
+  and any unfilled optional profile questions — each tagged with where to action it (*in AI Endurance* /
+  *edit profile* / *discuss with coach*), deduped and capped to ~5. Display-only; hidden from the
+  shared/screenshot view.
 - **The coaching brief ships as a default prompt.** [`coach-instructions.md`](coach-instructions.md)
   is the default system prompt a fresh clone gets (a prompt, *not* data — kept separate from the
   profile); edit it to taste. Full schema + privacy detail: [docs/profile.md](docs/profile.md).

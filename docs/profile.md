@@ -165,11 +165,17 @@ biomechanics, availability, fuelling, race targets) is injected into the app's o
 
 ## What this app cannot do
 
-This connector is **read-only to AI Endurance**. It cannot set your **swim CSS, FTP or race target
-times** there — set those directly in the AI Endurance app. The `ai_endurance_todo` block is a
-reminder of what's unset, not a write path; any entry with a non-empty value (e.g. `swim_css: not_set`)
-surfaces on the dashboard as a **Fix these in AI Endurance** card (display-only, hidden from the shared
-view), and clears from the card once you set it to `resolved` or remove it.
+This connector is **read-only to AI Endurance**. It cannot set your **swim CSS or FTP** there — set
+those directly in the AI Endurance app. The `ai_endurance_todo` block is a reminder of what's unset,
+not a write path; any entry with a non-empty value (e.g. `swim_css: not_set`) surfaces on the
+dashboard's **Set up & improve** card (display-only, hidden from the shared view), and clears once you
+set it to `resolved` or remove it. **Race target times are NOT an `ai_endurance_todo` item** — AI
+Endurance has no field for them, so they can't be "set" there; they live in `races[].target_time` and
+the coach reads them from the profile, so the card only ever shows things you can actually action.
+
+That card is a small, deterministic (no-AI) action hub: alongside the AI-Endurance gaps it also lists
+your free-text `open_items` (tagged *discuss with coach*) and any unfilled optional profile questions
+(tagged *edit profile*), deduped and capped to ~5 so it stays a calm prompt, not a backlog.
 
 ## The coaching brief is separate
 
