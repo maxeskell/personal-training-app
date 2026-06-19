@@ -114,6 +114,7 @@ async function renderLatest(share = false): Promise<string> {
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,
     weather,
+    profile: (await loadProfileSafe())?.profile,
     autoSyncStaleMin,
   });
 }

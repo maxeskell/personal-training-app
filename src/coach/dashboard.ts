@@ -6,6 +6,7 @@ import { findingKey } from "../insights/metrics.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone } from "../insights/headline.js";
 import { assembleSession } from "./session.js";
+import type { Profile } from "../profile/schema.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
 import { weekday, type WeekWeather } from "../weather/assess.js";
 import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
@@ -83,6 +84,12 @@ export interface DashboardInput {
   canFetchFit?: boolean;
   /** Week-ahead weather joined to the upcoming plan (omitted when the forecast is unavailable). */
   weather?: WeekWeather;
+  /**
+   * The athlete profile (loaded best-effort) — drives the "Fix these in AI Endurance" card from its
+   * `ai_endurance_todo`. Omitted/absent → the card is simply not shown. NOT persisted in snapshots, so
+   * the render paths load it explicitly rather than read it off state.
+   */
+  profile?: Profile;
   /**
    * Share/redacted view (for screenshots): hides the identifying bits — real race names + dates and the
    * location-revealing weather card — while keeping the analysis/trends shape. The health metrics shown
@@ -395,6 +402,52 @@ export function trendsHeading(days: number): string {
   return days >= 2 ? `Trends (last ${days} days)` : "Trends";
 }
 
+// Friendly copy for the recognised `ai_endurance_todo` keys; unknown keys fall back to a title-cased
+// label and (for status tokens) a generic note, so a new key still renders sensibly.
+const AIE_TODO_LABELS: Record<string, string> = {
+  swim_css: "Set your swim CSS",
+  ftp_w: "Resolve your cycling FTP",
+  race_targets: "Set your race target times",
+};
+const AIE_TODO_WHY: Record<string, string> = {
+  swim_css: "without it there's no swim model for your races — the highest-value fix for a triathlete",
+  ftp_w: "your power sources disagree, so bike zones and race predictions stay uncertain until reconciled",
+  race_targets: "predictions can't track against a goal until the target times are entered",
+};
+const AIE_TODO_STATUS = new Set(["not_set", "unresolved", "todo", "missing", "none", "pending", "unset"]);
+
+/** Map one `ai_endurance_todo` entry to a display label + a why-it-matters note. A status token
+ *  ("not_set"/"unresolved"/…) uses the curated note; any other value is itself the descriptive note. */
+export function aieTodoCopy(key: string, value: string): { label: string; why: string } {
+  const label = AIE_TODO_LABELS[key] ?? key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const isStatus = AIE_TODO_STATUS.has(value.trim().toLowerCase());
+  const why = isStatus ? (AIE_TODO_WHY[key] ?? "needs setting in AI Endurance") : value.trim();
+  return { label, why };
+}
+
+/**
+ * "Fix these in AI Endurance" — surfaces the profile's `ai_endurance_todo`: data only the athlete can
+ * set in AI Endurance, that the coach can't fill itself but which changes what it can model (e.g. swim
+ * CSS unset → no swim model; an unresolved FTP source). Display-only, deterministic, no LLM. Omitted in
+ * share/screenshot mode (it's personal setup) and whenever there's nothing outstanding.
+ */
+export function renderAieTodo(profile: Profile | undefined, share = false): string {
+  if (share || !profile?.ai_endurance_todo) return "";
+  const entries = Object.entries(profile.ai_endurance_todo).filter(
+    ([, v]) => v != null && String(v).trim() !== "" && String(v).trim().toLowerCase() !== "resolved",
+  );
+  if (!entries.length) return "";
+  const rows = entries
+    .map(([key, value]) => {
+      const { label, why } = aieTodoCopy(key, String(value));
+      return `<li><strong>${escapeHtml(label)}</strong>${why ? ` — ${escapeHtml(why)}` : ""}</li>`;
+    })
+    .join("");
+  return `<div class="card"><h2>Fix these in AI Endurance</h2>
+  <div class="k" style="margin-bottom:6px">Data only you can set in AI Endurance — each one the coach can't fill itself, but that changes what it can model.</div>
+  <ul style="margin:0;padding-left:18px;line-height:1.6">${rows}</ul></div>`;
+}
+
 /** Garmin model scores: endurance score, hill score, and the power-duration curve (MMP). */
 function renderScores(today: AthleteState): string {
   const e = today.enduranceScore.value;
@@ -638,7 +691,7 @@ function freshnessLine(today: AthleteState): string {
   return line;
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, autoSyncStaleMin, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Week: load by sport. Time in h:mm (user ask); a zero distance renders "—" not a misleading 0.0 km.
@@ -852,6 +905,8 @@ ${share ? "" : renderWeather(weather)}
 ${renderZones(today)}
 
 ${renderScores(today)}
+
+${renderAieTodo(profile, share)}
 
 <div class="card"><h2>Race</h2>
   <table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>

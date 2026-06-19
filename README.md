@@ -135,7 +135,8 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   MCP can't do. (Medication boundaries are the prescriber's call; the coach works *around* it.)
 - **What this app can't set for you.** This connector is **read-only to AI Endurance**, so it can't
   write your **swim CSS, FTP or race target times** there — set those directly in the AI Endurance app.
-  The profile's `ai_endurance_todo` block is a reminder, not a write path.
+  The profile's `ai_endurance_todo` block is a reminder, not a write path — it surfaces on the dashboard
+  as a **Fix these in AI Endurance** card (display-only; hidden from the shared/screenshot view).
 - **The coaching brief ships as a default prompt.** [`coach-instructions.md`](coach-instructions.md)
   is the default system prompt a fresh clone gets (a prompt, *not* data — kept separate from the
   profile); edit it to taste. Full schema + privacy detail: [docs/profile.md](docs/profile.md).
