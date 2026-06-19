@@ -7,13 +7,21 @@ set -euo pipefail
 
 PUBLIC_URL="${1:-}"
 READONLY="true"
-[[ "${2:-}" == "--allow-writes" ]] && READONLY="false"
+ASSUME_YES="false"
+[[ $# -gt 0 ]] && shift
+for arg in "$@"; do
+  case "$arg" in
+    --allow-writes) READONLY="false" ;;
+    --yes|-y) ASSUME_YES="true" ;;
+  esac
+done
 
 if [[ -z "$PUBLIC_URL" || "$PUBLIC_URL" != https://* ]]; then
-  echo "Usage: bash scripts/install-mcp.sh <PUBLIC_HTTPS_URL> [--allow-writes]"
+  echo "Usage: bash scripts/install-mcp.sh <PUBLIC_HTTPS_URL> [--allow-writes] [--yes]"
   echo "  <PUBLIC_HTTPS_URL>  your STABLE tunnel URL, e.g. https://your-mac.tailXXXX.ts.net"
   echo "                      (Cowork connects to <PUBLIC_HTTPS_URL>/mcp)"
   echo "  --allow-writes      also expose the gated write tools (default: read-only — recommended)"
+  echo "  --yes               skip the 'this exposes your health/medical data' confirmation prompt"
   exit 1
 fi
 
@@ -32,6 +40,32 @@ if [[ "$(uname)" != "Darwin" ]]; then
   echo "This installer targets macOS launchd. On Linux, run as a systemd --user service:"
   echo "  cd $PROJECT && COACH_MCP_AUTH=oauth COACH_MCP_PUBLIC_URL=$PUBLIC_URL COACH_MCP_READONLY=$READONLY $NPM_BIN run mcp:http"
   exit 0
+fi
+
+# --- Security confirmation: this stands up a server that exposes health + MEDICAL data ---
+cat <<WARN
+
+  ┌─ Before you install: what this exposes ───────────────────────────────────┐
+  An always-on server lets a Claude client reach, over your tunnel
+  ($PUBLIC_URL), these about YOU:
+    • training data + health metrics (HRV, resting HR, sleep, VO2max)
+    • your MEDICAL profile via get_profile — conditions and medication
+    • $([ "$READONLY" = true ] && echo 'plan writes are OFF (read-only — recommended)' || echo 'the gated plan-WRITE tools (you passed --allow-writes)')
+  It is OAuth-gated by your coach token and MUST sit behind a PRIVATE tunnel you
+  control (Tailscale Funnel). Anyone with that URL + token can read the above.
+  └───────────────────────────────────────────────────────────────────────────┘
+
+WARN
+if [[ "$ASSUME_YES" != "true" ]]; then
+  if [[ ! -t 0 ]]; then
+    echo "Refusing to install non-interactively. Re-run with --yes once you've read the above." >&2
+    exit 1
+  fi
+  read -r -p "Type 'yes' to install this internet-reachable server: " CONFIRM
+  if [[ "$CONFIRM" != "yes" ]]; then
+    echo "Aborted — nothing installed."
+    exit 1
+  fi
 fi
 
 mkdir -p "$HOME/Library/LaunchAgents" "$PROJECT/reports"

@@ -22,9 +22,13 @@ npm install && npm run demo
 no Garmin, no API key, no network. The fastest way to see what the coach produces before you wire up
 anything of your own.
 
-<!-- A dashboard screenshot/GIF belongs here — the single highest-impact thing for a first impression.
-     Generate the view with `npm run demo`, then drop an image in docs/ and link it from here. -->
-> 📸 _For sharing: run `npm run demo` and screenshot the dashboard — it's the quickest pitch._
+<!-- 📸 DROP-IN: a dashboard screenshot is the single highest-impact thing for a first impression.
+     To add it: run `npm run demo`, open reports/demo-dashboard.html in a browser, screenshot the top
+     of the page (Today + Top insights + a card or two), save it as docs/dashboard.png, then delete
+     this comment and uncomment the image line below. Alt text is already written.
+![The Endurance Coach dashboard — today's readiness verdict, top insights, weekly load by sport, multi-week trends, and the race countdown](docs/dashboard.png)
+-->
+> 📸 _Want to share it? Run `npm run demo` and screenshot `reports/demo-dashboard.html` — the quickest pitch._
 
 ## What you need to run it for real
 

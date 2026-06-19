@@ -786,7 +786,7 @@ code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 @media print {
   body{background:#fff}
   .card{break-inside:avoid;box-shadow:none;border:1px solid #ddd}
-  .acts, .syncbtn, .actbtn, button, #ask, #proposals, .sharelink, .sharebanner a{display:none !important}
+  .acts, .syncbtn, .actbtn, button, #ask, #proposals, .sharelink, .sharebanner a, .syncbar{display:none !important}
   details{display:block}
   details > summary{display:none}
   a{color:inherit;text-decoration:none}
@@ -799,7 +799,13 @@ ${
     ? `<div class="card sharebanner" style="background:#eef4ff;border:1px solid #cfe0ff;color:#244">🔒 <b>Share view</b> — real race names, exact dates and your location/weather are hidden, the analysis is intact. <a href="?">Exit share view</a></div>`
     : `<div class="sharelink" style="text-align:right;margin:-8px 0 8px"><a href="?share=1" style="font-size:12px;color:#888">🔒 Share view (hide race names + location for screenshots)</a></div>`
 }
-<div class="card" style="display:flex;align-items:center">
+${
+  // The Sync control is an interactive button with a live server behind it — useless (and an empty
+  // card once the button is print-hidden) in the share/screenshot view, so drop the card AND its
+  // script there entirely. autoSync() is only ever invoked on a live server page, never a share view.
+  share
+    ? ""
+    : `<div class="card syncbar" style="display:flex;align-items:center">
   <button id="syncbtn" class="syncbtn" onclick="sync()">🔄 Sync latest data</button>
   <span id="syncstatus" class="syncstatus"></span>
 </div>
@@ -812,7 +818,8 @@ async function sync(note){
   catch(e){ b.disabled=false; b.textContent='🔄 Sync latest data'; s.textContent='Sync failed: '+e+' (try again)'; }
 }
 function autoSync(min){ sync('Data is '+min+' min old — auto-refreshing:'); }
-</script>
+</script>`
+}
 
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
 ${insights ? renderHeader(today, insights, decisions, garminDays) : ""}
@@ -925,7 +932,7 @@ ${renderCost(costRecords)}
   Not medical advice. This is a personal training tool, not a medical professional — estimates are labelled MODEL.
   For pain, injury, illness or any acute symptom, stop and consult a doctor or sports physician.
 </footer>
-${autoSyncStaleMin != null ? `<script>autoSync(${Math.round(autoSyncStaleMin)})</script>` : ""}
+${!share && autoSyncStaleMin != null ? `<script>autoSync(${Math.round(autoSyncStaleMin)})</script>` : ""}
 </body></html>`;
 }
 

@@ -16,7 +16,7 @@ import { proposeAdjustments, validateProposals, buildProposerContext, writeConte
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
-import { buildDemoWindow } from "./demo/sampleData.js";
+import { buildDemoWindow, demoProfile } from "./demo/sampleData.js";
 import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact } from "./cli/dataCommands.js";
 import { buildInsights } from "./insights/engine.js";
 import { alertFindings, loadModel } from "./insights/metrics.js";
@@ -447,7 +447,7 @@ async function cmdDemo(): Promise<void> {
   const window = buildDemoWindow(todayIso(), 21);
   const state = window[window.length - 1];
   const insights = state.raw ? buildInsights(state, undefined, { history: window }) : undefined;
-  const html = renderDashboard({ window, decisions: [], insights, costRecords: [], canFetchFit: false });
+  const html = renderDashboard({ window, decisions: [], insights, costRecords: [], canFetchFit: false, profile: demoProfile });
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
   const dir = join(process.cwd(), "reports");
