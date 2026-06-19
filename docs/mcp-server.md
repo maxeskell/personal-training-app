@@ -235,7 +235,9 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
 
 ### LLM flows (need `ANTHROPIC_API_KEY`; every call is cost-logged)
 - **`ask`** `{ question }` — free-form Q&A over your assembled state + insights (same engine as the
-  dashboard "Ask your data" box).
+  dashboard "Ask your data" box). When the answer implies concrete actions it also emits **family-tagged
+  recommendations** (in the same structured call — no extra cost), surfaced as reactable cards on the
+  **Coach's recommendations** card and reactable by key via `react_to_insight` / `retrospect`.
 - **`readiness`** — green/amber/red verdict with cited drivers + a wellbeing check (logs to the
   decision log). Also emits a short list of **family-tagged recommendations**, surfaced as individually
   reactable cards on the dashboard's **Coach's recommendations** card and reactable by key via

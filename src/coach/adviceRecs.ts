@@ -20,7 +20,10 @@ export interface AdviceRec {
   family: string;
 }
 
-export type AdviceSource = "readiness" | "deep-dive";
+export type AdviceSource = "readiness" | "deep-dive" | "ask";
+
+/** Insight-log surfaces that carry reactable advice recommendations (read back onto the dashboard card). */
+export const ADVICE_SURFACES = new Set<string>(["readiness", "deep-dive", "ask"]);
 
 /** The insight families a recommendation may be tagged with (the schema enum + the weighting target). */
 export const ADVICE_FAMILIES = [
@@ -60,7 +63,7 @@ function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "rec";
 }
 
-const SOURCE_LABEL: Record<AdviceSource, string> = { readiness: "readiness", "deep-dive": "deep dive" };
+const SOURCE_LABEL: Record<AdviceSource, string> = { readiness: "readiness", "deep-dive": "deep dive", ask: "ask" };
 
 /**
  * Map an LLM-tagged recommendation list to keyed, family-tagged Findings (`advice:<source>:<slug>`),
@@ -98,7 +101,7 @@ export function recsToFindings(recs: AdviceRec[] | undefined, source: AdviceSour
 export function latestAdviceFindings(snapshots: InsightSnapshot[], suppressed: Set<string> = new Set()): SurfacedFinding[] {
   const latestBySurface = new Map<string, SurfacedFinding[]>();
   for (const s of [...snapshots].sort((a, b) => a.ts.localeCompare(b.ts))) {
-    if (s.surface === "readiness" || s.surface === "deep-dive") latestBySurface.set(s.surface, s.findings);
+    if (ADVICE_SURFACES.has(s.surface)) latestBySurface.set(s.surface, s.findings);
   }
   const out: SurfacedFinding[] = [];
   const seen = new Set<string>();
@@ -137,6 +140,6 @@ function adviceCardHtml(f: SurfacedFinding, reactions?: Map<string, InsightReact
 export function renderCoachRecs(recs: SurfacedFinding[], reactions?: Map<string, InsightReaction>, share = false): string {
   if (share || !recs.length) return "";
   return `<div class="card"><h2>Coach's recommendations</h2>
-  <div class="k" style="margin-bottom:6px">Action points distilled from your latest <b>readiness</b> and <b>deep-dive</b> write-ups — react to shape what the coach surfaces next: 👍 lifts that family · 👎 down-ranks it · 💤 snooze ~2 weeks · 🚫 ignore for good. Each is recorded by key, so you can also <code>retrospect</code> on how it held up.</div>
+  <div class="k" style="margin-bottom:6px">Action points distilled from your latest <b>readiness</b>, <b>deep-dive</b> and <b>ask</b> write-ups — react to shape what the coach surfaces next: 👍 lifts that family · 👎 down-ranks it · 💤 snooze ~2 weeks · 🚫 ignore for good. Each is recorded by key, so you can also <code>retrospect</code> on how it held up.</div>
   <div class="setup">${recs.map((f) => adviceCardHtml(f, reactions)).join("")}</div></div>`;
 }
