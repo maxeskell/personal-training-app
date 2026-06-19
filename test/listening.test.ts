@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { analyseListening, buildEngagementContext, formatListening } from "../src/coach/listening.js";
+import { adherencePct, analyseListening, buildEngagementContext, formatListening } from "../src/coach/listening.js";
 import { snapshotSignature, toSurfaced, type InsightSnapshot, type SurfacedFinding } from "../src/state/insightLog.js";
 import type { DecisionRecord } from "../src/state/decisionLog.js";
 import { emptyState, type AthleteState, type PlannedSession } from "../src/state/types.js";
@@ -100,6 +100,35 @@ test("analyseListening: adherence defers to plan progress (latest snapshot) and 
   assert.deepEqual(m.adherence!.trend, { priorPct: 0.6, deltaPts: 30 }); // 90% now vs 60% a week ago
   const endurance = m.adherence!.byZone.find((z) => z.zone === "Endurance")!;
   assert.equal(endurance.pct, 0.875);
+});
+
+test("adherencePct: off-plan work reads 'unplanned' not '—', and noisy over-delivery clamps to 200%+", () => {
+  // Normal cases pass through.
+  assert.equal(adherencePct(0.88), "88%");
+  assert.equal(adherencePct(1), "100%");
+  assert.equal(adherencePct(1.3), "130%"); // genuine over-delivery, still exact
+  // Nothing planned in the zone: distinguish "did off-plan work here" from "genuinely empty".
+  assert.equal(adherencePct(null, 0.3), "unplanned");
+  assert.equal(adherencePct(null, 0), "—");
+  assert.equal(adherencePct(null), "—");
+  // Tiny planned denominator (8 min planned / 28 min done = 350%) must not read as broken.
+  assert.equal(adherencePct(3.5), "200%+");
+});
+
+test("formatListening: a zone trained off-plan shows 'unplanned', a near-zero plan shows '200%+', never a bare '—' for work done", () => {
+  // VO2Max/Anaerobic: nothing planned but minutes done; Threshold: 8 min planned, 28 min done.
+  const states = [
+    stateWith("2026-06-18", {
+      adherence: {
+        Endurance: { actualH: 4.8, prescribedH: 6.0 },
+        Threshold: { actualH: 0.47, prescribedH: 0.13 },
+        VO2Max: { actualH: 0.18, prescribedH: 0 },
+      },
+    }),
+  ];
+  const md = formatListening(analyseListening({ snapshots: [], decisions: [], states }));
+  assert.match(md, /VO2Max \| 0:00 \| 0:11 \| unplanned \|/, "off-plan VO2Max reads 'unplanned', not '—'");
+  assert.match(md, /Threshold \| 0:08 \| 0:28 \| 200%\+ \|/, "noisy 350% clamps to a readable 200%+");
 });
 
 test("analyseListening: plan-change diff classifies added / moved / dropped, guarding window churn", () => {

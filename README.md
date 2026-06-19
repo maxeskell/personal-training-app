@@ -32,7 +32,7 @@ anything of your own.
 |---|---|
 | **Node.js 20+** | `node --version` (from https://nodejs.org). |
 | **A data source** | the spine the coach reads your plan, races and metrics from. **AI Endurance** is the default and most capable (https://aiendurance.com, a **paid** platform); **intervals.icu** is also supported (experimental, a thinner coach) — set `COACH_SOURCE=intervals`, see [docs/data-sources.md](docs/data-sources.md). **TrainingPeaks** has no personal API, but it syncs into intervals.icu, so TP users go via the intervals source. |
-| **An Anthropic API key** | only for the **AI write-ups** (readiness / weekly / race / ask / …). The **dashboard, zones and health checks run with no key.** Pay-as-you-go and usually pennies a day — `npm run cost` shows your spend. https://console.anthropic.com |
+| **An Anthropic API key** | only for the **AI write-ups** (readiness / weekly / race / ask / …). The **dashboard, zones and health checks run with no key.** Pay-as-you-go — typically **~$5–10/month** on a daily coaching cadence; `npm run cost` shows your actual spend. https://console.anthropic.com |
 | **Optional, all degradable** | Garmin device data, free Open-Meteo weather, a local LLM for cheap routing. Each is best-effort: if it's absent the matching card is simply omitted, never an error. |
 
 **Setting it up:** the easy path is to point an AI assistant (Claude Code or similar) at the repo and say
