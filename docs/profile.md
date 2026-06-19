@@ -184,8 +184,10 @@ That card is a small, deterministic (no-AI) action hub in three sections:
 - **This week** — the deterministic *marginal-gains* tweaks (the same selection the `tune` flow phrases
   up, computed live so it's always current and LLM-free), plus the **action items parsed from your most
   recent weekly review's "Next week" section** (or a pointer to it when there's no parseable section).
-- **Worth considering** — the topic headlines from your most recent **research digest**
-  (`knowledge/pending/`).
+- **Worth considering** — items parsed from your most recent **research digest** (`knowledge/pending/`).
+  Each expands to **what the research found** (the proposed prior), its **source**, a link to **read the
+  full digest** in-app (`/digest`), and the **exact `approve` command with the real file name** — plus the
+  honest reminder that these are priors to weigh, not verdicts (your own n=1 data outranks the textbook).
 
 The last two sections **read your last saved reports** — the dashboard never re-runs the weekly or
 research (LLM) flows — so each of their items carries an *"as of …"* tag and drops once the report is

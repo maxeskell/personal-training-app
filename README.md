@@ -146,7 +146,9 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   profile questions, a few **integration-health** nudges — missing API key, long-stale sync, unset
   open-water temp — and any **race with no date yet**), **This week** (the marginal-gains tweaks *not
   already in Top insights* + the action items from your last weekly review) and **Worth considering**
-  (the topics from your last research digest). **Everything in "This week" is actioned right on the card —
+  (items from your last research digest — each one says **what the research found**, names its **source**,
+  links to **read the full digest** in-app, and gives the **one concrete command** to fold it into the
+  coach's priors). **Everything in "This week" is actioned right on the card —
   it never points you at a saved report.** Each advice item leads with the plain-English action (the tech
   detail sits muted underneath) and carries a category chip (*Training / Fuelling / Gear / Recovery*):
   - a **fuelling, gear or recovery** change gets **👍 Agree / 👎 Disagree / 💤 Snooze** (the same logged,
@@ -273,6 +275,10 @@ creep, heat protocols) against the current priors and **drafts a proposed update
 `knowledge/pending/`. It is **review-gated**: nothing is applied until you read it and run
 `npm run knowledge -- approve <file>`, which folds it in under a dated section and bumps the verified date.
 `npm run knowledge` shows freshness (flagged **stale after ~35 days**) and any digests awaiting review.
+On the dashboard, a fresh digest also surfaces in the **"Worth considering"** card — each item shows what
+the research found and its source, and the card links to a **read-only in-app view of the full digest**
+(`/digest`) so you can read the proposal without leaving the dashboard or hunting for the file. The
+`approve` command shown there is **filled in with the real file name** — copy-paste, no `<file>` to swap.
 
 This is the one flow that reaches the public web (via the model's web search — best-effort and cost-logged;
 a failure leaves the priors untouched). The guardrails hold throughout: **priors are hypotheses that yield

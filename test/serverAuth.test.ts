@@ -49,6 +49,13 @@ test("server gates routes by token + host (integration)", async () => {
     const wrong = await fetch(`${base}/`, { headers: { "x-coach-token": "nope" } });
     assert.equal(wrong.status, 401);
 
+    // The read-only digest view is token-gated like everything else, and degrades to a friendly empty
+    // state (no digest in the test cwd) rather than erroring.
+    assert.equal((await fetch(`${base}/digest`)).status, 401, "no token → 401");
+    const digest = await fetch(`${base}/digest`, { headers: { "x-coach-token": "test-token-123" } });
+    assert.equal(digest.status, 200);
+    assert.match(await digest.text(), /research digest/i);
+
     // Oversized body → 413 (valid token + a route that always reads the body, so it's the size gate).
     const big = await fetch(`${base}/insight-feedback`, { method: "POST", headers: { "x-coach-token": "test-token-123" }, body: "x".repeat(70 * 1024) });
     assert.equal(big.status, 413);

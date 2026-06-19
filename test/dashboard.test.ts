@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { emptyState } from "../src/state/types.js";
 import { todayIso } from "../src/util/today.js";
 import { buildInsights } from "../src/insights/engine.js";
-import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, parseResearchTopics, parseActionBullets, mdLite, commonTrailingSentences, sessionFeedbackCardState } from "../src/coach/dashboard.js";
+import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, parseResearchItems, parseActionBullets, mdLite, commonTrailingSentences, sessionFeedbackCardState, renderResearchDigestPage } from "../src/coach/dashboard.js";
 import type { ProfileQuestion } from "../src/profile/questions.js";
 import type { InsightReport } from "../src/insights/engine.js";
 import type { Finding } from "../src/insights/metrics.js";
@@ -471,29 +471,40 @@ const NOW = Date.parse("2026-06-15T12:00:00Z");
 const F = (o: Partial<Finding>): Finding => ({ family: "Aerobic efficiency", title: "t", severity: "watch", detail: "d", evidence: "e", confidence: 0.6, ...o });
 const insightsWith = (findings: Finding[]) => ({ findings, topFindings: [] } as unknown as InsightReport);
 
-test("parseResearchTopics: pulls bold topic headlines, deduped + capped, tolerant of format drift", () => {
+test("parseResearchItems: flat form yields topic + kind + summary, deduped + capped, tolerant of drift", () => {
   const md = [
     "# Research digest — 2026-06-01 (PROPOSED)",
-    "- **Wider tyres** (CHANGE): 28–32mm at lower pressure.",
-    "- **Carb intake 90 g/h** (NEW): for long course.",
+    "- **Wider tyres** (CHANGE): 28–32mm at lower pressure roll faster. https://bicyclerollingresistance.com/x",
+    "- **Carb intake 90 g/h** (NEW): tolerable for trained guts.",
     "* **Wider tyres** again — a duplicate, dropped.",
     "Some prose with no bold lead.",
     "- not bold either",
   ].join("\n");
-  assert.deepEqual(parseResearchTopics(md), ["Wider tyres", "Carb intake 90 g/h"]);
-  assert.deepEqual(parseResearchTopics(md, 1), ["Wider tyres"]);
-  assert.deepEqual(parseResearchTopics("no parseable topics here"), []);
+  const items = parseResearchItems(md);
+  assert.deepEqual(items.map((i) => i.topic), ["Wider tyres", "Carb intake 90 g/h"]);
+  assert.equal(items[0].kind, "change");
+  assert.equal(items[0].summary, "28–32mm at lower pressure roll faster. https://bicyclerollingresistance.com/x");
+  assert.equal(items[0].link, "https://bicyclerollingresistance.com/x"); // a URL on the item's line is its link
+  assert.equal(items[1].kind, "new");
+  assert.deepEqual(parseResearchItems(md, 1).map((i) => i.topic), ["Wider tyres"]); // capped
+  assert.deepEqual(parseResearchItems("no parseable topics here"), []);
 
-  // The labelled form (what the real digest produces) — pull the Topic VALUE, skip Source/Proposed prior
-  // field-labels, and take "### Heading" topics. (Regression: the card used to show "Source"/"Proposed prior".)
+  // The labelled form (what the real digest produces): a "### Heading" item whose Topic / Proposed prior /
+  // Source sub-bullets fold into ONE structured item (the Topic value wins the name; Source URL → link).
   const labelled = [
     "# Research digest — 2026-06-01",
     "### Heat acclimation",
     "- **Topic**: Carbohydrate intake (CHANGE)",
     "- **Proposed prior**: aim 90 g/h on long course.",
-    "- **Source**: Jeukendrup 2024.",
+    "- **Source**: Jeukendrup 2024 — https://doi.org/10.x",
+    "- **Confidence**: high",
   ].join("\n");
-  assert.deepEqual(parseResearchTopics(labelled), ["Heat acclimation", "Carbohydrate intake"]);
+  const [item] = parseResearchItems(labelled);
+  assert.equal(item.topic, "Carbohydrate intake");
+  assert.equal(item.kind, "change");
+  assert.equal(item.summary, "aim 90 g/h on long course.");
+  assert.equal(item.source, "Jeukendrup 2024"); // trailing URL stripped from the source text…
+  assert.equal(item.link, "https://doi.org/10.x"); // …and captured as the link
 });
 
 test("buildSetupItems: groups This week (gains + weekly pointer) and Worth considering (research) with as-of tags", () => {
@@ -505,7 +516,14 @@ test("buildSetupItems: groups This week (gains + weekly pointer) and Worth consi
     questions: [],
     insights,
     weeklyReview: { date: "2026-06-12", actions: ["Cut one grey-zone ride"] }, // 3 days before NOW → fresh
-    researchDigest: { date: "2026-06-10", topics: ["90 g/h carb", "165mm cranks"] }, // 5 days → fresh
+    researchDigest: {
+      date: "2026-06-10", // 5 days → fresh
+      file: "2026-06-10-research-digest.md",
+      items: [
+        { topic: "90 g/h carb", kind: "change" as const, summary: "trained guts tolerate 90 g/h", source: "Jeukendrup 2024", link: "https://doi.org/10.y" },
+        { topic: "165mm cranks", kind: "new" as const },
+      ],
+    },
     now: NOW,
   });
   assert.deepEqual([...new Set(items.map((i) => i.group))], ["finish_setup", "this_week", "worth_considering"]);
@@ -520,6 +538,16 @@ test("buildSetupItems: groups This week (gains + weekly pointer) and Worth consi
   assert.deepEqual(consider.map((i) => i.label), ["90 g/h carb", "165mm cranks"]);
   assert.ok(consider.every((i) => i.route === "discuss with coach" && /as of 5d ago/.test(i.why)));
   assert.equal(consider[0].key, "setup:research:90 g h carb");
+  // The action answers the four questions the old blurb didn't: what it says, the source, the REAL file
+  // name in the approve command (never a `<file>` placeholder), and the honest "weigh it" framing.
+  assert.match(consider[0].action, /What it says: trained guts tolerate 90 g\/h/);
+  assert.match(consider[0].action, /Source: Jeukendrup 2024/);
+  assert.match(consider[0].action, /npm run knowledge -- approve 2026-06-10-research-digest\.md/);
+  assert.doesNotMatch(consider[0].action, /<file>/, "the placeholder is gone — the command is concrete");
+  assert.match(consider[0].action, /your own n=1 data outranks the textbook/);
+  // Links: always the in-app full digest, plus the item's own source when the digest gave a URL.
+  assert.deepEqual(consider[0].links?.map((l) => l.href), ["/digest", "https://doi.org/10.y"]);
+  assert.deepEqual(consider[1].links?.map((l) => l.href), ["/digest"], "no source URL → just the digest link");
 });
 
 test("parseActionBullets: pulls the bullets under the matched section only, deduped + capped", () => {
@@ -626,19 +654,22 @@ test("buildSetupItems: stale weekly/research reports drop out (the freshness win
   const items = buildSetupItems({ schema_version: 1, identity: {} } as Profile, {
     questions: [],
     weeklyReview: { date: "2026-05-01", actions: ["old action"] }, // >10d before NOW → stale
-    researchDigest: { date: "2026-01-01", topics: ["old topic"] }, // >45d → stale
+    researchDigest: { date: "2026-01-01", file: "2026-01-01-research-digest.md", items: [{ topic: "old topic" }] }, // >45d → stale
     now: NOW,
   });
   assert.equal(items.length, 0, "nothing fresh, nothing to surface");
 });
 
-test("buildSetupItems: a research digest with no parseable topics falls back to a single review pointer", () => {
+test("buildSetupItems: a research digest with no parseable items falls back to a single review pointer", () => {
   const items = buildSetupItems({ schema_version: 1, identity: {} } as Profile, {
     questions: [],
-    researchDigest: { date: "2026-06-14", topics: [] },
+    researchDigest: { date: "2026-06-14", file: "2026-06-14-research-digest.md", items: [] },
     now: NOW,
   });
   assert.deepEqual(items.map((i) => [i.label, i.key, i.group]), [["Review the latest research digest", "setup:research:digest", "worth_considering"]]);
+  // Even the fallback carries the concrete approve command + a link to read the digest.
+  assert.match(items[0].action, /npm run knowledge -- approve 2026-06-14-research-digest\.md/);
+  assert.deepEqual(items[0].links?.map((l) => l.href), ["/digest"]);
 });
 
 test("buildSetupItems: a This-week item restating a finish-setup item is deduped (finish-setup wins)", () => {
@@ -656,12 +687,34 @@ test("renderSetupImprove: group subheadings appear only when more than one secti
   assert.doesNotMatch(flat, /setup-group/, "finish-setup only → flat, no subheadings");
   const grouped = renderSetupImprove(profile, false, {
     questions: [],
-    researchDigest: { date: "2026-06-14", topics: ["90 g/h carb"] },
+    researchDigest: { date: "2026-06-14", file: "2026-06-14-research-digest.md", items: [{ topic: "90 g/h carb", summary: "trained guts cope with 90 g/h" }] },
     now: NOW,
   });
   assert.match(grouped, /class="setup-group">Finish setup</);
   assert.match(grouped, /class="setup-group">Worth considering</);
   assert.match(grouped, /90 g\/h carb/);
+  // The research card renders an in-app link to the full digest (answering "where's the link?").
+  assert.match(grouped, /<a class="setup-link" href="\/digest">Read the full digest →<\/a>/);
+});
+
+test("renderResearchDigestPage: renders the digest read-only — escaped, URLs linkified, real approve command", () => {
+  const md = [
+    "# Research digest — 2026-06-14 (PROPOSED)",
+    "### Carbohydrate intake",
+    "- **Proposed prior**: aim 90 g/h. See https://doi.org/10.x for the meta-analysis.",
+    "<script>alert(1)</script>", // injected markup must NOT survive as live HTML
+  ].join("\n");
+  const html = renderResearchDigestPage("2026-06-14-research-digest.md", md);
+  assert.match(html, /npm run knowledge -- approve 2026-06-14-research-digest\.md/, "the approve command names the real file");
+  assert.match(html, /<a href="https:\/\/doi\.org\/10\.x" target="_blank" rel="noopener noreferrer">/, "a source URL is linkified");
+  assert.doesNotMatch(html, /<script>alert\(1\)<\/script>/, "injected markup is escaped, not live");
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/, "…it shows as inert text");
+  assert.match(html, /n=1 data outranks the textbook/, "the honest 'priors to weigh' framing is present");
+
+  // No digest yet → a friendly empty state that says how to generate one (never an error).
+  const empty = renderResearchDigestPage(null, null);
+  assert.match(empty, /No research digest yet/);
+  assert.match(empty, /npm run research/);
 });
 
 test("Data changes card: surfaces an auto-detected metric change with agree/disagree, hidden when snoozed", () => {
