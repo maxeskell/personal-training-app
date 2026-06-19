@@ -11,7 +11,8 @@ import { runDeepDive } from "./coach/deepDive.js";
 import { runTuneUp } from "./coach/tuneUp.js";
 import { runResearchDigest } from "./coach/research.js";
 import { readKnowledge, writePendingDigest, pendingName, approvePending, knowledgeFreshness, listPending } from "./knowledge/store.js";
-import { buildTodayState, gatherReadiness, loadArchive, loadPredictionTrajectory, todayIso, withAie } from "./coach/orchestrator.js";
+import { buildTodayState, gatherCompleteness, gatherReadiness, loadArchive, loadPredictionTrajectory, todayIso, withAie } from "./coach/orchestrator.js";
+import { formatCompleteness } from "./state/dataCompleteness.js";
 import { proposeAdjustments, validateProposals, buildProposerContext, writeContextFor } from "./coach/planAdjust.js";
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport } from "./coach/reports.js";
@@ -197,6 +198,7 @@ async function cmdState(): Promise<void> {
 
   // Assemble via the configured data-source spine (AI Endurance by default; see src/sources/).
   const state = await selectDataSource().assemble({ store, garmin, date: todayIso(), assembledAt: new Date().toISOString() });
+  const garminConnected = garmin ? garmin.available : undefined; // capture before close()
   await garmin?.close();
   await store.save(state);
 
@@ -224,6 +226,13 @@ async function cmdState(): Promise<void> {
 
   console.log(`\n  sync gaps: ${state.syncGaps.length}`);
   for (const g of state.syncGaps) console.log(`    - [${g.kind}] ${g.detail}`);
+
+  // Granular-data completeness — a recent session missing its raw .FIT (so its splits/biomechanics are
+  // unreachable) is surfaced here, never as a silent zero. (`npm run state` doesn't fetch; run `fit-sync`
+  // or the dashboard Sync — or the MCP `sync` tool — to pull missing streams.)
+  console.log("");
+  for (const line of formatCompleteness(gatherCompleteness(state, { garminConnected }))) console.log(line);
+
   console.log(`\nSaved to ${config.dataDir}/state/${state.date}.json`);
 }
 

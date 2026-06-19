@@ -70,6 +70,8 @@ test("syncFitSummaries: downloads raw .FIT streams for endurance activities when
     const r = await syncFitSummaries(fakeGarmin({ downloadTool: true }) as never, store, 25);
     assert.equal(r.streamsSupported, true);
     assert.equal(r.streamsDownloaded, 2, "A1 (archived summary, no local stream) + A2; A3 ignored");
+    assert.equal(r.streamsFailed, 0, "all downloads landed their .fit");
+    assert.deepEqual(r.streamFailures, []);
     assert.ok(existsSync(join(dir, "fit-streams", "A1.fit")));
     assert.ok(existsSync(join(dir, "fit-streams", "A2.fit")));
     assert.ok(!existsSync(join(dir, "fit-streams", "A3.fit")), "strength activity gets no stream");
@@ -85,9 +87,55 @@ test("syncFitSummaries: downloads raw .FIT streams for endurance activities when
 test("downloadFitStream: writes {id}.fit into the dir and is a no-op when present", async () => {
   const dir = await mkdtemp(join(tmpdir(), "coach-fit-dl-"));
   const { downloadFitStream } = await import("../src/archive/fitSync.js");
-  assert.equal(await downloadFitStream(fakeGarmin({ downloadTool: true }) as never, "A9", dir), true);
+  assert.equal((await downloadFitStream(fakeGarmin({ downloadTool: true }) as never, "A9", dir)).ok, true);
   assert.ok(existsSync(join(dir, "A9.fit")));
-  // A client that fails the call → file absent → false.
+  // A client that fails the call → file absent → not ok, with the reason naming a failed call (not silence).
   const dead = { async listToolNames() { return []; }, async tryCall() { return null; } };
-  assert.equal(await downloadFitStream(dead as never, "A10", dir), false);
+  const failed = await downloadFitStream(dead as never, "A10", dir);
+  assert.equal(failed.ok, false);
+  assert.match(failed.reason ?? "", /call failed/i);
+});
+
+test("downloadFitStream: a 'successful' call that writes no {id}.fit is reported as failed, with the reason (root cause #3)", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "coach-fit-noland-"));
+  const { downloadFitStream } = await import("../src/archive/fitSync.js");
+  // Tool returns ok but never writes the expected <id>.fit (e.g. a different filename / a .zip).
+  const quietlyBroken = {
+    async listToolNames() { return ["download_activity_file"]; },
+    async tryCall() { return { status: "ok" }; },
+  };
+  const res = await downloadFitStream(quietlyBroken as never, "A11", dir);
+  assert.equal(res.ok, false, "no <id>.fit landed → not a silent success");
+  assert.match(res.reason ?? "", /no A11\.fit landed|unexpected filename/i);
+  assert.ok(!existsSync(join(dir, "A11.fit")));
+});
+
+test("syncFitSummaries: stream-download failures are aggregated, not swallowed", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "coach-fit-fail-"));
+  const { config } = await import("../src/config.js");
+  (config as { dataDir: string }).dataDir = dir;
+  process.env.FIT_STREAMS_DIR = join(dir, "fit-streams");
+  try {
+    const { ArchiveStore } = await import("../src/archive/store.js");
+    const { syncFitSummaries } = await import("../src/archive/fitSync.js");
+    // download_activity_file is advertised but never writes the file → every endurance activity fails.
+    const broken = {
+      async listToolNames() { return ["get_activities", "download_activity_file"]; },
+      async tryCall(name: string) {
+        if (name === "get_activities") return { activities: [{ activityId: "B1", type: "lap_swimming" }] };
+        if (name === "get_activity_fit_data") return { session: { start_time: "2026-06-19T07:00:00", sport: "swimming" } };
+        if (name === "get_activity_weather") return null;
+        if (name === "download_activity_file") return { status: "ok" }; // ok, but writes nothing
+        return null;
+      },
+    };
+    const r = await syncFitSummaries(broken as never, new ArchiveStore(), 25);
+    assert.equal(r.streamsSupported, true);
+    assert.equal(r.streamsDownloaded, 0);
+    assert.equal(r.streamsFailed, 1, "the failed download is counted, not hidden");
+    assert.equal(r.streamFailures.length, 1);
+    assert.match(r.streamFailures[0], /^B1: /);
+  } finally {
+    delete process.env.FIT_STREAMS_DIR;
+  }
 });

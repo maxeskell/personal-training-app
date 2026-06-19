@@ -26,16 +26,36 @@ export async function hasStreamDownloadTool(g: GarminClient): Promise<boolean> {
   return (await g.listToolNames()).includes(DOWNLOAD_TOOL);
 }
 
+/** Outcome of a raw-stream download — `ok` plus, on failure, the REAL reason (loud over silent). */
+export interface FitDownloadResult {
+  ok: boolean;
+  /** When ok=false: one-line cause — distinguishes a failed/auth call from a file that never landed. */
+  reason?: string;
+}
+
 /**
  * Download one activity's raw per-second .FIT into `dir` as `{activityId}.fit` (no-op if present).
- * Caller is responsible for the capability check. True = the file exists afterwards.
+ * Caller is responsible for the capability check.
+ *
+ * Returns the REAL outcome instead of inferring success purely from `existsSync`: a swallowed Garmin
+ * error (auth/timeout) and a call that "succeeded" but wrote nothing at the expected path are different
+ * failures, and the caller needs to tell them apart to surface an honest gap rather than a clean zero.
  */
-export async function downloadFitStream(g: GarminClient, activityId: string, dir = fitStreamsDir()): Promise<boolean> {
+export async function downloadFitStream(g: GarminClient, activityId: string, dir = fitStreamsDir()): Promise<FitDownloadResult> {
   const path = join(dir, `${activityId}.fit`);
-  if (existsSync(path)) return true;
+  if (existsSync(path)) return { ok: true };
   mkdirSync(dir, { recursive: true });
-  await g.tryCall(DOWNLOAD_TOOL, { activity_id: activityId, format: "fit", output_dir: dir });
-  return existsSync(path);
+  const res = await g.tryCall(DOWNLOAD_TOOL, { activity_id: activityId, format: "fit", output_dir: dir });
+  // tryCall returns null on a thrown error/timeout; an MCP tool failure instead comes back as a result
+  // flagged isError. Either way the download did not happen — say so, don't pretend it's just absent.
+  if (res == null || (res as { isError?: boolean }).isError) {
+    return { ok: false, reason: `${DOWNLOAD_TOOL} call failed (Garmin error/timeout/auth) — see the [garmin] log` };
+  }
+  if (existsSync(path)) return { ok: true };
+  return {
+    ok: false,
+    reason: `${DOWNLOAD_TOOL} returned but no ${activityId}.fit landed in ${dir} (unexpected filename/format — check the garmin_mcp build, or export the original .FIT manually)`,
+  };
 }
 
 const num = (x: unknown): number | undefined =>
@@ -54,6 +74,10 @@ export interface FitSyncResult {
   streamsDownloaded: number;
   /** Whether the connected garmin_mcp build offers raw-stream download at all. */
   streamsSupported: boolean;
+  /** Raw-stream downloads that were ATTEMPTED but failed (no longer swallowed — surfaced to the caller). */
+  streamsFailed: number;
+  /** One line per failed stream download (`{id}: {reason}`), for a loud completeness readout. */
+  streamFailures: string[];
 }
 
 export async function syncFitSummaries(g: GarminClient, store: ArchiveStore, limit = 25, log?: (msg: string) => void): Promise<FitSyncResult> {
@@ -67,6 +91,8 @@ export async function syncFitSummaries(g: GarminClient, store: ArchiveStore, lim
   let skipped = 0;
   let failed = 0;
   let streamsDownloaded = 0;
+  let streamsFailed = 0;
+  const streamFailures: string[] = [];
   const buffer: FitSummary[] = [];
   for (const a of list) {
     const id = String(a.activityId ?? a.id ?? a.activity_id ?? "");
@@ -75,11 +101,14 @@ export async function syncFitSummaries(g: GarminClient, store: ArchiveStore, lim
     // Raw stream first, independent of the summary dedup — earlier syncs predate stream download,
     // so already-archived activities in the window still get their .FIT pulled. Best-effort.
     if (streamsSupported && !existsSync(join(streamsDir, `${id}.fit`))) {
-      if (await downloadFitStream(g, id, streamsDir)) {
+      const dl = await downloadFitStream(g, id, streamsDir);
+      if (dl.ok) {
         streamsDownloaded++;
         log?.(`  ⬇ ${id}.fit → ${streamsDir}`);
       } else {
-        log?.(`  ? ${id}: stream download failed (biomechanics need a manual Export Original)`);
+        streamsFailed++;
+        streamFailures.push(`${id}: ${dl.reason}`);
+        log?.(`  ? ${id}: stream download failed — ${dl.reason}`);
       }
     }
     if (have.has(id)) {
@@ -117,5 +146,5 @@ export async function syncFitSummaries(g: GarminClient, store: ArchiveStore, lim
     log?.(`  + ${id} (${sum.sport}, ${sum.date}, ${sum.avgTempC ?? "?"}°C${sum.avgPowerW != null ? `, ${sum.avgPowerW}W` : ""})`);
   }
   await store.appendFitSummaries(buffer);
-  return { total: list.length, added, skipped, failed, summaries: buffer, streamsDownloaded, streamsSupported };
+  return { total: list.length, added, skipped, failed, summaries: buffer, streamsDownloaded, streamsSupported, streamsFailed, streamFailures };
 }

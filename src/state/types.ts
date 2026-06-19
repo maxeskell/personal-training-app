@@ -8,6 +8,9 @@
 // getUser-derived `AthleteProfile` identity slot below. Type-only import — no runtime coupling.
 import type { Profile as ProfileDoc } from "../profile/schema.js";
 export type { ProfileDoc };
+// Granular-data completeness readout — attached in-memory on sync/get_state, never persisted.
+import type { DataCompletenessReport } from "./dataCompleteness.js";
+export type { DataCompletenessReport };
 
 export type Source = "ai-endurance" | "intervals" | "garmin" | "derived" | "manual";
 
@@ -267,6 +270,15 @@ export interface AthleteState {
    * profile is present/valid.
    */
   profile?: ProfileDoc;
+
+  /**
+   * Granular-data completeness: for each recent session, whether its raw per-second `.FIT` is present
+   * (so per-interval splits / biomechanics are reachable) plus the Garmin capability + this-sync fetch
+   * outcome. Attached in-memory by the orchestrator on `sync` / `get_state` — DERIVED and time-sensitive,
+   * so it's stripped by StateStore.save (never persisted). Loud-over-silent: a missing `.FIT` surfaces
+   * here instead of a clean zero.
+   */
+  dataCompleteness?: DataCompletenessReport;
 }
 
 export function emptyState(date: string, assembledAt: string): AthleteState {

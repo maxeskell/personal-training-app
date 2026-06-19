@@ -149,7 +149,13 @@ async function refresh(): Promise<void> {
     // Best-effort: a fit-sync failure must never break a refresh. (Biomechanics still need a raw .FIT.)
     if (garmin) {
       try {
-        await syncFitSummaries(garmin, new ArchiveStore(), 5);
+        const fs = await syncFitSummaries(garmin, new ArchiveStore(), 5);
+        // A swallowed stream-download failure used to leave a clean-looking refresh hiding a missing
+        // biomechanics layer. Surface the reason in the server log instead.
+        if (fs.streamsFailed) {
+          console.warn(`fit-sync: ${fs.streamsFailed} raw .FIT download(s) failed — biomechanics/splits will be missing for these:`);
+          for (const f of fs.streamFailures) console.warn(`  ! ${f}`);
+        }
       } catch (e) {
         console.warn(`fit-sync during refresh failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -285,7 +291,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         const g = new GarminClient();
         if (await g.connect()) {
           try {
-            if ((await hasStreamDownloadTool(g)) && (await downloadFitStream(g, probe.fit.activityId, fitStreamsDir()))) {
+            if ((await hasStreamDownloadTool(g)) && (await downloadFitStream(g, probe.fit.activityId, fitStreamsDir())).ok) {
               decays = loadSessionDecays();
             }
           } finally {

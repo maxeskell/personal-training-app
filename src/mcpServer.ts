@@ -5,7 +5,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
-import { buildTodayState, gatherReadiness, loadArchive, loadPredictionTrajectory, todayIso, withAie } from "./coach/orchestrator.js";
+import { buildTodayState, gatherCompleteness, gatherReadiness, loadArchive, loadPredictionTrajectory, todayIso, withAie } from "./coach/orchestrator.js";
+import { formatCompleteness } from "./state/dataCompleteness.js";
 import { StateStore } from "./state/store.js";
 import { buildInsights } from "./insights/engine.js";
 import { DecisionLog, suppressedInsightKeys, reactionFromLabel, type DecisionRecord } from "./state/decisionLog.js";
@@ -85,6 +86,9 @@ export function summarizeState(state: AthleteState): string {
     L("nutrition targets", state.nutritionTargets),
     `  sync gaps: ${state.syncGaps.length}`,
     ...state.syncGaps.map((g) => `    - [${g.kind}] ${g.detail}`),
+    // Granular-data completeness — never a silent zero: a recent session missing its raw .FIT (so its
+    // splits/biomechanics are unreachable) is called out explicitly here, with the reason.
+    ...(state.dataCompleteness ? ["", ...formatCompleteness(state.dataCompleteness)] : []),
   ].join("\n");
 }
 
@@ -174,18 +178,21 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
   // ---- deterministic reads (no LLM, no token cost) ----
   server.tool(
     "sync",
-    "Assemble today's AthleteState fresh from AI Endurance (+ Garmin if enabled) and persist it. Returns a summary + any sync gaps. Network call; no LLM cost.",
+    "Assemble today's AthleteState fresh from AI Endurance (+ Garmin if enabled), auto-fetch recent raw .FIT streams, and persist it. Returns a summary, any sync gaps, AND a granular-data completeness readout (which recent sessions are missing their raw .FIT — so their per-interval splits / biomechanics are unreachable — and why). Network call; no LLM cost.",
     {},
-    async () => ok(summarizeState((await buildTodayState()).state)),
+    async () => ok(summarizeState((await buildTodayState({ syncFit: true })).state)),
   );
 
   server.tool(
     "get_state",
-    "Return today's AthleteState (plan, recovery, HRV/RHR, weight, thresholds, zones, …). Reads the last persisted snapshot by default; pass fresh=true to re-sync from AI Endurance first.",
+    "Return today's AthleteState (plan, recovery, HRV/RHR, weight, thresholds, zones, …) plus a granular-data completeness readout. Reads the last persisted snapshot by default; pass fresh=true to re-sync from AI Endurance first (use `sync` to also auto-fetch raw .FIT streams).",
     { fresh: z.boolean().optional().describe("Re-assemble from AI Endurance before returning (default: use the last snapshot).") },
     async ({ fresh }) => {
       const state = fresh ? (await buildTodayState()).state : (await new StateStore().recent(todayIso(), 1))[0];
       if (!state) return fail("No state assembled yet — call the `sync` tool (or get_state with fresh=true) first.");
+      // Attach a completeness readout (no FIT fetch here — that's `sync`'s job). For a snapshot read,
+      // garminConnected is left undefined so the note says capability is "from the last snapshot".
+      state.dataCompleteness ??= gatherCompleteness(state);
       return ok(summarizeState(state));
     },
   );
