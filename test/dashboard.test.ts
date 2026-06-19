@@ -296,6 +296,13 @@ test("dashboard shows the AIE-todo card only when a profile with outstanding ite
   assert.doesNotMatch(renderDashboard({ window: [s], decisions: [] }), /Fix these in AI Endurance/);
 });
 
+test("share view omits the interactive Sync card (no empty card in a screenshot/PDF)", () => {
+  const s = emptyState("2026-06-18", new Date().toISOString());
+  assert.match(renderDashboard({ window: [s], decisions: [] }), /Sync latest data/, "present in the interactive view");
+  assert.doesNotMatch(renderDashboard({ window: [s], decisions: [], share: true }), /Sync latest data/, "dropped in share view");
+  assert.match(renderDashboard({ window: [s], decisions: [] }), /\.syncbar\{display:none/, "and its card is print-hidden via .syncbar");
+});
+
 test("API cost card renders windowed totals + a monthly projection when records are present", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
   const costRecords = [
