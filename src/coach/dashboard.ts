@@ -1,6 +1,7 @@
 import type { AthleteState, ActualActivity, PlannedSession, ZoneSet } from "../state/types.js";
 import type { DecisionRecord, InsightReaction } from "../state/decisionLog.js";
 import type { FitSummary } from "../archive/store.js";
+import type { SessionFeedbackRecord } from "./sessionFeedbackStore.js";
 import type { InsightReport } from "../insights/engine.js";
 import { findingKey } from "../insights/metrics.js";
 import { selectMarginalGains } from "../insights/marginalGains.js";
@@ -124,6 +125,12 @@ export interface DashboardInput {
   researchDigest?: { date: string; topics: string[] };
   /** Clock for deterministic "as of N days ago" staleness (defaults to Date.now()); injectable in tests. */
   now?: number;
+  /**
+   * Persisted deep session-feedback records — the "Last session" card shows the one matching the latest
+   * session inline (no LLM on render, no button). Auto-generated at sync; absent → a "generates next sync"
+   * note. Read-only here.
+   */
+  sessionFeedbacks?: SessionFeedbackRecord[];
 }
 
 const TONE_COLOR: Record<Tone, string> = { good: "#1a8a3a", neutral: "#777", warn: "#c98a00", bad: "#c0392b" };
@@ -265,7 +272,27 @@ function plannedFor(window: AthleteState[], date: string, sport: string): Planne
 }
 
 /** "Last session" card: the most recent activity at a glance, what it was MEANT to be, + deep LLM feedback. */
-function renderLastSession(window: AthleteState[], insights: InsightReport | undefined, fitSummaries?: FitSummary[], canFetchFit?: boolean): string {
+/**
+ * Minimal, escape-FIRST markdown → HTML for stored feedback rendered server-side (mirrors the client
+ * `mdToHtml`): headers, bold, inline code, bullets. Everything is escaped before any formatting, so
+ * injected markup can't break out (dashboard escaping convention). Pure.
+ */
+export function mdLite(md: string): string {
+  let h = escapeHtml(md);
+  h = h.replace(/^#{1,3} (.*)$/gm, '<b style="font-size:15px">$1</b>');
+  h = h.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+  h = h.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  h = h.replace(/^- /gm, "• ");
+  return h;
+}
+
+function renderLastSession(
+  window: AthleteState[],
+  insights: InsightReport | undefined,
+  fitSummaries?: FitSummary[],
+  canFetchFit?: boolean,
+  sessionFeedbacks?: SessionFeedbackRecord[],
+): string {
   const today = window[window.length - 1];
   const d = assembleSession(today, insights, { decays: insights?.sessionDecays, fitSummaries });
   if (!d) return "";
@@ -290,20 +317,21 @@ function renderLastSession(window: AthleteState[], insights: InsightReport | und
   const planLine = plan
     ? `<div style="font-size:13px;color:#666;margin-bottom:10px">📋 Planned: <b>${escapeHtml(planBits)}</b></div>`
     : `<div class="k" style="margin-bottom:10px">📋 No planned workout matched this date/sport — unscheduled, or swapped from the plan.</div>`;
-  // Deep feedback costs an LLM call and is only worth it with the raw .FIT joined in (user ask):
-  // show the button when the stream is local OR the server can fetch it on demand (Garmin enabled +
-  // the archive knows this activity's id); otherwise say exactly how to unlock it manually.
-  const fetchable = !!canFetchFit && !!d.fit?.activityId;
-  const deep = d.decay
-    ? `<button class="actbtn" onclick="sessionFeedback()">🔍 Deep feedback on this session</button>`
-    : fetchable
-      ? `<button class="actbtn" onclick="sessionFeedback()">🔍 Deep feedback on this session</button> <span class="k">fetches this session's raw .FIT from Garmin first (~10s)</span>`
-      : `<div class="k">🔍 Deep feedback unlocks when this session's raw .FIT is in data/fit-streams/ — it couldn't be fetched automatically (Garmin off, or no archived activity id yet — try Sync), so export it from Garmin Connect → activity → ⚙ → Export Original. Without the per-second stream there are no biomechanics to analyse and the LLM call is skipped.</div>`;
+  // Deep feedback is auto-generated at sync (no button) and persisted; show the stored readout for THIS
+  // session inline. No LLM on render. Absent → say it generates on the next sync (+ how to unlock the
+  // .FIT if Garmin can't fetch it). The stored markdown leads with its own H1 — strip it (the card
+  // heading already names the session).
+  const stored = (sessionFeedbacks ?? [])
+    .filter((f) => f.date === d.date)
+    .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0];
+  const feedback = stored
+    ? `<div class="k" style="margin:8px 0 4px">🔍 Session feedback <span class="muted">(${stored.deep ? "deep analysis" : "summary"} · ${escapeHtml(fmtSince(Date.now() - new Date(stored.generatedAt).getTime()))})</span></div>
+      <div style="font-size:14px;color:#333;white-space:pre-wrap">${mdLite(stored.markdown.replace(/^# .*\n+/, ""))}</div>`
+    : `<div class="k">🔍 Deep feedback generates automatically on the next sync, once this session's raw .FIT is downloaded. No .FIT yet? Export it from Garmin Connect → activity → ⚙ → Export Original into data/fit-streams/.</div>`;
   return `<div class="card"><h2>Last session — ${d.date} ${d.sport}</h2>
     <div style="font-size:14px;margin-bottom:6px">${escapeHtml(bits)}</div>
     ${planLine}
-    ${deep}
-    <div id="sessionfb" style="margin-top:12px;font-size:14px;color:#333;white-space:pre-wrap"></div>
+    ${feedback}
   </div>`;
 }
 
@@ -973,7 +1001,7 @@ function freshnessLine(today: AthleteState): string {
   return line;
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReviewDate, researchDigest, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReviewDate, researchDigest, sessionFeedbacks, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Week: load by sport. Time in h:mm (user ask); a zero distance renders "—" not a misleading 0.0 km.
@@ -1109,7 +1137,7 @@ function autoSync(min){ sync('Data is '+min+' min old — auto-refreshing:'); }
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
 ${insights ? renderHeader(today, insights, decisions, garminDays) : ""}
 ${insights ? renderInsightsBox(insights, reactions, firstSeen) : ""}
-${renderLastSession(window, insights, fitSummaries, canFetchFit)}
+${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks)}
 
 <div class="card" id="askcard"><h2>Ask your data</h2>
   <form id="askform" onsubmit="return ask(event)">
@@ -1134,10 +1162,6 @@ async function ask(e){e.preventDefault();var q=document.getElementById('q').valu
   try{var r=await fetch('/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:q})});
     var j=await r.json();a.innerHTML=mdToHtml(j.answer||'(no answer)');}catch(err){a.textContent='Error: '+err;}
   return false;}
-async function sessionFeedback(){
-  var box=document.getElementById('sessionfb'); box.textContent='Analysing this session… (fetching the .FIT first if needed)';
-  try{var r=await fetch('/session-feedback',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
-    var j=await r.json(); box.innerHTML=mdToHtml(j.markdown||'(no feedback)');}catch(err){box.textContent='Error: '+err;}}
 function setReactionState(box,state){
   box.setAttribute('data-reaction-state',state);
   var like=box.querySelector('.agree');var dislike=box.querySelector('.disagree');

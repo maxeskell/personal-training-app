@@ -11,6 +11,8 @@ import { InsightLog } from "./state/insightLog.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { latestWeeklyReviewDate, latestResearchDigest } from "./coach/setupSources.js";
+import { loadSessionFeedbacks } from "./coach/sessionFeedbackStore.js";
+import { backfillSessionFeedback } from "./coach/autoSessionFeedback.js";
 import { buildInsights } from "./insights/engine.js";
 import { loadArchive } from "./coach/orchestrator.js";
 import { ArchiveStore } from "./archive/store.js";
@@ -120,6 +122,7 @@ async function renderLatest(share = false): Promise<string> {
     suppressed, // dismissed "Set up & improve" items (shares the insight snooze machinery)
     weeklyReviewDate: await latestWeeklyReviewDate(), // "This week" group — read persisted, never re-run
     researchDigest: await latestResearchDigest(), // "Worth considering" group — read persisted, never re-run
+    sessionFeedbacks: await loadSessionFeedbacks(), // auto-generated at sync; shown inline, no LLM here
   });
 }
 
@@ -152,6 +155,18 @@ async function refresh(): Promise<void> {
       }
     }
     if (config.weather.enabled) await refreshForecast(); // best-effort inside — never fails a refresh
+    // Auto deep session-feedback: generate + persist a deep dive for any recent session that lacks one
+    // (runs AFTER fit-sync so the raw .FIT is present). Best-effort + API-key-gated; no-FIT sessions are
+    // retried cheaply on a later sync. The dashboard then shows it inline with no button.
+    try {
+      const li = await latestInsights();
+      if (li) {
+        const n = await backfillSessionFeedback(li.state, li.insights, {});
+        if (n) console.log(`auto session-feedback: generated ${n} new readout(s)`);
+      }
+    } catch (e) {
+      console.warn(`auto session-feedback skipped (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
+    }
   } catch (err) {
     // Degrade, don't crash: an unreachable/unauthenticated spine leaves the last good state in place
     // rather than tearing down the refresh loop (which serves the dashboard hands-free).
