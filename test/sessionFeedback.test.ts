@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { latestByDate, type SessionFeedbackRecord } from "../src/coach/sessionFeedbackStore.js";
-import { sessionsNeedingFeedback } from "../src/coach/autoSessionFeedback.js";
+import { sessionsNeedingFeedback, feedbackLimitForMode } from "../src/coach/autoSessionFeedback.js";
 
 /**
  * Pure-logic tests for the auto session-feedback feature: collapsing the append-only store to the latest
@@ -43,4 +43,11 @@ test("sessionsNeedingFeedback: recent + unstored only, newest-first, capped", ()
 
   // A future-dated activity (clock skew) is ignored.
   assert.deepEqual(sessionsNeedingFeedback(["2026-06-12"], new Set(), "2026-06-09", 10, 5), []);
+});
+
+test("feedbackLimitForMode: off→0, latest→1, on→base (the COACH_AUTO_SESSION_FEEDBACK throttle)", () => {
+  assert.equal(feedbackLimitForMode("off"), 0);
+  assert.equal(feedbackLimitForMode("latest"), 1);
+  assert.equal(feedbackLimitForMode("on"), 5);
+  assert.equal(feedbackLimitForMode("on", 3), 3);
 });

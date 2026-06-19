@@ -191,9 +191,11 @@ The last two sections **read your last saved reports** — the dashboard never r
 research (LLM) flows — so each of their items carries an *"as of …"* tag and drops once the report is
 stale (≈10 days for the weekly review, ≈45 for research). Everything is deduped (a weekly tweak that
 restates a setup item collapses, finish-setup winning) and capped per section, so the card stays a calm
-prompt, not a backlog. Each item has a **✕ dismiss** that snoozes it for ~2 weeks via the same
-insight-feedback machinery (the decision log), so a dismissed item stays gone (and the freed slot is
-taken by the next-best item in that section).
+prompt, not a backlog. **Each item expands to a concrete, copy-pasteable proposed action** — exactly how
+to do it (set it in AI Endurance, the dot-path + the three ways to fill a profile field, the `.env` line
+to add, etc.) — so the card is self-serve without opening other docs. Each item also has a **✕ dismiss**
+that snoozes it for ~2 weeks via the same insight-feedback machinery (the decision log), so a dismissed
+item stays gone (and the freed slot is taken by the next-best item in that section).
 
 ## The coaching brief is separate
 
