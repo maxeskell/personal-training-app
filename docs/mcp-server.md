@@ -237,9 +237,12 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
 - **`ask`** `{ question }` — free-form Q&A over your assembled state + insights (same engine as the
   dashboard "Ask your data" box).
 - **`readiness`** — green/amber/red verdict with cited drivers + a wellbeing check (logs to the
-  decision log).
+  decision log). Also emits a short list of **family-tagged recommendations**, surfaced as individually
+  reactable cards on the dashboard's **Coach's recommendations** card and reactable by key via
+  `react_to_insight` / `retrospect`.
 - **`weekly`** / **`race_prep`** `{ race? }` / **`deep_dive`** — the review flows; each also writes
-  its dated report under `reports/`.
+  its dated report under `reports/`. **`deep_dive`** likewise distils its write-up into reactable,
+  family-tagged recommendations (same Coach's-recommendations surface).
 - **`tune`** — weekly marginal gains: the smaller, easy-to-action tweaks (efficiency, durability,
   fuelling, pacing, biomechanics), not "train more". Also writes a dated report.
 - **`research`** — monthly web-grounded digest: searches recent training/triathlon/gear thinking against

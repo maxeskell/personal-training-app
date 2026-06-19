@@ -1,9 +1,19 @@
 import { CoachLLM } from "../llm/client.js";
 import { liveCoachingContext } from "./seasonContext.js";
 import { findingKey } from "../insights/metrics.js";
+import { ADVICE_RECS_SCHEMA, recsToFindings, type AdviceRec } from "./adviceRecs.js";
+import { InsightLog } from "../state/insightLog.js";
 import type { AthleteState } from "../state/types.js";
 import type { InsightReport } from "../insights/engine.js";
 import type { InsightReaction } from "../state/decisionLog.js";
+
+/** Structured-extraction schema: distil the just-written deep-dive prose into family-tagged recommendations. */
+const DEEP_DIVE_RECS_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: { recommendations: ADVICE_RECS_SCHEMA },
+  required: ["recommendations"],
+  additionalProperties: false,
+};
 
 /** Per-finding context for the MCP surface: how old each insight is + the saved like/dislike. */
 export interface FindingContext {
@@ -92,6 +102,31 @@ export async function runDeepDive(
   ].join("\n");
 
   const { text, cacheRead, costUsd } = await llm.text(prompt);
-  const markdown = `# Deep dive — ${ins.date}\n\n${text}`;
-  return { markdown, cacheRead, costUsd };
+
+  // Distil the prose into individually-reactable, family-tagged recommendations (item 4-iii): a second
+  // structured pass over the write-up, logged to the insight log so each is keyed + dashboard-reactable +
+  // fed into the engagement weights. Best-effort and cost-aware — a failure leaves the prose untouched.
+  let recs: AdviceRec[] = [];
+  let recCost = 0;
+  let recCacheRead = 0;
+  try {
+    const extract = await llm.structured<{ recommendations: AdviceRec[] }>(
+      "From the deep-dive write-up below, extract 2–4 concrete, actionable `recommendations` — each a single " +
+        "imperative line tagged with its insight family. Only what the write-up actually supports; omit if nothing " +
+        `is genuinely actionable.\n\n${text}`,
+      DEEP_DIVE_RECS_SCHEMA,
+    );
+    recs = extract.value.recommendations ?? [];
+    recCost = extract.costUsd;
+    recCacheRead = extract.cacheRead;
+  } catch {
+    /* extraction is best-effort — the prose deep dive is the product, recs are a bonus */
+  }
+  const findings = recsToFindings(recs, "deep-dive");
+  await new InsightLog().recordSurfaced(findings, "deep-dive");
+  const recsSection = findings.length
+    ? `\n\n## Coach's recommendations\n\nReact to these on the dashboard's **Coach's recommendations** card, or by key via the MCP \`react_to_insight\` / \`retrospect\` tools:\n\n${findings.map((f) => `- ${f.title} _(${f.family} · \`${f.key}\`)_`).join("\n")}\n`
+    : "";
+  const markdown = `# Deep dive — ${ins.date}\n\n${text}${recsSection}`;
+  return { markdown, cacheRead: cacheRead + recCacheRead, costUsd: costUsd + recCost };
 }

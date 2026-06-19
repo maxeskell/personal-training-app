@@ -10,6 +10,7 @@ import { DecisionLog, suppressedInsightKeys, reactionFromLabel } from "./state/d
 import { InsightLog } from "./state/insightLog.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard, renderResearchDigestPage, aieGapKeyFromSetupKey } from "./coach/dashboard.js";
+import { latestAdviceFindings } from "./coach/adviceRecs.js";
 import { updateLocalProfile } from "./profile/update.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
 import { listPending, readPending } from "./knowledge/store.js";
@@ -92,6 +93,8 @@ async function renderLatest(share = false): Promise<string> {
   const insightLog = new InsightLog();
   // Read first-seen BEFORE recording this render, so a finding new to this render reads as brand new.
   const firstSeen = await insightLog.firstSeenByKey();
+  // Reactable advice from the latest readiness + deep-dive write-ups (item 4-iii), dropping suppressed.
+  const coachRecs = latestAdviceFindings(await insightLog.all(), suppressed);
   const insights = latest.raw ? buildInsights(latest, archive, { suppressed, history: window, engagement }) : undefined;
   // Record the full surfaced set (not just what gets a reaction) so the "what I listen to" model
   // (npm run listening) can read feedback against everything shown. Best-effort, de-duped, never blocks.
@@ -129,6 +132,7 @@ async function renderLatest(share = false): Promise<string> {
     researchDigest: await latestResearchDigest(), // "Worth considering" group — read persisted, never re-run
     sessionFeedbacks: await loadSessionFeedbacks(), // auto-generated at sync; shown inline, no LLM here
     metricOverrides: await loadMetricOverrides(), // your pins on auto-detected metrics (Data-changes card)
+    coachRecs, // reactable recommendations from your latest readiness + deep-dive write-ups
     setupHealth: {
       hasApiKey: CoachLLM.hasApiKey(),
       waterTempSet: config.weather.waterTempC != null,

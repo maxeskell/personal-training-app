@@ -6,6 +6,8 @@ import { config } from "../config.js";
 import { CoachLLM } from "../llm/client.js";
 import { loadSystemPrompt } from "./persona.js";
 import { assessReadiness } from "./readiness.js";
+import { recsToFindings } from "./adviceRecs.js";
+import { InsightLog } from "../state/insightLog.js";
 import { assessHealthRisk } from "../guardrails/wellbeing.js";
 import { DecisionLog, decisionId, nowIso } from "../state/decisionLog.js";
 import { ArchiveStore } from "../archive/store.js";
@@ -179,5 +181,8 @@ export async function gatherReadiness(): Promise<{
   if (!(await log.all()).some((r) => r.id === id)) {
     await log.append({ id, timestamp: nowIso(), kind: "readiness", summary: `${verdict.verdict}: ${verdict.why}`, status: "note" });
   }
+  // Surface the verdict's recommendations as individually reactable advice (item 4-iii): logged to the
+  // insight log so they're keyed, dashboard-reactable, and fed into the engagement weights. Best-effort.
+  await new InsightLog().recordSurfaced(recsToFindings(verdict.recommendations, "readiness"), "readiness");
   return { state, verdict, risk, cacheRead, costUsd };
 }

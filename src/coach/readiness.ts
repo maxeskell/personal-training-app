@@ -1,11 +1,14 @@
 import type { CoachLLM } from "../llm/client.js";
 import type { AthleteState } from "../state/types.js";
+import { ADVICE_RECS_SCHEMA, type AdviceRec } from "./adviceRecs.js";
 
 export interface ReadinessVerdict {
   verdict: "green" | "amber" | "red";
   why: string;
   drivers: Array<{ signal: string; reading: string; source: string }>;
   cautions: string[];
+  /** Family-tagged, actionable recommendations — surfaced as individually reactable cards (item 4-iii). */
+  recommendations?: AdviceRec[];
 }
 
 export const READINESS_SCHEMA: Record<string, unknown> = {
@@ -27,6 +30,7 @@ export const READINESS_SCHEMA: Record<string, unknown> = {
       },
     },
     cautions: { type: "array", items: { type: "string" } },
+    recommendations: ADVICE_RECS_SCHEMA,
   },
   required: ["verdict", "why", "drivers", "cautions"],
   additionalProperties: false,
@@ -194,7 +198,9 @@ export async function assessReadiness(
   const summary = summarizeForReadiness(window);
   const prompt =
     "Assess today's training readiness from this snapshot. Apply the operating rules. " +
-    "Remember: trend beats single point, one metric out of line is not red, Garmin scores are tiebreak only.\n\n" +
+    "Remember: trend beats single point, one metric out of line is not red, Garmin scores are tiebreak only. " +
+    "Also distil 2–4 concrete, actionable `recommendations` (each a single imperative line tagged with its " +
+    "insight family) — what to actually DO today given the call; omit if nothing is genuinely actionable.\n\n" +
     summary;
   const { value, cacheRead, costUsd } = await llm.structured<ReadinessVerdict>(prompt, READINESS_SCHEMA);
   // Deterministic backstop so the trend-over-point rule can't be drifted from by the model.

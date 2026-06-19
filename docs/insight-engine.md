@@ -134,6 +134,12 @@ dashboard, `insights` and `deep-dive`:
   logged against the key **without changing your reaction**, then `listening` joins it back into an
   *"Outcomes you recorded"* section (insight → your reaction → how it worked out) and `decisions` shows it.
   This is what makes "advice → what I did → outcome" answerable later.
+- **The LLM write-ups are reactable, not just prose.** The readiness verdict and the deep-dive each emit a
+  short, **family-tagged list of recommendations** alongside their prose. Each becomes a keyed, info-severity
+  finding logged to the insight history (surfaces `readiness` / `deep-dive`), so it shows as an individually
+  reactable card on the dashboard's **Coach's recommendations** card (and is reactable by key via
+  `react_to_insight` / `retrospect`). Because each carries a family, a 👍/👎/🚫 on a coaching suggestion feeds
+  the same family weights as any finding — the prose flows now both *give* advice and *learn* from your response.
 - **New "Follow-through" findings.** Two insights are now **generated from your own behaviour**: a
   *recurring signal you've set aside* (something you snoozed that the engine keeps re-raising — surfaced
   only after it recurs ≥2×) and *plan adherence is slipping* (you're doing <70% of planned hours, or it
