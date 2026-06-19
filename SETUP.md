@@ -16,6 +16,26 @@ the assistant must stop and ask, never guess. Steps marked **▶ RUN** are comma
 
 ---
 
+## Quick start (humans)
+
+On the Mac (or Linux box) that will host the coach:
+
+```bash
+git clone https://github.com/maxeskell/personal-training-app.git
+cd personal-training-app
+npm install
+npm run demo          # see it work right now — fictional sample data, no account, no key
+npm run setup         # guided wizard: writes your .env (Anthropic key, units, training location)
+npm run auth:aie      # one-time browser login to AI Endurance
+npm start             # run the coach; open the printed localhost link
+```
+
+That's the whole happy path — ~15 minutes, most of it the one browser login. **Everything below is
+the same journey in detail**, plus prerequisites, costs, the optional athlete profile, Garmin and
+troubleshooting. Read on only where a step needs it, or follow Step 0 onward straight through.
+
+---
+
 ## Where to run this (important)
 
 Run setup **on the machine that will host the coach** (e.g. your Mac), driven by a **local** assistant
@@ -48,14 +68,13 @@ Three external connections, each with its own login and token store — all kept
   coach *reads* this through AI Endurance's own connector — you don't host anything for it.
 - **Anthropic API (required for the AI write-ups).** A key in `.env` (`ANTHROPIC_API_KEY`), used for the
   readiness/weekly/race/ask prose. The deterministic dashboard, zones and health checks need no key.
-- **Garmin (optional).** Device data (HRV, training status, raw `.FIT`) via an *unofficial community* MCP;
-  login in Step 5a, tokens in `~/.garminconnect`.
+- **Garmin (optional).** Device data (HRV, training status, raw `.FIT`) via an *unofficial community*
+  connector; login in Step 5a, tokens in `~/.garminconnect`.
 
-> **This is not the same as the coach's *own* MCP server.** Separately and optionally, the coach can
-> *expose itself* as an MCP server so Claude (Desktop / Code / Cowork) can query your data in chat — that's
-> [docs/mcp-server.md](docs/mcp-server.md), and it is **not needed** for the CLI or the dashboard. "AI
-> Endurance MCP" = the spine the coach reads; "the coach's MCP server" = an optional way to ask Claude
-> about your data. Different things.
+These three are **inbound** — accounts the coach *reads from*. There's also a separate, **optional**
+**outbound** piece, the **Coach Query Server**: the coach can expose *itself* so you can ask Claude
+(Desktop / Code / Cowork) about your own data in chat ([docs/mcp-server.md](docs/mcp-server.md)). It's
+**not needed** for the CLI or the dashboard — ignore it for setup and come back to it later if you want it.
 
 ## Step 0 — Prerequisites (🧑 confirm you have these)
 
