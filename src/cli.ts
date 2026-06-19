@@ -464,19 +464,50 @@ async function cmdDemo(): Promise<void> {
   const today = todayIso();
   const window = buildDemoWindow(today, 42); // 42d → CTL/ATL/TSB trends + a non-empty Load card
   const state = window[window.length - 1];
-  const insights = state.raw ? buildInsights(state, undefined, { history: window }) : undefined;
-  // Rich sample inputs so the demo is a compelling hero: Garmin trends, API-cost card, and the
-  // full three-section "Set up & improve" card (This week / Worth considering).
+  const garminDays = buildDemoGarminDays(today);
+  // Feed the demo's Garmin history into the engine too (not just the Trends card) so monitoring /
+  // fuelling / sleep-correlation analyse real sample data instead of an empty series.
+  const insights = state.raw ? buildInsights(state, { garminDays }, { history: window }) : undefined;
+  const yd = new Date(`${today}T00:00:00Z`);
+  yd.setUTCDate(yd.getUTCDate() - 1);
+  const lastSessionDate = yd.toISOString().slice(0, 10); // the demo's most recent activity (a run)
+  // Sample stored feedback so the "Last session" card showcases the auto-generated deep dive inline.
+  const sessionFeedbacks = [
+    {
+      schemaVersion: 1,
+      date: lastSessionDate,
+      sport: "Run",
+      deep: true,
+      generatedAt: new Date().toISOString(),
+      costUsd: 0.21,
+      markdown: [
+        `# Session feedback — ${lastSessionDate} Run`,
+        "## Verdict",
+        "**A controlled aerobic run that landed right where it should** — efficiency a touch above your recent norm on slightly fresher legs.",
+        "## What went well",
+        "- Power-to-HR held steady through the back half — no late aerobic drift.",
+        "- Ran it on a mild positive TSB, so the quality came cheap.",
+        "## Watch",
+        "- Cadence dipped ~2% in the final 15 min — stay tall when fatigue creeps in.",
+        "## Takeaways",
+        "- Keep these as your bread-and-butter aerobic volume into the Olympic build.",
+        "- No change needed to the next two planned sessions.",
+      ].join("\n"),
+    },
+  ];
+  // Rich sample inputs so the demo is a compelling hero: Garmin trends, API-cost card, the full
+  // three-section "Set up & improve" card, and the auto session-feedback shown inline.
   const html = renderDashboard({
     window,
     decisions: [],
     insights,
-    garminDays: buildDemoGarminDays(today),
+    garminDays,
     costRecords: demoCostRecords(today),
     canFetchFit: false,
     profile: demoProfile,
     weeklyReviewDate: today,
     researchDigest: { date: today, topics: ["90 g/h carb intake for long course", "165 mm cranks change the fit"] },
+    sessionFeedbacks,
   });
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
