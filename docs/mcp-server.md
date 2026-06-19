@@ -142,12 +142,20 @@ Cloudflare named tunnels work too if you own a domain — same idea, stable host
 ```bash
 cd /path/to/personal-training-app && npm run mcp:install -- https://<your-mac>.<tailnet>.ts.net
 # read-only by default; append --allow-writes to also expose the gated write tools
+# the installer SHOWS what it exposes (incl. your health + MEDICAL profile) and asks you to type
+#   'yes' to confirm — append --yes to skip the prompt in a scripted install
 npm run mcp:logs        # tail the service log
 npm run mcp:uninstall   # stop auto-starting
 ```
 It prints the Cowork connector URL (`…/mcp`) and your coach token. After a `git pull` the service
 auto-restarts onto the new code. Now both the tunnel and the server survive reboots with no terminal
 open — point Cowork at the stable `…/mcp` URL once and it keeps working.
+
+> **What it exposes — shown on every start.** The server prints a banner to its log naming exactly
+> what's reachable: your training data, health metrics, and your **medical** profile via `get_profile`
+> (conditions, medication), plus the gated plan-write tools unless read-only. `auth=none` and
+> `COACH_MCP_PROFILE_WRITE=true` get extra warning lines. It's there so the stakes are visible at the
+> moment you stand the server up, not just in this doc — keep it behind your private, authenticated tunnel.
 
 > The launchd job runs the server as a **single node process** (`node --import tsx src/mcpHttp.ts`),
 > not `npm run mcp:http`. That matters: launchd's `KeepAlive` must supervise the *actual* server, not an

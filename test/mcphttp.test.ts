@@ -68,3 +68,24 @@ test("update_profile is gated by includeProfileWrite (off by default — opt-in 
   assert.ok((await toolNames({ includeProfileWrite: true })).includes("update_profile"), "present when opted in");
   assert.ok((await toolNames({ includeWrites: false, includeProfileWrite: true })).includes("update_profile"), "opt-in works even on a read-only AIE surface");
 });
+
+test("httpStartupBanner spells out the exposed surface (incl. the medical profile) and escalates for risky configs", async () => {
+  const { httpStartupBanner } = await import("../src/mcpHttp.js");
+  const base = { host: "127.0.0.1", port: 8787, tokenFile: "/x/.endurance-coach/mcp.token" };
+
+  // A read-only, token-authed server: names the data, says read-only, points at the token — no write/none scare lines.
+  const tokenRO = httpStartupBanner({ ...base, auth: "token", includeWrites: false, profileWrite: false }).join("\n");
+  assert.match(tokenRO, /MEDICAL profile via get_profile/);
+  assert.match(tokenRO, /health metrics/);
+  assert.match(tokenRO, /READ-ONLY/);
+  assert.match(tokenRO, /every request needs your bearer token/);
+  assert.doesNotMatch(tokenRO, /plan-WRITE/, "read-only mode doesn't advertise write tools");
+  assert.doesNotMatch(tokenRO, /auth=NONE/);
+
+  // The dangerous combo (no auth + writes + profile-write) gets the loud lines.
+  const none = httpStartupBanner({ ...base, auth: "none", includeWrites: true, profileWrite: true }).join("\n");
+  assert.match(none, /auth=NONE: none of the above is password-protected/);
+  assert.match(none, /plan-WRITE tools/);
+  assert.match(none, /profile-write is ON/);
+  assert.match(none, /PRIVATE tunnel/);
+});

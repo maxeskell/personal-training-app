@@ -78,6 +78,49 @@ function isLoopbackHost(host: string): boolean {
   return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
 }
 
+/**
+ * Startup banner for the HTTP surface (token / oauth / none). PURE — returns the lines so it's
+ * unit-tested. It spells out exactly what this server exposes — including the MEDICAL profile via
+ * `get_profile` — every time it starts, so the stakes are at the decision point, not buried in docs.
+ * Louder for the riskier configs (auth=none, profile-write on).
+ */
+export function httpStartupBanner(o: {
+  auth: "token" | "oauth" | "none";
+  host: string;
+  port: number;
+  includeWrites: boolean;
+  profileWrite: boolean;
+  tokenFile: string;
+}): string[] {
+  const RULE = "─".repeat(74);
+  const surface = [
+    "training data + health metrics (HRV, resting HR, sleep, VO2max)",
+    "your MEDICAL profile via get_profile — conditions and medication",
+    o.includeWrites ? "the gated plan-WRITE tools (propose / confirm)" : null,
+    o.profileWrite ? "the profile-WRITE tool — a remote caller can write a file on this machine" : null,
+  ].filter((s): s is string => s != null);
+  const lines = [
+    RULE,
+    `endurance-coach MCP over HTTP — http://${o.host}:${o.port}/  (auth=${o.auth}, ${o.includeWrites ? "read + gated writes" : "READ-ONLY"}${o.profileWrite ? " + profile-write" : ""})`,
+    "This server EXPOSES, to anyone who can reach it:",
+    ...surface.map((s) => `    • ${s}`),
+  ];
+  if (o.auth === "none") {
+    lines.push(
+      "⚠ auth=NONE: none of the above is password-protected. Bind 127.0.0.1 and reach it ONLY",
+      "  through a PRIVATE tunnel you control (e.g. Tailscale Funnel) — never a LAN or public IP.",
+    );
+  } else {
+    lines.push(
+      `auth=${o.auth}: every request needs your bearer token (${o.tokenFile}, or COACH_MCP_TOKEN).`,
+      "  Even so, expose it ONLY through an authenticated HTTPS tunnel — never a raw public port.",
+    );
+  }
+  if (o.profileWrite) lines.push("⚠ profile-write is ON: a REMOTE caller can write profile.local.yaml here.");
+  lines.push("Safe setup: docs/mcp-server.md", RULE);
+  return lines;
+}
+
 /** Dispatch to the configured auth mode. */
 export async function runHttp(): Promise<void> {
   // Refuse to bind an authenticated server with a weak secret (a user-set short COACH_MCP_TOKEN).
@@ -152,10 +195,15 @@ async function runHttpRaw(): Promise<void> {
 
   httpServer.on("clientError", (_e, socket) => socket.destroy());
   httpServer.listen(config.mcp.httpPort, config.mcp.httpHost, () => {
-    console.error(`endurance-coach MCP (HTTP, auth=${config.mcp.auth}) on http://${config.mcp.httpHost}:${config.mcp.httpPort}/  —  ${includeWrites ? "read + gated writes" : "READ-ONLY"}${config.mcp.profileWrite ? " + profile-write" : ""}`);
-    if (requireToken) console.error(`Auth: every request needs  Authorization: Bearer <token>.  Token file: ${config.secretsDir}/mcp.token  (or set COACH_MCP_TOKEN).`);
-    else console.error("Auth: NONE — only expose this behind a private tunnel you control.");
-    console.error("Reach it from Claude Cowork via an authenticated HTTPS tunnel — see docs/mcp-server.md.");
+    for (const l of httpStartupBanner({
+      auth: config.mcp.auth,
+      host: config.mcp.httpHost,
+      port: config.mcp.httpPort,
+      includeWrites,
+      profileWrite: config.mcp.profileWrite,
+      tokenFile: `${config.secretsDir}/mcp.token`,
+    }))
+      console.error(l);
   });
 }
 
@@ -220,7 +268,15 @@ async function runHttpOAuth(): Promise<void> {
   );
 
   app.listen(config.mcp.httpPort, config.mcp.httpHost, () => {
-    console.error(`endurance-coach MCP (HTTP+OAuth) on ${config.mcp.httpHost}:${config.mcp.httpPort}  —  ${includeWrites ? "read + gated writes" : "READ-ONLY"}${config.mcp.profileWrite ? " + profile-write" : ""}`);
+    for (const l of httpStartupBanner({
+      auth: "oauth",
+      host: config.mcp.httpHost,
+      port: config.mcp.httpPort,
+      includeWrites,
+      profileWrite: config.mcp.profileWrite,
+      tokenFile: `${config.secretsDir}/mcp.token`,
+    }))
+      console.error(l);
     console.error(`Point the Claude Cowork connector at:  ${resourceServerUrl.href}`);
     console.error(`Authorize gate: your coach token (${config.secretsDir}/mcp.token, or COACH_MCP_TOKEN).`);
   });
