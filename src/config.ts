@@ -165,6 +165,16 @@ export const config = {
   autoSyncMinutes: Number(process.env.COACH_AUTOSYNC_MIN ?? 30),
 
   /**
+   * Auto deep session-feedback at sync (see README "Deep session feedback"). Each session generated is
+   * ONE LLM call, so this is the throttle: `on` = every recent session that has its raw .FIT (default),
+   * `latest` = only the single most recent, `off` = none (use `npm run session` on demand instead).
+   */
+  autoSessionFeedback: ((): "off" | "latest" | "on" => {
+    const v = (process.env.COACH_AUTO_SESSION_FEEDBACK ?? "on").trim().toLowerCase();
+    return v === "off" || v === "latest" ? v : "on";
+  })(),
+
+  /**
    * MCP server (`npm run mcp` stdio · `npm run mcp:http`). HTTP mode exists for clients that can only
    * reach a remote URL — notably Claude Cowork, whose sandboxed cloud VM can't spawn a local stdio
    * server: run HTTP mode locally and expose it through an AUTHENTICATED HTTPS tunnel (see

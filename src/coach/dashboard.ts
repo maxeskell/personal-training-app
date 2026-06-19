@@ -9,7 +9,7 @@ import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone, type Headline } from "../insights/headline.js";
 import { assembleSession } from "./session.js";
 import type { Profile } from "../profile/schema.js";
-import { PROFILE_QUESTIONS, type ProfileQuestion } from "../profile/questions.js";
+import { PROFILE_QUESTIONS, WAYS_TO_ANSWER, type ProfileQuestion } from "../profile/questions.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
 import { weekday, type WeekWeather } from "../weather/assess.js";
 import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
@@ -474,6 +474,28 @@ const AIE_TODO_WHY: Record<string, string> = {
 };
 const AIE_TODO_STATUS = new Set(["not_set", "unresolved", "todo", "missing", "none", "pending", "unset"]);
 
+// Self-serve "how to do it" for the recognised AIE gaps (shown in the item's dropdown); unknown keys
+// fall back to the generic line.
+const AIE_TODO_ACTION: Record<string, string> = {
+  swim_css:
+    "In AI Endurance: Profile → Thresholds → set your swim CSS (critical swim speed — pace per 100m from a recent CSS test, or estimate it from a 400m + 200m time-trial). It syncs back on the next ↻ Sync and unlocks the swim model + race splits.",
+  ftp_w:
+    "In AI Endurance: reconcile your cycling FTP (Settings → Thresholds) so the auto-detected and test-based figures agree — the coach uses that one number for bike zones and race predictions. ↻ Sync afterwards.",
+};
+const AIE_TODO_ACTION_FALLBACK = "Set this directly in AI Endurance, then hit ↻ Sync so the coach reads the new value.";
+
+// Self-serve action copy for the non-AIE sources (shown in each item's dropdown).
+const OPEN_ITEM_ACTION =
+  "A free-text note you (or the coach) logged. Do it, then clear it — remove the line from `open_items` in profile.local.yaml, or ask Claude to update your profile.";
+const WEEKLY_ITEM_ACTION =
+  "From your latest weekly review (saved under reports/, …-weekly-review.md). Open that report for the full reasoning, or ask the coach to expand on it.";
+const RESEARCH_ITEM_ACTION =
+  "From your latest research digest (knowledge/pending/). Review it; to adopt it into the coach's priors run `npm run knowledge -- approve <file>`, or ask the coach what it means for you. A prompt to weigh — your own data outranks the textbook.";
+/** Proposed action for an unfilled profile question: the field + the canonical three ways to answer. */
+function questionAction(q: ProfileQuestion): string {
+  return `Fills \`${q.field}\` in your profile. Three ways:\n• ${WAYS_TO_ANSWER.join("\n• ")}`;
+}
+
 /**
  * `ai_endurance_todo` keys that aren't actionable ANYWHERE, so they must never reach the card (issue
  * #112: only surface items you can actually do something about). AI Endurance has no field for per-race
@@ -519,6 +541,8 @@ export interface SetupItem {
   group: SetupGroup;
   /** Where the athlete actions it. */
   route: SetupRoute;
+  /** Self-serve "how to do it" — the concrete proposed action shown in the item's expandable dropdown. */
+  action: string;
   /** Ranking weight (higher = surfaces first); the per-group cap keeps the highest-value items. */
   priority: number;
 }
@@ -558,22 +582,46 @@ function asOf(ageDays: number): string {
 }
 
 /**
- * Parse the topic headlines from a research-digest markdown (the bold lead of each `- **Topic** …` item,
- * per RESEARCH_PROMPT). Pure + tolerant: if the format drifts it just returns fewer (or no) topics, and
- * the caller falls back to a single "new digest to review" pointer. Deduped, capped.
+ * Bold leads that are FIELD LABELS in a research digest, not topic names — the digest lists each item as
+ * `**Topic**: … / **Proposed prior**: … / **Source**: …`, so the labels must be skipped (and a
+ * `**Topic**: X` line yields X, not "Topic"). Without this the card showed "Proposed prior" / "Source".
+ */
+const RESEARCH_LABELS = /^(topic|source|sources|proposed prior|prior|reviewer notes?|confidence|apply|link|evidence|change|new|confirms?)$/i;
+
+/**
+ * Parse the topic HEADLINES from a research-digest markdown. Handles both the flat form
+ * (`- **Wider tyres** (CHANGE): …` → "Wider tyres") and the labelled form (`- **Topic**: Wider tyres` →
+ * "Wider tyres"), skipping pure field-label bullets (Source / Proposed prior / …) and `### Heading`
+ * topics. Pure + tolerant: format drift just yields fewer (or no) topics, and the caller falls back to a
+ * "review the digest" pointer. Deduped, capped.
  */
 export function parseResearchTopics(markdown: string, limit = 4): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const line of markdown.split("\n")) {
-    const m = line.match(/^\s*[-*]\s*\*\*(.+?)\*\*/); // a bulleted item that leads with a bold topic
-    if (!m) continue;
-    const topic = m[1].replace(/[:.]+$/, "").trim();
+  const add = (raw: string) => {
+    // Drop a trailing "(NEW)" / "(CHANGE)" qualifier and any trailing punctuation.
+    const topic = raw.replace(/\s*\((?:new|change|confirms?)\)\s*$/i, "").replace(/[:.\s]+$/, "").trim();
     const k = topic.toLowerCase();
-    if (!topic || seen.has(k)) continue;
+    if (!topic || topic.length > 80 || seen.has(k) || out.length >= limit) return;
     seen.add(k);
     out.push(topic);
+  };
+  for (const line of markdown.split("\n")) {
     if (out.length >= limit) break;
+    const heading = line.match(/^#{2,4}\s+(.*\S)/); // a "### Topic" heading (skip the digest's own H1)
+    if (heading && !RESEARCH_LABELS.test(heading[1].trim())) {
+      add(heading[1]);
+      continue;
+    }
+    const bullet = line.match(/^\s*[-*]\s*\*\*(.+?)\*\*\s*(.*)$/); // "- **Lead** rest"
+    if (!bullet) continue;
+    const lead = bullet[1].replace(/[:.\s]+$/, "").trim();
+    if (RESEARCH_LABELS.test(lead)) {
+      // A labelled bullet: "**Topic**: value" gives the value; "**Source**: …" etc. is skipped.
+      if (/^topic$/i.test(lead)) add(bullet[2].replace(/^[:\-\s]+/, ""));
+      continue;
+    }
+    add(lead); // the flat form — the bold lead IS the topic
   }
   return out;
 }
@@ -715,35 +763,35 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
     const v = value == null ? "" : String(value).trim();
     if (v === "" || v.toLowerCase() === "resolved") continue;
     const { label, why } = aieTodoCopy(key, v);
-    items.push({ key: setupKey("ai_endurance", key), label, why, source: "ai_endurance", group: "finish_setup", route: "in AI Endurance", priority: SETUP_PRIORITY.ai_endurance });
+    items.push({ key: setupKey("ai_endurance", key), label, why, source: "ai_endurance", group: "finish_setup", route: "in AI Endurance", action: AIE_TODO_ACTION[key] ?? AIE_TODO_ACTION_FALLBACK, priority: SETUP_PRIORITY.ai_endurance });
   }
   // 2) Free-text open items (a running list of unresolved actions) → raise them with the coach.
   for (const raw of profile.open_items ?? []) {
     const text = typeof raw === "string" ? raw.trim() : "";
     if (!text) continue;
-    items.push({ key: setupKey("open_item", dedupeKey(text)), label: text, why: "", source: "open_item", group: "finish_setup", route: "discuss with coach", priority: SETUP_PRIORITY.open_item });
+    items.push({ key: setupKey("open_item", dedupeKey(text)), label: text, why: "", source: "open_item", group: "finish_setup", route: "discuss with coach", action: OPEN_ITEM_ACTION, priority: SETUP_PRIORITY.open_item });
   }
   // 3) Unfilled optional profile questions → fill them in (or tell Claude via update_profile).
   for (const q of questions) {
     if (!isBlank(valueAtPath(profile, q.field))) continue;
-    items.push({ key: setupKey("profile_question", q.field), label: `Answer: ${q.question}`, why: q.why, source: "profile_question", group: "finish_setup", route: "edit profile", priority: questionPriority(q) });
+    items.push({ key: setupKey("profile_question", q.field), label: `Answer: ${q.question}`, why: q.why, source: "profile_question", group: "finish_setup", route: "edit profile", action: questionAction(q), priority: questionPriority(q) });
   }
   // 4) Tool/integration health (operational nudges) — things that block the app doing its best work.
   const h = opts.setupHealth;
   if (h?.hasApiKey === false) {
-    items.push({ key: setupKey("health", "apikey"), label: "Add your ANTHROPIC_API_KEY", why: "unlocks the AI write-ups — readiness, weekly, ask and session feedback", source: "health", group: "finish_setup", route: "in your setup", priority: SETUP_PRIORITY.health });
+    items.push({ key: setupKey("health", "apikey"), label: "Add your ANTHROPIC_API_KEY", why: "unlocks the AI write-ups — readiness, weekly, ask and session feedback", source: "health", group: "finish_setup", route: "in your setup", action: "Add `ANTHROPIC_API_KEY=sk-ant-…` to your .env, then redeploy with `npm run update`. The dashboard, zones and health checks already work without it; this turns on the AI write-ups (readiness, weekly, ask, session feedback).", priority: SETUP_PRIORITY.health });
   }
   if (h?.lastSyncAgeHours != null && h.lastSyncAgeHours >= 72) {
-    items.push({ key: setupKey("health", "sync"), label: "Sync your training data", why: `last synced ${Math.round(h.lastSyncAgeHours / 24)}d ago — the cards are reading stale data`, source: "health", group: "finish_setup", route: "in your setup", priority: SETUP_PRIORITY.health });
+    items.push({ key: setupKey("health", "sync"), label: "Sync your training data", why: `last synced ${Math.round(h.lastSyncAgeHours / 24)}d ago — the cards are reading stale data`, source: "health", group: "finish_setup", route: "in your setup", action: "Hit ↻ Sync at the top of the dashboard (it also auto-syncs when the snapshot goes stale). If it keeps failing, refresh your AI Endurance / Garmin auth with `npm run auth:aie`.", priority: SETUP_PRIORITY.health });
   }
   if (h?.waterTempSet === false) {
-    items.push({ key: setupKey("health", "watertemp"), label: "Set your open-water temperature", why: "COACH_WATER_TEMP_C has no public feed — set it when the venue posts a reading", source: "health", group: "finish_setup", route: "in your setup", priority: SETUP_PRIORITY.health_low });
+    items.push({ key: setupKey("health", "watertemp"), label: "Set your open-water temperature", why: "COACH_WATER_TEMP_C has no public feed — set it when the venue posts a reading", source: "health", group: "finish_setup", route: "in your setup", action: "Set `COACH_WATER_TEMP_C=<°C>` in .env and redeploy (`npm run update`). There's no public feed for open-water temperature, so update it whenever your venue posts a reading — it gates open-water-swim advice.", priority: SETUP_PRIORITY.health_low });
   }
   // 5) Incomplete race entries — a named race with no date can't drive the countdown/taper/race-day plan.
   for (const r of (profile.races ?? []).slice(0, 4)) {
     const name = typeof r?.name === "string" ? r.name.trim() : "";
     if (!name || r?.date) continue;
-    items.push({ key: setupKey("race", dedupeKey(name)), label: `Add the date for ${name}`, why: "so the countdown, periodisation and race-day plan line up", source: "race", group: "finish_setup", route: "edit profile", priority: SETUP_PRIORITY.race });
+    items.push({ key: setupKey("race", dedupeKey(name)), label: `Add the date for ${name}`, why: "so the countdown, periodisation and race-day plan line up", source: "race", group: "finish_setup", route: "edit profile", action: `Add a \`date: YYYY-MM-DD\` (and ideally \`distance\` + \`priority\`) to "${name}" under \`races:\` in profile.local.yaml — or ask Claude. It drives the countdown, the periodisation/taper shape and the race-day split plan.`, priority: SETUP_PRIORITY.race });
   }
 
   // --- This week (Phase 2: marginal gains + last weekly review's actions, read-only/LLM-free) --------
@@ -754,7 +802,8 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
     const surfaced = opts.surfacedInsightKeys ?? new Set<string>();
     for (const f of selectMarginalGains(opts.insights)) {
       if (surfaced.has(findingKey(f))) continue;
-      items.push({ key: setupKey("tune", findingKey(f)), label: f.recommendation ?? f.title, why: f.title, source: "tune", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.tune });
+      const action = `${f.detail}\n\nDo: ${f.recommendation ?? f.title}${f.evidence ? `\nEvidence: ${f.evidence}` : ""}`;
+      items.push({ key: setupKey("tune", findingKey(f)), label: f.recommendation ?? f.title, why: f.title, source: "tune", group: "this_week", route: "discuss with coach", action, priority: SETUP_PRIORITY.tune });
     }
   }
   if (opts.weeklyReview) {
@@ -764,11 +813,11 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
       if (acts.length) {
         // The weekly review's own "Next week" action items.
         for (const a of acts) {
-          items.push({ key: setupKey("weekly", dedupeKey(a)), label: a, why: `from this week's review — ${asOf(age)}`, source: "weekly", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.weekly });
+          items.push({ key: setupKey("weekly", dedupeKey(a)), label: a, why: `from this week's review — ${asOf(age)}`, source: "weekly", group: "this_week", route: "discuss with coach", action: WEEKLY_ITEM_ACTION, priority: SETUP_PRIORITY.weekly });
         }
       } else {
         // The report had no parseable action section → fall back to a pointer.
-        items.push({ key: setupKey("weekly", "review"), label: "Revisit this week's training review", why: `weekly review saved — ${asOf(age)}`, source: "weekly", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.weekly });
+        items.push({ key: setupKey("weekly", "review"), label: "Revisit this week's training review", why: `weekly review saved — ${asOf(age)}`, source: "weekly", group: "this_week", route: "discuss with coach", action: WEEKLY_ITEM_ACTION, priority: SETUP_PRIORITY.weekly });
       }
     }
   }
@@ -780,10 +829,10 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
       const topics = opts.researchDigest.topics.slice(0, GROUP_CAP.worth_considering);
       if (topics.length) {
         for (const t of topics) {
-          items.push({ key: setupKey("research", dedupeKey(t)), label: t, why: `from the research digest — ${asOf(age)}`, source: "research", group: "worth_considering", route: "discuss with coach", priority: SETUP_PRIORITY.research });
+          items.push({ key: setupKey("research", dedupeKey(t)), label: t, why: `from the research digest — ${asOf(age)}`, source: "research", group: "worth_considering", route: "discuss with coach", action: RESEARCH_ITEM_ACTION, priority: SETUP_PRIORITY.research });
         }
       } else {
-        items.push({ key: setupKey("research", "digest"), label: "Review the latest research digest", why: asOf(age), source: "research", group: "worth_considering", route: "discuss with coach", priority: SETUP_PRIORITY.research });
+        items.push({ key: setupKey("research", "digest"), label: "Review the latest research digest", why: asOf(age), source: "research", group: "worth_considering", route: "discuss with coach", action: RESEARCH_ITEM_ACTION, priority: SETUP_PRIORITY.research });
       }
     }
   }
@@ -821,14 +870,18 @@ const GROUP_HEADING: Record<SetupGroup, string> = {
   worth_considering: "Worth considering",
 };
 
-/** One `<li>` for a setup item: action + why + a route tag + the dismiss ✕ (carries its stable key). */
+/**
+ * One expandable `<details>` for a setup item: the summary line (label · why · route tag · dismiss ✕),
+ * and — on expand — the **proposed action** (self-serve "how to do it" so you never leave the page). The
+ * ✕ carries the stable key and stops propagation so a dismiss click doesn't toggle the dropdown.
+ */
 function setupItemHtml(it: SetupItem): string {
-  const note = it.why ? ` — ${escapeHtml(it.why)}` : "";
-  return `<li class="setup-item" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><div><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> <button class="dismiss" title="Dismiss — hide this for ~2 weeks" onclick="dismissSetup(this)">✕</button></div></li>`;
+  const note = it.why ? ` — <span class="muted">${escapeHtml(it.why)}</span>` : "";
+  const body = it.action ? `<div class="setup-action">${escapeHtml(it.action)}</div>` : "";
+  return `<details class="setup-item" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><summary><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> <button class="dismiss" title="Dismiss — hide this for ~2 weeks" onclick="event.stopPropagation();dismissSetup(this)">✕</button></summary>${body}</details>`;
 }
 
-const setupListHtml = (its: SetupItem[]): string =>
-  `<ul class="setup" style="margin:0;padding-left:18px;line-height:1.6">${its.map(setupItemHtml).join("")}</ul>`;
+const setupListHtml = (its: SetupItem[]): string => `<div class="setup">${its.map(setupItemHtml).join("")}</div>`;
 
 /**
  * "Set up & improve" — the dashboard's deterministic, LLM-free action hub (issue #112). Three sections:
@@ -850,7 +903,7 @@ export function renderSetupImprove(profile: Profile | undefined, share = false, 
       ? setupListHtml(items)
       : present.map((g) => `<h3 class="setup-group">${GROUP_HEADING[g]}</h3>${setupListHtml(items.filter((it) => it.group === g))}`).join("");
   return `<div class="card"><h2>Set up &amp; improve</h2>
-  <div class="k" style="margin-bottom:6px">What to do next — from your profile and your last saved coach reports (no AI call here). Each item is tagged with where to action it; dismiss (✕) hides one for ~2 weeks.</div>
+  <div class="k" style="margin-bottom:6px">What to do next — from your profile and your last saved coach reports (no AI call here). <b>Click any item</b> for exactly how to do it; the tag says where; dismiss (✕) hides one for ~2 weeks.</div>
   ${body}</div>`;
 }
 
@@ -1251,7 +1304,13 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .acts .agree.on{background:#e6f5ea;border-color:#1a8a3a;font-weight:600}.acts .disagree.on{background:#fdeaea;border-color:#c0392b;font-weight:600}
 .newbadge{background:#1558d6;color:#fff;font-size:9px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:9px;margin-right:6px;vertical-align:middle}
 .age{font-size:11px;color:#bbb;margin-top:4px}
-.setup li{margin-bottom:4px}.route{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.02em;color:#6b5b45;background:#f4f1ea;border:1px solid #e7d9c6;border-radius:9px;padding:1px 7px;margin-left:4px;white-space:nowrap}
+.route{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.02em;color:#6b5b45;background:#f4f1ea;border:1px solid #e7d9c6;border-radius:9px;padding:1px 7px;margin-left:4px;white-space:nowrap}
+details.setup-item{border-bottom:1px solid #f0ede5;padding:5px 0}details.setup-item:last-child{border-bottom:0}
+details.setup-item>summary{cursor:pointer;line-height:1.5;list-style:none}
+details.setup-item>summary::-webkit-details-marker{display:none}
+details.setup-item>summary::before{content:"▸";color:#b9aa93;display:inline-block;width:14px}
+details.setup-item[open]>summary::before{content:"▾"}
+.setup-action{margin:6px 0 8px 14px;padding:8px 11px;background:#faf8f3;border-left:2px solid #e7d9c6;border-radius:4px;font-size:13px;line-height:1.55;color:#444;white-space:pre-wrap}
 .setup-item .dismiss{font-size:11px;line-height:1;color:#b9aa93;background:none;border:0;cursor:pointer;padding:0 3px;margin-left:2px}.setup-item .dismiss:hover{color:#c0392b}
 .setup-group{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#9a8a72;margin:10px 0 3px}
 .actbtn{font-size:13px;padding:7px 14px;border:1px solid #c8642d;border-radius:8px;background:#fff;color:#c8642d;cursor:pointer}.actbtn:hover{background:#c8642d;color:#fff}

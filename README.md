@@ -150,8 +150,9 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   weekly/research LLM flows — and each carries an *"as of …"* tag, dropping once the report goes stale.
   Every item is tagged with where to action it (*in AI Endurance* / *edit profile* / *discuss with coach*
   / *in your setup*), **ranked by value**, deduped and capped, and has a **✕ dismiss** that hides it for
-  ~2 weeks (reusing the insights' snooze machinery — a calm hub, not a nag). Display-only; hidden from the
-  shared/screenshot view.
+  ~2 weeks (reusing the insights' snooze machinery — a calm hub, not a nag). **Click any item to expand a
+  concrete, copy-pasteable proposed action** — exactly how to do it, no need to leave the page.
+  Display-only; hidden from the shared/screenshot view.
 - **The coaching brief ships as a default prompt.** [`coach-instructions.md`](coach-instructions.md)
   is the default system prompt a fresh clone gets (a prompt, *not* data — kept separate from the
   profile); edit it to taste. Full schema + privacy detail: [docs/profile.md](docs/profile.md).
@@ -182,7 +183,9 @@ the dashboard's **Last session** card shows it **inline** (no LLM call on page l
 kept for later analysis (`data/session-feedback.jsonl`). Generation is best-effort and cost-aware: it runs
 once per session after `fit-sync` has pulled the raw **.FIT** (so it's a real deep dive), is API-key-gated,
 cost-logged, and capped per sync; a session without its .FIT yet is picked up on a later sync (skipped
-cheaply, no tokens). `npm run session` still produces an on-demand readout (and writes to the same store).
+cheaply, no tokens). Since each session generated is one LLM call, **`COACH_AUTO_SESSION_FEEDBACK`** throttles
+it — `on` (default, every recent session), `latest` (only the most recent), or `off` (none — use
+`npm run session` on demand instead). `npm run session` always produces an on-demand readout (and writes to the same store).
 The card also shows what the session was **meant to be** — the matching
 planned workout (title, planned vs done time), or an explicit note when nothing in the plan matched. It
 joins your **AI Endurance metrics** (power/HR/ESS/durability) with the

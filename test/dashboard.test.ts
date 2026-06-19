@@ -369,9 +369,11 @@ test("renderSetupImprove: renders the card, tags routes + dismiss control, hides
   assert.match(html, /Shim the cleat/);
   assert.match(html, /in AI Endurance/);
   assert.match(html, /discuss with coach/);
-  // Each item carries its stable dismissal key + a ✕ that posts to the shared insight-feedback machinery.
-  assert.match(html, /data-key="setup:aie:swim_css"/);
-  assert.match(html, /class="dismiss"[^>]*onclick="dismissSetup\(this\)"/);
+  // Each item is an expandable <details> carrying its stable dismissal key, a ✕ (whose click stops the
+  // dropdown toggling), and a self-serve proposed action in the body.
+  assert.match(html, /<details class="setup-item" data-key="setup:aie:swim_css"/);
+  assert.match(html, /class="dismiss"[^>]*onclick="event\.stopPropagation\(\);dismissSetup\(this\)"/);
+  assert.match(html, /<div class="setup-action">[^<]*Profile → Thresholds/, "the swim-CSS proposed action is in the dropdown");
   // Redacted screenshot view and the empty cases produce nothing.
   assert.equal(renderSetupImprove(profile, true), "", "hidden in share mode");
   assert.equal(renderSetupImprove(undefined), "");
@@ -429,6 +431,17 @@ test("parseResearchTopics: pulls bold topic headlines, deduped + capped, toleran
   assert.deepEqual(parseResearchTopics(md), ["Wider tyres", "Carb intake 90 g/h"]);
   assert.deepEqual(parseResearchTopics(md, 1), ["Wider tyres"]);
   assert.deepEqual(parseResearchTopics("no parseable topics here"), []);
+
+  // The labelled form (what the real digest produces) — pull the Topic VALUE, skip Source/Proposed prior
+  // field-labels, and take "### Heading" topics. (Regression: the card used to show "Source"/"Proposed prior".)
+  const labelled = [
+    "# Research digest — 2026-06-01",
+    "### Heat acclimation",
+    "- **Topic**: Carbohydrate intake (CHANGE)",
+    "- **Proposed prior**: aim 90 g/h on long course.",
+    "- **Source**: Jeukendrup 2024.",
+  ].join("\n");
+  assert.deepEqual(parseResearchTopics(labelled), ["Heat acclimation", "Carbohydrate intake"]);
 });
 
 test("buildSetupItems: groups This week (gains + weekly pointer) and Worth considering (research) with as-of tags", () => {

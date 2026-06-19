@@ -1,4 +1,5 @@
 import { CoachLLM } from "../llm/client.js";
+import { config } from "../config.js";
 import type { AthleteState } from "../state/types.js";
 import type { InsightReport } from "../insights/engine.js";
 import { richActivities } from "../insights/metrics.js";
@@ -30,6 +31,11 @@ export interface AutoFeedbackOpts {
   limit?: number;
 }
 
+/** How many sessions a sync may generate, given the COACH_AUTO_SESSION_FEEDBACK mode. `off` → 0. Pure. */
+export function feedbackLimitForMode(mode: "off" | "latest" | "on", base = 5): number {
+  return mode === "off" ? 0 : mode === "latest" ? 1 : base;
+}
+
 /**
  * The recent session dates that still need feedback: within `lookbackDays` of `today`, not already
  * stored, newest first, capped at `limit`. Pure — the testable core of the generation loop.
@@ -57,8 +63,9 @@ export async function backfillSessionFeedback(
   opts: AutoFeedbackOpts = {},
 ): Promise<number> {
   if (!CoachLLM.hasApiKey()) return 0;
+  const limit = feedbackLimitForMode(config.autoSessionFeedback, opts.limit ?? 5);
+  if (limit === 0) return 0; // COACH_AUTO_SESSION_FEEDBACK=off → on-demand only
   const lookbackDays = opts.lookbackDays ?? 10;
-  const limit = opts.limit ?? 5;
 
   const stored = new Set(latestByDate(await loadSessionFeedbacks()).keys());
   const dates = sessionsNeedingFeedback(
