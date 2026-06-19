@@ -262,6 +262,8 @@ projection, and the dashboard carries an **API cost** card. To keep it down, the
     a MODEL with the assumptions stated. **Both estimates are always shown** (race-day best and
     race-it-today, side by side), even when they currently match. Because each race is a different number of
     weeks out, the best case **differs per race** — a race months away has more room than one in a fortnight.
+    The caveats every race shares (the build assumptions, and the fixed-transition / durability / missing-leg
+    notes) are shown **once** in an *"Applies to all races"* line rather than repeated under each race.
     Times are rounded to the minute; each card leads with the race **date + countdown** and a glossary.
     (Earlier versions tried to roll your plan's load forward into a projected fitness/CTL number; that was
     too sensitive to plan-data quirks and over-projected, so it was replaced by this bounded curve. Tune the
