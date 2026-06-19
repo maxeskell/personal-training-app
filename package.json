@@ -55,6 +55,7 @@
     "watch:uninstall": "bash scripts/uninstall-watch.sh",
     "ask": "tsx src/cli.ts ask",
     "session": "tsx src/cli.ts session",
+    "splits": "tsx src/cli.ts splits",
     "cost": "tsx src/cli.ts cost",
     "listening": "tsx src/cli.ts listening",
     "tune": "tsx src/cli.ts tune",

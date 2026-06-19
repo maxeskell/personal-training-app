@@ -83,10 +83,36 @@ export interface FitSample {
   lrBalance?: number; // raw bike left/right power balance field
 }
 
+/** One `lap` message (global 19) — a rep/segment the device or athlete marked (run/bike reps, swim sets). */
+export interface FitLap {
+  index?: number;
+  startTimeS?: number; // unix-ish seconds (FIT epoch + offset)
+  elapsedS?: number; // total_elapsed_time
+  timerS?: number; // total_timer_time (moving) — preferred for pace
+  distanceM?: number;
+  avgSpeedMs?: number;
+  avgHr?: number;
+  avgPowerW?: number;
+  totalStrokes?: number; // swim: total_cycles aliased to strokes
+}
+
+/** One `length` message (global 101) — a single pool length (swim only). Distance = the pool length. */
+export interface FitLength {
+  index?: number;
+  elapsedS?: number;
+  timerS?: number;
+  strokes?: number;
+  avgSpeedMs?: number;
+  swimStroke?: number; // FIT swim_stroke enum
+  lengthType?: number; // 1 = active, 0 = idle/rest
+}
+
 export interface FitActivity {
   sport: number; // FIT sport enum: 1=run, 2=bike, 5=swim
   sportName: string;
   samples: FitSample[];
+  laps: FitLap[];
+  lengths: FitLength[];
   session: {
     durationSec?: number;
     distanceKm?: number;
@@ -94,6 +120,7 @@ export interface FitActivity {
     avgPower?: number;
     avgCadence?: number;
     avgTempC?: number;
+    poolLengthM?: number; // session.pool_length (swim) — distance per FitLength
   };
 }
 
@@ -120,6 +147,36 @@ function toSample(f: Record<number, number | null>): FitSample {
     lrBalance: g(30), // bike left/right power balance (raw)
   };
   return s;
+}
+
+/** Map a `lap` (global 19) field map → FitLap, applying FIT scales. Field numbers from the FIT profile. */
+function toLap(f: Record<number, number | null>): FitLap {
+  const g = (k: number) => (f[k] == null ? undefined : (f[k] as number));
+  return {
+    index: g(254),
+    startTimeS: f[2] != null ? (f[2] as number) + FIT_EPOCH_OFFSET : undefined,
+    elapsedS: g(7) != null ? +(g(7)! / 1000).toFixed(2) : undefined, // total_elapsed_time
+    timerS: g(8) != null ? +(g(8)! / 1000).toFixed(2) : undefined, // total_timer_time
+    distanceM: g(9) != null ? +(g(9)! / 100).toFixed(2) : undefined, // total_distance
+    avgSpeedMs: g(13) != null ? g(13)! / 1000 : undefined,
+    avgHr: g(15),
+    avgPowerW: g(19),
+    totalStrokes: g(10), // total_cycles (== total_strokes for swimming)
+  };
+}
+
+/** Map a `length` (global 101) field map → FitLength (swim, one pool length). */
+function toLength(f: Record<number, number | null>): FitLength {
+  const g = (k: number) => (f[k] == null ? undefined : (f[k] as number));
+  return {
+    index: g(254),
+    elapsedS: g(3) != null ? +(g(3)! / 1000).toFixed(2) : undefined, // total_elapsed_time
+    timerS: g(4) != null ? +(g(4)! / 1000).toFixed(2) : undefined, // total_timer_time
+    strokes: g(5), // total_strokes
+    avgSpeedMs: g(6) != null ? g(6)! / 1000 : undefined,
+    swimStroke: g(7),
+    lengthType: g(12), // 1 = active, 0 = idle/rest
+  };
 }
 
 function mean(xs: number[]): number | undefined {
@@ -182,6 +239,8 @@ export function parseFit(buf: Buffer): FitActivity | null {
 
   const defs = new Map<number, MsgDef>();
   const samples: FitSample[] = [];
+  const laps: FitLap[] = [];
+  const lengths: FitLength[] = [];
   let sportEnum = 0;
   let session: Record<number, number | null> = {};
 
@@ -231,6 +290,8 @@ export function parseFit(buf: Buffer): FitActivity | null {
         pos = rec.pos;
         if (def.global === 20) samples.push(toSample(rec.fields));
         else if (def.global === 18) session = rec.fields;
+        else if (def.global === 19) laps.push(toLap(rec.fields));
+        else if (def.global === 101) lengths.push(toLength(rec.fields));
         else if (def.global === 12 && rec.fields[0] != null) sportEnum = rec.fields[0] as number;
       }
     }
@@ -246,6 +307,8 @@ export function parseFit(buf: Buffer): FitActivity | null {
     sport: sportEnum,
     sportName: SPORT_NAMES[sportEnum] ?? `sport-${sportEnum}`,
     samples,
+    laps,
+    lengths,
     session: {
       durationSec: ts.length > 1 ? ts[ts.length - 1] - ts[0] : undefined,
       distanceKm: session[9] != null ? +(((session[9] as number) / 100) / 1000).toFixed(2) : undefined,
@@ -253,6 +316,7 @@ export function parseFit(buf: Buffer): FitActivity | null {
       avgPower: session[20] != null && (session[20] as number) < 65535 ? (session[20] as number) : undefined,
       avgCadence: session[18] != null && (session[18] as number) < 255 ? (session[18] as number) : undefined,
       avgTempC: mean(temps),
+      poolLengthM: session[44] != null ? +((session[44] as number) / 100).toFixed(2) : undefined, // session.pool_length
     },
   };
 }

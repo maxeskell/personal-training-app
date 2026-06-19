@@ -236,6 +236,56 @@ async function cmdState(): Promise<void> {
   console.log(`\nSaved to ${config.dataDir}/state/${state.date}.json`);
 }
 
+/**
+ * `splits [date] [--sport S] [--t400 m:ss --t200 m:ss] [--maxhr N]` — per-interval splits (laps/lengths)
+ * for a session from its raw .FIT, plus a swim CSS estimate (400/200 method) with a maximal-effort
+ * confidence check. With --t400/--t200 it computes CSS straight from your times (no .FIT needed).
+ * Deterministic, no LLM. READ-ONLY — set CSS in AI Endurance yourself.
+ */
+async function cmdSplits(): Promise<void> {
+  const { loadActivityFits } = await import("./insights/fit.js");
+  const { formatSplits, formatCss, computeCss, detectCssEffortsFromLaps, parseClock } = await import("./insights/sessionSplits.js");
+  const args = process.argv.slice(3);
+  const flag = (name: string) => {
+    const i = args.indexOf(name);
+    return i >= 0 ? args[i + 1] : undefined;
+  };
+  const date = args.find((a) => /^\d{4}-\d{2}-\d{2}$/.test(a));
+  const sport = flag("--sport");
+  const t400 = parseClock(flag("--t400"));
+  const t200 = parseClock(flag("--t200"));
+  const maxHr = flag("--maxhr") ? Number(flag("--maxhr")) : undefined;
+
+  if (t400 != null && t200 != null) {
+    console.log("\n" + formatCss(computeCss({ t400Sec: t400, t200Sec: t200, maxHr, source: "explicit" })).join("\n") + "\n");
+    return;
+  }
+  const matchesSport = (fitSport: string): boolean => {
+    if (!sport) return true;
+    const q = sport.toLowerCase();
+    const want = /cycl|bike|ride/.test(q) ? "ride" : /run/.test(q) ? "run" : /swim/.test(q) ? "swim" : q;
+    return fitSport.toLowerCase().includes(want);
+  };
+  const fits = loadActivityFits().filter((f) => matchesSport(f.sport));
+  const pool = date ? fits.filter((f) => f.date === date) : fits;
+  const target = pool.length ? pool[pool.length - 1] : null;
+  if (!target) {
+    console.log(
+      `\nNo raw .FIT found for splits${date ? ` on ${date}` : ""}${sport ? ` (${sport})` : ""}. Run \`npm run fit-sync\` to fetch it, ` +
+        "or drop an exported .FIT into the streams dir. To compute CSS without a .FIT: --t400 <m:ss> --t200 <m:ss>.\n",
+    );
+    return;
+  }
+  const lines = [`\nSession ${target.date} ${target.sport} (activity ${target.activityId}):`, "", ...formatSplits(target.fit)];
+  if (target.fit.sport === 5 || /swim/i.test(target.fit.sportName)) {
+    const efforts = detectCssEffortsFromLaps(target.fit.laps);
+    lines.push("");
+    if (efforts) lines.push(...formatCss(computeCss({ ...efforts, maxHr })));
+    else lines.push("CSS: couldn't auto-detect a 400 m + 200 m maximal pair from the laps — pass --t400 <m:ss> --t200 <m:ss> to compute it.");
+  }
+  console.log(lines.join("\n") + "\n");
+}
+
 function printReadiness(v: { verdict: string; why: string; drivers: Array<{ signal: string; reading: string; source: string }>; cautions: string[] }, risk: ReturnType<typeof assessHealthRisk>): void {
   if (risk.level !== "none") console.log(`\n⚠ Wellbeing (${risk.level}): ${risk.message}\n`);
   const dot = v.verdict === "green" ? "🟢" : v.verdict === "amber" ? "🟡" : "🔴";
@@ -856,6 +906,7 @@ const commands: Record<string, () => Promise<void>> = {
   doctor: cmdDoctor,
   "health-remote": cmdHealthRemote,
   state: cmdState,
+  splits: cmdSplits,
   readiness: cmdReadiness,
   ping: cmdPing,
   weekly: cmdWeekly,

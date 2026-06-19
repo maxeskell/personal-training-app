@@ -138,7 +138,9 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
 - **What this app can't set for you.** This connector is **read-only to AI Endurance**, so it can't
   write your **swim CSS or FTP** there — set those directly in the AI Endurance app. The profile's
   `ai_endurance_todo` block is a reminder, not a write path. (Race *target times* aren't on it — AIE has
-  no field for them; they live in `races[].target_time` and the coach reads them from the profile.)
+  no field for them; they live in `races[].target_time` and the coach reads them from the profile.) It
+  *can* now **compute** your swim CSS from a 400/200 test (the `splits` tool / `npm run splits`) and
+  recommend the number — with a maximal-effort confidence check — but applying it stays your manual step.
 - **A "Set up & improve" card on the dashboard.** A small, deterministic (no-AI) action hub in three
   sections: **Finish setup** (actionable AI-Endurance gaps, your free-text `open_items`, unfilled optional
   profile questions, a few **integration-health** nudges — missing API key, long-stale sync, unset
@@ -432,6 +434,7 @@ see and blocking for minutes (which used to surface in Cowork as a mystery timeo
 | Tool | What it does | Cost |
 | --- | --- | --- |
 | `sync` / `get_state` | assemble (or read) today's AthleteState — plan, recovery, HRV/RHR, weight, thresholds, zones. `sync` also **auto-fetches recent raw `.FIT` streams** (parity with the dashboard Sync) and both surface a **granular-data completeness** readout — which recent sessions are missing their raw `.FIT` (so their per-interval splits / biomechanics are unreachable) and *why* (Garmin off / not reachable / download capability missing / a download that failed), never a silent zero | none |
+| `splits` | per-interval splits (laps/lengths) for a session from its raw `.FIT` — run/bike reps, swim lengths — **and a swim CSS estimate** by the 400/200 method with a maximal-effort confidence check. Pass `t400`/`t200` (sec or m:ss) to compute CSS from times with no `.FIT` needed; else it auto-detects the 400/200 pair from the FIT laps. Read-only: computes & recommends — you set CSS in AI Endurance | none |
 | `get_profile` | the validated athlete profile (stable context: body, kit, medical, availability, race targets) + a computed `dose_cycle` (days_since_dose, in_gi_trough). NO live numbers — those are in `get_state` | none |
 | `insights` | run the n=1 insight engine: CTL/ATL/TSB & ramp, EF, durability, correlations, change-points, taper target, validated monitoring rules — each top finding annotated with its **key, age (NEW/Nd old) and your saved reaction** | none |
 | `react_to_insight` | like / dislike / snooze / clear a surfaced insight by `key` — full parity with the dashboard buttons (persists, reshapes surfacing); a local decision-log write, **available even on the read-only Cowork surface** | none |

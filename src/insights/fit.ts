@@ -135,6 +135,37 @@ function fitToStreamFile(act: FitActivity, name: string): StreamFile {
   };
 }
 
+/** One parsed activity's raw .FIT, tagged with its id (from the filename) + date + sport. */
+export interface ActivityFit {
+  activityId: string;
+  date: string;
+  sport: string;
+  fit: FitActivity;
+}
+
+/**
+ * Parse every raw `.FIT` in the streams dir into ActivityFit (id + date + sport + parsed FIT), so the
+ * splits / CSS tools can pick one by date. JSON pre-extracts are ignored here — laps/lengths only live in
+ * the binary .FIT. Empty when none. Best-effort: an unreadable file is skipped, never throws.
+ */
+export function loadActivityFits(dir = fitStreamsDir()): ActivityFit[] {
+  if (!dir || !existsSync(dir)) return [];
+  const out: ActivityFit[] = [];
+  for (const name of readdirSync(dir)) {
+    if (!/\.(fit|FIT)$/.test(name)) continue;
+    try {
+      const fit = parseFit(readFileSync(join(dir, name)));
+      if (!fit) continue;
+      const firstT = fit.samples.find((s) => s.t != null)?.t ?? fit.laps.find((l) => l.startTimeS != null)?.startTimeS;
+      const date = firstT != null ? new Date(firstT * 1000).toISOString().slice(0, 10) : "";
+      out.push({ activityId: name.replace(/\.(fit|FIT)$/, ""), date, sport: fit.sportName, fit });
+    } catch {
+      // skip unreadable/malformed .FIT
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
 /** Load and analyse every stream file in `FIT_STREAMS_DIR` (or the passed dir). Empty if none. */
 export function loadSessionDecays(dir = fitStreamsDir()): SessionDecay[] {
   if (!dir || !existsSync(dir)) return [];
