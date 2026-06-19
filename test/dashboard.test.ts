@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyState } from "../src/state/types.js";
+import { todayIso } from "../src/util/today.js";
 import { buildInsights } from "../src/insights/engine.js";
 import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, parseResearchTopics, parseActionBullets, mdLite, commonTrailingSentences } from "../src/coach/dashboard.js";
 import type { ProfileQuestion } from "../src/profile/questions.js";
@@ -556,6 +557,28 @@ test("renderSetupImprove: group subheadings appear only when more than one secti
   assert.match(grouped, /class="setup-group">Finish setup</);
   assert.match(grouped, /class="setup-group">Worth considering</);
   assert.match(grouped, /90 g\/h carb/);
+});
+
+test("Data changes card: surfaces an auto-detected metric change with agree/disagree, hidden when snoozed", () => {
+  const mk = (date: string, ftp: number) => {
+    const s = emptyState(date, new Date().toISOString());
+    s.thresholds = { value: { bikeFtpW: ftp }, source: "garmin" };
+    return s;
+  };
+  const window = [mk("2026-06-13", 250), mk(todayIso(), 262)];
+  const html = renderDashboard({ window, decisions: [] });
+  assert.match(html, /Data changes — your call/);
+  assert.match(html, /<b>Bike FTP<\/b>: 250 W → <b>262 W<\/b>/);
+  assert.match(html, /Garmin/);
+  assert.match(html, /data-key="change:bikeFtpW:262"/);
+  assert.match(html, /data-reaction="like" onclick="feedback\(this\)"/); // reuses the insight-feedback machinery
+  // A saved disagree shows; snoozing (suppressed) hides the change entirely.
+  const reacted = renderDashboard({ window, decisions: [], reactions: new Map([["change:bikeFtpW:262", "disagree"]]) });
+  assert.match(reacted, /👎 disagreed/);
+  const snoozed = renderDashboard({ window, decisions: [], suppressed: new Set(["change:bikeFtpW:262"]) });
+  assert.doesNotMatch(snoozed, /Data changes — your call/);
+  // No card when nothing changed.
+  assert.doesNotMatch(renderDashboard({ window: [mk(todayIso(), 250)], decisions: [] }), /Data changes — your call/);
 });
 
 test("dashboard shows the Set-up-&-improve card only when a profile with outstanding items is supplied", () => {
