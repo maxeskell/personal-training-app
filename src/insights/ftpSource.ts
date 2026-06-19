@@ -16,6 +16,7 @@
 
 import type { AthleteState } from "../state/types.js";
 import type { RichActivity } from "./metrics.js";
+import { shiftIso } from "../util/today.js";
 
 export interface PowerCoverage {
   ridesWithPower: number;
@@ -35,12 +36,6 @@ export interface FtpDiagnosis {
   coverage: PowerCoverage;
   flags: string[];
   recommendation: string;
-}
-
-function shiftIso(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
 }
 
 /** Share of recent rides that actually carry power — the data the Garmin MMP estimate is built from. */

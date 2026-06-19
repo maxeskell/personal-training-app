@@ -9,6 +9,7 @@ import type {
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { config } from "../config.js";
+import { escapeHtml } from "../util/html.js";
 
 /**
  * Thrown when AI Endurance needs an interactive (re)authorization that the current context can't do.
@@ -187,10 +188,6 @@ export class FileOAuthClientProvider implements OAuthClientProvider {
   private async ensureDir(): Promise<void> {
     await mkdir(this.dir, { recursive: true, mode: 0o700 });
   }
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
 async function readJson<T>(path: string): Promise<T | undefined> {
