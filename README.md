@@ -277,8 +277,12 @@ creep, heat protocols) against the current priors and **drafts a proposed update
 `npm run knowledge` shows freshness (flagged **stale after ~35 days**) and any digests awaiting review.
 On the dashboard, a fresh digest also surfaces in the **"Worth considering"** card — each item shows what
 the research found and its source, and the card links to a **read-only in-app view of the full digest**
-(`/digest`) so you can read the proposal without leaving the dashboard or hunting for the file. The
-`approve` command shown there is **filled in with the real file name** — copy-paste, no `<file>` to swap.
+(`/digest`) so you can read the proposal without leaving the dashboard or hunting for the file. That page
+renders the proposal as **formatted markdown** (headings, lists, quoted study excerpts) with every
+**source linked to the original** — bare DOIs are turned into `doi.org` links so the paper is one click
+away — and the `approve` command shown there is **filled in with the real file name** (copy-paste, no
+`<file>` to swap). Each source carries a resolvable DOI/URL, and the model's own search commentary is kept
+out of the saved digest.
 
 This is the one flow that reaches the public web (via the model's web search — best-effort and cost-logged;
 a failure leaves the priors untouched). The guardrails hold throughout: **priors are hypotheses that yield
