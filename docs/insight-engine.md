@@ -42,6 +42,15 @@ autocorrelation-aware, effect-sizes-with-CIs, and every MODEL caveat attached.
     `.env.example`. **When a recent session's stream is missing, that's surfaced as an explicit
     data-completeness gap** on `sync` / `get_state` / `npm run state` (with the reason: Garmin off / not
     reachable / capability absent / a download that failed) — a missing stream is never a silent zero.
+  - **Per-interval splits + swim CSS** — the same `.FIT` parser now decodes **lap (msg 19)** and
+    **length (msg 101)** records, so the `splits` tool (`npm run splits`) returns per-rep / per-length
+    splits for a session, and for a **swim test** computes **Critical Swim Speed** by the 400/200 method
+    (`CSS/100m = (T400 − T200)/2`) with a **maximal-effort confidence check** (it flags submaximal HR or
+    pacing so a soft test can't masquerade as a firm CSS). You can also pass the two times directly
+    (`--t400 / --t200`) with no `.FIT`. It's read-only — it recommends the number; you set CSS in AI
+    Endurance. (The AI Endurance `*ActivityDetail` endpoint would be an alternative source, but it's
+    **blocked upstream** — the activity list exposes no `activity_id` to call it; see the Insight Engine
+    Spec — so Garmin's `.FIT` laps/lengths are the route to per-interval structure.)
 
 Every finding carries a **confidence score**; only good-signal findings are surfaced, and the most
 important also feed a multiple-comparisons guard: the exploratory correlation scan is **FDR-controlled**

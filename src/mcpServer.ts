@@ -7,6 +7,8 @@ import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
 import { buildTodayState, gatherCompleteness, gatherReadiness, loadArchive, loadPredictionTrajectory, todayIso, withAie } from "./coach/orchestrator.js";
 import { formatCompleteness } from "./state/dataCompleteness.js";
+import { loadActivityFits } from "./insights/fit.js";
+import { formatSplits, formatCss, computeCss, detectCssEffortsFromLaps, parseClock } from "./insights/sessionSplits.js";
 import { StateStore } from "./state/store.js";
 import { buildInsights } from "./insights/engine.js";
 import { DecisionLog, suppressedInsightKeys, reactionFromLabel, type DecisionRecord } from "./state/decisionLog.js";
@@ -194,6 +196,52 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
       // garminConnected is left undefined so the note says capability is "from the last snapshot".
       state.dataCompleteness ??= gatherCompleteness(state);
       return ok(summarizeState(state));
+    },
+  );
+
+  server.tool(
+    "splits",
+    "Per-interval splits (laps/lengths) for a session from its raw .FIT — run/bike reps, swim lengths — AND, for a swim test, a Critical Swim Speed estimate by the 400/200 method with a maximal-effort confidence check. Pass t400 & t200 (seconds or m:ss) to compute CSS directly from times with NO .FIT needed; otherwise it reads the .FIT for `date` (or the most recent session) and auto-detects the 400/200 maximal pair. Deterministic, no LLM cost. READ-ONLY: it computes & recommends — you set CSS in AI Endurance yourself.",
+    {
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Session date (defaults to the most recent activity with a .FIT)."),
+      sport: z.string().optional().describe("Filter by sport (e.g. 'swim', 'run', 'ride')."),
+      t400: z.union([z.string(), z.number()]).optional().describe("Maximal 400 m time for a CSS calc — seconds or m:ss (e.g. '6:20')."),
+      t200: z.union([z.string(), z.number()]).optional().describe("Maximal 200 m time for a CSS calc — seconds or m:ss (e.g. '3:00')."),
+      maxHr: z.number().optional().describe("Your max HR — lets the confidence check confirm the test efforts were maximal."),
+    },
+    async ({ date, sport, t400, t200, maxHr }) => {
+      // Direct CSS from supplied times — works with no .FIT at all.
+      if (t400 != null && t200 != null) {
+        const a = parseClock(t400);
+        const b = parseClock(t200);
+        if (a == null || b == null) return fail("Couldn't parse t400/t200 — give seconds (e.g. 380) or m:ss (e.g. '6:20').");
+        return ok(formatCss(computeCss({ t400Sec: a, t200Sec: b, maxHr, source: "explicit" })).join("\n"));
+      }
+      // Otherwise read the session's raw .FIT.
+      const matchesSport = (fitSport: string): boolean => {
+        if (!sport) return true;
+        const q = sport.toLowerCase();
+        const want = /cycl|bike|ride/.test(q) ? "ride" : /run/.test(q) ? "run" : /swim/.test(q) ? "swim" : q;
+        return fitSport.toLowerCase().includes(want);
+      };
+      const fits = loadActivityFits().filter((f) => matchesSport(f.sport));
+      const pool = date ? fits.filter((f) => f.date === date) : fits;
+      const target = pool.length ? pool[pool.length - 1] : null; // sorted ascending → latest
+      if (!target) {
+        return ok(
+          `No raw .FIT found for splits${date ? ` on ${date}` : ""}${sport ? ` (${sport})` : ""}. Run the \`sync\` tool (or \`npm run fit-sync\`) to fetch it, or drop an exported .FIT into the streams dir. ` +
+            "To compute CSS without a .FIT, pass t400 and t200 (your maximal 400 m and 200 m times).",
+        );
+      }
+      const lines = [`Session ${target.date} ${target.sport} (activity ${target.activityId}):`, "", ...formatSplits(target.fit)];
+      const isSwim = target.fit.sport === 5 || /swim/i.test(target.fit.sportName);
+      if (isSwim) {
+        const efforts = detectCssEffortsFromLaps(target.fit.laps);
+        lines.push("");
+        if (efforts) lines.push(...formatCss(computeCss({ ...efforts, maxHr })));
+        else lines.push("CSS: couldn't auto-detect a 400 m + 200 m maximal pair from the laps — pass t400 and t200 (your test times) to compute it.");
+      }
+      return ok(lines.join("\n"));
     },
   );
 
@@ -561,7 +609,7 @@ async function main(): Promise<void> {
   const server = buildServer({ includeProfileWrite: true });
   await server.connect(new StdioServerTransport());
   console.error(
-    "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/get_profile/insights/react_to_insight/list_reports/" +
+    "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/splits/get_profile/insights/react_to_insight/list_reports/" +
       "read_report/decisions/listening/knowledge/cost · LLM tools: ask/readiness/weekly/race_prep/deep_dive/tune/research/session_feedback · " +
       "writes: update_profile (local file) · gated AIE writes: propose_adjustment/confirm/decline.",
   );

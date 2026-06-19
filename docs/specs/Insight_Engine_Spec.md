@@ -302,8 +302,13 @@ The list items are far richer than the v1 README implied. Each carries:
    detail** (see below), so this no longer gates N1.
    **Follow-up probe (N2):** passing `{date}` to `get*ActivityDetail` does **not** work — the tool errors
    server-side (`int() argument … not 'NoneType'`), i.e. it requires an **integer activityId** the list
-   never exposes. So within-session decoupling / power-curve **remain blocked**; needs an id source from
-   AI Endurance (support question) before N3.
+   never exposes. So within-session decoupling / power-curve **remain blocked** via AI Endurance; needs an
+   id source from AI Endurance (support question) before N3.
+   **Update (per-interval structure via Garmin instead):** rather than wait on the AIE id, **per-interval
+   splits + swim CSS now come from Garmin's `.FIT`** — the dependency-free parser decodes lap (msg 19) and
+   length (msg 101) records, and the `splits` tool exposes per-rep/per-length splits and a 400/200 CSS
+   estimate (with a maximal-effort confidence check). Garmin exposes activity ids, so this path isn't
+   gated on the AIE blocker. Within-session decoupling/power-curve from AIE detail stay open pending the id.
 4. **Garmin HRV history?** `get_hrv_trend` returned an empty/under-documented shape in the probe — needs an
    arg/format follow-up. **Low priority** — AI Endurance's `rMSSD` + recovery model already cover HRV.
 5. **Run power coverage?** **40/40 runs have power.** → Run **EF via power** (not just pace) is viable.
