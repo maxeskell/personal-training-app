@@ -4,7 +4,8 @@ import type { FitSummary } from "../archive/store.js";
 import type { SessionFeedbackRecord } from "./sessionFeedbackStore.js";
 import type { InsightReport } from "../insights/engine.js";
 import { findingKey } from "../insights/metrics.js";
-import { detectMetricChanges } from "./metricChanges.js";
+import { detectMetricChanges, formatMetricValue, metricLabel } from "./metricChanges.js";
+import type { MetricOverrides } from "../state/metricOverrides.js";
 import { selectMarginalGains } from "../insights/marginalGains.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone, type Headline } from "../insights/headline.js";
@@ -138,6 +139,8 @@ export interface DashboardInput {
    * note. Read-only here.
    */
   sessionFeedbacks?: SessionFeedbackRecord[];
+  /** Your pins on auto-detected metrics (the Data-changes card's 👎): surfaced with an un-pin control. */
+  metricOverrides?: MetricOverrides;
 }
 
 const TONE_COLOR: Record<Tone, string> = { good: "#1a8a3a", neutral: "#777", warn: "#c98a00", bad: "#c0392b" };
@@ -645,35 +648,46 @@ function asOf(ageDays: number): string {
 const SOURCE_LABEL: Record<string, string> = { "ai-endurance": "AI Endurance", garmin: "Garmin", intervals: "intervals.icu", derived: "derived", manual: "you" };
 
 /**
- * "Data changes — your call": when AI Endurance / Garmin have changed an auto-detected number (FTP,
- * threshold HR/pace, swim CSS, VO₂max), surface it with 👍 agree / 👎 disagree / 💤 snooze — reusing the
- * insight-feedback machinery (same keys, same `feedback()` handler, same snooze cool-off). Detected by
- * diffing the snapshot window; no LLM. Snoozed changes are hidden; a saved agree/disagree is shown.
- * Omitted when nothing changed recently.
+ * "Data changes — your call": when AI Endurance / Garmin change an auto-detected number (FTP, threshold
+ * HR/pace, swim CSS, VO₂max), surface it (diffed from snapshots, no LLM) with 👍 agree (acknowledge, via
+ * the insight-feedback machinery), 👎 disagree (PIN your prior value as an override the next sync honours)
+ * and 💤 snooze. Active pins are listed separately with an un-pin (accept the auto value). A pinned
+ * metric's change is hidden (your value is in force) until you un-pin or the platform detects something
+ * new. Omitted when there's nothing to show.
  */
-function renderDataChanges(window: AthleteState[], reactions?: Map<string, InsightReaction>, suppressed?: Set<string>, now?: number): string {
-  const changes = detectMetricChanges(window, { now }).filter((c) => !suppressed?.has(c.key)).slice(0, 5);
-  if (!changes.length) return "";
-  const rows = changes
+function renderDataChanges(window: AthleteState[], reactions?: Map<string, InsightReaction>, suppressed?: Set<string>, overrides?: MetricOverrides, now?: number): string {
+  const pinned = overrides ?? {};
+  const changes = detectMetricChanges(window, { now })
+    .filter((c) => !suppressed?.has(c.key) && !(c.metric in pinned)) // a pinned metric shows as an override, not a change
+    .slice(0, 5);
+  const changeRows = changes
     .map((c) => {
-      const saved = reactions?.get(c.key); // "agree" | "disagree" (snoozed are filtered out above)
+      const saved = reactions?.get(c.key);
       const state = saved === "agree" ? "like" : saved === "disagree" ? "dislike" : "";
       const on = (which: string) => (state === which ? " on" : "");
-      const summary = `${c.label}: ${c.from} → ${c.to}`;
-      return `<div class="insight" data-key="${escapeHtml(c.key)}" data-summary="${escapeHtml(summary)}" data-reaction-state="${state}">
+      return `<div class="insight" data-key="${escapeHtml(c.key)}" data-summary="${escapeHtml(`${c.label}: ${c.from} → ${c.to}`)}" data-reaction-state="${state}" data-metric="${escapeHtml(c.metric)}" data-when="${c.toValue}" data-use="${c.fromValue}">
         <div><b>${escapeHtml(c.label)}</b>: ${escapeHtml(c.from)} → <b>${escapeHtml(c.to)}</b> <span class="muted">· ${escapeHtml(SOURCE_LABEL[c.source] ?? c.source)} · ${asOf(c.ageDays)}</span></div>
         <div class="acts">
           <button class="agree${on("like")}" data-reaction="like" onclick="feedback(this)">👍 Agree</button>
-          <button class="disagree${on("dislike")}" data-reaction="dislike" onclick="feedback(this)">👎 Disagree</button>
+          <button class="disagree${on("dislike")}" onclick="pinOverride(this)">👎 Disagree — keep ${escapeHtml(c.from)}</button>
           <button class="ignore" data-reaction="snooze" onclick="feedback(this)">💤 Snooze</button>
-          <span class="reacted">${state === "like" ? "👍 agreed" : state === "dislike" ? "👎 disagreed" : ""}</span>
+          <span class="reacted">${state === "like" ? "👍 agreed" : ""}</span>
         </div>
       </div>`;
     })
     .join("");
+  const overrideRows = Object.entries(pinned)
+    .map(([metric, ov]) => {
+      return `<div class="insight" data-metric="${escapeHtml(metric)}">
+        <div>📌 <b>${escapeHtml(metricLabel(metric))}</b>: using <b>${escapeHtml(formatMetricValue(metric, ov.use))}</b> <span class="muted">· you overrode the auto-detected ${escapeHtml(formatMetricValue(metric, ov.when))}</span></div>
+        <div class="acts"><button class="ignore" onclick="unpinOverride(this)">↩ Un-pin — accept ${escapeHtml(formatMetricValue(metric, ov.when))}</button><span class="reacted"></span></div>
+      </div>`;
+    })
+    .join("");
+  if (!changeRows && !overrideRows) return "";
   return `<div class="card insights"><h2>Data changes — your call</h2>
-    <div class="k" style="margin-bottom:8px">AI Endurance / Garmin updated these auto-detected numbers (the coach now uses the new value). 👍 to acknowledge, 👎 if it looks wrong, 💤 to hide it. Zones follow from these thresholds.</div>
-    ${rows}
+    <div class="k" style="margin-bottom:8px">AI Endurance / Garmin auto-update these numbers. 👍 accept · 👎 keep your own (pins it until you un-pin or they detect something new) · 💤 hide. Zones follow from these thresholds.</div>
+    ${changeRows}${overrideRows}
   </div>`;
 }
 
@@ -1294,7 +1308,7 @@ function freshnessLine(today: AthleteState): string {
   return line;
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // One synthesised "Today" call, computed once and shared: the header leads on it, the Top-insights box
@@ -1463,7 +1477,7 @@ ${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedback
 ${share ? "" : renderWeather(weather)}
 
 ${insights ? renderInsightsBox(insights, reactions, firstSeen, leadKey) : ""}
-${renderDataChanges(window, reactions, suppressed)}
+${renderDataChanges(window, reactions, suppressed, metricOverrides)}
 
 <div class="card" id="askcard"><h2>Ask your data</h2>
   <form id="askform" onsubmit="return ask(event)">
@@ -1529,6 +1543,21 @@ async function dismissSetup(btn){
     body:JSON.stringify({key:li.getAttribute('data-key'),reaction:'snooze',summary:li.getAttribute('data-summary')})});
     li.style.opacity=0.4;li.style.textDecoration='line-through';
   }catch(err){btn.disabled=false;}
+}
+async function pinOverride(btn){
+  var box=btn.closest('.insight');var s=box.querySelector('.reacted');s.textContent='Pinning…';
+  try{await fetch('/metric-override',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({metric:box.getAttribute('data-metric'),when:Number(box.getAttribute('data-when')),use:Number(box.getAttribute('data-use'))})});
+    box.querySelectorAll('button').forEach(function(b){b.disabled=true;});box.style.opacity=0.6;
+    s.textContent='📌 pinned — your value is used from the next sync';
+  }catch(err){s.textContent='error';}
+}
+async function unpinOverride(btn){
+  var box=btn.closest('.insight');var s=box.querySelector('.reacted');s.textContent='…';
+  try{await fetch('/metric-override',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({metric:box.getAttribute('data-metric'),clear:true})});
+    btn.disabled=true;box.style.opacity=0.6;s.textContent='↩ un-pinned — accepting the auto value from the next sync';
+  }catch(err){s.textContent='error';}
 }
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 async function actPlan(){

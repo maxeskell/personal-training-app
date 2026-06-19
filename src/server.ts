@@ -12,6 +12,8 @@ import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
 import { loadSessionFeedbacks, saveSessionFeedback, latestByDate } from "./coach/sessionFeedbackStore.js";
+import { loadMetricOverrides, setMetricOverride, clearMetricOverride } from "./state/metricOverrides.js";
+import { TRACKED_METRICS } from "./coach/metricChanges.js";
 import { backfillSessionFeedback } from "./coach/autoSessionFeedback.js";
 import { buildInsights } from "./insights/engine.js";
 import { loadArchive } from "./coach/orchestrator.js";
@@ -124,6 +126,7 @@ async function renderLatest(share = false): Promise<string> {
     weeklyReview: await latestWeeklyReview(), // "This week" group — read persisted, never re-run
     researchDigest: await latestResearchDigest(), // "Worth considering" group — read persisted, never re-run
     sessionFeedbacks: await loadSessionFeedbacks(), // auto-generated at sync; shown inline, no LLM here
+    metricOverrides: await loadMetricOverrides(), // your pins on auto-detected metrics (Data-changes card)
     setupHealth: {
       hasApiKey: CoachLLM.hasApiKey(),
       waterTempSet: config.weather.waterTempC != null,
@@ -363,6 +366,22 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       await new DecisionLog().recordInsightFeedback(body.key, reaction, body.summary ?? body.key);
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
       return;
+    }
+
+    // Metric overrides (the Data-changes card's 👎 pin / un-pin). Pinning records "while the platform
+    // reports `when`, use `use` instead"; clearing accepts the auto-detected value again. Applied at the
+    // next sync's assemble. Validated against the tracked-metric set so an arbitrary field can't be set.
+    if (url.pathname === "/metric-override" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)) || "{}") as { metric?: string; when?: number; use?: number; clear?: boolean };
+      const json = (code: number, b: object) => res.writeHead(code, { "content-type": "application/json" }).end(JSON.stringify(b));
+      if (!body.metric || !TRACKED_METRICS.has(body.metric)) return json(400, { ok: false, error: "unknown metric" });
+      if (body.clear) {
+        await clearMetricOverride(body.metric);
+        return json(200, { ok: true, cleared: body.metric });
+      }
+      if (typeof body.when !== "number" || typeof body.use !== "number") return json(400, { ok: false, error: "need numeric when + use" });
+      await setMetricOverride(body.metric, body.when, body.use);
+      return json(200, { ok: true });
     }
 
     // Action loop — generate GATED plan-adjustment proposals from the surfaced alerts (no write here).
