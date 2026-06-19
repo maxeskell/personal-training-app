@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyState } from "../src/state/types.js";
 import { buildInsights } from "../src/insights/engine.js";
-import { renderDashboard, ftpEstimateGapNote } from "../src/coach/dashboard.js";
+import { renderDashboard, ftpEstimateGapNote, trendsHeading } from "../src/coach/dashboard.js";
 import type { Finding } from "../src/insights/metrics.js";
 import type { SessionDecay } from "../src/insights/fit.js";
 import type { InsightReaction } from "../src/state/decisionLog.js";
@@ -236,6 +236,18 @@ test("a power-curve FTP estimate well below the configured FTP is reconciled on 
   s.powerCurve = { value: { ftpEstimateW: 183, activitiesAnalyzed: 7, bests: [] }, source: "garmin" };
   const html = renderDashboard({ window: [s], decisions: [] });
   assert.match(html, /FTP estimate is 18% under your configured 223 W FTP/);
+});
+
+test("trends heading drops the window suffix until there are ≥2 days to trend (no 'last 0 days' / '1 days')", () => {
+  // The demo (single snapshot, no Garmin archive) and a brand-new install must not show a nonsensical window.
+  assert.equal(trendsHeading(0), "Trends");
+  assert.equal(trendsHeading(1), "Trends");
+  assert.equal(trendsHeading(2), "Trends (last 2 days)");
+  assert.equal(trendsHeading(42), "Trends (last 42 days)");
+  // And the rendered demo-style dashboard (no garminDays) never emits the broken label.
+  const html = renderDashboard({ window: [emptyState("2026-06-18", new Date().toISOString())], decisions: [] });
+  assert.doesNotMatch(html, /last 0 days|last 1 days/, "no broken window label on a single-snapshot dashboard");
+  assert.match(html, /<h2>Trends<\/h2>/, "shows a clean 'Trends' heading instead");
 });
 
 test("API cost card renders windowed totals + a monthly projection when records are present", () => {
