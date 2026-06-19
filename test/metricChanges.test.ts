@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyState, type AthleteState, type DisciplineThresholds, type Source } from "../src/state/types.js";
-import { detectMetricChanges } from "../src/coach/metricChanges.js";
+import { detectMetricChanges, detectSourceConflicts } from "../src/coach/metricChanges.js";
 
 /**
  * detectMetricChanges synthesises a "what changed" feed by diffing the daily snapshot window — neither AI
@@ -63,4 +63,40 @@ test("detectMetricChanges: a null gap between readings doesn't read as a change"
     st(day(14), { bikeFtpW: 250 }),
   ];
   assert.deepEqual(detectMetricChanges(window, { now: NOW }), []);
+});
+
+test("detectMetricChanges: tracks max HR like any other threshold marker", () => {
+  const window = [st(day(12), { maxHr: 188 }), st(day(14), { maxHr: 191 })];
+  const got = detectMetricChanges(window, { now: NOW });
+  assert.equal(got.length, 1);
+  assert.deepEqual({ metric: got[0].metric, from: got[0].from, to: got[0].to, key: got[0].key }, { metric: "maxHr", from: "188 bpm", to: "191 bpm", key: "change:maxHr:191" });
+});
+
+test("detectSourceConflicts: surfaces AIE-vs-Garmin disagreement with which one is in use", () => {
+  const s = st(day(14), { bikeFtpW: 250 }, "ai-endurance"); // the merged winner is the AIE 250 W
+  s.thresholdsBySource = {
+    "ai-endurance": { bikeFtpW: 250, runThresholdHr: 168 },
+    garmin: { bikeFtpW: 235, runThresholdHr: 168 }, // disagree on FTP, agree on HR
+  };
+  const got = detectSourceConflicts(s);
+  assert.equal(got.length, 1, "only the metric they actually disagree on");
+  const c = got[0];
+  assert.equal(c.metric, "bikeFtpW");
+  assert.equal(c.key, "conflict:bikeFtpW:235v250");
+  assert.equal(c.inUse.source, "ai-endurance"); // matches state.thresholds (250)
+  assert.equal(c.inUse.value, 250);
+  assert.equal(c.alt.source, "garmin"); // the other reading a pin would adopt
+  assert.equal(c.alt.value, 235);
+  assert.deepEqual(c.readings.map((r) => r.source), ["ai-endurance", "garmin"]); // AIE first (SOURCE_ORDER)
+  assert.equal(c.alt.formatted, "235 W");
+});
+
+test("detectSourceConflicts: silent when sources agree or only one is present", () => {
+  const agree = st(day(14), { bikeFtpW: 250 });
+  agree.thresholdsBySource = { "ai-endurance": { bikeFtpW: 250 }, garmin: { bikeFtpW: 250 } };
+  assert.deepEqual(detectSourceConflicts(agree), []);
+  const oneSource = st(day(14), { bikeFtpW: 250 });
+  oneSource.thresholdsBySource = { garmin: { bikeFtpW: 250 } };
+  assert.deepEqual(detectSourceConflicts(oneSource), []);
+  assert.deepEqual(detectSourceConflicts(st(day(14), { bikeFtpW: 250 })), []); // field absent (older snapshot)
 });

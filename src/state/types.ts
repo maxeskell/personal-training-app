@@ -167,6 +167,7 @@ export interface DisciplineThresholds {
   runThresholdHr?: number;
   runThresholdPowerW?: number; // running power threshold (FR970 native running power)
   swimCssSecPer100?: number;
+  maxHr?: number; // max heart rate (the HR-zone anchor) — Garmin holds it; AIE may too
   bikeFtpNote?: string; // set when Garmin's auto-detected FTP conflicts with a higher test-based value
 }
 
@@ -249,6 +250,13 @@ export interface AthleteState {
   zones: Provenanced<DisciplineZones>;
   thresholds: Provenanced<DisciplineThresholds>;
 
+  /**
+   * What EACH source independently reported for the threshold markers, kept un-merged so the dashboard
+   * can show "AI Endurance 250 W vs Garmin 235 W" side by side when they disagree (the merged winner
+   * lives in `thresholds` above). Persisted; absent on snapshots written before this field existed.
+   */
+  thresholdsBySource?: Partial<Record<Source, DisciplineThresholds>>;
+
   syncGaps: SyncGap[];
   readinessVerdict: ReadinessVerdict;
   readinessWhy: string;
@@ -315,6 +323,7 @@ export function emptyState(date: string, assembledAt: string): AthleteState {
     athleteProfile: absent<AthleteProfile>(),
     zones: absent<DisciplineZones>(),
     thresholds: absent<DisciplineThresholds>(),
+    thresholdsBySource: {},
     syncGaps: [],
     readinessVerdict: "unknown",
     readinessWhy: "Not yet assessed.",

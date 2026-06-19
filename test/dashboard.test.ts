@@ -638,6 +638,26 @@ test("Data changes card: surfaces an auto-detected metric change with agree/disa
   assert.doesNotMatch(renderDashboard({ window: [mk(todayIso(), 250)], decisions: [] }), /Data changes — your call/);
 });
 
+test("Data changes card: surfaces an AIE-vs-Garmin disagreement side by side with a one-tap source pick", () => {
+  const s = emptyState(todayIso(), new Date().toISOString());
+  s.thresholds = { value: { bikeFtpW: 250 }, source: "ai-endurance" }; // the merged winner
+  s.thresholdsBySource = { "ai-endurance": { bikeFtpW: 250 }, garmin: { bikeFtpW: 235 } };
+  const html = renderDashboard({ window: [s], decisions: [] });
+  assert.match(html, /Data changes — your call/);
+  assert.match(html, /⚖️ <b>Bike FTP<\/b>: AI Endurance <b>250 W<\/b> vs Garmin <b>235 W<\/b>/);
+  assert.match(html, /using AI Endurance 250 W/);
+  // The "use the other source" button pins via the same override machinery (when = in-use, use = alt).
+  assert.match(html, /data-metric="bikeFtpW" data-when="250" data-use="235"/);
+  assert.match(html, /📌 Use Garmin 235 W/);
+  assert.match(html, /data-key="conflict:bikeFtpW:235v250"/);
+  // Snoozing hides it; pinning the metric hides the conflict (it shows as an override instead).
+  assert.doesNotMatch(renderDashboard({ window: [s], decisions: [], suppressed: new Set(["conflict:bikeFtpW:235v250"]) }), /sources disagree|⚖️ <b>Bike FTP/);
+  assert.doesNotMatch(
+    renderDashboard({ window: [s], decisions: [], metricOverrides: { bikeFtpW: { when: 250, use: 235, ts: "2026-06-14T00:00:00Z" } } }),
+    /⚖️ <b>Bike FTP/,
+  );
+});
+
 test("dashboard shows the Set-up-&-improve card only when a profile with outstanding items is supplied", () => {
   const s = emptyState("2026-06-18", new Date().toISOString());
   const withTodo = renderDashboard({

@@ -43,6 +43,7 @@ const DEMO_THRESHOLDS: DisciplineThresholds = {
   runThresholdPaceSecPerKm: 255, // ~4:15 /km
   runThresholdHr: 168,
   swimCssSecPer100: 95,
+  maxHr: 188,
 };
 
 const WEEK_SPORTS: Array<NonNullable<PlannedSession["sport"]>> = ["Run", "Ride", "Swim", "Run", "Ride", "Run", "Strength"];
@@ -151,6 +152,13 @@ export function buildDemoWindow(today: string, days = 21): AthleteState[] {
   const t = window[window.length - 1];
   t.thresholds = p(DEMO_THRESHOLDS, "ai-endurance", "demo sample data");
   t.zones = p(deriveZones(DEMO_THRESHOLDS), "derived", "standard zone models from the demo thresholds");
+  // Per-source readings so the "Data changes" card shows a live AIE-vs-Garmin disagreement: Garmin's
+  // device auto-detects a LOWER cycling FTP (235 W) from sparse power data than the test-based 250 W in
+  // use — the realistic "keep the higher value, but show the gap" case (matches the 235 W power-curve FTP).
+  t.thresholdsBySource = {
+    "ai-endurance": DEMO_THRESHOLDS,
+    garmin: { ...DEMO_THRESHOLDS, bikeFtpW: 235 },
+  };
   t.nutritionTargets = p(
     { calories: { lower: 2600, upper: 3200 }, carbG: { lower: 350, upper: 500 }, proteinG: { lower: 110, upper: 150 }, fatG: { lower: 60, upper: 90 } },
     "ai-endurance",

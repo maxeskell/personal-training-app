@@ -156,14 +156,16 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   concrete, copy-pasteable proposed action** — exactly how to do it, no need to leave the page.
   Display-only; hidden from the shared/screenshot view.
 - **A "Data changes — your call" card.** When AI Endurance or Garmin **auto-update** a number the coach
-  relies on — bike FTP, threshold HR/pace, swim CSS, VO₂max — the dashboard surfaces it (*"Bike FTP 250 →
-  262 W · Garmin · as of 3d ago"*) so it isn't a silent change. Neither platform exposes a notification
-  feed, so this is **diffed from your own daily snapshots** (deterministic, no LLM). Each change carries
-  **👍 agree / 👎 disagree / 💤 snooze**, reusing the insights' feedback machinery (zones follow from the
-  thresholds). **👎 disagree pins your own value** as a local override the next sync honours — *conditionally*:
-  it holds only while the platform keeps reporting the value you rejected, so if it later detects something
-  new that resurfaces for a fresh call. Active pins are listed with an **un-pin** (accept the auto value).
-  Overrides live in the gitignored data dir, never the profile.
+  relies on — bike FTP, threshold HR/pace, swim CSS, **max HR**, VO₂max — the dashboard surfaces it (*"Bike
+  FTP 250 → 262 W · Garmin · as of 3d ago"*) so it isn't a silent change. Neither platform exposes a
+  notification feed, so this is **diffed from your own daily snapshots** (deterministic, no LLM). Each change
+  carries **👍 agree / 👎 disagree / 💤 snooze**, reusing the insights' feedback machinery (zones follow from
+  the thresholds). **👎 disagree pins your own value** as a local override the next sync honours —
+  *conditionally*: it holds only while the platform keeps reporting the value you rejected, so if it later
+  detects something new that resurfaces for a fresh call. The card also flags when the **two platforms
+  currently disagree** (*"Bike FTP · AI Endurance 250 W vs Garmin 235 W · using AI Endurance 250 W"*) with a
+  one-tap **⚖️ use the other source** that pins it the same way. Active pins are listed with an **un-pin**
+  (accept the auto value). Overrides live in the gitignored data dir, never the profile.
 - **The coaching brief ships as a default prompt.** [`coach-instructions.md`](coach-instructions.md)
   is the default system prompt a fresh clone gets (a prompt, *not* data — kept separate from the
   profile); edit it to taste. Full schema + privacy detail: [docs/profile.md](docs/profile.md).
