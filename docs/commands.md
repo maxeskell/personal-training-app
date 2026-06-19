@@ -34,6 +34,7 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 | `npm run ask -- "<question>"` | free-form Q&A over your data + insights |
 | `npm run session` / `npm run session 2026-06-09` | deep feedback on one session (needs its raw `.FIT`; `--force` for summary-only) |
 | `npm run splits` / `npm run splits 2026-06-09 --sport swim` | per-interval splits (laps/lengths) from a session's raw `.FIT`; for a swim test also a CSS estimate (400/200, with a maximal-effort confidence check). `--t400 6:20 --t200 3:00` computes CSS straight from times (no `.FIT` needed). Read-only — set CSS in AI Endurance yourself |
+| `npm run ingest-fit` / `npm run ingest-fit <path>` | manual-export fallback: report the watched `.FIT` streams dir, or validate + copy in an exported `.FIT` (Garmin Connect → Export Original) so `splits` / `session` can read it |
 | `npm run check` | fire-only health watch — alerts only if a flag / early-warning fires (no LLM) |
 
 ## Dashboard & phone

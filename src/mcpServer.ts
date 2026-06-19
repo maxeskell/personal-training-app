@@ -9,6 +9,7 @@ import { buildTodayState, gatherCompleteness, gatherReadiness, loadArchive, load
 import { formatCompleteness } from "./state/dataCompleteness.js";
 import { loadActivityFits } from "./insights/fit.js";
 import { formatSplits, formatCss, computeCss, detectCssEffortsFromLaps, parseClock } from "./insights/sessionSplits.js";
+import { reportStreamsDir, ingestFitFile, formatStreamsReport, formatIngest } from "./archive/fitIngest.js";
 import { StateStore } from "./state/store.js";
 import { buildInsights } from "./insights/engine.js";
 import { DecisionLog, suppressedInsightKeys, reactionFromLabel, type DecisionRecord } from "./state/decisionLog.js";
@@ -242,6 +243,16 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
         else lines.push("CSS: couldn't auto-detect a 400 m + 200 m maximal pair from the laps — pass t400 and t200 (your test times) to compute it.");
       }
       return ok(lines.join("\n"));
+    },
+  );
+
+  server.tool(
+    "ingest_fit",
+    "The manual-export fallback for raw .FIT streams (when the Garmin auto-download can't run). With no args: report what's in the watched streams dir (each file's validity + summary) and confirm the absolute path + the drop convention. With `path`: validate an exported .FIT at that path and copy it in so `splits` / `session_feedback` can read it. Deterministic, no LLM cost, read-only to AI Endurance.",
+    { path: z.string().optional().describe("Absolute path to an exported .FIT (Garmin Connect → Export Original) to validate + ingest. Omit to just report the streams dir.") },
+    async ({ path }) => {
+      if (path) return ok(formatIngest(ingestFitFile(path)).join("\n"));
+      return ok(formatStreamsReport(reportStreamsDir()).join("\n"));
     },
   );
 
@@ -609,7 +620,7 @@ async function main(): Promise<void> {
   const server = buildServer({ includeProfileWrite: true });
   await server.connect(new StdioServerTransport());
   console.error(
-    "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/splits/get_profile/insights/react_to_insight/list_reports/" +
+    "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/splits/ingest_fit/get_profile/insights/react_to_insight/list_reports/" +
       "read_report/decisions/listening/knowledge/cost · LLM tools: ask/readiness/weekly/race_prep/deep_dive/tune/research/session_feedback · " +
       "writes: update_profile (local file) · gated AIE writes: propose_adjustment/confirm/decline.",
   );
