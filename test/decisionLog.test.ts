@@ -21,6 +21,17 @@ test("suppressedInsightKeys: a snooze older than the window lapses (can resurfac
   assert.equal(suppressedInsightKeys(reactions, 14, new Date("2026-06-12T00:00:00Z")).size, 0);
 });
 
+test("suppressedInsightKeys: done (completed) + dismiss hide PERMANENTLY — never lapse", () => {
+  // Both reactions are months old; a snooze that age would have lapsed, but done/dismiss stay hidden.
+  const reactions = latestInsightReactions([
+    fb("done", "completed", "2026-01-01T00:00:00Z"),
+    fb("ignored-forever", "dismissed", "2026-01-01T00:00:00Z"),
+    fb("snoozed-long-ago", "deferred", "2026-01-01T00:00:00Z"),
+  ]);
+  const sup = suppressedInsightKeys(reactions, 14, new Date("2026-06-12T00:00:00Z"));
+  assert.deepEqual([...sup].sort(), ["done", "ignored-forever"]); // the stale snooze lapsed; these don't
+});
+
 test("latestInsightReactions: latest wins, and a later 'clear' drops the opinion (back to neutral)", () => {
   const recs = [fb("k", "accepted", "2026-06-01T00:00:00Z"), fb("k", "declined", "2026-06-05T00:00:00Z")];
   assert.equal(latestInsightReactions(recs).get("k")?.reaction, "disagree"); // most recent wins
@@ -32,7 +43,16 @@ test("reactionFromLabel: shared vocabulary for the website + MCP react_to_insigh
   assert.equal(reactionFromLabel("like"), "agree");
   assert.equal(reactionFromLabel("dislike"), "disagree");
   assert.equal(reactionFromLabel("snooze"), "ignore");
+  assert.equal(reactionFromLabel("done"), "done"); // ✓ Done on a setup task
+  assert.equal(reactionFromLabel("dismiss"), "dismiss"); // 🚫 Ignore on a setup task
   assert.equal(reactionFromLabel("clear"), "clear");
   assert.equal(reactionFromLabel("agree"), "agree"); // canonical names still accepted
   assert.equal(reactionFromLabel("bogus"), undefined);
+});
+
+test("latestInsightReactions: round-trips done + dismiss through their stored statuses", () => {
+  const recs = [fb("a", "completed", "2026-06-01T00:00:00Z"), fb("b", "dismissed", "2026-06-01T00:00:00Z")];
+  const map = latestInsightReactions(recs);
+  assert.equal(map.get("a")?.reaction, "done");
+  assert.equal(map.get("b")?.reaction, "dismiss");
 });

@@ -1,9 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { surfaceFindings, type Finding } from "../src/insights/metrics.js";
-import { engagementFindings } from "../src/insights/engagement.js";
+import { engagementFindings, engagementSteer } from "../src/insights/engagement.js";
 import { buildInsights } from "../src/insights/engine.js";
 import { emptyState } from "../src/state/types.js";
+
+test("engagementSteer: names the families you set aside (down-weighted), else null", () => {
+  assert.equal(engagementSteer(undefined), null);
+  assert.equal(engagementSteer({}), null);
+  assert.equal(engagementSteer({ familyWeights: new Map([["Load & form", 1.2]]) }), null, "only-lifted families → no steer");
+  const steer = engagementSteer({ familyWeights: new Map([["Gear", 0.7], ["Durability", 0.85], ["Load & form", 1.2]]) });
+  assert.match(steer!, /sets aside advice in: Durability, Gear/); // down-weighted only, sorted; lifted family excluded
+  assert.match(steer!, /Don't re-pitch/);
+});
 
 test("surfaceFindings: engagement weights reorder WITHIN a tier but never bury a flag", () => {
   const fs: Finding[] = [

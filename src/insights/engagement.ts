@@ -17,6 +17,23 @@ export interface EngagementContext {
   recurringDismissed?: Array<{ key: string; family: string; title: string; times: number; reaction: "disagree" | "ignore" }>;
   /** Current plan adherence (AI Endurance plan progress) for the divergence nudge. */
   adherence?: { pct: number; priorPct: number | null; deltaPts: number | null; plannedH: number } | null;
+  /** Gated plan-proposal accept/decline history — a high decline rate makes the proposer more conservative. */
+  proposals?: { accepted: number; declined: number };
+}
+
+/**
+ * A one-line steer for the LLM PROSE flows (weekly review, research digest): the finding families the
+ * athlete habitually sets aside (down-weighted < 1), so the flow stops re-pitching them and spends its
+ * picks on what the athlete acts on. Pure; null when there's no clear dismissal signal yet. (This shapes
+ * the LLM prompt only — it never gates the deterministic engine, which has its own safety-preserving weights.)
+ */
+export function engagementSteer(ctx: EngagementContext | undefined): string | null {
+  const dismissed = [...(ctx?.familyWeights ?? new Map())].filter(([, w]) => w < 1).map(([f]) => f as string).sort();
+  if (!dismissed.length) return null;
+  return (
+    `The athlete consistently sets aside advice in: ${dismissed.join(", ")}. ` +
+    `Don't re-pitch those areas unless the signal is strong and genuinely new — spend your picks on the families they act on and on fresh, actionable angles.`
+  );
 }
 
 const FOLLOW_THROUGH = "Follow-through";

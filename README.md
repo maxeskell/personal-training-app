@@ -151,20 +151,35 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   coach's priors). **Everything in "This week" is actioned right on the card —
   it never points you at a saved report.** Each advice item leads with the plain-English action (the tech
   detail sits muted underneath) and carries a category chip (*Training / Fuelling / Gear / Recovery*):
-  - a **fuelling, gear or recovery** change gets **👍 Agree / 👎 Disagree / 💤 Snooze** (the same logged,
-    reversible feedback the Top-insights box uses — your reactions feed the listening model);
+  - a **fuelling, gear or recovery** change gets **👍 Agree / 👎 Disagree / 💤 Snooze** (reversible) plus
+    **🚫 Ignore** (a permanent "don't show this again", distinct from the ~2-week snooze) — the same logged
+    feedback the Top-insights box uses. These reactions **feed the listening model the same way a top-box
+    reaction does**: a 👍/👎 on a card now reshapes that finding-family's ranking weight (it used to be
+    recorded but dropped on the floor);
   - a **training plan edit** gets **➡️ Make this change**, which drafts the concrete edit and applies it to
     your plan in AI Endurance through the **gated propose→confirm write** (you confirm the exact change
     first; it's logged and reversible). If it can't be tied to a scheduled session, you get the **precise
     steps** to make it yourself in AI Endurance or Garmin instead — never a dead end.
 
   An `open_items` entry that just restates a setup gap (e.g. a hand-written "swim CSS not set" alongside the
-  `swim_css` gap) folds into the canonical item, so each gap is listed once. The time-bound sections
-  **read your last saved reports** — they never re-run the weekly/research LLM flows — and each carries an
-  *"as of …"* tag, dropping once the report goes stale. **Finish-setup** tasks stay plain `<details>`
-  rows tagged with where to action them (*in AI Endurance* / *edit profile* / *in your setup*), each
-  expandable to a concrete, copy-pasteable how-to. Everything is **ranked by value**, deduped, capped, and
-  snoozable for ~2 weeks (a calm hub, not a nag). Display-only; hidden from the shared/screenshot view.
+  `swim_css` gap) folds into the canonical item, so each gap is listed once. **A gap the live data already
+  satisfies auto-clears** — once your **swim CSS** is set in AI Endurance and synced, the "Set your swim CSS"
+  task (and any open-item restatement of it) just disappears, no click needed. (FTP is deliberately *not*
+  auto-cleared: its gap is a Garmin-vs-AIE *disagreement*, not an absence, so a value being present doesn't
+  mean it's resolved.) The time-bound sections **read your last saved reports** — they never re-run the
+  weekly/research LLM flows — and each carries an *"as of …"* tag, dropping once the report goes stale.
+  **Finish-setup** tasks stay plain `<details>` rows tagged with where to action them (*in AI Endurance* /
+  *edit profile* / *in your setup*), each expandable to a concrete, copy-pasteable how-to, and each carries
+  **three distinct actions** (the old single ✕ only ever snoozed):
+  - **✓ Done** — "I've done this": hidden for good, and remembered. For an **AI-Endurance gap** the server
+    also writes it `resolved` back into your `profile.local.yaml`, so it stays gone across rebuilds — not
+    just suppressed in the log.
+  - **💤 Snooze** — "not now": hidden ~2 weeks, then it can resurface (re-snoozing it is how the coach
+    notices a task that keeps coming back).
+  - **🚫 Ignore** — "ignore this advice": dropped for good, without touching your profile.
+
+  Everything is **ranked by value**, deduped and capped (a calm hub, not a nag). Display-only; hidden from
+  the shared/screenshot view.
 - **A "Data changes — your call" card.** When AI Endurance or Garmin **auto-update** a number the coach
   relies on — bike FTP, threshold HR/pace, swim CSS, **max HR**, VO₂max — the dashboard surfaces it (*"Bike
   FTP 250 → 262 W · Garmin · as of 3d ago"*) so it isn't a silent change. Neither platform exposes a
@@ -194,7 +209,15 @@ score, and anything estimated is labelled a MODEL. Surfaced in `deep-dive`, `ask
 The **Top insights** card also closes a feedback loop: 👍/👎/💤 on each finding is saved and reversible,
 down-ranks or lifts its family **within a severity tier** (flags are never buried), and `npm run listening`
 prints your engagement model — what you act on vs dismiss, plan adherence (deferring to AI Endurance) and
-plan changes diffed from daily snapshots.
+plan changes diffed from daily snapshots. The loop now spans the whole hub, not just the top box:
+**reactions on the "This week" cards count toward their family weight too** (a `setup:*` card carries its
+finding family so the listening model can attribute it), and your **gated plan-proposal accept/decline
+history** feeds back into the proposer — decline most of them and it turns conservative (smallest viable
+change, or nothing), rather than re-pitching edits you keep waving off. The **weekly review and research
+digest** read the same signal: they're told which families you set aside and stop re-pitching them. And you
+can record a **retrospective** on any insight (`retrospect` MCP tool) — *did it hold up?* — which `listening`
+joins back into an **"Outcomes you recorded"** view (insight → your reaction → outcome), so the loop answers
+"what advice did I get, what did I do, and did it work" — not just "what was I shown".
 
 **→ Full detail — the Q1–Q7 methods, the like/dislike/snooze mechanics and the engagement loop:
 [docs/insight-engine.md](docs/insight-engine.md).**

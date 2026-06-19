@@ -211,14 +211,21 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
   run-load, autocorr-aware correlations, change-points, taper target, validated monitoring rules)
   and return the computed metrics + top surfaced findings. Each top finding is annotated with its
   **`key`, age (NEW / Nd old) and your saved reaction**, so you know what's fresh and can react by key.
-- **`react_to_insight`** `{ key, reaction: like|dislike|snooze|clear, summary? }` — record your reaction
-  to a surfaced insight, full parity with the dashboard buttons (like/dislike persist and are reversible,
-  dislike stays visible but down-ranks, snooze hides ~2 weeks, clear removes a prior opinion). It writes
-  only to the **local decision log** — not AI Endurance — so it stays available even on the **read-only
-  Cowork surface**.
-- **`listening`** — your engagement model: which insight families you act on vs dismiss, gated-proposal
-  accept/decline, what's snoozed, findings that recurred after a snooze, plan **adherence** (done vs
-  planned, deferring to AI Endurance) and **plan changes** (added/moved/dropped). Deterministic, no LLM.
+- **`react_to_insight`** `{ key, reaction: like|dislike|snooze|clear, summary?, family? }` — record your
+  reaction to a surfaced insight, full parity with the dashboard buttons (like/dislike persist and are
+  reversible, dislike stays visible but down-ranks, snooze hides ~2 weeks, clear removes a prior opinion).
+  `family` is only needed when reacting to a `setup:*` card key the insight log doesn't carry, so the
+  engagement model can still weight it. It writes only to the **local decision log** — not AI Endurance —
+  so it stays available even on the **read-only Cowork surface**.
+- **`retrospect`** `{ key, note, summary? }` — record how a past insight/recommendation **held up** (a
+  free-text outcome note). Logged against the key **without changing your reaction**, then joined back into
+  `listening` (an "Outcomes you recorded" section) and shown by `decisions` — so you can answer "advice →
+  what I did → how it worked out". Local decision-log write only.
+- **`listening`** — your engagement model: which insight families you act on vs dismiss (now counting
+  **"This week" card reactions** too, not just the Top-insights box), gated-proposal accept/decline, what's
+  snoozed, findings that recurred after a snooze, **outcomes you've recorded** (retrospectives), plan
+  **adherence** (done vs planned, deferring to AI Endurance) and **plan changes** (added/moved/dropped).
+  Deterministic, no LLM.
 - **`list_reports`** / **`read_report`** `{ name }` — list and read the dated markdown reports under
   `reports/`. `read_report` only accepts a bare `*.md` file name (path-traversal guarded).
 - **`decisions`** `{ filter?: "all" | "pending" }` — the decision-log audit trail; `pending` shows

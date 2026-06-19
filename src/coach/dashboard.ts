@@ -1,4 +1,4 @@
-import type { AthleteState, ActualActivity, PlannedSession, ZoneSet } from "../state/types.js";
+import type { AthleteState, ActualActivity, PlannedSession, ZoneSet, DisciplineThresholds } from "../state/types.js";
 import type { DecisionRecord, InsightReaction } from "../state/decisionLog.js";
 import type { FitSummary } from "../archive/store.js";
 import type { SessionFeedbackRecord } from "./sessionFeedbackStore.js";
@@ -45,7 +45,7 @@ import {
 // setupSources) is preserved after the split — the bodies now live in the focused modules above.
 export { mdLite, linkifyEscaped } from "./dashboardHelpers.js";
 export { renderResearchDigestPage } from "./researchPage.js";
-export { renderSetupImprove, buildSetupItems, aieTodoCopy, parseResearchItems, parseActionBullets } from "./setupCard.js";
+export { renderSetupImprove, buildSetupItems, aieTodoCopy, aieGapKeyFromSetupKey, parseResearchItems, parseActionBullets } from "./setupCard.js";
 export type { ResearchTopic } from "./setupCard.js";
 
 /**
@@ -876,7 +876,7 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
 
   // Humanised activity log — plain labels, status icon, dev ids stripped from the summary.
   const KIND_LABEL: Record<string, string> = { readiness: "Readiness", "plan-adjust": "Plan change", "insight-feedback": "Your feedback", note: "Note" };
-  const STATUS_LABEL: Record<string, string> = { accepted: "✓ agreed", declined: "✕ dismissed", deferred: "○ ignored", proposed: "• proposed", executed: "✓ applied", note: "" };
+  const STATUS_LABEL: Record<string, string> = { accepted: "✓ agreed", declined: "✕ dismissed", deferred: "○ ignored", completed: "✓ done", dismissed: "🚫 ignored", proposed: "• proposed", executed: "✓ applied", note: "" };
   // Dedupe by kind+summary keeping the most recent — re-reacting to the same insight (👍 then 👍 again,
   // or flip-flopping) logs a fresh row each time, which otherwise listed the same signal 2–3× here.
   const seenDecision = new Set<string>();
@@ -943,7 +943,9 @@ details.setup-item[open]>summary::before{content:"▾"}
 .setup-action{margin:6px 0 8px 14px;padding:8px 11px;background:#faf8f3;border-left:2px solid #e7d9c6;border-radius:4px;font-size:13px;line-height:1.55;color:#444;white-space:pre-wrap}
 .setup-links{margin:0 0 9px 14px;display:flex;flex-wrap:wrap;gap:14px}
 .setup-link{font-size:12px;font-weight:600;color:#c8642d;text-decoration:none}.setup-link:hover{text-decoration:underline}
-.setup-item .dismiss{font-size:11px;line-height:1;color:#b9aa93;background:none;border:0;cursor:pointer;padding:0 3px;margin-left:2px}.setup-item .dismiss:hover{color:#c0392b}
+.setup-acts{margin-left:4px;white-space:nowrap}
+.setup-item .su-act{font-size:11px;line-height:1;color:#b9aa93;background:none;border:0;cursor:pointer;padding:0 3px}
+.setup-item .su-done:hover{color:#1a8a3a}.setup-item .su-snooze:hover{color:#9a8a72}.setup-item .su-ignore:hover{color:#c0392b}
 .setup-group{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#9a8a72;margin:10px 0 3px}
 .actbtn{font-size:13px;padding:7px 14px;border:1px solid #c8642d;border-radius:8px;background:#fff;color:#c8642d;cursor:pointer}.actbtn:hover{background:#c8642d;color:#fff}
 code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
@@ -1050,22 +1052,37 @@ async function feedback(btn){
   var cur=box.getAttribute('data-reaction-state')||'';
   // Clicking the active like/dislike again clears it (back to neutral); snooze is always a hide action.
   var send=(want!=='snooze'&&cur===want)?'clear':want;
-  var key=box.getAttribute('data-key');var summary=box.getAttribute('data-summary');
+  var key=box.getAttribute('data-key');var summary=box.getAttribute('data-summary');var family=box.getAttribute('data-family')||'';
   var span=box.querySelector('.reacted');span.textContent='…';
   try{await fetch('/insight-feedback',{method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({key:key,reaction:send,summary:summary})});
+    body:JSON.stringify({key:key,reaction:send,summary:summary,family:family})});
     if(send==='snooze'){box.querySelectorAll('button').forEach(function(b){b.disabled=true;});box.style.opacity=0.5;span.textContent='💤 snoozed — hidden ~2wk';return;}
     if(send==='clear'){setReactionState(box,'');span.textContent='cleared';return;}
     setReactionState(box,send);span.textContent=send==='like'?'👍 liked':'👎 disliked (still shown)';
   }catch(err){span.textContent='error';}
 }
-async function dismissSetup(btn){
-  var li=btn.closest('.setup-item');btn.disabled=true;
+// 🚫 Ignore on a "This week" card — a permanent hide (never resurfaces), carrying its family so the
+// listening model attributes the dismissal. Distinct from 💤 Snooze (which lapses after ~2 weeks).
+async function ignoreCard(btn){
+  var box=btn.closest('.insight');box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
+  var span=box.querySelector('.reacted');if(span)span.textContent='…';
   try{await fetch('/insight-feedback',{method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({key:li.getAttribute('data-key'),reaction:'snooze',summary:li.getAttribute('data-summary')})});
-    li.style.opacity=0.4;li.style.textDecoration='line-through';
-  }catch(err){btn.disabled=false;}
+    body:JSON.stringify({key:box.getAttribute('data-key'),reaction:'dismiss',summary:box.getAttribute('data-summary'),family:box.getAttribute('data-family')||''})});
+    box.style.opacity=0.4;if(span)span.textContent="🚫 ignored — won't show again";
+  }catch(err){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});if(span)span.textContent='error';}
 }
+// The three Finish-setup actions share one POST; only the reaction differs. done/dismiss hide forever,
+// snooze hides ~2wk (server-side). done on an AI-Endurance gap ALSO writes it resolved into the profile.
+async function setupAction(btn,reaction){
+  var li=btn.closest('.setup-item');li.querySelectorAll('button').forEach(function(b){b.disabled=true;});
+  try{await fetch('/insight-feedback',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({key:li.getAttribute('data-key'),reaction:reaction,summary:li.getAttribute('data-summary')})});
+    li.style.opacity=0.4;li.style.textDecoration='line-through';
+  }catch(err){li.querySelectorAll('button').forEach(function(b){b.disabled=false;});}
+}
+function completeSetup(btn){return setupAction(btn,'done');}   // ✓ Done — remembered forever
+function dismissSetup(btn){return setupAction(btn,'snooze');}  // 💤 Snooze — hidden ~2 weeks
+function ignoreSetup(btn){return setupAction(btn,'dismiss');}  // 🚫 Ignore — don't show again
 async function pinOverride(btn){
   var box=btn.closest('.insight');var s=box.querySelector('.reacted');s.textContent='Pinning…';
   try{await fetch('/metric-override',{method:'POST',headers:{'content-type':'application/json'},
@@ -1117,7 +1134,7 @@ async function declineProposal(btn){var box=btn.closest('.proposal');var id=box.
     box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='dismissed';box.style.opacity=0.5;}catch(e){s.textContent='error';}}
 </script>
 
-${renderSetupImprove(profile, share, { suppressed, reactions, insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth })}
+${renderSetupImprove(profile, share, { suppressed, reactions, insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined })}
 
 ${insights ? renderSignals(insights) : ""}
 

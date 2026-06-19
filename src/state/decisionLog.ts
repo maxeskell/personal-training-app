@@ -10,14 +10,17 @@ import { config } from "../config.js";
  * chat history. Stored as JSONL so it's append-cheap and inspectable.
  */
 
-export type DecisionStatus = "proposed" | "accepted" | "declined" | "deferred" | "executing" | "executed" | "note" | "cleared";
+export type DecisionStatus = "proposed" | "accepted" | "declined" | "deferred" | "executing" | "executed" | "completed" | "dismissed" | "note" | "cleared";
 
 /**
- * How the athlete reacted to a surfaced insight. like/dislike (agree/disagree) are persistent, visible
- * OPINIONS — neither hides the insight; dislike just down-ranks it. snooze (ignore) is the hide action
- * (~2-week cool-off). clear removes a previous opinion (back to neutral). Maps to the statuses below.
+ * How the athlete reacted to a surfaced insight or setup task. like/dislike (agree/disagree) are
+ * persistent, visible OPINIONS — neither hides the item; dislike just down-ranks it. snooze (ignore) is
+ * the timed hide (~2-week cool-off, then it can resurface). done and dismiss are the two PERMANENT hides
+ * on a Finish-setup task: done = "I've done this" (and, for an AI-Endurance gap, it's written `resolved`
+ * back to the profile), dismiss = "ignore this advice, don't show it again". clear removes a previous
+ * opinion (back to neutral). Maps to the statuses below.
  */
-export type InsightReaction = "agree" | "disagree" | "ignore" | "clear";
+export type InsightReaction = "agree" | "disagree" | "ignore" | "done" | "dismiss" | "clear";
 
 export interface DecisionRecord {
   id: string;
@@ -30,6 +33,14 @@ export interface DecisionRecord {
   status: DecisionStatus;
   /** For insight-feedback: the stable key of the finding being reacted to. */
   insightKey?: string;
+  /**
+   * For insight-feedback on a family-bearing card (a "Set up & improve → This week" marginal gain): the
+   * finding FAMILY the reaction belongs to. Carried with the reaction because these cards react under a
+   * `setup:*` key that never enters the insight log, so the engagement model can't recover the family from
+   * the surfacing history — it reads it from here instead. Absent for Top-insights reactions (family comes
+   * from the insight log) and for non-family cards (weekly/research/finish-setup tasks).
+   */
+  family?: string;
   /** Optional retrospective note on how the call held up. */
   retro?: string;
 }
@@ -38,6 +49,8 @@ const REACTION_STATUS: Record<InsightReaction, DecisionStatus> = {
   agree: "accepted",
   disagree: "declined",
   ignore: "deferred",
+  done: "completed",
+  dismiss: "dismissed",
   clear: "cleared",
 };
 
@@ -99,14 +112,16 @@ export class DecisionLog {
     await this.append({ ...original, status, retro, timestamp: nowIso() });
   }
 
-  /** Record an agree/disagree/ignore reaction to a surfaced insight. */
-  async recordInsightFeedback(insightKey: string, reaction: InsightReaction, summary: string): Promise<void> {
+  /** Record a reaction to a surfaced insight or setup card. `family` is set only for family-bearing
+   *  cards (This-week marginal gains), so the engagement model can attribute the reaction (see DecisionRecord.family). */
+  async recordInsightFeedback(insightKey: string, reaction: InsightReaction, summary: string, family?: string): Promise<void> {
     await this.append({
       id: randomUUID(), // collision-free (was a 32-bit second-granularity hash that could collide)
       timestamp: nowIso(),
       kind: "insight-feedback",
       summary,
       insightKey,
+      family,
       status: REACTION_STATUS[reaction],
     });
   }
@@ -115,11 +130,47 @@ export class DecisionLog {
   async insightReactions(): Promise<Map<string, { reaction: InsightReaction; timestamp: string }>> {
     return latestInsightReactions(await this.all());
   }
+
+  /**
+   * Record a RETROSPECTIVE on a surfaced insight / setup item — "how did this advice hold up?". Stored as a
+   * `note` record (NOT an insight-feedback record, so it never alters the reaction) carrying the same
+   * `insightKey` + a free-text `retro`. Joined back to the insight by `listening` and shown by `decisions`,
+   * so the athlete can later answer "advice → my reaction → outcome".
+   */
+  async recordRetro(insightKey: string, note: string, summary?: string): Promise<void> {
+    await this.append({
+      id: randomUUID(),
+      timestamp: nowIso(),
+      kind: "note",
+      summary: summary ?? insightKey,
+      insightKey,
+      retro: note,
+      status: "note",
+    });
+  }
 }
 
-/** Map a stored insight-feedback status back to the athlete's reaction. */
+/** Latest retrospective note per insight key (most recent wins) — from the `note` records carrying a retro. */
+export function latestRetros(records: DecisionRecord[]): Map<string, { note: string; timestamp: string }> {
+  const out = new Map<string, { note: string; timestamp: string }>();
+  for (const r of records) {
+    if (r.kind !== "note" || !r.insightKey || !r.retro) continue;
+    out.set(r.insightKey, { note: r.retro, timestamp: r.timestamp });
+  }
+  return out;
+}
+
+/** Map a stored insight-feedback status back to the athlete's reaction (inverse of REACTION_STATUS;
+ *  any unexpected status falls back to "ignore" so an old/unknown record is treated as a benign hide). */
+const STATUS_REACTION: Partial<Record<DecisionStatus, InsightReaction>> = {
+  accepted: "agree",
+  declined: "disagree",
+  deferred: "ignore",
+  completed: "done",
+  dismissed: "dismiss",
+};
 export function reactionOf(status: DecisionStatus): InsightReaction {
-  return status === "accepted" ? "agree" : status === "declined" ? "disagree" : "ignore";
+  return STATUS_REACTION[status] ?? "ignore";
 }
 
 /**
@@ -130,6 +181,7 @@ export function reactionOf(status: DecisionStatus): InsightReaction {
 const REACTION_LABELS: Record<string, InsightReaction> = {
   like: "agree", dislike: "disagree", snooze: "ignore", clear: "clear",
   agree: "agree", disagree: "disagree", ignore: "ignore",
+  done: "done", dismiss: "dismiss",
 };
 export function reactionFromLabel(label: string): InsightReaction | undefined {
   return REACTION_LABELS[label];
@@ -152,10 +204,11 @@ export function latestInsightReactions(
 }
 
 /**
- * Keys the athlete SNOOZED within `withinDays` — suppressed from surfacing. Only snooze (ignore) hides:
- * like/dislike are visible opinions (dislike just down-ranks), so they never suppress. A snooze older than
- * the window lapses and the insight can surface again (and re-snooze, which is how "it keeps coming back"
- * is detected).
+ * Keys the athlete chose to HIDE — suppressed from surfacing. Three reactions hide; the rest don't:
+ *   • done / dismiss → PERMANENT (a completed or ignored setup task never resurfaces);
+ *   • ignore (snooze) → TIMED — hidden only within `withinDays`, then it lapses and can surface again
+ *     (and re-snooze, which is how "it keeps coming back" is detected);
+ *   • like/dislike are visible opinions (dislike just down-ranks), so they never suppress.
  */
 export function suppressedInsightKeys(
   reactions: Map<string, { reaction: InsightReaction; timestamp: string }>,
@@ -164,7 +217,11 @@ export function suppressedInsightKeys(
 ): Set<string> {
   const out = new Set<string>();
   for (const [key, { reaction, timestamp }] of reactions) {
-    if (reaction !== "ignore") continue; // only snooze hides; like/dislike stay visible
+    if (reaction === "done" || reaction === "dismiss") {
+      out.add(key); // permanent — completed or explicitly ignored, never lapses
+      continue;
+    }
+    if (reaction !== "ignore") continue; // like/dislike stay visible
     const ageDays = (now.getTime() - new Date(timestamp).getTime()) / 86_400_000;
     if (ageDays <= withinDays) out.add(key);
   }

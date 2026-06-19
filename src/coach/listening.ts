@@ -1,5 +1,6 @@
 import {
   latestInsightReactions,
+  latestRetros,
   suppressedInsightKeys,
   type DecisionRecord,
   type InsightReaction,
@@ -54,6 +55,16 @@ export interface SuppressedNow {
   daysAgo: number;
 }
 
+/** A recorded retrospective: an insight joined to your reaction (if any) and the outcome note you logged. */
+export interface Retrospective {
+  key: string;
+  family: string;
+  title: string;
+  reaction: InsightReaction | null; // your latest reaction to it, when one exists
+  note: string; // the "how did it hold up" note
+  at: string; // when the retro was recorded
+}
+
 /**
  * Plan adherence — DEFERRED to AI Endurance's own plan progress (getPlanProgress done_sec/plan_sec),
  * never re-derived from a competing planned-vs-actual match. This is the authoritative "are you doing
@@ -100,6 +111,7 @@ export interface ListeningModel {
   byFamily: FamilyEngagement[]; // surfaced-desc
   proposals: { accepted: number; declined: number; pending: number; deferred: number };
   suppressedNow: SuppressedNow[];
+  retrospectives: Retrospective[]; // outcomes you've recorded (advice → reaction → how it held up)
   recurredAfterDismissal: DismissedRecurrence[];
   adherence: AdherenceSummary | null; // plan progress (deferred to AI Endurance)
   planChanges: PlanChangeSummary; // plan edits diffed from daily snapshots
@@ -232,27 +244,55 @@ export function analyseListening({ snapshots, decisions, states = [], load, now 
   }
 
   const reactions = latestInsightReactions(decisions);
+  // Latest family/title per reacted key, straight from the raw records — lets us attribute a card reaction
+  // whose key never entered the insight log (a `setup:*` "This week" gain carries its finding family on the
+  // decision record). Later record wins, matching latestInsightReactions.
+  const reactionMeta = new Map<string, { family?: string; title?: string }>();
+  for (const r of decisions) {
+    if (r.kind !== "insight-feedback" || !r.insightKey) continue;
+    reactionMeta.set(r.insightKey, { family: r.family, title: r.summary });
+  }
 
-  // 2. Per-family engagement over the surfaced keys.
+  // 2. Per-family engagement. `bucket` maps a reaction to its engagement column: done counts as engaged
+  // (agreed — you acted on it), dismiss as set-aside (ignored). Returns false when there's no reaction yet.
   const families = new Map<string, FamilyEngagement>();
   const fam = (name: string): FamilyEngagement =>
     families.get(name) ?? families.set(name, { family: name, surfaced: 0, agreed: 0, disagreed: 0, ignored: 0, noReaction: 0 }).get(name)!;
+  const bucket = (e: FamilyEngagement, r: InsightReaction | undefined): boolean => {
+    if (r === "agree" || r === "done") e.agreed += 1;
+    else if (r === "disagree") e.disagreed += 1;
+    else if (r === "ignore" || r === "dismiss") e.ignored += 1;
+    else return (e.noReaction += 1), false;
+    return true;
+  };
   const reactionTotals = { agree: 0, disagree: 0, ignore: 0 };
   let reactedKeys = 0;
   for (const [key, meta] of keyMeta) {
     const e = fam(meta.family);
     e.surfaced += 1;
     const r = reactions.get(key)?.reaction;
-    if (r === "agree") (e.agreed += 1), (reactionTotals.agree += 1), reactedKeys++;
-    else if (r === "disagree") (e.disagreed += 1), (reactionTotals.disagree += 1), reactedKeys++;
-    else if (r === "ignore") (e.ignored += 1), (reactionTotals.ignore += 1), reactedKeys++;
-    else e.noReaction += 1;
+    if (bucket(e, r)) {
+      reactedKeys++;
+      if (r === "agree") reactionTotals.agree++;
+      else if (r === "disagree") reactionTotals.disagree++;
+      else if (r === "ignore") reactionTotals.ignore++;
+    }
+  }
+  // Fold family-bearing card reactions (setup:* keys absent from the insight log) into their family, so a
+  // reaction on a "This week" gain shapes its family weight exactly like the Top-insights box does.
+  for (const [key, meta] of reactionMeta) {
+    if (keyMeta.has(key) || !meta.family) continue;
+    const e = fam(meta.family);
+    e.surfaced += 1;
+    bucket(e, reactions.get(key)?.reaction);
   }
   const byFamily = [...families.values()].sort((a, b) => b.surfaced - a.surfaced || a.family.localeCompare(b.family));
 
-  // Reactions we have on record but never logged surfacing for (feedback predates the insight log).
+  // Reactions on record we never logged surfacing for (predate the insight log). A `setup:*` card reaction
+  // is intentional in-app feedback (attributed above when family-bearing, tracked otherwise), not a
+  // pre-logging gap — so it's excluded here.
   let feedbackBeforeLogging = 0;
-  for (const key of reactions.keys()) if (!keyMeta.has(key)) feedbackBeforeLogging++;
+  for (const key of reactions.keys()) if (!keyMeta.has(key) && !key.startsWith("setup:")) feedbackBeforeLogging++;
 
   // 3. Gated plan-proposal decisions (latest status per id).
   const latestById = new Map<string, DecisionRecord>();
@@ -280,6 +320,24 @@ export function analyseListening({ snapshots, decisions, states = [], load, now 
       };
     })
     .sort((a, b) => a.daysAgo - b.daysAgo);
+
+  // 4b. Retrospectives you've recorded — each joined to the insight's family/title and your latest reaction,
+  // so "what advice did I get, what did I do, how did it hold up" is answerable. Family/title resolve from
+  // the insight log, else the card reaction's stored family/title, else the key itself.
+  const retrospectives: Retrospective[] = [...latestRetros(decisions)]
+    .map(([key, { note, timestamp }]) => {
+      const meta = keyMeta.get(key);
+      const rMeta = reactionMeta.get(key);
+      return {
+        key,
+        family: meta?.family ?? rMeta?.family ?? UNATTRIBUTED,
+        title: meta?.title ?? rMeta?.title ?? key,
+        reaction: reactions.get(key)?.reaction ?? null,
+        note,
+        at: timestamp,
+      };
+    })
+    .sort((a, b) => b.at.localeCompare(a.at));
 
   // 5. Dismissed-but-recurred: a disagree/ignore finding that the engine surfaced again afterwards —
   // i.e. the signal persisted despite your call. The honest "did ignoring it cost me?" prompt (no claim).
@@ -315,6 +373,7 @@ export function analyseListening({ snapshots, decisions, states = [], load, now 
     byFamily,
     proposals,
     suppressedNow,
+    retrospectives,
     recurredAfterDismissal,
     adherence: buildAdherence(states),
     planChanges: buildPlanChanges(states),
@@ -359,7 +418,9 @@ export function buildEngagementContext(model: ListeningModel): EngagementContext
         }
       : null;
 
-  return { familyWeights, recurringDismissed, adherence };
+  const proposals = { accepted: model.proposals.accepted, declined: model.proposals.declined };
+
+  return { familyWeights, recurringDismissed, adherence, proposals };
 }
 
 /**
@@ -470,6 +531,19 @@ export function formatListening(m: ListeningModel, date: string): string {
     lines.push("");
     for (const r of m.recurredAfterDismissal) {
       lines.push(`- **${r.family} / ${r.title}** — snoozed ${r.reactedAt.slice(0, 10)}, resurfaced ${r.daysLater}d later (${r.recurredAt.slice(0, 10)})`);
+    }
+    lines.push("");
+  }
+
+  if (m.retrospectives.length) {
+    lines.push(`## Outcomes you recorded — did the advice hold up? (${m.retrospectives.length})`);
+    lines.push("");
+    lines.push("_Your own retrospective notes, joined to each insight and how you reacted to it at the time._");
+    lines.push("");
+    const REACTED = { agree: "👍 agreed", disagree: "👎 disagreed", ignore: "💤 snoozed", done: "✓ done", dismiss: "🚫 ignored", clear: "—" } as const;
+    for (const r of m.retrospectives) {
+      const how = r.reaction ? ` (you ${REACTED[r.reaction]})` : "";
+      lines.push(`- **${r.family} / ${r.title}**${how} — ${r.note} _(${r.at.slice(0, 10)})_`);
     }
     lines.push("");
   }

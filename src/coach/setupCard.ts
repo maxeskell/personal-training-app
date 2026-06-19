@@ -1,4 +1,5 @@
 import type { InsightReport } from "../insights/engine.js";
+import type { DisciplineThresholds } from "../state/types.js";
 import { findingKey } from "../insights/metrics.js";
 import { selectMarginalGains } from "../insights/marginalGains.js";
 import { categorize, isPlanEdit, CATEGORY_LABEL, type ActionCategory } from "./weeklyActions.js";
@@ -153,6 +154,12 @@ export interface SetupItem {
    */
   reactable?: boolean;
   /**
+   * The finding FAMILY behind a reactable marginal-gain card. Sent with the reaction (data-family) so the
+   * engagement model can weight it by family even though the card reacts under a `setup:*` key that never
+   * enters the insight log. Absent for non-finding cards (weekly/research/finish-setup tasks).
+   */
+  family?: string;
+  /**
    * Render a "Make this change" button that drafts the concrete edit through the gated propose→confirm
    * write to AI Endurance (training plan edits only). `rec` is the recommendation text the drafter acts on.
    */
@@ -176,6 +183,17 @@ const SOURCE_TAG: Record<SetupSource, string> = {
 };
 function setupKey(source: SetupSource, id: string): string {
   return `setup:${SOURCE_TAG[source]}:${id}`;
+}
+
+/**
+ * Inverse of {@link setupKey} for AI-Endurance gaps only: given a setup item key, return the
+ * `ai_endurance_todo` key it represents (`setup:aie:swim_css` → `swim_css`), else null. Lets the server's
+ * "✓ Done" handler write that one gap `resolved` back into profile.local.yaml. Other item sources
+ * (open-item / question / health / advice) have no profile field, so they return null (suppressed only).
+ */
+export function aieGapKeyFromSetupKey(key: string): string | null {
+  const prefix = `setup:${SOURCE_TAG.ai_endurance}:`;
+  return key.startsWith(prefix) ? key.slice(prefix.length) : null;
 }
 
 /** Per-group caps keep the hub calm: a handful of setup gaps, a couple of timely nudges. */
@@ -385,6 +403,19 @@ function setupTopic(label: string): string | null {
   return null;
 }
 
+/**
+ * Finish-setup TOPICS that the live, synced data already satisfies — so the hand-maintained `not_set`
+ * marker (and any `open_item` restatement of it) is just stale and should auto-clear, no click needed:
+ * a swim CSS set in AI Endurance lands in `thresholds.swimCssSecPer100` on the next sync and removes the
+ * "Set your swim CSS" task. Only unambiguous, PRESENCE-based gaps qualify. FTP is deliberately excluded —
+ * its gap is a source DISAGREEMENT (Garmin vs AIE), not an absence, so a present value isn't "resolved".
+ */
+function resolvedSetupTopics(t: DisciplineThresholds | undefined): Set<string> {
+  const out = new Set<string>();
+  if ((t?.swimCssSecPer100 ?? 0) > 0) out.add("swim-css");
+  return out;
+}
+
 /** Options for {@link buildSetupItems} / {@link renderSetupImprove}. */
 export interface SetupOptions {
   /** Profile-question catalogue (defaults to the real one; injectable for tests). */
@@ -404,6 +435,12 @@ export interface SetupOptions {
   researchDigest?: { date: string; file: string; items: ResearchTopic[] };
   /** Tool/integration health signals (computed in the IO layer) → operational "Finish setup" nudges. */
   setupHealth?: { lastSyncAgeHours?: number; hasApiKey?: boolean; waterTempSet?: boolean };
+  /**
+   * Today's live, synced thresholds — used to AUTO-RESOLVE a Finish-setup gap the data already satisfies
+   * (a synced swim CSS clears the swim-CSS task), so a value set in AI Endurance picks up on the next sync
+   * without a manual edit or click. See {@link resolvedSetupTopics}. Omitted → nothing auto-resolves.
+   */
+  liveThresholds?: DisciplineThresholds;
   /** Clock for staleness (defaults to Date.now()). */
   now?: number;
 }
@@ -480,7 +517,7 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
       if (surfaced.has(findingKey(f))) continue;
       const action = `${f.detail}${f.evidence ? ` (${f.evidence})` : ""}`;
       // Marginal gains are execution cues, not schedule edits → always agree/disagree/snooze.
-      items.push({ key: setupKey("tune", findingKey(f)), label: f.recommendation ?? f.title, why: f.title, source: "tune", group: "this_week", route: "your call", action, priority: SETUP_PRIORITY.tune, category: categorize(`${f.family} ${f.title} ${f.recommendation ?? ""}`), reactable: true });
+      items.push({ key: setupKey("tune", findingKey(f)), label: f.recommendation ?? f.title, why: f.title, source: "tune", group: "this_week", route: "your call", action, priority: SETUP_PRIORITY.tune, category: categorize(`${f.family} ${f.title} ${f.recommendation ?? ""}`), reactable: true, family: f.family });
     }
   }
   if (opts.weeklyReview) {
@@ -535,12 +572,14 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
     .map((d) => d.item);
   const seen = new Set<string>();
   const seenTopics = new Set<string>(); // CSS/FTP folding, Finish-setup only (see SETUP_TOPIC_PATTERNS)
+  const resolvedTopics = resolvedSetupTopics(opts.liveThresholds); // live data already satisfies these
   const perGroup: Record<SetupGroup, number> = { finish_setup: 0, this_week: 0, worth_considering: 0 };
   const out: SetupItem[] = [];
   for (const item of ranked) {
     const k = dedupeKey(item.label);
     if (seen.has(k)) continue;
     const topic = item.group === "finish_setup" ? setupTopic(item.label) : null;
+    if (topic && resolvedTopics.has(topic)) continue; // synced data already satisfies this gap → auto-clear
     if (topic && seenTopics.has(topic)) continue; // a restatement of an already-listed setup gap
     seen.add(k);
     if (topic) seenTopics.add(topic);
@@ -573,21 +612,24 @@ function reactionState(key: string, reactions?: Map<string, InsightReaction>): {
 
 /**
  * A "your call" advice card (fuelling / gear / recovery / general): plain-English action first, the tech
- * detail muted underneath, then 👍 Agree / 👎 Disagree / 💤 Snooze — the same logged, reversible
- * insight-feedback machinery the Top-insights box uses (so a reaction here is read by the listening model).
+ * detail muted underneath, then 👍 Agree / 👎 Disagree / 💤 Snooze (reversible) plus 🚫 Ignore (permanent) —
+ * the same logged insight-feedback machinery the Top-insights box uses (so a reaction here is read by the
+ * listening model). `data-family` carries the finding family so the engagement model can weight it.
  */
 function reactableCardHtml(it: SetupItem, reactions?: Map<string, InsightReaction>): string {
   const { state, reacted } = reactionState(it.key, reactions);
   const on = (which: string) => (state === which ? " on" : "");
   const why = it.why ? `<div class="age">${escapeHtml(it.why)}</div>` : "";
   const detail = it.action ? `<div class="ev">${escapeHtml(it.action)}</div>` : "";
-  return `<div class="insight" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-reaction-state="${state}">
+  const familyAttr = it.family ? ` data-family="${escapeHtml(it.family)}"` : "";
+  return `<div class="insight" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-reaction-state="${state}"${familyAttr}>
     <div>${categoryChip(it.category)}<b>${escapeHtml(it.label)}</b></div>
     ${detail}${why}
     <div class="acts">
       <button class="agree${on("like")}" data-reaction="like" onclick="feedback(this)">👍 Agree</button>
       <button class="disagree${on("dislike")}" data-reaction="dislike" onclick="feedback(this)">👎 Disagree</button>
       <button class="ignore" data-reaction="snooze" onclick="feedback(this)">💤 Snooze</button>
+      <button class="ignore" title="Ignore this advice — don't show it again" onclick="ignoreCard(this)">🚫 Ignore</button>
       <span class="reacted">${reacted}</span>
     </div>
   </div>`;
@@ -608,6 +650,7 @@ function applyableCardHtml(it: SetupItem): string {
     <div class="acts">
       <button class="agree" onclick="actItem(this)">➡️ Make this change</button>
       <button class="ignore" data-reaction="snooze" onclick="feedback(this)">💤 Snooze</button>
+      <button class="ignore" title="Ignore this advice — don't show it again" onclick="ignoreCard(this)">🚫 Ignore</button>
       <span class="reacted"></span>
     </div>
   </div>`;
@@ -615,15 +658,28 @@ function applyableCardHtml(it: SetupItem): string {
 
 /**
  * One expandable `<details>` for a plain setup TASK (an AI-Endurance gap, a profile question, a config
- * nudge): the summary line (label · why · route tag · dismiss ✕), and — on expand — the **proposed
- * action** (self-serve "how to do it"). The ✕ carries the stable key and stops propagation so a dismiss
- * click doesn't toggle the dropdown.
+ * nudge): the summary line (label · why · route tag · the three actions), and — on expand — the
+ * **proposed action** (self-serve "how to do it"). Each action carries the stable key and stops
+ * propagation so a click doesn't toggle the dropdown. The actions are deliberately distinct (the old
+ * single ✕ only ever snoozed): **✓ Done** marks it complete and remembers forever (for an AI-Endurance
+ * gap the server also writes it `resolved` into the profile); **💤 Snooze** hides it ~2 weeks then it can
+ * resurface; **🚫 Ignore** drops the advice for good.
  */
 function setupTaskHtml(it: SetupItem): string {
   const note = it.why ? ` — <span class="muted">${escapeHtml(it.why)}</span>` : "";
   const body = it.action ? `<div class="setup-action">${escapeHtml(it.action)}</div>` : "";
   const links = it.links?.length ? `<div class="setup-links">${it.links.map(setupLinkHtml).join("")}</div>` : "";
-  return `<details class="setup-item" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><summary><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> <button class="dismiss" title="Dismiss — hide this for ~2 weeks" onclick="event.stopPropagation();dismissSetup(this)">✕</button></summary>${body}${links}</details>`;
+  const doneTitle =
+    it.source === "ai_endurance"
+      ? "I've done this — marks it resolved in your profile so it stays gone"
+      : "I've done this — hide it for good";
+  const acts =
+    `<span class="setup-acts">` +
+    `<button class="su-act su-done" title="${escapeHtml(doneTitle)}" onclick="event.stopPropagation();completeSetup(this)">✓ Done</button>` +
+    `<button class="su-act su-snooze" title="Not now — hide this for ~2 weeks" onclick="event.stopPropagation();dismissSetup(this)">💤 Snooze</button>` +
+    `<button class="su-act su-ignore" title="Ignore this advice — don't show it again" onclick="event.stopPropagation();ignoreSetup(this)">🚫 Ignore</button>` +
+    `</span>`;
+  return `<details class="setup-item" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><summary><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> ${acts}</summary>${body}${links}</details>`;
 }
 
 /** One safe anchor in a setup item's dropdown. Only renders `/`-relative (in-app) or http(s) hrefs — an
@@ -669,6 +725,6 @@ export function renderSetupImprove(profile: Profile | undefined, share = false, 
       ? setupListHtml(items, reactions)
       : present.map((g) => `<h3 class="setup-group">${GROUP_HEADING[g]}</h3>${setupListHtml(items.filter((it) => it.group === g), reactions)}`).join("");
   return `<div class="card"><h2>Set up &amp; improve</h2>
-  <div class="k" style="margin-bottom:6px">What to do next — all actioned right here. <b>This week</b> cards are your call: 👍 Agree / 👎 Disagree / 💤 Snooze on fuelling, gear and recovery; a training change has <b>Make this change</b> (applies it in AI Endurance after you confirm the exact edit, or hands you the precise steps). <b>Finish setup</b> tasks open for exactly how to do them.</div>
+  <div class="k" style="margin-bottom:6px">What to do next — all actioned right here. <b>This week</b> cards are your call: 👍 Agree / 👎 Disagree / 💤 Snooze on fuelling, gear and recovery; a training change has <b>Make this change</b> (applies it in AI Endurance after you confirm the exact edit, or hands you the precise steps). <b>Finish setup</b> tasks open for exactly how to do them, and each carries <b>✓ Done</b> (mark it complete — an AI-Endurance gap is also written back to your profile so it stays gone), <b>💤 Snooze</b> (hide ~2 weeks) and <b>🚫 Ignore</b> (don't show again). A gap you've already filled in AI Endurance clears itself on the next sync.</div>
   ${body}</div>`;
 }

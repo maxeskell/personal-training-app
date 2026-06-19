@@ -86,6 +86,41 @@ test("analyseListening: engagement, family breakdown, proposals, suppression, re
   assert.equal(m.suppressedNow[0].daysAgo, 7);
 });
 
+// A "This week" card reaction: a setup:* key the insight log never carried, with its finding family + the
+// new done/dismiss statuses, persisted on the decision record.
+function cardFeedback(key: string, status: DecisionRecord["status"], ts: string, family?: string): DecisionRecord {
+  return { id: `card-${key}-${ts}`, timestamp: ts, kind: "insight-feedback", summary: key, insightKey: key, family, status };
+}
+
+test("analyseListening: family-bearing card reactions feed family engagement, not the 'before logging' bucket", () => {
+  const snapshots = [snap("2026-06-01T07:00:00.000Z", [sf("e1", "Fuelling & body comp", "Carb intake low")])];
+  const decisions: DecisionRecord[] = [
+    feedback("e1", "accepted", "2026-06-02T08:00:00.000Z"), // a logged top-box finding, agreed
+    cardFeedback("setup:tune:fuelling-carbs", "declined", "2026-06-03T08:00:00.000Z", "Fuelling & body comp"), // 👎 on a This-week gain
+    cardFeedback("setup:tune:gear-tyres", "dismissed", "2026-06-03T09:00:00.000Z", "Gear"), // 🚫 Ignore a gear gain
+    cardFeedback("setup:tune:rec-sleep", "completed", "2026-06-03T10:00:00.000Z", "Recovery"), // ✓ Done on a recovery gain
+  ];
+  const m = analyseListening({ snapshots, decisions, now: new Date("2026-06-05T08:00:00.000Z") });
+
+  assert.equal(m.feedbackBeforeLogging, 0, "setup:* card reactions are NOT mislabeled as pre-logging feedback");
+  const fuel = m.byFamily.find((f) => f.family === "Fuelling & body comp")!;
+  assert.deepEqual(fuel, { family: "Fuelling & body comp", surfaced: 2, agreed: 1, disagreed: 1, ignored: 0, noReaction: 0 });
+  const gear = m.byFamily.find((f) => f.family === "Gear")!;
+  assert.deepEqual(gear, { family: "Gear", surfaced: 1, agreed: 0, disagreed: 0, ignored: 1, noReaction: 0 }); // dismiss → ignored
+  const rec = m.byFamily.find((f) => f.family === "Recovery")!;
+  assert.deepEqual(rec, { family: "Recovery", surfaced: 1, agreed: 1, disagreed: 0, ignored: 0, noReaction: 0 }); // done → agreed (acted on)
+});
+
+test("buildEngagementContext: a family reacted to only via This-week cards still earns a weight", () => {
+  const decisions: DecisionRecord[] = [
+    cardFeedback("setup:tune:gear-a", "dismissed", "2026-06-01T08:00:00.000Z", "Gear"),
+    cardFeedback("setup:tune:gear-b", "declined", "2026-06-02T08:00:00.000Z", "Gear"),
+  ];
+  const ctx = buildEngagementContext(analyseListening({ snapshots: [], decisions }));
+  // 2 surfaced via cards, both dismissed (dismiss + disagree) → dismissRate 1 → floored weight 0.7.
+  assert.equal(ctx.familyWeights!.get("Gear"), 0.7);
+});
+
 test("analyseListening: adherence defers to plan progress (latest snapshot) and trends vs ~1wk earlier", () => {
   const states = [
     stateWith("2026-06-01", { adherence: { Endurance: { actualH: 5, prescribedH: 8 }, Threshold: { actualH: 1, prescribedH: 2 } } }),
@@ -184,6 +219,31 @@ test("buildEngagementContext: weights families by act-vs-dismiss, maps recurring
   assert.equal(ctx.adherence!.pct, 0.875);
   assert.equal(ctx.adherence!.priorPct, 0.5);
   assert.equal(ctx.adherence!.plannedH, 8);
+});
+
+test("analyseListening: retrospectives join an outcome note to the insight + your reaction", () => {
+  const snapshots = [snap("2026-06-01T07:00:00.000Z", [sf("k1", "Fuelling & body comp", "Carb intake low")])];
+  const decisions: DecisionRecord[] = [
+    feedback("k1", "accepted", "2026-06-02T08:00:00.000Z"), // you agreed at the time
+    { id: "n1", timestamp: "2026-06-15T08:00:00.000Z", kind: "note", insightKey: "k1", retro: "the carb advice was right — fewer late fades", summary: "Carb intake low", status: "note" },
+    // A retro on a card-only key (never in the insight log) still resolves family/title from the card record.
+    cardFeedback("setup:tune:gear-tyres", "dismissed", "2026-06-03T09:00:00.000Z", "Gear"),
+    { id: "n2", timestamp: "2026-06-16T08:00:00.000Z", kind: "note", insightKey: "setup:tune:gear-tyres", retro: "ignoring the tyre tip was fine", summary: "Wider tyres", status: "note" },
+  ];
+  const m = analyseListening({ snapshots, decisions, now: new Date("2026-06-17T08:00:00.000Z") });
+
+  assert.equal(m.retrospectives.length, 2);
+  assert.equal(m.retrospectives[0].key, "setup:tune:gear-tyres"); // most recent first
+  const fuel = m.retrospectives.find((r) => r.key === "k1")!;
+  assert.equal(fuel.family, "Fuelling & body comp");
+  assert.equal(fuel.reaction, "agree");
+  assert.match(fuel.note, /carb advice was right/);
+  const gear = m.retrospectives.find((r) => r.key === "setup:tune:gear-tyres")!;
+  assert.equal(gear.family, "Gear"); // resolved from the card reaction record
+  assert.equal(gear.reaction, "dismiss");
+
+  // A note record never alters the reaction it annotates.
+  assert.match(formatListening(m, "2026-06-17"), /Outcomes you recorded — did the advice hold up\? \(2\)/);
 });
 
 test("analyseListening: empty input is well-formed, and the formatter degrades gracefully", () => {

@@ -348,14 +348,29 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
       key: z.string().min(1).describe("Finding key from the `insights` tool output (the key=… field)."),
       reaction: z.enum(["like", "dislike", "snooze", "clear"]),
       summary: z.string().optional().describe("The finding's title, for the audit log (optional)."),
+      family: z.string().optional().describe("The finding's family — only needed when reacting to a setup:* card key the insight log doesn't carry, so the engagement model can weight it."),
     },
-    async ({ key, reaction, summary }) => {
+    async ({ key, reaction, summary, family }) => {
       const mapped = reactionFromLabel(reaction);
       if (!mapped) return fail(`Unknown reaction: ${reaction}`);
-      await new DecisionLog().recordInsightFeedback(key, mapped, summary ?? key);
+      await new DecisionLog().recordInsightFeedback(key, mapped, summary ?? key, family);
       const note =
         reaction === "snooze" ? "hidden ~2 weeks" : reaction === "clear" ? "opinion cleared" : `saved (${reaction === "dislike" ? "stays visible, down-ranked" : "reversible"})`;
       return ok(`Recorded ${reaction} on "${key}" — ${note}.`);
+    },
+  );
+
+  server.tool(
+    "retrospect",
+    "Record how a past insight/recommendation HELD UP — a free-text outcome note (e.g. 'the carb advice was right, fewer late fades'). `key` is the finding/setup key you reacted to (from `insights` or the card). It's logged against that key WITHOUT changing your reaction, then joined back into `listening` (an 'Outcomes you recorded' section) and shown by `decisions` — so you can answer 'advice → what I did → how it worked out'. Local decision-log write only.",
+    {
+      key: z.string().min(1).describe("The finding/setup key the outcome is about (from the `insights` tool or a card)."),
+      note: z.string().min(1).describe("How it held up — the retrospective ('proved right', 'didn't fit', 'irrelevant', …)."),
+      summary: z.string().optional().describe("The insight's title, for the audit log (optional)."),
+    },
+    async ({ key, note, summary }) => {
+      await new DecisionLog().recordRetro(key, note, summary);
+      return ok(`Logged a retrospective on "${key}". It'll show in \`listening\` (Outcomes you recorded) and \`decisions\`.`);
     },
   );
 
@@ -415,7 +430,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
       const miss = missingKey();
       if (miss) return fail(miss);
       const { window } = await buildTodayState();
-      const { markdown } = await runWeeklyReview(new CoachLLM(await loadSystemPrompt(), "weekly"), window);
+      const { markdown } = await runWeeklyReview(new CoachLLM(await loadSystemPrompt(), "weekly"), window, await loadEngagementContext(window));
       await writeReport("weekly-review", todayIso(), markdown);
       return ok(markdown);
     },
@@ -478,7 +493,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
       if (miss) return fail(miss);
       const today = todayIso();
       try {
-        const { markdown } = await runResearchDigest(new CoachLLM(await loadSystemPrompt(), "research", "high"), await readKnowledge(), today);
+        const { markdown } = await runResearchDigest(new CoachLLM(await loadSystemPrompt(), "research", "high"), await readKnowledge(), today, await loadEngagementContext([]));
         await writePendingDigest(today, markdown);
         return ok(`Drafted a research digest for review → knowledge/pending/${pendingName(today)}\nReview it, then approve with the CLI: npm run knowledge -- approve ${pendingName(today)}\n\n${markdown}`);
       } catch (e) {
@@ -572,8 +587,9 @@ function registerWriteTools(server: McpServer): void {
       const screen = screenNutritionPrompt(request);
       if (screen.blocked) return ok(screen.redirect!);
       const { state, window } = await buildTodayState();
-      const ins = buildInsights(state, await loadArchive(), { history: window });
-      const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt(), "propose"), request, state, buildProposerContext(state, ins));
+      const engagement = await loadEngagementContext(window);
+      const ins = buildInsights(state, await loadArchive(), { history: window, engagement });
+      const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt(), "propose"), request, state, buildProposerContext(state, ins, engagement));
       const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? [], writeContextFor(state));
       if (!valid.length) {
         const tail = rejected.length ? "\n" + rejected.map((r) => `  · ${r}`).join("\n") : "";

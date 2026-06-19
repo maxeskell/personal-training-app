@@ -1,4 +1,6 @@
 import { CoachLLM } from "../llm/client.js";
+import { engagementSteer } from "../insights/engagement.js";
+import type { EngagementContext } from "../insights/engagement.js";
 
 /**
  * Monthly research digest. Uses the LLM's web search to scan for recent developments in endurance /
@@ -8,13 +10,14 @@ import { CoachLLM } from "../llm/client.js";
  * (no key, web search unavailable, network) leaves the knowledge layer untouched.
  */
 
-export const RESEARCH_PROMPT = (knowledge: string, today: string) =>
+export const RESEARCH_PROMPT = (knowledge: string, today: string, steer?: string | null) =>
   [
     `You are refreshing a triathlon coach's sports-science knowledge layer. Today is ${today}.`,
     "Using web search, look for DEVELOPMENTS IN THE LAST ~12 MONTHS that would change or add to the",
     "priors below — endurance/triathlon training, fuelling, durability, tapering, recovery, and GEAR",
     "(e.g. tyre width/pressure, aero, footwear). Prioritise meta-analyses, position stands and strong",
     "reviews over single studies or blogs.",
+    ...(steer ? [`ENGAGEMENT STEER [from the athlete's feedback history]: ${steer}`] : []),
     "",
     "Output a concise MARKDOWN review proposal — NOT a rewrite of the file. For each item:",
     "- **Topic** and whether it's NEW, a CHANGE to an existing prior, or CONFIRMS one.",
@@ -40,8 +43,9 @@ export async function runResearchDigest(
   llm: CoachLLM,
   knowledge: string,
   today: string,
+  engagement?: EngagementContext,
 ): Promise<{ markdown: string; costUsd: number }> {
-  const { text, costUsd } = await llm.research(RESEARCH_PROMPT(knowledge, today));
+  const { text, costUsd } = await llm.research(RESEARCH_PROMPT(knowledge, today, engagementSteer(engagement)));
   const header = [
     `# Research digest — ${today} (PROPOSED — review before applying)`,
     "",
