@@ -33,6 +33,14 @@ export interface DecisionRecord {
   status: DecisionStatus;
   /** For insight-feedback: the stable key of the finding being reacted to. */
   insightKey?: string;
+  /**
+   * For insight-feedback on a family-bearing card (a "Set up & improve → This week" marginal gain): the
+   * finding FAMILY the reaction belongs to. Carried with the reaction because these cards react under a
+   * `setup:*` key that never enters the insight log, so the engagement model can't recover the family from
+   * the surfacing history — it reads it from here instead. Absent for Top-insights reactions (family comes
+   * from the insight log) and for non-family cards (weekly/research/finish-setup tasks).
+   */
+  family?: string;
   /** Optional retrospective note on how the call held up. */
   retro?: string;
 }
@@ -104,14 +112,16 @@ export class DecisionLog {
     await this.append({ ...original, status, retro, timestamp: nowIso() });
   }
 
-  /** Record an agree/disagree/ignore reaction to a surfaced insight. */
-  async recordInsightFeedback(insightKey: string, reaction: InsightReaction, summary: string): Promise<void> {
+  /** Record a reaction to a surfaced insight or setup card. `family` is set only for family-bearing
+   *  cards (This-week marginal gains), so the engagement model can attribute the reaction (see DecisionRecord.family). */
+  async recordInsightFeedback(insightKey: string, reaction: InsightReaction, summary: string, family?: string): Promise<void> {
     await this.append({
       id: randomUUID(), // collision-free (was a 32-bit second-granularity hash that could collide)
       timestamp: nowIso(),
       kind: "insight-feedback",
       summary,
       insightKey,
+      family,
       status: REACTION_STATUS[reaction],
     });
   }

@@ -716,9 +716,10 @@ async function cmdPropose(): Promise<void> {
     return;
   }
   const { state, window } = await buildTodayState();
-  const ins = buildInsights(state, await loadArchive(), { history: window });
+  const engagement = await loadEngagementContext(window);
+  const ins = buildInsights(state, await loadArchive(), { history: window, engagement });
   const llm = new CoachLLM(await loadSystemPrompt(), "propose");
-  const { result, cacheRead, costUsd } = await proposeAdjustments(llm, request, state, buildProposerContext(state, ins));
+  const { result, cacheRead, costUsd } = await proposeAdjustments(llm, request, state, buildProposerContext(state, ins, engagement));
   const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? [], writeContextFor(state));
 
   if (!valid.length) {
@@ -748,7 +749,8 @@ async function cmdAct(): Promise<void> {
   if (!requireLLM()) process.exit(1);
   const { state, window } = await buildTodayState();
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
-  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window });
+  const engagement = await loadEngagementContext(window);
+  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
   // Act only on SURFACED findings (good-signal, not dismissed) that warrant a plan change.
   const actionable = ins.topFindings.filter((f) => f.severity !== "info");
   if (!actionable.length) {
@@ -759,8 +761,8 @@ async function cmdAct(): Promise<void> {
   console.log("\nActing on surfaced signals (gated; agree/disagree respected):");
   for (const f of actionable) console.log(`  • [${f.severity}, ${Math.round((f.confidence ?? 0.6) * 100)}%] ${f.title}`);
 
-  // Ground the proposer in the FULL picture (load/form bands + health + races + predictions + taper).
-  const ctx = buildProposerContext(state, ins);
+  // Ground the proposer in the FULL picture (load/form bands + health + races + predictions + taper + decline-aware).
+  const ctx = buildProposerContext(state, ins, engagement);
 
   const request =
     "Turn these surfaced training signals into minimal, specific plan adjustments with trade-offs " +

@@ -17,6 +17,8 @@ export interface EngagementContext {
   recurringDismissed?: Array<{ key: string; family: string; title: string; times: number; reaction: "disagree" | "ignore" }>;
   /** Current plan adherence (AI Endurance plan progress) for the divergence nudge. */
   adherence?: { pct: number; priorPct: number | null; deltaPts: number | null; plannedH: number } | null;
+  /** Gated plan-proposal accept/decline history — a high decline rate makes the proposer more conservative. */
+  proposals?: { accepted: number; declined: number };
 }
 
 const FOLLOW_THROUGH = "Follow-through";

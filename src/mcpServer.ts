@@ -348,11 +348,12 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
       key: z.string().min(1).describe("Finding key from the `insights` tool output (the key=… field)."),
       reaction: z.enum(["like", "dislike", "snooze", "clear"]),
       summary: z.string().optional().describe("The finding's title, for the audit log (optional)."),
+      family: z.string().optional().describe("The finding's family — only needed when reacting to a setup:* card key the insight log doesn't carry, so the engagement model can weight it."),
     },
-    async ({ key, reaction, summary }) => {
+    async ({ key, reaction, summary, family }) => {
       const mapped = reactionFromLabel(reaction);
       if (!mapped) return fail(`Unknown reaction: ${reaction}`);
-      await new DecisionLog().recordInsightFeedback(key, mapped, summary ?? key);
+      await new DecisionLog().recordInsightFeedback(key, mapped, summary ?? key, family);
       const note =
         reaction === "snooze" ? "hidden ~2 weeks" : reaction === "clear" ? "opinion cleared" : `saved (${reaction === "dislike" ? "stays visible, down-ranked" : "reversible"})`;
       return ok(`Recorded ${reaction} on "${key}" — ${note}.`);
@@ -572,8 +573,9 @@ function registerWriteTools(server: McpServer): void {
       const screen = screenNutritionPrompt(request);
       if (screen.blocked) return ok(screen.redirect!);
       const { state, window } = await buildTodayState();
-      const ins = buildInsights(state, await loadArchive(), { history: window });
-      const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt(), "propose"), request, state, buildProposerContext(state, ins));
+      const engagement = await loadEngagementContext(window);
+      const ins = buildInsights(state, await loadArchive(), { history: window, engagement });
+      const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt(), "propose"), request, state, buildProposerContext(state, ins, engagement));
       const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? [], writeContextFor(state));
       if (!valid.length) {
         const tail = rejected.length ? "\n" + rejected.map((r) => `  · ${r}`).join("\n") : "";

@@ -692,6 +692,12 @@ export interface SetupItem {
    */
   reactable?: boolean;
   /**
+   * The finding FAMILY behind a reactable marginal-gain card. Sent with the reaction (data-family) so the
+   * engagement model can weight it by family even though the card reacts under a `setup:*` key that never
+   * enters the insight log. Absent for non-finding cards (weekly/research/finish-setup tasks).
+   */
+  family?: string;
+  /**
    * Render a "Make this change" button that drafts the concrete edit through the gated propose→confirm
    * write to AI Endurance (training plan edits only). `rec` is the recommendation text the drafter acts on.
    */
@@ -1130,7 +1136,7 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
       if (surfaced.has(findingKey(f))) continue;
       const action = `${f.detail}${f.evidence ? ` (${f.evidence})` : ""}`;
       // Marginal gains are execution cues, not schedule edits → always agree/disagree/snooze.
-      items.push({ key: setupKey("tune", findingKey(f)), label: f.recommendation ?? f.title, why: f.title, source: "tune", group: "this_week", route: "your call", action, priority: SETUP_PRIORITY.tune, category: categorize(`${f.family} ${f.title} ${f.recommendation ?? ""}`), reactable: true });
+      items.push({ key: setupKey("tune", findingKey(f)), label: f.recommendation ?? f.title, why: f.title, source: "tune", group: "this_week", route: "your call", action, priority: SETUP_PRIORITY.tune, category: categorize(`${f.family} ${f.title} ${f.recommendation ?? ""}`), reactable: true, family: f.family });
     }
   }
   if (opts.weeklyReview) {
@@ -1225,21 +1231,24 @@ function reactionState(key: string, reactions?: Map<string, InsightReaction>): {
 
 /**
  * A "your call" advice card (fuelling / gear / recovery / general): plain-English action first, the tech
- * detail muted underneath, then 👍 Agree / 👎 Disagree / 💤 Snooze — the same logged, reversible
- * insight-feedback machinery the Top-insights box uses (so a reaction here is read by the listening model).
+ * detail muted underneath, then 👍 Agree / 👎 Disagree / 💤 Snooze (reversible) plus 🚫 Ignore (permanent) —
+ * the same logged insight-feedback machinery the Top-insights box uses (so a reaction here is read by the
+ * listening model). `data-family` carries the finding family so the engagement model can weight it.
  */
 function reactableCardHtml(it: SetupItem, reactions?: Map<string, InsightReaction>): string {
   const { state, reacted } = reactionState(it.key, reactions);
   const on = (which: string) => (state === which ? " on" : "");
   const why = it.why ? `<div class="age">${escapeHtml(it.why)}</div>` : "";
   const detail = it.action ? `<div class="ev">${escapeHtml(it.action)}</div>` : "";
-  return `<div class="insight" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-reaction-state="${state}">
+  const familyAttr = it.family ? ` data-family="${escapeHtml(it.family)}"` : "";
+  return `<div class="insight" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-reaction-state="${state}"${familyAttr}>
     <div>${categoryChip(it.category)}<b>${escapeHtml(it.label)}</b></div>
     ${detail}${why}
     <div class="acts">
       <button class="agree${on("like")}" data-reaction="like" onclick="feedback(this)">👍 Agree</button>
       <button class="disagree${on("dislike")}" data-reaction="dislike" onclick="feedback(this)">👎 Disagree</button>
       <button class="ignore" data-reaction="snooze" onclick="feedback(this)">💤 Snooze</button>
+      <button class="ignore" title="Ignore this advice — don't show it again" onclick="ignoreCard(this)">🚫 Ignore</button>
       <span class="reacted">${reacted}</span>
     </div>
   </div>`;
@@ -1260,6 +1269,7 @@ function applyableCardHtml(it: SetupItem): string {
     <div class="acts">
       <button class="agree" onclick="actItem(this)">➡️ Make this change</button>
       <button class="ignore" data-reaction="snooze" onclick="feedback(this)">💤 Snooze</button>
+      <button class="ignore" title="Ignore this advice — don't show it again" onclick="ignoreCard(this)">🚫 Ignore</button>
       <span class="reacted"></span>
     </div>
   </div>`;
@@ -1856,14 +1866,24 @@ async function feedback(btn){
   var cur=box.getAttribute('data-reaction-state')||'';
   // Clicking the active like/dislike again clears it (back to neutral); snooze is always a hide action.
   var send=(want!=='snooze'&&cur===want)?'clear':want;
-  var key=box.getAttribute('data-key');var summary=box.getAttribute('data-summary');
+  var key=box.getAttribute('data-key');var summary=box.getAttribute('data-summary');var family=box.getAttribute('data-family')||'';
   var span=box.querySelector('.reacted');span.textContent='…';
   try{await fetch('/insight-feedback',{method:'POST',headers:{'content-type':'application/json'},
-    body:JSON.stringify({key:key,reaction:send,summary:summary})});
+    body:JSON.stringify({key:key,reaction:send,summary:summary,family:family})});
     if(send==='snooze'){box.querySelectorAll('button').forEach(function(b){b.disabled=true;});box.style.opacity=0.5;span.textContent='💤 snoozed — hidden ~2wk';return;}
     if(send==='clear'){setReactionState(box,'');span.textContent='cleared';return;}
     setReactionState(box,send);span.textContent=send==='like'?'👍 liked':'👎 disliked (still shown)';
   }catch(err){span.textContent='error';}
+}
+// 🚫 Ignore on a "This week" card — a permanent hide (never resurfaces), carrying its family so the
+// listening model attributes the dismissal. Distinct from 💤 Snooze (which lapses after ~2 weeks).
+async function ignoreCard(btn){
+  var box=btn.closest('.insight');box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
+  var span=box.querySelector('.reacted');if(span)span.textContent='…';
+  try{await fetch('/insight-feedback',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({key:box.getAttribute('data-key'),reaction:'dismiss',summary:box.getAttribute('data-summary'),family:box.getAttribute('data-family')||''})});
+    box.style.opacity=0.4;if(span)span.textContent="🚫 ignored — won't show again";
+  }catch(err){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});if(span)span.textContent='error';}
 }
 // The three Finish-setup actions share one POST; only the reaction differs. done/dismiss hide forever,
 // snooze hides ~2wk (server-side). done on an AI-Endurance gap ALSO writes it resolved into the profile.

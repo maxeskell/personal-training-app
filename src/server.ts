@@ -203,7 +203,7 @@ async function latestInsights() {
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
   const engagement = await loadEngagementContext(window);
   const insights = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
-  return { state, insights };
+  return { state, insights, engagement };
 }
 
 type LatestInsights = NonNullable<Awaited<ReturnType<typeof latestInsights>>>;
@@ -219,7 +219,7 @@ const sessionFeedbackInFlight = new Map<string, Promise<SessionFeedbackResult>>(
  * real scheduled sessions, so anything un-targetable degrades to a `notes` explanation, never a bad write.
  */
 async function draftGatedProposals(li: LatestInsights, request: string) {
-  const ctx = buildProposerContext(li.state, li.insights); // full picture: load/form + health + races + taper
+  const ctx = buildProposerContext(li.state, li.insights, li.engagement); // full picture: load/form + health + races + taper + decline-aware
   const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt(), "act"), request, li.state, ctx);
   const { valid, rejected } = validateProposals(result.proposals, li.state.plannedSessions.value ?? [], writeContextFor(li.state));
   const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
@@ -380,13 +380,14 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     // snooze→ignore (hides ~2wk), done→completed and dismiss→dismissed (both hide forever), clear→neutral.
     // Canonical names are still accepted for back-compat.
     if (url.pathname === "/insight-feedback" && req.method === "POST") {
-      const body = JSON.parse((await readBody(req)) || "{}") as { key?: string; reaction?: string; summary?: string };
+      const body = JSON.parse((await readBody(req)) || "{}") as { key?: string; reaction?: string; summary?: string; family?: string };
       const reaction = reactionFromLabel(String(body.reaction));
       if (!body.key || !reaction) {
         res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "need key + reaction" }));
         return;
       }
-      await new DecisionLog().recordInsightFeedback(body.key, reaction, body.summary ?? body.key);
+      const family = typeof body.family === "string" && body.family.trim() ? body.family.trim() : undefined;
+      await new DecisionLog().recordInsightFeedback(body.key, reaction, body.summary ?? body.key, family);
       // "✓ Done" on an AI-Endurance setup gap is also written `resolved` into profile.local.yaml, so the
       // gap stays cleared across rebuilds — not just suppressed in the decision log. Other item sources
       // have no profile field, so they're recorded only. Best-effort: a profile-write failure (e.g. the

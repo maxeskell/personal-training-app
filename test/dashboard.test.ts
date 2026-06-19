@@ -660,6 +660,7 @@ test("buildSetupItems: This-week items are typed 'your call' cards — training 
   assert.equal(gain.reactable, true);
   assert.ok(!gain.applyable, "an execution cue is not a schedule edit");
   assert.equal(gain.source, "tune");
+  assert.equal(gain.family, "Aerobic efficiency", "carries the finding family so its reaction can be weighted");
 });
 
 test("renderSetupImprove: This-week cards action in-app — no 'saved under reports' pointer anywhere", () => {
@@ -675,7 +676,9 @@ test("renderSetupImprove: This-week cards action in-app — no 'saved under repo
   assert.doesNotMatch(html, /saved under reports|weekly-review\.md|open that report|ask the coach to expand/i, "no out-of-app report pointers");
   assert.match(html, /Make this change/, "the training plan edit gets an in-app apply button");
   assert.match(html, /actItem\(this\)/, "Make this change wires to the gated drafter");
-  assert.match(html, /👍 Agree[\s\S]*👎 Disagree[\s\S]*💤 Snooze/, "the reaction card carries agree/disagree/snooze");
+  assert.match(html, /👍 Agree[\s\S]*👎 Disagree[\s\S]*💤 Snooze[\s\S]*🚫 Ignore/, "the reaction card carries agree/disagree/snooze + a permanent ignore");
+  assert.match(html, /onclick="ignoreCard\(this\)"/, "🚫 Ignore wires to a permanent dismiss");
+  assert.match(html, /data-family="Aerobic efficiency"/, "the marginal-gain card carries its finding family for engagement weighting");
   assert.match(html, /data-rec="Cut one grey-zone ride"/, "the applyable card carries the recommendation text");
 });
 

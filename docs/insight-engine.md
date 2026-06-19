@@ -118,7 +118,15 @@ dashboard, `insights` and `deep-dive`:
 - **Ranking follows your attention.** Families you consistently dismiss are gently **down-ranked** and the
   ones you act on are **lifted** — but this is **safety-preserving**: severity always wins (a `flag` can
   never be buried under a family you like) and flags are never down-weighted. It only reorders *within* a
-  severity tier.
+  severity tier. This counts your reactions **everywhere**, not just the Top-insights box: a 👍/👎 (or ✓ Done
+  / 🚫 Ignore) on a **"This week" card** is attributed to its finding family too — the card carries its
+  family on the reaction record, since its `setup:*` key never enters the surfaced-insight log. (Before, those
+  card reactions were recorded but silently excluded from the weights.)
+- **The proposer gets conservative when you decline.** Your gated plan-proposal **accept/decline** history
+  feeds the proposal drafter: once you've declined a majority of recent proposals, it's told to propose only
+  a change it's highly confident clears the bar — smallest viable edit, or nothing — instead of re-pitching
+  edits you keep waving off. (Surfacing of deterministic findings is untouched; this only shapes the LLM
+  plan-edit drafter.)
 - **New "Follow-through" findings.** Two insights are now **generated from your own behaviour**: a
   *recurring signal you've set aside* (something you snoozed that the engine keeps re-raising — surfaced
   only after it recurs ≥2×) and *plan adherence is slipping* (you're doing <70% of planned hours, or it

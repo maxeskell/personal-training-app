@@ -39,6 +39,20 @@ test("buildProposerContext folds in load bands, training status, races, predicti
   assert.match(ctx, /Taper target/);
 });
 
+test("buildProposerContext: a high plan-proposal decline rate adds the be-conservative nudge", () => {
+  const s = emptyState("2026-06-08", "x");
+  const ins = { load: null, topFindings: [], findings: [], predictions: [], durability: { run: {} }, taper: {} } as unknown as InsightReport;
+
+  // No engagement → no nudge.
+  assert.doesNotMatch(buildProposerContext(s, ins), /cautious about plan edits/);
+  // Mostly-accepted history → no nudge (declined below the majority bar).
+  assert.doesNotMatch(buildProposerContext(s, ins, { proposals: { accepted: 4, declined: 1 } }), /cautious about plan edits/);
+  // Majority declined over enough proposals → nudge the proposer to be conservative.
+  const ctx = buildProposerContext(s, ins, { proposals: { accepted: 1, declined: 3 } });
+  assert.match(ctx, /DECLINED 3 of the last 4 plan-change proposals/);
+  assert.match(ctx, /cautious about plan edits/);
+});
+
 test("basis flows through validateProposals", () => {
   const planned = [{ workoutId: "1", date: "2026-06-10", title: "Run", sport: "Run" as const }];
   const { valid } = validateProposals(

@@ -232,27 +232,55 @@ export function analyseListening({ snapshots, decisions, states = [], load, now 
   }
 
   const reactions = latestInsightReactions(decisions);
+  // Latest family/title per reacted key, straight from the raw records — lets us attribute a card reaction
+  // whose key never entered the insight log (a `setup:*` "This week" gain carries its finding family on the
+  // decision record). Later record wins, matching latestInsightReactions.
+  const reactionMeta = new Map<string, { family?: string; title?: string }>();
+  for (const r of decisions) {
+    if (r.kind !== "insight-feedback" || !r.insightKey) continue;
+    reactionMeta.set(r.insightKey, { family: r.family, title: r.summary });
+  }
 
-  // 2. Per-family engagement over the surfaced keys.
+  // 2. Per-family engagement. `bucket` maps a reaction to its engagement column: done counts as engaged
+  // (agreed — you acted on it), dismiss as set-aside (ignored). Returns false when there's no reaction yet.
   const families = new Map<string, FamilyEngagement>();
   const fam = (name: string): FamilyEngagement =>
     families.get(name) ?? families.set(name, { family: name, surfaced: 0, agreed: 0, disagreed: 0, ignored: 0, noReaction: 0 }).get(name)!;
+  const bucket = (e: FamilyEngagement, r: InsightReaction | undefined): boolean => {
+    if (r === "agree" || r === "done") e.agreed += 1;
+    else if (r === "disagree") e.disagreed += 1;
+    else if (r === "ignore" || r === "dismiss") e.ignored += 1;
+    else return (e.noReaction += 1), false;
+    return true;
+  };
   const reactionTotals = { agree: 0, disagree: 0, ignore: 0 };
   let reactedKeys = 0;
   for (const [key, meta] of keyMeta) {
     const e = fam(meta.family);
     e.surfaced += 1;
     const r = reactions.get(key)?.reaction;
-    if (r === "agree") (e.agreed += 1), (reactionTotals.agree += 1), reactedKeys++;
-    else if (r === "disagree") (e.disagreed += 1), (reactionTotals.disagree += 1), reactedKeys++;
-    else if (r === "ignore") (e.ignored += 1), (reactionTotals.ignore += 1), reactedKeys++;
-    else e.noReaction += 1;
+    if (bucket(e, r)) {
+      reactedKeys++;
+      if (r === "agree") reactionTotals.agree++;
+      else if (r === "disagree") reactionTotals.disagree++;
+      else if (r === "ignore") reactionTotals.ignore++;
+    }
+  }
+  // Fold family-bearing card reactions (setup:* keys absent from the insight log) into their family, so a
+  // reaction on a "This week" gain shapes its family weight exactly like the Top-insights box does.
+  for (const [key, meta] of reactionMeta) {
+    if (keyMeta.has(key) || !meta.family) continue;
+    const e = fam(meta.family);
+    e.surfaced += 1;
+    bucket(e, reactions.get(key)?.reaction);
   }
   const byFamily = [...families.values()].sort((a, b) => b.surfaced - a.surfaced || a.family.localeCompare(b.family));
 
-  // Reactions we have on record but never logged surfacing for (feedback predates the insight log).
+  // Reactions on record we never logged surfacing for (predate the insight log). A `setup:*` card reaction
+  // is intentional in-app feedback (attributed above when family-bearing, tracked otherwise), not a
+  // pre-logging gap — so it's excluded here.
   let feedbackBeforeLogging = 0;
-  for (const key of reactions.keys()) if (!keyMeta.has(key)) feedbackBeforeLogging++;
+  for (const key of reactions.keys()) if (!keyMeta.has(key) && !key.startsWith("setup:")) feedbackBeforeLogging++;
 
   // 3. Gated plan-proposal decisions (latest status per id).
   const latestById = new Map<string, DecisionRecord>();
@@ -359,7 +387,9 @@ export function buildEngagementContext(model: ListeningModel): EngagementContext
         }
       : null;
 
-  return { familyWeights, recurringDismissed, adherence };
+  const proposals = { accepted: model.proposals.accepted, declined: model.proposals.declined };
+
+  return { familyWeights, recurringDismissed, adherence, proposals };
 }
 
 /**

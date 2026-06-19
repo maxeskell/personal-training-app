@@ -151,8 +151,11 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   coach's priors). **Everything in "This week" is actioned right on the card —
   it never points you at a saved report.** Each advice item leads with the plain-English action (the tech
   detail sits muted underneath) and carries a category chip (*Training / Fuelling / Gear / Recovery*):
-  - a **fuelling, gear or recovery** change gets **👍 Agree / 👎 Disagree / 💤 Snooze** (the same logged,
-    reversible feedback the Top-insights box uses — your reactions feed the listening model);
+  - a **fuelling, gear or recovery** change gets **👍 Agree / 👎 Disagree / 💤 Snooze** (reversible) plus
+    **🚫 Ignore** (a permanent "don't show this again", distinct from the ~2-week snooze) — the same logged
+    feedback the Top-insights box uses. These reactions **feed the listening model the same way a top-box
+    reaction does**: a 👍/👎 on a card now reshapes that finding-family's ranking weight (it used to be
+    recorded but dropped on the floor);
   - a **training plan edit** gets **➡️ Make this change**, which drafts the concrete edit and applies it to
     your plan in AI Endurance through the **gated propose→confirm write** (you confirm the exact change
     first; it's logged and reversible). If it can't be tied to a scheduled session, you get the **precise
@@ -206,7 +209,11 @@ score, and anything estimated is labelled a MODEL. Surfaced in `deep-dive`, `ask
 The **Top insights** card also closes a feedback loop: 👍/👎/💤 on each finding is saved and reversible,
 down-ranks or lifts its family **within a severity tier** (flags are never buried), and `npm run listening`
 prints your engagement model — what you act on vs dismiss, plan adherence (deferring to AI Endurance) and
-plan changes diffed from daily snapshots.
+plan changes diffed from daily snapshots. The loop now spans the whole hub, not just the top box:
+**reactions on the "This week" cards count toward their family weight too** (a `setup:*` card carries its
+finding family so the listening model can attribute it), and your **gated plan-proposal accept/decline
+history** feeds back into the proposer — decline most of them and it turns conservative (smallest viable
+change, or nothing), rather than re-pitching edits you keep waving off.
 
 **→ Full detail — the Q1–Q7 methods, the like/dislike/snooze mechanics and the engagement loop:
 [docs/insight-engine.md](docs/insight-engine.md).**

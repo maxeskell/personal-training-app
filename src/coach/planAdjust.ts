@@ -1,6 +1,7 @@
 import type { CoachLLM } from "../llm/client.js";
 import type { AthleteState, PlannedSession } from "../state/types.js";
 import type { InsightReport } from "../insights/engine.js";
+import type { EngagementContext } from "../insights/engagement.js";
 import { coachHeadline, tsbBand, rampBand } from "../insights/headline.js";
 import { PROPOSABLE_WRITE_TOOLS, validateWrite, type WriteContext } from "../guardrails/writeValidators.js";
 import { raceContext, deriveSeasonShape, liveGoals } from "./seasonContext.js";
@@ -117,7 +118,12 @@ export async function proposeAdjustments(
  * the relevant detector findings (durability, heat, EF, fuelling, illness) + predictions-vs-goal + taper
  * target. So a proposal reasons over "you're overreached AND 33 d from your A-race," not just the trigger.
  */
-export function buildProposerContext(state: AthleteState, ins: InsightReport): string {
+/** Threshold for the conservative-proposer nudge: enough proposals to trust the rate, and a majority declined. */
+export const PROPOSAL_DECLINE_MIN = 2;
+export const PROPOSAL_DECLINE_MIN_TOTAL = 3;
+export const PROPOSAL_DECLINE_RATE = 0.5;
+
+export function buildProposerContext(state: AthleteState, ins: InsightReport, engagement?: EngagementContext): string {
   const hl = coachHeadline(ins, state);
   const L = ins.load;
   const ts = state.trainingStatus.value;
@@ -138,6 +144,15 @@ export function buildProposerContext(state: AthleteState, ins: InsightReport): s
   if (ins.taper.recommendedTsbLow != null) lines.push(`Taper target: race-day TSB ~${ins.taper.recommendedTsbLow}..${ins.taper.recommendedTsbHigh}`);
   const shape = deriveSeasonShape(liveGoals(state), state.date);
   if (shape.length) lines.push(`Season-shape calls [derived from live goals]: ${shape.join(" ")}`);
+  // Engagement: a high plan-proposal decline rate means the athlete is wary of plan edits — tell the
+  // proposer to be conservative (smallest viable change, or nothing) rather than pushing changes they'll wave off.
+  const p = engagement?.proposals;
+  if (p && p.declined >= PROPOSAL_DECLINE_MIN && p.accepted + p.declined >= PROPOSAL_DECLINE_MIN_TOTAL && p.declined / (p.accepted + p.declined) >= PROPOSAL_DECLINE_RATE) {
+    lines.push(
+      `Engagement: the athlete has DECLINED ${p.declined} of the last ${p.accepted + p.declined} plan-change proposals — they're cautious about plan edits. ` +
+        `Propose ONLY a change you're highly confident clears the bar; prefer the smallest viable edit, and if nothing clearly helps, propose nothing (empty array) and say why.`,
+    );
+  }
   return lines.join("\n");
 }
 
