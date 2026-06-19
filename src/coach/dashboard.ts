@@ -429,7 +429,7 @@ function renderLastSession(
       feedback = `<div class="k">🔍 No raw .FIT for this session and no automatic way to fetch it (Garmin off, an old garmin_mcp build, or no archived activity id). Export it from Garmin Connect → activity → ⚙ → Export Original into data/fit-streams/ and it'll be analysed on the next sync.</div>`;
       break;
   }
-  return `<div class="card"><h2>Last session — ${d.date} ${d.sport}</h2>
+  return `<div class="card"><h2>Last session — ${escapeHtml(d.date)} ${escapeHtml(d.sport)}</h2>
     <div style="font-size:14px;margin-bottom:6px">${escapeHtml(bits)}</div>
     ${planLine}
     ${feedback}
