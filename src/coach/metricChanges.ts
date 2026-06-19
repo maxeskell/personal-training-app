@@ -1,4 +1,4 @@
-import type { AthleteState, Source } from "../state/types.js";
+import type { AthleteState, DisciplineThresholds, Source } from "../state/types.js";
 
 /**
  * Detect when AI Endurance / Garmin have CHANGED an auto-detected number (FTP, threshold HR/pace, swim
@@ -41,8 +41,19 @@ const TRACKED: Tracked[] = [
   { metric: "bikeThresholdHr", label: "Bike threshold HR", pick: (s) => s.thresholds.value?.bikeThresholdHr, src: (s) => s.thresholds.source, fmt: (n) => `${n} bpm` },
   { metric: "runThresholdPowerW", label: "Run threshold power", pick: (s) => s.thresholds.value?.runThresholdPowerW, src: (s) => s.thresholds.source, fmt: (n) => `${n} W` },
   { metric: "swimCssSecPer100", label: "Swim CSS", pick: (s) => s.thresholds.value?.swimCssSecPer100, src: (s) => s.thresholds.source, fmt: (n) => paceFmt(n, "/100m") },
+  { metric: "maxHr", label: "Max HR", pick: (s) => s.thresholds.value?.maxHr, src: (s) => s.thresholds.source, fmt: (n) => `${n} bpm` },
   { metric: "vo2max", label: "VO₂max", pick: (s) => s.vo2max.value, src: (s) => s.vo2max.source, fmt: (n) => `${n}` },
 ];
+
+/**
+ * The tracked metrics that live in `DisciplineThresholds` (everything except vo2max, which has its own
+ * slot) — these are the ones a per-source side-by-side can be built for, since each source records its
+ * own threshold reading on `thresholdsBySource`.
+ */
+const THRESHOLD_TRACKED = TRACKED.filter((t) => t.metric !== "vo2max");
+
+/** Stable display order for sources in a side-by-side (AIE first, Garmin last). */
+const SOURCE_ORDER: Source[] = ["ai-endurance", "intervals", "garmin", "derived", "manual"];
 
 /** The metrics the change-feed + overrides track (the override store validates against this). */
 export const TRACKED_METRICS: ReadonlySet<string> = new Set(TRACKED.map((t) => t.metric));
@@ -102,4 +113,62 @@ export function detectMetricChanges(window: AthleteState[], opts: { now?: number
     });
   }
   return out.sort((a, b) => a.ageDays - b.ageDays);
+}
+
+/** One source's reading of a metric, formatted for display. */
+export interface SourceReading {
+  source: Source;
+  value: number;
+  formatted: string;
+}
+
+/**
+ * A metric where AI Endurance and Garmin currently report DIFFERENT values — the "AIE 250 vs Garmin
+ * 262" disagreement the user asked to see side by side. `inUse` is the reading that matches the merged
+ * winner on `state.thresholds` (what the coach actually uses); `alt` is the other one, which a single
+ * tap can pin (via the same conditional-override machinery as a change's "disagree").
+ */
+export interface SourceConflict {
+  /** Stable key for snooze, per metric + the disagreeing values (so a new pair re-surfaces). */
+  key: string;
+  metric: string;
+  label: string;
+  readings: SourceReading[]; // every source's reading, in SOURCE_ORDER
+  inUse: SourceReading; // the reading currently driving the coach (the merged winner)
+  alt: SourceReading; // the other reading — what "use this instead" would pin
+}
+
+/**
+ * Find the tracked threshold metrics where the recorded per-source readings (`state.thresholdsBySource`)
+ * DISAGREE today — so the dashboard can show both numbers and which one is in force. Deterministic, no
+ * LLM; tolerant of the field being absent on older snapshots. Pure.
+ */
+export function detectSourceConflicts(state: AthleteState): SourceConflict[] {
+  const bySource = state.thresholdsBySource ?? {};
+  const sources = Object.keys(bySource) as Source[];
+  if (sources.length < 2) return [];
+  const out: SourceConflict[] = [];
+  for (const t of THRESHOLD_TRACKED) {
+    const field = t.metric as keyof DisciplineThresholds;
+    const readings: SourceReading[] = [];
+    for (const src of sources) {
+      const v = bySource[src]?.[field];
+      if (typeof v === "number") readings.push({ source: src, value: v, formatted: t.fmt(v) });
+    }
+    const distinct = new Set(readings.map((r) => r.value));
+    if (readings.length < 2 || distinct.size < 2) continue; // need ≥2 sources that actually disagree
+    readings.sort((a, b) => SOURCE_ORDER.indexOf(a.source) - SOURCE_ORDER.indexOf(b.source));
+    const live = state.thresholds.value?.[field];
+    const inUse = readings.find((r) => r.value === live) ?? readings[0];
+    const alt = readings.find((r) => r.value !== inUse.value) ?? readings[readings.length - 1];
+    out.push({
+      key: `conflict:${t.metric}:${[...distinct].sort((a, b) => a - b).join("v")}`,
+      metric: t.metric,
+      label: t.label,
+      readings,
+      inUse,
+      alt,
+    });
+  }
+  return out;
 }

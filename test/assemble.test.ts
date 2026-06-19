@@ -51,6 +51,20 @@ test("mapGarminThresholds keeps the higher test-based FTP and surfaces the confl
   const t = s.thresholds.value!;
   assert.equal(t.bikeFtpW, 280, "the higher test-based value keeps driving zones");
   assert.match(t.bikeFtpNote ?? "", /keeping the higher test-based 280/);
+  // Garmin's OWN reading is still recorded for the side-by-side, even though AIE's value wins.
+  assert.equal(s.thresholdsBySource?.garmin?.bikeFtpW, 250);
+});
+
+test("mapGarminThresholds records Garmin's per-source reading and max HR from the user profile", () => {
+  const s = emptyState("2026-06-14", "2026-06-14T06:00:00Z");
+  mapGarminThresholds(
+    s,
+    { functional_threshold_power_watts: 250, sport: "CYCLING" },
+    { lactate_threshold_heart_rate_bpm: 165, weight_kg: 70 },
+    { userData: { maxHr: 190 } }, // python-garminconnect nests it under userData
+  );
+  assert.equal(s.thresholds.value!.maxHr, 190, "max HR flows into the active thresholds");
+  assert.deepEqual(s.thresholdsBySource?.garmin, { bikeFtpW: 250, runThresholdHr: 165, maxHr: 190 }, "the un-merged Garmin reading (no derived w/kg, no UI note)");
 });
 
 // --- Garmin stable identity (get_user_profile → DOB + height) ----------------

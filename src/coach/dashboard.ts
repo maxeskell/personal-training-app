@@ -4,7 +4,7 @@ import type { FitSummary } from "../archive/store.js";
 import type { SessionFeedbackRecord } from "./sessionFeedbackStore.js";
 import type { InsightReport } from "../insights/engine.js";
 import { findingKey } from "../insights/metrics.js";
-import { detectMetricChanges, formatMetricValue, metricLabel } from "./metricChanges.js";
+import { detectMetricChanges, detectSourceConflicts, formatMetricValue, metricLabel } from "./metricChanges.js";
 import type { MetricOverrides } from "../state/metricOverrides.js";
 import { selectMarginalGains } from "../insights/marginalGains.js";
 import { categorize, isPlanEdit, CATEGORY_LABEL, type ActionCategory } from "./weeklyActions.js";
@@ -669,16 +669,24 @@ const SOURCE_LABEL: Record<string, string> = { "ai-endurance": "AI Endurance", g
 
 /**
  * "Data changes — your call": when AI Endurance / Garmin change an auto-detected number (FTP, threshold
- * HR/pace, swim CSS, VO₂max), surface it (diffed from snapshots, no LLM) with 👍 agree (acknowledge, via
- * the insight-feedback machinery), 👎 disagree (PIN your prior value as an override the next sync honours)
- * and 💤 snooze. Active pins are listed separately with an un-pin (accept the auto value). A pinned
- * metric's change is hidden (your value is in force) until you un-pin or the platform detects something
- * new. Omitted when there's nothing to show.
+ * HR/pace, swim CSS, max HR, VO₂max), surface it (diffed from snapshots, no LLM) with 👍 agree
+ * (acknowledge, via the insight-feedback machinery), 👎 disagree (PIN your prior value as an override the
+ * next sync honours) and 💤 snooze. It ALSO surfaces metrics where the two platforms currently DISAGREE
+ * ("AI Endurance 250 W vs Garmin 235 W") with which one is in force and a one-tap "use the other" pin.
+ * Active pins are listed separately with an un-pin (accept the auto value). A pinned metric's change is
+ * hidden (your value is in force) until you un-pin or the platform detects something new. Omitted when
+ * there's nothing to show.
  */
 function renderDataChanges(window: AthleteState[], reactions?: Map<string, InsightReaction>, suppressed?: Set<string>, overrides?: MetricOverrides, now?: number): string {
   const pinned = overrides ?? {};
   const changes = detectMetricChanges(window, { now })
     .filter((c) => !suppressed?.has(c.key) && !(c.metric in pinned)) // a pinned metric shows as an override, not a change
+    .slice(0, 5);
+  const changedMetrics = new Set(changes.map((c) => c.metric));
+  // Cross-source disagreements TODAY — but never duplicate a metric already shown as a change or pinned.
+  const latest = window.length ? window[window.length - 1] : undefined;
+  const conflicts = (latest ? detectSourceConflicts(latest) : [])
+    .filter((c) => !suppressed?.has(c.key) && !(c.metric in pinned) && !changedMetrics.has(c.metric))
     .slice(0, 5);
   const changeRows = changes
     .map((c) => {
@@ -696,6 +704,21 @@ function renderDataChanges(window: AthleteState[], reactions?: Map<string, Insig
       </div>`;
     })
     .join("");
+  const conflictRows = conflicts
+    .map((c) => {
+      const sideBySide = c.readings
+        .map((r) => `${escapeHtml(SOURCE_LABEL[r.source] ?? r.source)} <b>${escapeHtml(r.formatted)}</b>`)
+        .join(" vs ");
+      return `<div class="insight" data-key="${escapeHtml(c.key)}" data-summary="${escapeHtml(`${c.label}: sources disagree (${c.readings.map((r) => r.formatted).join(" vs ")})`)}" data-metric="${escapeHtml(c.metric)}" data-when="${c.inUse.value}" data-use="${c.alt.value}">
+        <div>⚖️ <b>${escapeHtml(c.label)}</b>: ${sideBySide} <span class="muted">· using ${escapeHtml(SOURCE_LABEL[c.inUse.source] ?? c.inUse.source)} ${escapeHtml(c.inUse.formatted)}</span></div>
+        <div class="acts">
+          <button class="disagree" onclick="pinOverride(this)">📌 Use ${escapeHtml(SOURCE_LABEL[c.alt.source] ?? c.alt.source)} ${escapeHtml(c.alt.formatted)}</button>
+          <button class="ignore" data-reaction="snooze" onclick="feedback(this)">💤 Snooze</button>
+          <span class="reacted"></span>
+        </div>
+      </div>`;
+    })
+    .join("");
   const overrideRows = Object.entries(pinned)
     .map(([metric, ov]) => {
       return `<div class="insight" data-metric="${escapeHtml(metric)}">
@@ -704,10 +727,10 @@ function renderDataChanges(window: AthleteState[], reactions?: Map<string, Insig
       </div>`;
     })
     .join("");
-  if (!changeRows && !overrideRows) return "";
+  if (!changeRows && !conflictRows && !overrideRows) return "";
   return `<div class="card insights"><h2>Data changes — your call</h2>
-    <div class="k" style="margin-bottom:8px">AI Endurance / Garmin auto-update these numbers. 👍 accept · 👎 keep your own (pins it until you un-pin or they detect something new) · 💤 hide. Zones follow from these thresholds.</div>
-    ${changeRows}${overrideRows}
+    <div class="k" style="margin-bottom:8px">AI Endurance / Garmin auto-update these numbers (and sometimes disagree). 👍 accept · 👎 keep your own · ⚖️ pick a source when they differ · 💤 hide. Pins hold until you un-pin or a new value appears. Zones follow from these thresholds.</div>
+    ${changeRows}${conflictRows}${overrideRows}
   </div>`;
 }
 

@@ -12,6 +12,7 @@ import {
   type PowerCurveSignals,
   type RacePredictionSignals,
   type RecoveryModel,
+  type Source,
 } from "./types.js";
 import { deriveZones } from "../insights/zones.js";
 import { applyMetricOverrides, loadMetricOverrides } from "./metricOverrides.js";
@@ -128,8 +129,9 @@ export async function assembleState(
     mapGarminIdentity(state, userProfile);
 
     // Thresholds + zones from Garmin's own FTP/LT tools (verified shapes) — these win over the
-    // AIE getUser-derived values mapped earlier, since they're the device's current numbers.
-    mapGarminThresholds(state, ftp, lactate);
+    // AIE getUser-derived values mapped earlier, since they're the device's current numbers. The
+    // user profile carries the device's max-HR (the HR-zone anchor), so it's passed in too.
+    mapGarminThresholds(state, ftp, lactate, userProfile);
     mapTrainingStatus(state, trainingStatus);
     mapHrvStatus(state, hrv);
     mapPowerCurve(state, pdc);
@@ -402,10 +404,25 @@ function mapZonesThresholds(state: AthleteState, payload: unknown): void {
     const secPer100 = cssRaw < 5 ? Math.round(100 / cssRaw) : Math.round(cssRaw); // m/s → sec/100m if tiny
     if (secPer100 >= 60 && secPer100 <= 240) thresholds.swimCssSecPer100 = secPer100;
   }
+  const maxHr = firstNum(payload, ["max_hr", "max_heart_rate", "maximum_heart_rate", "hr_max"]);
+  if (maxHr != null && maxHr >= 120 && maxHr <= 230) thresholds.maxHr = Math.round(maxHr);
 
   if (Object.keys(thresholds).length === 0) return; // nothing exposed → leave absent
+  recordSourceReading(state, "ai-endurance", thresholds);
   state.thresholds = { value: thresholds, source: "ai-endurance" };
   state.zones = { value: deriveZones(thresholds), source: "derived", note: "standard zone models from thresholds (Coggan power / %-LTHR / %-threshold pace)" };
+}
+
+/**
+ * Record what ONE source independently reported for the threshold markers, kept un-merged on
+ * `thresholdsBySource` so the dashboard can show the platforms side by side when they disagree (the
+ * merged winner stays on `state.thresholds`). No-op for an empty reading. Pure (mutates state).
+ */
+function recordSourceReading(state: AthleteState, source: Source, reading: DisciplineThresholds): void {
+  const trimmed: DisciplineThresholds = { ...reading };
+  delete trimmed.bikeFtpNote; // a UI note, not a reading
+  if (Object.keys(trimmed).length === 0) return;
+  state.thresholdsBySource = { ...(state.thresholdsBySource ?? {}), [source]: trimmed };
 }
 
 /**
@@ -418,14 +435,18 @@ function mapZonesThresholds(state: AthleteState, payload: unknown): void {
  * `lactate_threshold_speed_mps` has been observed reported ~10× too small, so we normalise a value in
  * the 0.2–0.8 range up by 10 before deriving pace, and only accept a plausible running speed.
  */
-export function mapGarminThresholds(state: AthleteState, ftp: unknown, lactate: unknown): void {
+export function mapGarminThresholds(state: AthleteState, ftp: unknown, lactate: unknown, userProfile?: unknown): void {
   const t: DisciplineThresholds = { ...(state.thresholds.value ?? {}) };
+  // What Garmin ITSELF reported, kept un-merged so the dashboard can show it next to AIE's reading even
+  // when AIE's value wins (e.g. we keep a higher test-based FTP). `g` records the raw device numbers.
+  const g: DisciplineThresholds = {};
   const weightKg = asNumber(get(lactate, "weight_kg")) ?? state.weightKg.value ?? undefined;
 
   const priorBikeFtp = t.bikeFtpW; // AIE/test-derived value mapped earlier, if any
   const bikeFtp = asNumber(get(ftp, "functional_threshold_power_watts"));
   if (bikeFtp != null && bikeFtp > 0 && String(get(ftp, "sport") ?? "CYCLING").toUpperCase().includes("CYCL")) {
     const garminFtp = Math.round(bikeFtp);
+    g.bikeFtpW = garminFtp; // record Garmin's device FTP regardless of which value wins below
     if (priorBikeFtp != null && garminFtp < priorBikeFtp) {
       // Keep the higher (test-based) value driving the zones, but surface the conflict.
       t.bikeFtpNote = `Garmin auto-detects ${garminFtp} W from sparse power-meter rides — keeping the higher test-based ${priorBikeFtp} W. Do a power-meter FTP effort to let Garmin re-detect.`;
@@ -437,16 +458,23 @@ export function mapGarminThresholds(state: AthleteState, ftp: unknown, lactate: 
   }
 
   const ltHr = asNumber(get(lactate, "lactate_threshold_heart_rate_bpm"));
-  if (ltHr != null && ltHr > 0) t.runThresholdHr = Math.round(ltHr);
+  if (ltHr != null && ltHr > 0) t.runThresholdHr = g.runThresholdHr = Math.round(ltHr);
   // get_lactate_threshold reports the RUNNING functional threshold power (FR970 native running power).
   const runPow = asNumber(get(lactate, "functional_threshold_power_watts"));
   if (runPow != null && runPow > 0 && String(get(lactate, "sport") ?? "").toUpperCase().includes("RUN")) {
-    t.runThresholdPowerW = Math.round(runPow);
+    t.runThresholdPowerW = g.runThresholdPowerW = Math.round(runPow);
   }
   let v = asNumber(get(lactate, "lactate_threshold_speed_mps"));
   if (v != null && v >= 0.2 && v < 0.8) v *= 10; // known ~10× under-report
-  if (v != null && v >= 2 && v <= 7) t.runThresholdPaceSecPerKm = Math.round(1000 / v);
+  if (v != null && v >= 2 && v <= 7) t.runThresholdPaceSecPerKm = g.runThresholdPaceSecPerKm = Math.round(1000 / v);
 
+  // Max HR — the device holds it on the user profile (the anchor for its HR zones). Probe candidate keys
+  // both top-level and under python-garminconnect's `userData`; best-effort, gated to a plausible range.
+  const profileData = get(userProfile, "userData") ?? userProfile;
+  const maxHr = firstNum(profileData, ["max_heart_rate", "maxHr", "max_hr", "maximum_heart_rate", "maxHeartRate", "userMaxHeartRate"]);
+  if (maxHr != null && maxHr >= 120 && maxHr <= 230) t.maxHr = g.maxHr = Math.round(maxHr);
+
+  recordSourceReading(state, "garmin", g);
   if (Object.keys(t).length === 0) return;
   state.thresholds = { value: t, source: "garmin", note: "Garmin get_cycling_ftp + get_lactate_threshold" };
   state.zones = { value: deriveZones(t), source: "derived", note: "standard zone models from Garmin thresholds (Coggan power / %-LTHR / %-threshold pace)" };
