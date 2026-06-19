@@ -2,7 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyState } from "../src/state/types.js";
 import { buildInsights } from "../src/insights/engine.js";
-import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderAieTodo, aieTodoCopy } from "../src/coach/dashboard.js";
+import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, parseResearchTopics } from "../src/coach/dashboard.js";
+import type { ProfileQuestion } from "../src/profile/questions.js";
+import type { InsightReport } from "../src/insights/engine.js";
+import type { Finding } from "../src/insights/metrics.js";
 import type { Profile } from "../src/profile/schema.js";
 import type { Finding } from "../src/insights/metrics.js";
 import type { SessionDecay } from "../src/insights/fit.js";
@@ -257,43 +260,251 @@ test("aieTodoCopy: status tokens get the curated 'why', free text passes through
     why: "without it there's no swim model for your races — the highest-value fix for a triathlete",
   });
   assert.equal(aieTodoCopy("ftp_w", "unresolved").label, "Resolve your cycling FTP");
-  assert.equal(aieTodoCopy("race_targets", "set the three target times").why, "set the three target times");
+  assert.equal(aieTodoCopy("some_field", "set it in AIE").why, "set it in AIE", "a descriptive value passes through as the note");
   assert.equal(aieTodoCopy("some_new_field", "todo").label, "Some New Field");
   assert.equal(aieTodoCopy("some_new_field", "todo").why, "needs setting in AI Endurance");
 });
 
-test("renderAieTodo: surfaces ai_endurance_todo as a card, drops resolved items, hides in share mode, escapes values", () => {
+// A tiny questions catalogue so buildSetupItems' "unfilled profile questions" branch is deterministic
+// regardless of how the real catalogue grows.
+const TEST_QUESTIONS: ProfileQuestion[] = [
+  { area: "fuelling", field: "fuelling.carb_target_g_per_hour", question: "Typical long-run fuel?", why: "feeds nutrition advice" },
+  { area: "availability", field: "availability.rest_day", question: "Which weekday is your rest day?", why: "shapes the week" },
+];
+
+test("buildSetupItems: drops race_targets, tags + routes each source, dedupes and caps", () => {
   const profile = {
     schema_version: 1,
     identity: {},
-    ai_endurance_todo: { swim_css: "not_set", ftp_w: "unresolved", race_targets: "set the three target times", legacy: "resolved" },
+    ai_endurance_todo: {
+      swim_css: "not_set",
+      ftp_w: "unresolved",
+      race_targets: "set the target_time for each race", // non-actionable → must be dropped
+      legacy: "resolved", // resolved → dropped
+    },
+    open_items: ["Shim the bike cleat after Birmingham", "  ", 42 as unknown as string],
+    fuelling: { carb_target_g_per_hour: { long: 80 } }, // filled → its question is NOT surfaced
+    // availability.rest_day is absent → its question IS surfaced
   } as Profile;
-  const html = renderAieTodo(profile);
-  assert.match(html, /Fix these in AI Endurance/);
+  const items = buildSetupItems(profile, { questions: TEST_QUESTIONS });
+
+  // race_targets and resolved are gone; only actionable items remain.
+  assert.ok(!items.some((i) => /race target/i.test(i.label)), "the non-actionable race_targets item is dropped");
+  assert.ok(!items.some((i) => i.label.toLowerCase().includes("legacy")), "a resolved item is dropped");
+
+  const aie = items.filter((i) => i.source === "ai_endurance");
+  assert.deepEqual(
+    aie.map((i) => i.label),
+    ["Set your swim CSS", "Resolve your cycling FTP"],
+  );
+  assert.ok(aie.every((i) => i.route === "in AI Endurance"));
+
+  const open = items.filter((i) => i.source === "open_item");
+  assert.deepEqual(open.map((i) => i.label), ["Shim the bike cleat after Birmingham"], "blank/non-string open items are skipped");
+  assert.equal(open[0].route, "discuss with coach");
+
+  const q = items.filter((i) => i.source === "profile_question");
+  assert.deepEqual(q.map((i) => i.label), ["Answer: Which weekday is your rest day?"], "only the UNFILLED question surfaces");
+  assert.equal(q[0].route, "edit profile");
+});
+
+test("buildSetupItems: dedupes across sources (first/higher-value wins) and caps at ~5", () => {
+  // An open item restates an AIE label; the AIE one (added first) wins, the duplicate is dropped.
+  const deduped = buildSetupItems({
+    schema_version: 1,
+    identity: {},
+    ai_endurance_todo: { swim_css: "not_set" },
+    open_items: ["set your swim css"],
+  } as Profile);
+  assert.equal(deduped.filter((i) => /swim css/i.test(i.label)).length, 1, "the restated item is deduped");
+  assert.equal(deduped[0].source, "ai_endurance", "the higher-value source is kept");
+
+  // With far more than five unfilled questions, the list is capped.
+  const many: ProfileQuestion[] = Array.from({ length: 12 }, (_, i) => ({
+    area: "health",
+    field: `health.q${i}`,
+    question: `Question ${i}?`,
+    why: "why",
+  }));
+  const capped = buildSetupItems({ schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set", ftp_w: "unresolved" } } as Profile, { questions: many });
+  assert.equal(capped.length, 5, "the card is capped to keep it a calm hub");
+  assert.equal(capped[0].source, "ai_endurance", "AIE gaps lead the list");
+});
+
+test("buildSetupItems: ranks by value so high-impact gaps win the cap (coach-read > reference-only)", () => {
+  // A reference-only question (sits FIRST in catalogue order) must rank below a coach-read one, and
+  // both must rank below an AIE gap and an open item — so the cap keeps the high-value items.
+  const questions: ProfileQuestion[] = [
+    { area: "identity", field: "identity.height_cm", question: "Standing height (cm)?", why: "Stable anthropometry kept for reference." },
+    { area: "fuelling", field: "fuelling.carb_target_g_per_hour", question: "Typical long-run fuel?", why: "Read into the coaching context as your per-session fuelling plan." },
+  ];
+  const items = buildSetupItems(
+    { schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" }, open_items: ["Shim the cleat"] } as Profile,
+    { questions },
+  );
+  assert.deepEqual(
+    items.map((i) => i.source),
+    ["ai_endurance", "open_item", "profile_question", "profile_question"],
+    "AIE > open item > profile questions",
+  );
+  // Within the questions, the coach-read one outranks the reference-only one despite catalogue order.
+  const labels = items.filter((i) => i.source === "profile_question").map((i) => i.label);
+  assert.deepEqual(labels, ["Answer: Typical long-run fuel?", "Answer: Standing height (cm)?"]);
+  assert.ok(items[0].priority > items[items.length - 1].priority, "priority is monotonic across the ranked list");
+});
+
+test("renderSetupImprove: renders the card, tags routes + dismiss control, hides in share mode, escapes values", () => {
+  const profile = {
+    schema_version: 1,
+    identity: {},
+    ai_endurance_todo: { swim_css: "not_set" },
+    open_items: ["Shim the cleat"],
+  } as Profile;
+  const html = renderSetupImprove(profile, false, { questions: [] });
+  assert.match(html, /Set up &amp; improve/);
   assert.match(html, /Set your swim CSS/);
-  assert.match(html, /Resolve your cycling FTP/);
-  assert.match(html, /Set your race target times/);
-  assert.match(html, /set the three target times/, "a descriptive value passes through as the note");
-  assert.doesNotMatch(html, /legacy|resolved/, "an item marked 'resolved' is dropped");
+  assert.match(html, /Shim the cleat/);
+  assert.match(html, /in AI Endurance/);
+  assert.match(html, /discuss with coach/);
+  // Each item carries its stable dismissal key + a ✕ that posts to the shared insight-feedback machinery.
+  assert.match(html, /data-key="setup:aie:swim_css"/);
+  assert.match(html, /class="dismiss"[^>]*onclick="dismissSetup\(this\)"/);
   // Redacted screenshot view and the empty cases produce nothing.
-  assert.equal(renderAieTodo(profile, true), "", "hidden in share mode");
-  assert.equal(renderAieTodo(undefined), "");
-  assert.equal(renderAieTodo({ schema_version: 1, identity: {} } as Profile), "", "no card when there's nothing to do");
+  assert.equal(renderSetupImprove(profile, true), "", "hidden in share mode");
+  assert.equal(renderSetupImprove(undefined), "");
+  assert.equal(renderSetupImprove({ schema_version: 1, identity: {} } as Profile, false, { questions: [] }), "", "no card when there's nothing to do");
   // Interpolated values are escaped (dashboard escaping convention).
-  const nasty = renderAieTodo({ schema_version: 1, identity: {}, ai_endurance_todo: { x: `<script>bad()</script>` } } as Profile);
+  const nasty = renderSetupImprove({ schema_version: 1, identity: {}, ai_endurance_todo: { x: `<script>bad()</script>` } } as Profile, false, { questions: [] });
   assert.doesNotMatch(nasty, /<script>bad/);
   assert.match(nasty, /&lt;script&gt;/);
 });
 
-test("dashboard shows the AIE-todo card only when a profile with outstanding items is supplied", () => {
+test("buildSetupItems: stable keys + a dismissed (snoozed) key is dropped, freeing its slot", () => {
+  const profile = {
+    schema_version: 1,
+    identity: {},
+    ai_endurance_todo: { swim_css: "not_set", ftp_w: "unresolved" },
+    open_items: ["Shim the cleat"],
+  } as Profile;
+  // Keys are namespaced + derived from identity (todo key / normalised open text), not display copy.
+  const keys = buildSetupItems(profile, { questions: [] }).map((i) => i.key);
+  assert.deepEqual(keys, ["setup:aie:swim_css", "setup:aie:ftp_w", "setup:open:shim the cleat"]);
+  // The same item yields the same key across renders (so a dismissal sticks).
+  assert.deepEqual(buildSetupItems(profile, { questions: [] }).map((i) => i.key), keys);
+
+  // Dismiss the FTP item → it drops, and the others remain (in order).
+  const after = buildSetupItems(profile, { questions: [], suppressed: new Set(["setup:aie:ftp_w"]) });
+  assert.deepEqual(after.map((i) => i.key), ["setup:aie:swim_css", "setup:open:shim the cleat"]);
+
+  // Dismissal frees a slot before the ~5 cap: with 6 unfilled questions + 1 AIE gap, dismissing the
+  // AIE gap lets a 6th question (otherwise cut) surface.
+  // 1 AIE gap + 6 questions, cap 5 → shown = [swim, q0..q3]; q4 and q5 are cut.
+  const many: ProfileQuestion[] = Array.from({ length: 6 }, (_, i) => ({ area: "health", field: `health.q${i}`, question: `Q${i}?`, why: "why" }));
+  const full = buildSetupItems({ schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile, { questions: many });
+  assert.equal(full.length, 5);
+  assert.ok(!full.some((i) => i.key === "setup:q:health.q4"), "q4 is cut by the cap");
+  // Dismiss the AIE gap → shown = [q0..q4], so q4 (previously cut) takes the freed slot.
+  const freed = buildSetupItems({ schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile, { questions: many, suppressed: new Set(["setup:aie:swim_css"]) });
+  assert.equal(freed.length, 5);
+  assert.ok(freed.some((i) => i.key === "setup:q:health.q4"), "dismissing one item lets the next-best fill the freed slot");
+});
+
+// --- Phase 2/3: "This week" (marginal gains + weekly pointer) and "Worth considering" (research) ---
+const NOW = Date.parse("2026-06-15T12:00:00Z");
+const F = (o: Partial<Finding>): Finding => ({ family: "Aerobic efficiency", title: "t", severity: "watch", detail: "d", evidence: "e", confidence: 0.6, ...o });
+const insightsWith = (findings: Finding[]) => ({ findings, topFindings: [] } as unknown as InsightReport);
+
+test("parseResearchTopics: pulls bold topic headlines, deduped + capped, tolerant of format drift", () => {
+  const md = [
+    "# Research digest — 2026-06-01 (PROPOSED)",
+    "- **Wider tyres** (CHANGE): 28–32mm at lower pressure.",
+    "- **Carb intake 90 g/h** (NEW): for long course.",
+    "* **Wider tyres** again — a duplicate, dropped.",
+    "Some prose with no bold lead.",
+    "- not bold either",
+  ].join("\n");
+  assert.deepEqual(parseResearchTopics(md), ["Wider tyres", "Carb intake 90 g/h"]);
+  assert.deepEqual(parseResearchTopics(md, 1), ["Wider tyres"]);
+  assert.deepEqual(parseResearchTopics("no parseable topics here"), []);
+});
+
+test("buildSetupItems: groups This week (gains + weekly pointer) and Worth considering (research) with as-of tags", () => {
+  const profile = { schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile;
+  const insights = insightsWith([
+    F({ family: "Durability", title: "Brick pacing", severity: "watch", recommendation: "Start the brick run 5s/km easier", confidence: 0.8 }),
+  ]);
+  const items = buildSetupItems(profile, {
+    questions: [],
+    insights,
+    weeklyReviewDate: "2026-06-12", // 3 days before NOW → fresh
+    researchDigest: { date: "2026-06-10", topics: ["90 g/h carb", "165mm cranks"] }, // 5 days → fresh
+    now: NOW,
+  });
+  assert.deepEqual([...new Set(items.map((i) => i.group))], ["finish_setup", "this_week", "worth_considering"]);
+
+  const week = items.filter((i) => i.group === "this_week");
+  assert.equal(week[0].label, "Start the brick run 5s/km easier", "marginal gain (its recommendation) leads This week");
+  assert.equal(week[0].source, "tune");
+  assert.ok(week[0].key.startsWith("setup:tune:"), "tune item carries a namespaced finding key");
+  assert.ok(week.some((i) => i.source === "weekly" && /as of 3d ago/.test(i.why)), "weekly pointer carries an as-of tag");
+
+  const consider = items.filter((i) => i.group === "worth_considering");
+  assert.deepEqual(consider.map((i) => i.label), ["90 g/h carb", "165mm cranks"]);
+  assert.ok(consider.every((i) => i.route === "discuss with coach" && /as of 5d ago/.test(i.why)));
+  assert.equal(consider[0].key, "setup:research:90 g h carb");
+});
+
+test("buildSetupItems: stale weekly/research reports drop out (the freshness windows)", () => {
+  const items = buildSetupItems({ schema_version: 1, identity: {} } as Profile, {
+    questions: [],
+    weeklyReviewDate: "2026-05-01", // >10d before NOW → stale
+    researchDigest: { date: "2026-01-01", topics: ["old topic"] }, // >45d → stale
+    now: NOW,
+  });
+  assert.equal(items.length, 0, "nothing fresh, nothing to surface");
+});
+
+test("buildSetupItems: a research digest with no parseable topics falls back to a single review pointer", () => {
+  const items = buildSetupItems({ schema_version: 1, identity: {} } as Profile, {
+    questions: [],
+    researchDigest: { date: "2026-06-14", topics: [] },
+    now: NOW,
+  });
+  assert.deepEqual(items.map((i) => [i.label, i.key, i.group]), [["Review the latest research digest", "setup:research:digest", "worth_considering"]]);
+});
+
+test("buildSetupItems: a This-week item restating a finish-setup item is deduped (finish-setup wins)", () => {
+  const profile = { schema_version: 1, identity: {}, open_items: ["Start the brick run easier"] } as Profile;
+  const insights = insightsWith([F({ family: "Durability", title: "Brick", recommendation: "Start the brick run easier" })]);
+  const items = buildSetupItems(profile, { questions: [], insights, now: NOW });
+  const matching = items.filter((i) => /start the brick run easier/i.test(i.label));
+  assert.equal(matching.length, 1, "the cross-group restatement is deduped");
+  assert.equal(matching[0].group, "finish_setup", "and the finish-setup item is the one kept");
+});
+
+test("renderSetupImprove: group subheadings appear only when more than one section is present", () => {
+  const profile = { schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile;
+  const flat = renderSetupImprove(profile, false, { questions: [] });
+  assert.doesNotMatch(flat, /setup-group/, "finish-setup only → flat, no subheadings");
+  const grouped = renderSetupImprove(profile, false, {
+    questions: [],
+    researchDigest: { date: "2026-06-14", topics: ["90 g/h carb"] },
+    now: NOW,
+  });
+  assert.match(grouped, /class="setup-group">Finish setup</);
+  assert.match(grouped, /class="setup-group">Worth considering</);
+  assert.match(grouped, /90 g\/h carb/);
+});
+
+test("dashboard shows the Set-up-&-improve card only when a profile with outstanding items is supplied", () => {
   const s = emptyState("2026-06-18", new Date().toISOString());
   const withTodo = renderDashboard({
     window: [s],
     decisions: [],
     profile: { schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile,
   });
-  assert.match(withTodo, /Fix these in AI Endurance/);
-  assert.doesNotMatch(renderDashboard({ window: [s], decisions: [] }), /Fix these in AI Endurance/);
+  assert.match(withTodo, /Set up &amp; improve/);
+  assert.doesNotMatch(renderDashboard({ window: [s], decisions: [] }), /Set up &amp; improve/);
 });
 
 test("share view omits the interactive Sync card (no empty card in a screenshot/PDF)", () => {

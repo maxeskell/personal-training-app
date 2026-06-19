@@ -3,10 +3,12 @@ import type { DecisionRecord, InsightReaction } from "../state/decisionLog.js";
 import type { FitSummary } from "../archive/store.js";
 import type { InsightReport } from "../insights/engine.js";
 import { findingKey } from "../insights/metrics.js";
+import { selectMarginalGains } from "../insights/marginalGains.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone } from "../insights/headline.js";
 import { assembleSession } from "./session.js";
 import type { Profile } from "../profile/schema.js";
+import { PROFILE_QUESTIONS, type ProfileQuestion } from "../profile/questions.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
 import { weekday, type WeekWeather } from "../weather/assess.js";
 import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
@@ -85,9 +87,10 @@ export interface DashboardInput {
   /** Week-ahead weather joined to the upcoming plan (omitted when the forecast is unavailable). */
   weather?: WeekWeather;
   /**
-   * The athlete profile (loaded best-effort) — drives the "Fix these in AI Endurance" card from its
-   * `ai_endurance_todo`. Omitted/absent → the card is simply not shown. NOT persisted in snapshots, so
-   * the render paths load it explicitly rather than read it off state.
+   * The athlete profile (loaded best-effort) — drives the "Set up & improve" card from its actionable
+   * `ai_endurance_todo` gaps, `open_items`, and any unfilled profile questions. Omitted/absent → the
+   * card is simply not shown. NOT persisted in snapshots, so the render paths load it explicitly rather
+   * than read it off state.
    */
   profile?: Profile;
   /**
@@ -102,6 +105,25 @@ export interface DashboardInput {
    * which has no /refresh endpoint behind it.
    */
   autoSyncStaleMin?: number;
+  /**
+   * Keys the athlete snoozed within the cool-off window (same set used to suppress insights). Lets the
+   * "Set up & improve" card drop items dismissed via its ✕ control. Omitted → nothing is suppressed.
+   */
+  suppressed?: Set<string>;
+  /**
+   * Leading date (YYYY-MM-DD) of the most recent persisted weekly-review report, if any — feeds the
+   * "Set up & improve → This week" group a "review saved Nd ago" pointer that drops when stale. The card
+   * reads only this date, never re-runs the (LLM) weekly flow.
+   */
+  weeklyReviewDate?: string;
+  /**
+   * Latest persisted research digest (from `knowledge/pending/`): its date + the topic headlines parsed
+   * from the markdown. Feeds the "Worth considering" group as-of-tagged items; drops when stale. Read
+   * only — the card never re-runs the (LLM + web-search) research flow.
+   */
+  researchDigest?: { date: string; topics: string[] };
+  /** Clock for deterministic "as of N days ago" staleness (defaults to Date.now()); injectable in tests. */
+  now?: number;
 }
 
 const TONE_COLOR: Record<Tone, string> = { good: "#1a8a3a", neutral: "#777", warn: "#c98a00", bad: "#c0392b" };
@@ -407,14 +429,20 @@ export function trendsHeading(days: number): string {
 const AIE_TODO_LABELS: Record<string, string> = {
   swim_css: "Set your swim CSS",
   ftp_w: "Resolve your cycling FTP",
-  race_targets: "Set your race target times",
 };
 const AIE_TODO_WHY: Record<string, string> = {
   swim_css: "without it there's no swim model for your races — the highest-value fix for a triathlete",
   ftp_w: "your power sources disagree, so bike zones and race predictions stay uncertain until reconciled",
-  race_targets: "predictions can't track against a goal until the target times are entered",
 };
 const AIE_TODO_STATUS = new Set(["not_set", "unresolved", "todo", "missing", "none", "pending", "unset"]);
+
+/**
+ * `ai_endurance_todo` keys that aren't actionable ANYWHERE, so they must never reach the card (issue
+ * #112: only surface items you can actually do something about). AI Endurance has no field for per-race
+ * target times — they live in `profile.races[].target_time`, which the coach already reads — so a
+ * `race_targets` nag would point at a setting that can't be set.
+ */
+const NON_ACTIONABLE_AIE = new Set(["race_targets"]);
 
 /** Map one `ai_endurance_todo` entry to a display label + a why-it-matters note. A status token
  *  ("not_set"/"unresolved"/…) uses the curated note; any other value is itself the descriptive note. */
@@ -425,27 +453,281 @@ export function aieTodoCopy(key: string, value: string): { label: string; why: s
   return { label, why };
 }
 
+/** Where an item is actioned — shown as a tag so the source can be trusted/weighted at a glance. */
+export type SetupRoute = "in AI Endurance" | "edit profile" | "discuss with coach";
+
+/** The three sections of the card (issue #112). Finish setup first, then time-bound advice. */
+export type SetupGroup = "finish_setup" | "this_week" | "worth_considering";
+
+/** Which producer an item came from (used for tagging, dedupe ordering and the dismissal key). */
+export type SetupSource = "ai_endurance" | "open_item" | "profile_question" | "tune" | "weekly" | "research";
+
+/** One actionable item on the "Set up & improve" card, tagged by its source and where to act on it. */
+export interface SetupItem {
+  /**
+   * Stable per-item key (`setup:<tag>:<id>`) used to persist a dismissal in the SAME decision-log
+   * machinery as insight feedback. Derived from the item's IDENTITY (todo key / field / finding key /
+   * normalised text), not its display copy, so rewording a `why` doesn't lose a dismissal. The `setup:`
+   * namespace keeps these distinct from insight finding keys in the shared log.
+   */
+  key: string;
+  /** Short title / the action. */
+  label: string;
+  /** One line: why it's worth doing (or, for a free-text open item, empty). */
+  why: string;
+  /** Which producer surfaced it — used for tagging + dedupe ordering. */
+  source: SetupSource;
+  /** Which section of the card it belongs to. */
+  group: SetupGroup;
+  /** Where the athlete actions it. */
+  route: SetupRoute;
+  /** Ranking weight (higher = surfaces first); the per-group cap keeps the highest-value items. */
+  priority: number;
+}
+
+/** Stable dismissal key for a setup item — namespaced (by source tag) so it never collides with an insight key. */
+const SOURCE_TAG: Record<SetupSource, string> = {
+  ai_endurance: "aie",
+  open_item: "open",
+  profile_question: "q",
+  tune: "tune",
+  weekly: "weekly",
+  research: "research",
+};
+function setupKey(source: SetupSource, id: string): string {
+  return `setup:${SOURCE_TAG[source]}:${id}`;
+}
+
+/** Per-group caps keep the hub calm: a handful of setup gaps, a couple of timely nudges. */
+const GROUP_CAP: Record<SetupGroup, number> = { finish_setup: 5, this_week: 3, worth_considering: 2 };
+
+/** Persisted-report freshness windows: an item drops once its source report is older than this. */
+const WEEKLY_FRESH_DAYS = 10; // weekly review / tune cadence
+const RESEARCH_FRESH_DAYS = 45; // monthly research digest
+
+/** Whole days from a YYYY-MM-DD report date to `now` (negative clamped to 0 for a future-dated file). */
+function ageDaysFrom(date: string, now: number): number | null {
+  const t = Date.parse(`${date}T00:00:00Z`);
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.floor((now - t) / 86_400_000));
+}
+
+/** "as of today" / "as of 3d ago" — the freshness tag the issue asks every time-bound item to carry. */
+function asOf(ageDays: number): string {
+  return ageDays <= 0 ? "as of today" : `as of ${ageDays}d ago`;
+}
+
 /**
- * "Fix these in AI Endurance" — surfaces the profile's `ai_endurance_todo`: data only the athlete can
- * set in AI Endurance, that the coach can't fill itself but which changes what it can model (e.g. swim
- * CSS unset → no swim model; an unresolved FTP source). Display-only, deterministic, no LLM. Omitted in
- * share/screenshot mode (it's personal setup) and whenever there's nothing outstanding.
+ * Parse the topic headlines from a research-digest markdown (the bold lead of each `- **Topic** …` item,
+ * per RESEARCH_PROMPT). Pure + tolerant: if the format drifts it just returns fewer (or no) topics, and
+ * the caller falls back to a single "new digest to review" pointer. Deduped, capped.
  */
-export function renderAieTodo(profile: Profile | undefined, share = false): string {
-  if (share || !profile?.ai_endurance_todo) return "";
-  const entries = Object.entries(profile.ai_endurance_todo).filter(
-    ([, v]) => v != null && String(v).trim() !== "" && String(v).trim().toLowerCase() !== "resolved",
-  );
-  if (!entries.length) return "";
-  const rows = entries
-    .map(([key, value]) => {
-      const { label, why } = aieTodoCopy(key, String(value));
-      return `<li><strong>${escapeHtml(label)}</strong>${why ? ` — ${escapeHtml(why)}` : ""}</li>`;
-    })
-    .join("");
-  return `<div class="card"><h2>Fix these in AI Endurance</h2>
-  <div class="k" style="margin-bottom:6px">Data only you can set in AI Endurance — each one the coach can't fill itself, but that changes what it can model.</div>
-  <ul style="margin:0;padding-left:18px;line-height:1.6">${rows}</ul></div>`;
+export function parseResearchTopics(markdown: string, limit = 4): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const line of markdown.split("\n")) {
+    const m = line.match(/^\s*[-*]\s*\*\*(.+?)\*\*/); // a bulleted item that leads with a bold topic
+    if (!m) continue;
+    const topic = m[1].replace(/[:.]+$/, "").trim();
+    const k = topic.toLowerCase();
+    if (!topic || seen.has(k)) continue;
+    seen.add(k);
+    out.push(topic);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/**
+ * Per-source ranking weights (higher = surfaces first) so the ~5 cap keeps the highest-VALUE items, not
+ * just the first ones in catalogue order. AI-Endurance gaps block a whole discipline model / zones, and
+ * open items are actions the athlete explicitly flagged, so both outrank profile questions; among
+ * questions, a field the coach actually READS beats a reference-only one (so "what's your height?" never
+ * crowds out a real gap).
+ */
+const SETUP_PRIORITY = { ai_endurance: 100, open_item: 70, question_coach: 50, question_reference: 20, tune: 60, weekly: 40, research: 30 } as const;
+
+/**
+ * A profile question is "reference-only" (lower priority) when its `why` follows the questions.ts honesty
+ * convention for fields no flow reads yet — "for your reference", "for future use", "not yet read…". This
+ * only nudges ORDERING, so a reworded `why` at worst mis-ranks an item; it never breaks the card.
+ */
+const REFERENCE_ONLY_WHY = /for (your )?reference|for future use|not (yet )?read|not (yet )?pulled into/i;
+
+function questionPriority(q: ProfileQuestion): number {
+  return REFERENCE_ONLY_WHY.test(q.why) ? SETUP_PRIORITY.question_reference : SETUP_PRIORITY.question_coach;
+}
+
+/** Treat null / blank string / empty collection as "not filled in" when scanning for open questions. */
+function isBlank(v: unknown): boolean {
+  if (v == null) return true;
+  if (typeof v === "string") return v.trim() === "";
+  if (Array.isArray(v)) return v.length === 0;
+  if (typeof v === "object") return Object.keys(v as Record<string, unknown>).length === 0;
+  return false;
+}
+
+/** Resolve a dot-path (e.g. "health.medication.dose_day") against the profile; undefined if absent. */
+function valueAtPath(obj: unknown, dotPath: string): unknown {
+  let cur: unknown = obj;
+  for (const part of dotPath.split(".")) {
+    if (cur && typeof cur === "object" && !Array.isArray(cur)) cur = (cur as Record<string, unknown>)[part];
+    else return undefined;
+  }
+  return cur;
+}
+
+/** Normalised key for dedup — collapses case/punctuation so a restated item doesn't show twice. */
+function dedupeKey(label: string): string {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/** Options for {@link buildSetupItems} / {@link renderSetupImprove}. */
+export interface SetupOptions {
+  /** Profile-question catalogue (defaults to the real one; injectable for tests). */
+  questions?: ProfileQuestion[];
+  /** Item keys the athlete dismissed (snoozed) within the cool-off window — dropped before the cap. */
+  suppressed?: Set<string>;
+  /** Already-built insight report — its deterministic marginal-gains feed the "This week" group (no LLM). */
+  insights?: InsightReport;
+  /** Date of the latest persisted weekly-review report (drops from "This week" once stale). */
+  weeklyReviewDate?: string;
+  /** Latest research digest (date + parsed topics) for the "Worth considering" group (drops when stale). */
+  researchDigest?: { date: string; topics: string[] };
+  /** Clock for staleness (defaults to Date.now()). */
+  now?: number;
+}
+
+/** Display order + dedupe precedence for the three groups (finish setup wins a cross-group duplicate). */
+const GROUP_ORDER: Record<SetupGroup, number> = { finish_setup: 0, this_week: 1, worth_considering: 2 };
+
+/**
+ * Build the grouped, deduped, capped list of "Set up & improve" items — NO LLM, all from data the
+ * dashboard already loads or has persisted (issue #112). Sources, each tagged + routed:
+ *   • Finish setup      ← `ai_endurance_todo` gaps · `open_items` · unfilled profile questions.
+ *   • This week         ← the deterministic marginal-gains selection (the `tune` flow's LLM-free core,
+ *                          computed live so it's always current) + a pointer to a recent weekly review.
+ *   • Worth considering ← the last persisted research digest's topics (read-only; never re-run live).
+ * Time-bound items (weekly/research) carry an "as of …" tag and drop once their report goes stale.
+ * Dismissed items (snoozed via the shared insight-feedback machinery) are dropped first; the rest are
+ * ranked, deduped across sources (finish-setup wins), and capped per group so the card stays calm. Pure.
+ */
+export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions = {}): SetupItem[] {
+  if (!profile) return [];
+  const questions = opts.questions ?? PROFILE_QUESTIONS;
+  const suppressed = opts.suppressed ?? new Set<string>();
+  const now = opts.now ?? Date.now();
+  const items: SetupItem[] = [];
+
+  // --- Finish setup ---------------------------------------------------------------------------------
+  // 1) Actionable AI-Endurance gaps (skip resolved/blank values and the non-actionable keys).
+  for (const [key, value] of Object.entries(profile.ai_endurance_todo ?? {})) {
+    if (NON_ACTIONABLE_AIE.has(key)) continue;
+    const v = value == null ? "" : String(value).trim();
+    if (v === "" || v.toLowerCase() === "resolved") continue;
+    const { label, why } = aieTodoCopy(key, v);
+    items.push({ key: setupKey("ai_endurance", key), label, why, source: "ai_endurance", group: "finish_setup", route: "in AI Endurance", priority: SETUP_PRIORITY.ai_endurance });
+  }
+  // 2) Free-text open items (a running list of unresolved actions) → raise them with the coach.
+  for (const raw of profile.open_items ?? []) {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (!text) continue;
+    items.push({ key: setupKey("open_item", dedupeKey(text)), label: text, why: "", source: "open_item", group: "finish_setup", route: "discuss with coach", priority: SETUP_PRIORITY.open_item });
+  }
+  // 3) Unfilled optional profile questions → fill them in (or tell Claude via update_profile).
+  for (const q of questions) {
+    if (!isBlank(valueAtPath(profile, q.field))) continue;
+    items.push({ key: setupKey("profile_question", q.field), label: `Answer: ${q.question}`, why: q.why, source: "profile_question", group: "finish_setup", route: "edit profile", priority: questionPriority(q) });
+  }
+
+  // --- This week (Phase 2: marginal gains + last weekly review, read-only/LLM-free) -----------------
+  if (opts.insights) {
+    for (const f of selectMarginalGains(opts.insights, GROUP_CAP.this_week)) {
+      items.push({ key: setupKey("tune", findingKey(f)), label: f.recommendation ?? f.title, why: f.title, source: "tune", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.tune });
+    }
+  }
+  if (opts.weeklyReviewDate) {
+    const age = ageDaysFrom(opts.weeklyReviewDate, now);
+    if (age != null && age <= WEEKLY_FRESH_DAYS) {
+      items.push({ key: setupKey("weekly", "review"), label: "Revisit this week's training review", why: `weekly review saved — ${asOf(age)}`, source: "weekly", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.weekly });
+    }
+  }
+
+  // --- Worth considering (Phase 3: last research digest, read-only/LLM-free) ------------------------
+  if (opts.researchDigest) {
+    const age = ageDaysFrom(opts.researchDigest.date, now);
+    if (age != null && age <= RESEARCH_FRESH_DAYS) {
+      const topics = opts.researchDigest.topics.slice(0, GROUP_CAP.worth_considering);
+      if (topics.length) {
+        for (const t of topics) {
+          items.push({ key: setupKey("research", dedupeKey(t)), label: t, why: `from the research digest — ${asOf(age)}`, source: "research", group: "worth_considering", route: "discuss with coach", priority: SETUP_PRIORITY.research });
+        }
+      } else {
+        items.push({ key: setupKey("research", "digest"), label: "Review the latest research digest", why: asOf(age), source: "research", group: "worth_considering", route: "discuss with coach", priority: SETUP_PRIORITY.research });
+      }
+    }
+  }
+
+  // Drop dismissed items, then order by group → priority → insertion (stable). Dedupe across sources
+  // (finish-setup sorts first, so it wins a cross-group restatement), and cap PER GROUP — filtering
+  // before the cap means a dismissal lets the next-best item in that group take the freed slot.
+  const ranked = items
+    .filter((item) => !suppressed.has(item.key))
+    .map((item, i) => ({ item, i }))
+    .sort((a, b) => GROUP_ORDER[a.item.group] - GROUP_ORDER[b.item.group] || b.item.priority - a.item.priority || a.i - b.i)
+    .map((d) => d.item);
+  const seen = new Set<string>();
+  const perGroup: Record<SetupGroup, number> = { finish_setup: 0, this_week: 0, worth_considering: 0 };
+  const out: SetupItem[] = [];
+  for (const item of ranked) {
+    const k = dedupeKey(item.label);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    if (perGroup[item.group] >= GROUP_CAP[item.group]) continue;
+    perGroup[item.group] += 1;
+    out.push(item);
+  }
+  return out;
+}
+
+/** Human heading per group (only shown when more than one group is present). */
+const GROUP_HEADING: Record<SetupGroup, string> = {
+  finish_setup: "Finish setup",
+  this_week: "This week",
+  worth_considering: "Worth considering",
+};
+
+/** One `<li>` for a setup item: action + why + a route tag + the dismiss ✕ (carries its stable key). */
+function setupItemHtml(it: SetupItem): string {
+  const note = it.why ? ` — ${escapeHtml(it.why)}` : "";
+  return `<li class="setup-item" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><div><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> <button class="dismiss" title="Dismiss — hide this for ~2 weeks" onclick="dismissSetup(this)">✕</button></div></li>`;
+}
+
+const setupListHtml = (its: SetupItem[]): string =>
+  `<ul class="setup" style="margin:0;padding-left:18px;line-height:1.6">${its.map(setupItemHtml).join("")}</ul>`;
+
+/**
+ * "Set up & improve" — the dashboard's deterministic, LLM-free action hub (issue #112). Three sections:
+ * **Finish setup** (AI-Endurance gaps · open items · unfilled profile questions), **This week** (the
+ * marginal-gains selection + a recent weekly-review pointer) and **Worth considering** (the last research
+ * digest's topics). The time-bound groups READ persisted reports (never re-run the LLM flows) and carry
+ * an "as of …" tag. Each item is dismissable (the ✕ snoozes it via the same insight-feedback machinery,
+ * so it stays gone ~2wk — a calm hub, not a nag). The group headings only appear when more than one
+ * section is present. Omitted in share/screenshot mode and whenever there's nothing outstanding.
+ */
+export function renderSetupImprove(profile: Profile | undefined, share = false, opts: SetupOptions = {}): string {
+  if (share) return "";
+  const items = buildSetupItems(profile, opts);
+  if (!items.length) return "";
+  const groups: SetupGroup[] = ["finish_setup", "this_week", "worth_considering"];
+  const present = groups.filter((g) => items.some((it) => it.group === g));
+  const body =
+    present.length <= 1
+      ? setupListHtml(items)
+      : present.map((g) => `<h3 class="setup-group">${GROUP_HEADING[g]}</h3>${setupListHtml(items.filter((it) => it.group === g))}`).join("");
+  return `<div class="card"><h2>Set up &amp; improve</h2>
+  <div class="k" style="margin-bottom:6px">What to do next — from your profile and your last saved coach reports (no AI call here). Each item is tagged with where to action it; dismiss (✕) hides one for ~2 weeks.</div>
+  ${body}</div>`;
 }
 
 /** Garmin model scores: endurance score, hill score, and the power-duration curve (MMP). */
@@ -691,7 +973,7 @@ function freshnessLine(today: AthleteState): string {
   return line;
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReviewDate, researchDigest, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Week: load by sport. Time in h:mm (user ask); a zero distance renders "—" not a misleading 0.0 km.
@@ -779,6 +1061,9 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .acts .agree.on{background:#e6f5ea;border-color:#1a8a3a;font-weight:600}.acts .disagree.on{background:#fdeaea;border-color:#c0392b;font-weight:600}
 .newbadge{background:#1558d6;color:#fff;font-size:9px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:9px;margin-right:6px;vertical-align:middle}
 .age{font-size:11px;color:#bbb;margin-top:4px}
+.setup li{margin-bottom:4px}.route{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.02em;color:#6b5b45;background:#f4f1ea;border:1px solid #e7d9c6;border-radius:9px;padding:1px 7px;margin-left:4px;white-space:nowrap}
+.setup-item .dismiss{font-size:11px;line-height:1;color:#b9aa93;background:none;border:0;cursor:pointer;padding:0 3px;margin-left:2px}.setup-item .dismiss:hover{color:#c0392b}
+.setup-group{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#9a8a72;margin:10px 0 3px}
 .actbtn{font-size:13px;padding:7px 14px;border:1px solid #c8642d;border-radius:8px;background:#fff;color:#c8642d;cursor:pointer}.actbtn:hover{background:#c8642d;color:#fff}
 code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 .proposal{border:1px solid #e7d9c6;border-radius:8px;padding:10px 12px;margin-top:10px}
@@ -872,6 +1157,13 @@ async function feedback(btn){
     setReactionState(box,send);span.textContent=send==='like'?'👍 liked':'👎 disliked (still shown)';
   }catch(err){span.textContent='error';}
 }
+async function dismissSetup(btn){
+  var li=btn.closest('.setup-item');btn.disabled=true;
+  try{await fetch('/insight-feedback',{method:'POST',headers:{'content-type':'application/json'},
+    body:JSON.stringify({key:li.getAttribute('data-key'),reaction:'snooze',summary:li.getAttribute('data-summary')})});
+    li.style.opacity=0.4;li.style.textDecoration='line-through';
+  }catch(err){btn.disabled=false;}
+}
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 async function actPlan(){
   var box=document.getElementById('proposals'); box.innerHTML='<div class="k">Drafting a plan change…</div>';
@@ -913,7 +1205,7 @@ ${renderZones(today)}
 
 ${renderScores(today)}
 
-${renderAieTodo(profile, share)}
+${renderSetupImprove(profile, share, { suppressed, insights, weeklyReviewDate, researchDigest })}
 
 <div class="card"><h2>Race</h2>
   <table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>

@@ -10,6 +10,7 @@ import { DecisionLog, suppressedInsightKeys, reactionFromLabel } from "./state/d
 import { InsightLog } from "./state/insightLog.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard } from "./coach/dashboard.js";
+import { latestWeeklyReviewDate, latestResearchDigest } from "./coach/setupSources.js";
 import { buildInsights } from "./insights/engine.js";
 import { loadArchive } from "./coach/orchestrator.js";
 import { ArchiveStore } from "./archive/store.js";
@@ -116,6 +117,9 @@ async function renderLatest(share = false): Promise<string> {
     weather,
     profile: (await loadProfileSafe())?.profile,
     autoSyncStaleMin,
+    suppressed, // dismissed "Set up & improve" items (shares the insight snooze machinery)
+    weeklyReviewDate: await latestWeeklyReviewDate(), // "This week" group — read persisted, never re-run
+    researchDigest: await latestResearchDigest(), // "Worth considering" group — read persisted, never re-run
   });
 }
 

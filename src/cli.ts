@@ -16,6 +16,7 @@ import { proposeAdjustments, validateProposals, buildProposerContext, writeConte
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
+import { latestWeeklyReviewDate, latestResearchDigest } from "./coach/setupSources.js";
 import { buildDemoWindow, demoProfile } from "./demo/sampleData.js";
 import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact } from "./cli/dataCommands.js";
 import { buildInsights } from "./insights/engine.js";
@@ -408,6 +409,7 @@ async function cmdSession(): Promise<void> {
 async function cmdDashboard(): Promise<void> {
   const { window, state } = await buildTodayState();
   const decisions = await new DecisionLog().all();
+  const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions()); // for the Set-up-&-improve card's dismissals
   const archive = await loadArchive();
   const predictionTrajectory = state.raw ? await loadPredictionTrajectory(state) : undefined;
   const insights = state.raw ? buildInsights(state, archive, { history: window, predictionTrajectory }) : undefined;
@@ -429,6 +431,9 @@ async function cmdDashboard(): Promise<void> {
     canFetchFit: config.garmin.enabled,
     weather,
     profile: (await loadProfileSafe())?.profile,
+    suppressed,
+    weeklyReviewDate: await latestWeeklyReviewDate(), // "This week" pointer — reads the persisted report
+    researchDigest: await latestResearchDigest(), // "Worth considering" — reads the persisted digest
     share: process.argv.includes("--share"), // redacted view for screenshots (race names + location hidden)
   });
   const { mkdir, writeFile } = await import("node:fs/promises");
@@ -444,10 +449,21 @@ async function cmdDashboard(): Promise<void> {
 /** `demo` — render the dashboard from built-in SAMPLE data: no AI Endurance account, no Garmin, no API
  *  key, no network. Lets anyone see the coach working before setting up their own accounts. */
 async function cmdDemo(): Promise<void> {
-  const window = buildDemoWindow(todayIso(), 21);
+  const today = todayIso();
+  const window = buildDemoWindow(today, 21);
   const state = window[window.length - 1];
   const insights = state.raw ? buildInsights(state, undefined, { history: window }) : undefined;
-  const html = renderDashboard({ window, decisions: [], insights, costRecords: [], canFetchFit: false, profile: demoProfile });
+  // Sample "This week" / "Worth considering" inputs so the demo showcases the full three-section card.
+  const html = renderDashboard({
+    window,
+    decisions: [],
+    insights,
+    costRecords: [],
+    canFetchFit: false,
+    profile: demoProfile,
+    weeklyReviewDate: today,
+    researchDigest: { date: today, topics: ["90 g/h carb intake for long course", "165 mm cranks change the fit"] },
+  });
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
   const dir = join(process.cwd(), "reports");

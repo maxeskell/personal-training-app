@@ -165,11 +165,33 @@ biomechanics, availability, fuelling, race targets) is injected into the app's o
 
 ## What this app cannot do
 
-This connector is **read-only to AI Endurance**. It cannot set your **swim CSS, FTP or race target
-times** there — set those directly in the AI Endurance app. The `ai_endurance_todo` block is a
-reminder of what's unset, not a write path; any entry with a non-empty value (e.g. `swim_css: not_set`)
-surfaces on the dashboard as a **Fix these in AI Endurance** card (display-only, hidden from the shared
-view), and clears from the card once you set it to `resolved` or remove it.
+This connector is **read-only to AI Endurance**. It cannot set your **swim CSS or FTP** there — set
+those directly in the AI Endurance app. The `ai_endurance_todo` block is a reminder of what's unset,
+not a write path; any entry with a non-empty value (e.g. `swim_css: not_set`) surfaces on the
+dashboard's **Set up & improve** card (display-only, hidden from the shared view), and clears once you
+set it to `resolved` or remove it. **Race target times are NOT an `ai_endurance_todo` item** — AI
+Endurance has no field for them, so they can't be "set" there; they live in `races[].target_time` and
+the coach reads them from the profile, so the card only ever shows things you can actually action.
+
+That card is a small, deterministic (no-AI) action hub in three sections:
+
+- **Finish setup** — the AI-Endurance gaps above, your free-text `open_items` (tagged *discuss with
+  coach*) and any unfilled optional profile questions (tagged *edit profile*). **Ranked by value** —
+  AI-Endurance gaps and open items outrank profile questions, and a field the coach actually reads
+  outranks a reference-only one.
+- **This week** — the deterministic *marginal-gains* tweaks (the same selection the `tune` flow phrases
+  up, computed live so it's always current and LLM-free), plus a pointer to your most recent weekly
+  review if one was saved lately.
+- **Worth considering** — the topic headlines from your most recent **research digest**
+  (`knowledge/pending/`).
+
+The last two sections **read your last saved reports** — the dashboard never re-runs the weekly or
+research (LLM) flows — so each of their items carries an *"as of …"* tag and drops once the report is
+stale (≈10 days for the weekly pointer, ≈45 for research). Everything is deduped (a weekly tweak that
+restates a setup item collapses, finish-setup winning) and capped per section, so the card stays a calm
+prompt, not a backlog. Each item has a **✕ dismiss** that snoozes it for ~2 weeks via the same
+insight-feedback machinery (the decision log), so a dismissed item stays gone (and the freed slot is
+taken by the next-best item in that section).
 
 ## The coaching brief is separate
 
