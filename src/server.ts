@@ -11,7 +11,9 @@ import { InsightLog } from "./state/insightLog.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
-import { loadSessionFeedbacks } from "./coach/sessionFeedbackStore.js";
+import { loadSessionFeedbacks, saveSessionFeedback, latestByDate } from "./coach/sessionFeedbackStore.js";
+import { loadMetricOverrides, setMetricOverride, clearMetricOverride } from "./state/metricOverrides.js";
+import { TRACKED_METRICS } from "./coach/metricChanges.js";
 import { backfillSessionFeedback } from "./coach/autoSessionFeedback.js";
 import { buildInsights } from "./insights/engine.js";
 import { loadArchive } from "./coach/orchestrator.js";
@@ -31,6 +33,7 @@ import { getForecast, refreshForecast } from "./weather/store.js";
 import { assessWeek, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
 import { config } from "./config.js";
 import { todayIso } from "./util/today.js";
+import { coalesce } from "./util/coalesce.js";
 
 /**
  * Local dashboard server (N1, Path-B need #2 upgraded to "online"). Binds to the LAN so a phone on
@@ -123,6 +126,7 @@ async function renderLatest(share = false): Promise<string> {
     weeklyReview: await latestWeeklyReview(), // "This week" group — read persisted, never re-run
     researchDigest: await latestResearchDigest(), // "Worth considering" group — read persisted, never re-run
     sessionFeedbacks: await loadSessionFeedbacks(), // auto-generated at sync; shown inline, no LLM here
+    metricOverrides: await loadMetricOverrides(), // your pins on auto-detected metrics (Data-changes card)
     setupHealth: {
       hasApiKey: CoachLLM.hasApiKey(),
       waterTempSet: config.weather.waterTempC != null,
@@ -200,13 +204,19 @@ async function latestInsights() {
   return { state, insights };
 }
 
+type LatestInsights = NonNullable<Awaited<ReturnType<typeof latestInsights>>>;
+type SessionFeedbackResult = { status: string; markdown: string; deep?: boolean };
+
+/** In-flight session-feedback generations, keyed by `${date}:${force}` — see the /session-feedback route. */
+const sessionFeedbackInFlight = new Map<string, Promise<SessionFeedbackResult>>();
+
 /**
  * Draft a free-text request into concrete, validated, GATED plan-adjustment proposals (no write here —
  * confirming one is the only path that writes). Shared by /act (acts on the surfaced alerts) and /act-item
  * (acts on one specific "This week" recommendation). The proposer is re-validated against the athlete's
  * real scheduled sessions, so anything un-targetable degrades to a `notes` explanation, never a bad write.
  */
-async function draftGatedProposals(li: NonNullable<Awaited<ReturnType<typeof latestInsights>>>, request: string) {
+async function draftGatedProposals(li: LatestInsights, request: string) {
   const ctx = buildProposerContext(li.state, li.insights); // full picture: load/form + health + races + taper
   const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt(), "act"), request, li.state, ctx);
   const { valid, rejected } = validateProposals(result.proposals, li.state.plannedSessions.value ?? [], writeContextFor(li.state));
@@ -218,6 +228,48 @@ async function draftGatedProposals(li: NonNullable<Awaited<ReturnType<typeof lat
   }
   const notes = [result.notes, rejected.length ? `Not applied: ${rejected.join("; ")}` : ""].filter(Boolean).join(" ");
   return { proposals, notes };
+}
+
+/**
+ * Generate + persist deep feedback for ONE session — the expensive path: an optional on-demand .FIT
+ * download, then one LLM call. Re-checks the store first so a sibling sync that just wrote it short-circuits
+ * (no spend). Returns the card's response shape. Wrapped by coalesce() in the route so two concurrent
+ * requests for the same session run it once and share the result (no double LLM spend).
+ */
+async function produceSessionFeedback(li: LatestInsights, date: string, force: boolean): Promise<SessionFeedbackResult> {
+  let decays = loadSessionDecays();
+  const fitSummaries = await new ArchiveStore().loadFitSummaries();
+  const probe = assembleSession(li.state, li.insights, { date, decays, fitSummaries });
+  if (!probe) return { status: "no-data", markdown: "No recent activity found to analyse." };
+  const existing = latestByDate(await loadSessionFeedbacks()).get(probe.date);
+  if (existing) return { status: "ready", markdown: existing.markdown, deep: existing.deep };
+  // On-demand stream fetch: if the raw .FIT isn't local but the archive knows the Garmin id, pull it now
+  // (~seconds) so the deep dive runs with biomechanics. Best-effort — the no-fit gate below still protects spend.
+  if (!probe.decay && probe.fit?.activityId && config.garmin.enabled) {
+    const g = new GarminClient();
+    if (await g.connect()) {
+      try {
+        if ((await hasStreamDownloadTool(g)) && (await downloadFitStream(g, probe.fit.activityId, fitStreamsDir())).ok) {
+          decays = loadSessionDecays();
+        }
+      } finally {
+        await g.close();
+      }
+    }
+  }
+  const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), li.state, li.insights, { date, force, decays, fitSummaries });
+  if (!feedback) return { status: "no-data", markdown: "No recent activity found to analyse." };
+  if (feedback.skippedNoFit) return { status: "no-fit", markdown: feedback.markdown };
+  // Persist so subsequent page loads serve it inline (no LLM on render) — same store the auto-backfill writes.
+  await saveSessionFeedback({
+    date: feedback.detail.date,
+    sport: String(feedback.detail.sport),
+    deep: !!feedback.detail.decay,
+    generatedAt: new Date().toISOString(),
+    costUsd: feedback.costUsd,
+    markdown: feedback.markdown,
+  });
+  return { status: "ready", markdown: feedback.markdown, deep: !!feedback.detail.decay };
 }
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -297,40 +349,28 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       return;
     }
 
-    // Deep feedback on a single session (the dashboard "Last session" card posts here).
+    // Deep feedback on a single session — the dashboard "Last session" card fetches this on page load
+    // when no readout is stored yet (it downloads the raw .FIT on demand, generates, and persists, so the
+    // next open is inline). Returns a `status` the card branches on: ready | no-fit | no-api-key | no-data.
     if (url.pathname === "/session-feedback" && req.method === "POST") {
       const json = (b: object) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(b));
-      if (!CoachLLM.hasApiKey()) return json({ markdown: "ANTHROPIC_API_KEY isn't set on the server, so I can't analyse sessions yet." });
+      if (!CoachLLM.hasApiKey()) return json({ status: "no-api-key", markdown: "ANTHROPIC_API_KEY isn't set on the server, so I can't analyse sessions yet." });
       const li = await latestInsights();
-      if (!li) return json({ markdown: "No data assembled yet — hit ↻ Sync first." });
+      if (!li) return json({ status: "no-data", markdown: "No data assembled yet — hit ↻ Sync first." });
       const body = JSON.parse((await readBody(req)) || "{}") as { date?: string; force?: boolean };
       const reqDate = String(body.date ?? "");
       const date = /^\d{4}-\d{2}-\d{2}$/.test(reqDate) ? reqDate : undefined;
-      let decays = loadSessionDecays();
-      const fitSummaries = await new ArchiveStore().loadFitSummaries();
-      // On-demand stream fetch (user ask): if the target session's raw .FIT isn't local but the archive
-      // knows its Garmin id, pull it now (~seconds) so the deep dive runs with biomechanics instead of
-      // skipping. Best-effort — on any failure the no-fit gate below still protects the LLM spend.
-      const probe = assembleSession(li.state, li.insights, { date, decays, fitSummaries });
-      if (probe && !probe.decay && probe.fit?.activityId && config.garmin.enabled) {
-        const g = new GarminClient();
-        if (await g.connect()) {
-          try {
-            if ((await hasStreamDownloadTool(g)) && (await downloadFitStream(g, probe.fit.activityId, fitStreamsDir())).ok) {
-              decays = loadSessionDecays();
-            }
-          } finally {
-            await g.close();
-          }
-        }
-      }
-      const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), li.state, li.insights, {
-        date,
-        force: body.force === true, // escape hatch: summary-only analysis without the raw .FIT
-        decays,
-        fitSummaries,
-      });
-      return json({ markdown: feedback?.markdown ?? "No recent activity found to analyse.", skippedNoFit: feedback?.skippedNoFit === true });
+      const force = body.force === true; // escape hatch: summary-only analysis without the raw .FIT
+      // Resolve the target session up front (cheap — no network/LLM) so we can dedupe by its date and
+      // short-circuit when it's already stored.
+      const probe = assembleSession(li.state, li.insights, { date, decays: loadSessionDecays(), fitSummaries: await new ArchiveStore().loadFitSummaries() });
+      if (!probe) return json({ status: "no-data", markdown: "No recent activity found to analyse." });
+      const existing = latestByDate(await loadSessionFeedbacks()).get(probe.date);
+      if (existing) return json({ status: "ready", markdown: existing.markdown, deep: existing.deep });
+      // Coalesce concurrent requests for the SAME session into ONE generate: two dashboard tabs opened
+      // together (or a quick double-load) must not each fire the LLM — the expensive download+analyse runs
+      // once and both await it. Keyed by date(+force); the slot frees when it settles.
+      return json(await coalesce(sessionFeedbackInFlight, `${probe.date}:${force ? "force" : ""}`, () => produceSessionFeedback(li, probe.date, force)));
     }
 
     // Insight feedback (the insights box posts like/dislike/snooze/clear here). The UI vocabulary maps to
@@ -346,6 +386,22 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       await new DecisionLog().recordInsightFeedback(body.key, reaction, body.summary ?? body.key);
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }));
       return;
+    }
+
+    // Metric overrides (the Data-changes card's 👎 pin / un-pin). Pinning records "while the platform
+    // reports `when`, use `use` instead"; clearing accepts the auto-detected value again. Applied at the
+    // next sync's assemble. Validated against the tracked-metric set so an arbitrary field can't be set.
+    if (url.pathname === "/metric-override" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)) || "{}") as { metric?: string; when?: number; use?: number; clear?: boolean };
+      const json = (code: number, b: object) => res.writeHead(code, { "content-type": "application/json" }).end(JSON.stringify(b));
+      if (!body.metric || !TRACKED_METRICS.has(body.metric)) return json(400, { ok: false, error: "unknown metric" });
+      if (body.clear) {
+        await clearMetricOverride(body.metric);
+        return json(200, { ok: true, cleared: body.metric });
+      }
+      if (typeof body.when !== "number" || typeof body.use !== "number") return json(400, { ok: false, error: "need numeric when + use" });
+      await setMetricOverride(body.metric, body.when, body.use);
+      return json(200, { ok: true });
     }
 
     // Action loop — generate GATED plan-adjustment proposals from the surfaced alerts (no write here).

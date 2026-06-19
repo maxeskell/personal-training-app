@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { emptyState } from "../src/state/types.js";
 import { todayIso } from "../src/util/today.js";
 import { buildInsights } from "../src/insights/engine.js";
-import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, parseResearchTopics, parseActionBullets, mdLite, commonTrailingSentences } from "../src/coach/dashboard.js";
+import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, parseResearchTopics, parseActionBullets, mdLite, commonTrailingSentences, sessionFeedbackCardState } from "../src/coach/dashboard.js";
 import type { ProfileQuestion } from "../src/profile/questions.js";
 import type { InsightReport } from "../src/insights/engine.js";
 import type { Finding } from "../src/insights/metrics.js";
@@ -166,19 +166,64 @@ test("trends keep one sleep graph (score); power-curve bests carry the date they
   assert.match(html, /2026-05-19/);
 });
 
-test("the Last-session card shows auto-generated feedback inline (no button); a note when none is stored yet", () => {
+test("sessionFeedbackCardState: stored wins; then key-gated; then local-FIT vs fetchable; else manual", () => {
+  const base = { hasStored: false, hasApiKey: true, hasLocalFit: false, canFetchFit: false, hasActivityId: false };
+  // A stored readout always wins, even with everything else absent.
+  assert.deepEqual(sessionFeedbackCardState({ ...base, hasStored: true, hasApiKey: false }), { kind: "stored" });
+  // No key → say so (can't generate at all), regardless of FIT availability.
+  assert.deepEqual(sessionFeedbackCardState({ ...base, hasApiKey: false, hasLocalFit: true }), { kind: "no-api-key" });
+  // Local .FIT present → generate now, no download needed.
+  assert.deepEqual(sessionFeedbackCardState({ ...base, hasLocalFit: true }), { kind: "auto", needsDownload: false });
+  // No local .FIT but fetchable (Garmin on + archived activity id) → download first, then generate.
+  assert.deepEqual(sessionFeedbackCardState({ ...base, canFetchFit: true, hasActivityId: true }), { kind: "auto", needsDownload: true });
+  // Fetchable needs BOTH the capability and a known id — missing either → manual export.
+  assert.deepEqual(sessionFeedbackCardState({ ...base, canFetchFit: true }), { kind: "manual" });
+  assert.deepEqual(sessionFeedbackCardState({ ...base, hasActivityId: true }), { kind: "manual" });
+  assert.deepEqual(sessionFeedbackCardState(base), { kind: "manual" });
+});
+
+test("Last-session card: stored inline; live fetch when producible; honest note otherwise; never a button", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
   s.raw = { getRunningActivity: { activities: [{ activity_date_local: "2026-06-09", activity_movingtime: 3600, activity_avhr: 150 }] } };
   const ins = buildInsights(s, undefined, {});
-  // No stored feedback yet → a "generates on the next sync" note, and NO interactive button anywhere.
-  const without = renderDashboard({ window: [s], decisions: [], insights: ins });
-  assert.ok(!without.includes("sessionFeedback()"), "the on-demand button + handler are gone");
-  assert.match(without, /generates automatically on the next sync/);
-  // Stored feedback for this session → rendered inline (markdown formatted), still no button.
+
+  // No key → an honest "needs ANTHROPIC_API_KEY" note, no live placeholder, no button/handler.
+  const noKey = renderDashboard({ window: [s], decisions: [], insights: ins });
+  assert.ok(!noKey.includes("sessionFeedback()"), "the old on-demand button + handler are gone");
+  assert.match(noKey, /needs ANTHROPIC_API_KEY/);
+  assert.ok(!noKey.includes('id="sessfb"'), "no live placeholder when it can't be produced");
+
+  // Key set + a fetchable .FIT (Garmin on + archived activity id for this date) → a live placeholder that
+  // fetches on load, and the loader + on-load trigger are present.
+  const fetchable = renderDashboard({
+    window: [s],
+    decisions: [],
+    insights: ins,
+    canFetchFit: true,
+    fitSummaries: [{ activityId: "123", date: "2026-06-09", sport: "Run" }],
+    setupHealth: { hasApiKey: true, waterTempSet: true, lastSyncAgeHours: 1 },
+  });
+  assert.match(fetchable, /<div id="sessfb" data-date="2026-06-09">/);
+  assert.match(fetchable, /Downloading this session&#39;s \.FIT/); // the message is HTML-escaped
+  assert.match(fetchable, /async function loadSessionFeedback\(\)/);
+  assert.match(fetchable, /if\(document\.getElementById\('sessfb'\)\)loadSessionFeedback\(\);/);
+
+  // Key set but no .FIT and no way to fetch one → the manual-export note, no live placeholder.
+  const manual = renderDashboard({
+    window: [s],
+    decisions: [],
+    insights: ins,
+    setupHealth: { hasApiKey: true, waterTempSet: true, lastSyncAgeHours: 1 },
+  });
+  assert.match(manual, /No raw .FIT for this session and no automatic way to fetch it/);
+  assert.ok(!manual.includes('id="sessfb"'));
+
+  // Stored feedback for this session → rendered inline (markdown formatted), still no button or placeholder.
   const withFb = renderDashboard({
     window: [s],
     decisions: [],
     insights: ins,
+    setupHealth: { hasApiKey: true, waterTempSet: true, lastSyncAgeHours: 1 },
     sessionFeedbacks: [
       { schemaVersion: 1, date: "2026-06-09", sport: "Run", deep: true, generatedAt: new Date().toISOString(), costUsd: 0.2, markdown: "# Session feedback — 2026-06-09 Run\n\n## Verdict\n**Solid** aerobic run." },
     ],
@@ -186,6 +231,12 @@ test("the Last-session card shows auto-generated feedback inline (no button); a 
   assert.match(withFb, /Session feedback <span class="muted">\(deep analysis/);
   assert.match(withFb, /<b>Solid<\/b> aerobic run/, "markdown is rendered inline");
   assert.ok(!withFb.includes("sessionFeedback()"), "still no button");
+  assert.ok(!withFb.includes('id="sessfb"'), "stored → no live placeholder");
+
+  // Every inline <script> still parses (the new loadSessionFeedback + on-load trigger included).
+  for (const [i, sc] of [...fetchable.matchAll(/<script>([\s\S]*?)<\/script>/g)].entries()) {
+    assert.doesNotThrow(() => new Function(sc[1]), `script block ${i} must parse`);
+  }
 });
 
 test("mdLite: escapes injected markup before formatting headers/bold/code/bullets", () => {
@@ -625,12 +676,18 @@ test("Data changes card: surfaces an auto-detected metric change with agree/disa
   assert.match(html, /<b>Bike FTP<\/b>: 250 W → <b>262 W<\/b>/);
   assert.match(html, /Garmin/);
   assert.match(html, /data-key="change:bikeFtpW:262"/);
-  assert.match(html, /data-reaction="like" onclick="feedback\(this\)"/); // reuses the insight-feedback machinery
-  // A saved disagree shows; snoozing (suppressed) hides the change entirely.
-  const reacted = renderDashboard({ window, decisions: [], reactions: new Map([["change:bikeFtpW:262", "disagree"]]) });
-  assert.match(reacted, /👎 disagreed/);
+  assert.match(html, /data-reaction="like" onclick="feedback\(this\)"/); // agree reuses insight-feedback
+  // Disagree is a PIN button carrying the metric + the value to keep (the prior reading).
+  assert.match(html, /data-metric="bikeFtpW" data-when="262" data-use="250"/);
+  assert.match(html, /onclick="pinOverride\(this\)"/);
+  // Snoozing (suppressed) hides the change entirely.
   const snoozed = renderDashboard({ window, decisions: [], suppressed: new Set(["change:bikeFtpW:262"]) });
   assert.doesNotMatch(snoozed, /Data changes — your call/);
+  // An active override is listed (not as a change) with an un-pin control, and hides its change.
+  const pinned = renderDashboard({ window, decisions: [], metricOverrides: { bikeFtpW: { when: 262, use: 250, ts: "2026-06-14T00:00:00Z" } } });
+  assert.match(pinned, /📌 <b>Bike FTP<\/b>: using <b>250 W<\/b>/);
+  assert.match(pinned, /onclick="unpinOverride\(this\)"/);
+  assert.doesNotMatch(pinned, /250 W → <b>262 W/); // the change is suppressed while pinned
   // No card when nothing changed.
   assert.doesNotMatch(renderDashboard({ window: [mk(todayIso(), 250)], decisions: [] }), /Data changes — your call/);
 });

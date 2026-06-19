@@ -19,6 +19,7 @@ import { writeReport } from "./coach/reports.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
 import { loadSessionFeedbacks, saveSessionFeedback } from "./coach/sessionFeedbackStore.js";
+import { loadMetricOverrides } from "./state/metricOverrides.js";
 import { buildDemoWindow, buildDemoGarminDays, demoCostRecords, demoProfile } from "./demo/sampleData.js";
 import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact } from "./cli/dataCommands.js";
 import { buildInsights } from "./insights/engine.js";
@@ -535,6 +536,7 @@ async function cmdDashboard(): Promise<void> {
     weeklyReview: await latestWeeklyReview(), // "This week" actions — reads the persisted report
     researchDigest: await latestResearchDigest(), // "Worth considering" — reads the persisted digest
     sessionFeedbacks: await loadSessionFeedbacks(), // auto-generated at sync; shown inline on the card
+    metricOverrides: await loadMetricOverrides(), // your pins on auto-detected metrics (Data-changes card)
     setupHealth: {
       hasApiKey: CoachLLM.hasApiKey(),
       waterTempSet: config.weather.waterTempC != null,
