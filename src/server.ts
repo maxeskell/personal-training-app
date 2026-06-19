@@ -9,8 +9,9 @@ import { selectDataSource } from "./sources/index.js";
 import { DecisionLog, suppressedInsightKeys, reactionFromLabel } from "./state/decisionLog.js";
 import { InsightLog } from "./state/insightLog.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
-import { renderDashboard } from "./coach/dashboard.js";
+import { renderDashboard, renderResearchDigestPage } from "./coach/dashboard.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
+import { listPending, readPending } from "./knowledge/store.js";
 import { loadSessionFeedbacks, saveSessionFeedback, latestByDate } from "./coach/sessionFeedbackStore.js";
 import { loadMetricOverrides, setMetricOverride, clearMetricOverride } from "./state/metricOverrides.js";
 import { TRACKED_METRICS } from "./coach/metricChanges.js";
@@ -463,6 +464,24 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (url.pathname === "/refresh") {
       await refreshOnce();
       res.writeHead(302, { Location: "/" }).end();
+      return;
+    }
+    // Read-only view of the latest pending research digest — what the "Worth considering" card's "Read the
+    // full digest" link points at, so "where's the research?" is answered in-app (the digest itself lives in
+    // gitignored knowledge/pending/). Best-effort: no/unreadable digest renders a friendly empty state.
+    if (url.pathname === "/digest") {
+      let file: string | null = null;
+      let md: string | null = null;
+      try {
+        const newest = (await listPending())[0]; // newest-first
+        if (newest) {
+          file = newest.name;
+          md = await readPending(newest.name);
+        }
+      } catch {
+        /* degrade to the empty-state page */
+      }
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(renderResearchDigestPage(file, md));
       return;
     }
     if (url.pathname === "/" || url.pathname === "/index.html") {

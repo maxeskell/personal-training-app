@@ -602,7 +602,14 @@ async function cmdDemo(): Promise<void> {
     canFetchFit: false,
     profile: demoProfile,
     weeklyReview: { date: today, actions: ["Cut one grey-zone ride", "Move the long run off your GI-trough day"] },
-    researchDigest: { date: today, topics: ["90 g/h carb intake for long course", "165 mm cranks change the fit"] },
+    researchDigest: {
+      date: today,
+      file: `${today}-research-digest.md`,
+      items: [
+        { topic: "90 g/h carb intake for long course", kind: "change", summary: "Trained guts tolerate up to ~90 g/h of mixed glucose+fructose, holding power deeper into long races.", source: "Jeukendrup, 2023 review" },
+        { topic: "165 mm cranks change the fit", kind: "new", summary: "Shorter cranks open the hip angle and can improve comfort/aero with no power loss for most riders.", source: "Bike-fit literature, 2024" },
+      ],
+    },
     setupHealth: { hasApiKey: true, waterTempSet: false, lastSyncAgeHours: 2 },
     sessionFeedbacks,
   });

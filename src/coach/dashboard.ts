@@ -122,11 +122,12 @@ export interface DashboardInput {
    */
   weeklyReview?: { date: string; actions: string[] };
   /**
-   * Latest persisted research digest (from `knowledge/pending/`): its date + the topic headlines parsed
-   * from the markdown. Feeds the "Worth considering" group as-of-tagged items; drops when stale. Read
-   * only — the card never re-runs the (LLM + web-search) research flow.
+   * Latest persisted research digest (from `knowledge/pending/`): its date, file name, and the structured
+   * items parsed from the markdown (topic + what-it-says + source + link). Feeds the "Worth considering"
+   * group as-of-tagged items; drops when stale. Read-only — the card never re-runs the (LLM + web-search)
+   * research flow. The `file` name makes the `approve` command concrete (no `<file>` placeholder).
    */
-  researchDigest?: { date: string; topics: string[] };
+  researchDigest?: { date: string; file: string; items: ResearchTopic[] };
   /**
    * Tool/integration health (computed in the IO layer): drives operational "Finish setup" nudges — a
    * missing API key, a long-stale sync, an unset open-water temperature.
@@ -299,6 +300,31 @@ export function mdLite(md: string): string {
   h = h.replace(/`([^`\n]+)`/g, "<code>$1</code>");
   h = h.replace(/^- /gm, "• ");
   return h;
+}
+
+/** Wrap bare http(s) URLs in ALREADY-ESCAPED text with anchors. The input has no raw `<` (it's escaped),
+ *  so the matched URL can't break out — used by the read-only digest page so sources are one click away. */
+export function linkifyEscaped(escaped: string): string {
+  return escaped.replace(/(https?:\/\/[^\s<>"']+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+}
+
+/**
+ * Standalone read-only page for the latest pending research digest — what the "Worth considering" card's
+ * "Read the full digest →" link points at, so "where's the research?" has an in-app answer (the digest
+ * itself lives in gitignored `knowledge/pending/`). Escape-FIRST markdown via {@link mdLite}, then URLs
+ * linkified; the approve command shows the REAL file name. `file`/`markdown` null → a friendly empty state
+ * (best-effort: a missing or unreadable digest must never error). Pure.
+ */
+export function renderResearchDigestPage(file: string | null, markdown: string | null): string {
+  const shell = (inner: string) =>
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Research digest</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:760px;margin:0 auto;padding:26px 20px 64px;color:#2b2b2b;line-height:1.6}h2{margin:.2em 0 .4em}a{color:#c8642d}code{background:#f4f1ea;border-radius:4px;padding:1px 5px;font-size:.92em}.back{display:inline-block;margin-bottom:18px;font-size:13px;text-decoration:none}.digest{font-size:15px;white-space:pre-wrap}.note{background:#faf8f3;border-left:3px solid #e7d9c6;border-radius:5px;padding:12px 14px;font-size:14px;margin:0 0 20px}</style></head>
+<body><a class="back" href="/">← Back to the dashboard</a>${inner}</body></html>`;
+  if (!file || !markdown || !markdown.trim()) {
+    return shell(`<h2>No research digest yet</h2><div class="note">The monthly research flow hasn't drafted one yet. Run <code>npm run research</code> to generate a proposed update to the coach's priors — it web-searches recent training / triathlon / gear research and drops a review proposal in <code>knowledge/pending/</code>. Best-effort; needs <code>ANTHROPIC_API_KEY</code>.</div>`);
+  }
+  const approve = `npm run knowledge -- approve ${file}`;
+  return shell(`<div class="note"><b>This is a proposal — nothing here is active yet.</b> These are priors to weigh, not verdicts: your own n=1 data outranks the textbook. To fold it into the coach's priors run <code>${escapeHtml(approve)}</code>, or ask the coach what any item means for you.</div><div class="digest">${linkifyEscaped(mdLite(markdown))}</div>`);
 }
 
 /**
@@ -556,8 +582,44 @@ const OPEN_ITEM_ACTION =
 // English first, the where-to-do-it spelled out. No "open the report" — the reasoning is on the card.
 const TRAINING_MANUAL_HINT =
   "Hit “Make this change” to apply it to your plan in AI Endurance (you’ll confirm the exact edit first). If it can’t be tied to a scheduled session, you’ll get the precise steps to make it yourself in AI Endurance or Garmin.";
-const RESEARCH_ITEM_ACTION =
-  "From your latest research digest (knowledge/pending/). Review it; to adopt it into the coach's priors run `npm run knowledge -- approve <file>`, or ask the coach what it means for you. A prompt to weigh — your own data outranks the textbook.";
+/**
+ * The dropdown copy for ONE research-digest item — answering the four questions the old generic blurb
+ * didn't: what the research IS (its kind), what it actually SAYS (the proposed prior), its SOURCE, and —
+ * with the REAL digest file name, never a `<file>` placeholder — the two concrete things to DO (ask the
+ * coach, or approve it into the priors). Honest framing throughout: a prior to weigh, not a verdict.
+ */
+function researchItemAction(t: ResearchTopic, file: string): string {
+  const lines: string[] = [];
+  if (t.summary) lines.push(`What it says: ${t.summary}`);
+  const kindLine =
+    t.kind === "new" ? "Flagged NEW since the coach's priors were last refreshed."
+      : t.kind === "change" ? "Flagged as a CHANGE to a prior the coach already holds."
+        : t.kind === "confirms" ? "CONFIRMS a prior the coach already holds."
+          : "";
+  if (kindLine) lines.push(kindLine);
+  if (t.source) lines.push(`Source: ${t.source}`);
+  lines.push("A prior to weigh, not a verdict — your own n=1 data outranks the textbook.");
+  lines.push(`What to do: ask the coach what it means for your training, or fold it into the coach's priors with \`npm run knowledge -- approve ${file}\`.`);
+  return lines.join("\n");
+}
+
+/** Dropdown copy for the fallback pointer (a digest exists but no items parsed out of it cleanly). */
+function researchDigestPointerAction(file: string): string {
+  return [
+    "Your latest monthly research digest is ready — open it with “Read the full digest” below.",
+    "It proposes updates to the coach's sports-science priors from recent training, triathlon and gear research.",
+    "A prior to weigh, not a verdict — your own n=1 data outranks the textbook.",
+    `What to do: read it, ask the coach what any item means for you, or fold it in with \`npm run knowledge -- approve ${file}\`.`,
+  ].join("\n");
+}
+
+/** The links shown under a research item: always the in-app full-digest view, plus the item's own source
+ *  URL when the digest gave one. Only `/`-relative + http(s) hrefs (rendered safely — see setupLinkHtml). */
+function researchLinks(t: ResearchTopic): SetupLink[] {
+  const links: SetupLink[] = [{ label: "Read the full digest", href: "/digest" }];
+  if (t.link && /^https?:\/\//i.test(t.link)) links.push({ label: t.source ? `Source: ${t.source.slice(0, 48)}` : "Open the source", href: t.link });
+  return links;
+}
 /** Proposed action for an unfilled profile question: the field + the canonical three ways to answer. */
 function questionAction(q: ProfileQuestion): string {
   return `Fills \`${q.field}\` in your profile. Three ways:\n• ${WAYS_TO_ANSWER.join("\n• ")}`;
@@ -588,6 +650,13 @@ export type SetupGroup = "finish_setup" | "this_week" | "worth_considering";
 
 /** Which producer an item came from (used for tagging, dedupe ordering and the dismissal key). */
 export type SetupSource = "ai_endurance" | "open_item" | "profile_question" | "tune" | "weekly" | "research" | "health" | "race";
+
+/** A labelled link shown under a setup item's dropdown (currently the research card: the full digest +
+ *  the item's source). Only `/`-relative or http(s) hrefs are rendered — see {@link setupLinkHtml}. */
+export interface SetupLink {
+  label: string;
+  href: string;
+}
 
 /** One actionable item on the "Set up & improve" card, tagged by its source and where to act on it. */
 export interface SetupItem {
@@ -629,6 +698,8 @@ export interface SetupItem {
   applyable?: boolean;
   /** The raw recommendation text an applyable card sends to the drafter (data-rec); set with `applyable`. */
   rec?: string;
+  /** Optional links rendered in the dropdown (research items: the full digest + the source). */
+  links?: SetupLink[];
 }
 
 /** Stable dismissal key for a setup item — namespaced (by source tag) so it never collides with an insight key. */
@@ -735,48 +806,115 @@ function renderDataChanges(window: AthleteState[], reactions?: Map<string, Insig
 }
 
 /**
- * Bold leads that are FIELD LABELS in a research digest, not topic names — the digest lists each item as
- * `**Topic**: … / **Proposed prior**: … / **Source**: …`, so the labels must be skipped (and a
- * `**Topic**: X` line yields X, not "Topic"). Without this the card showed "Proposed prior" / "Source".
+ * Bold leads / headings that are FIELD LABELS in a research digest, not topic names — the digest lists each
+ * item as `**Topic**: … / **Proposed prior**: … / **Source**: …`, so the labels are skipped as topics (and
+ * a `**Topic**: X` line yields X, not "Topic"). Without this the card showed "Proposed prior" / "Source".
  */
-const RESEARCH_LABELS = /^(topic|source|sources|proposed prior|prior|reviewer notes?|confidence|apply|link|evidence|change|new|confirms?)$/i;
+const RESEARCH_LABELS = /^(topic|source|sources|proposed prior|prior|proposed|reviewer notes?|confidence|apply|link|evidence|change|new|confirms?)$/i;
+const RESEARCH_KIND = /\((new|change|confirms?)\)/i;
+const RESEARCH_URL = /(https?:\/\/[^\s)<>\]]+)/i;
 
 /**
- * Parse the topic HEADLINES from a research-digest markdown. Handles both the flat form
- * (`- **Wider tyres** (CHANGE): …` → "Wider tyres") and the labelled form (`- **Topic**: Wider tyres` →
- * "Wider tyres"), skipping pure field-label bullets (Source / Proposed prior / …) and `### Heading`
- * topics. Pure + tolerant: format drift just yields fewer (or no) topics, and the caller falls back to a
- * "review the digest" pointer. Deduped, capped.
+ * One parsed item from a research digest: the topic, plus — where the markdown gives them — the KIND of
+ * update (new / change / confirms), a one-line summary of the proposed prior ("what it says"), a source
+ * attribution and a link. Everything but `topic` is optional: format drift just yields a thinner item.
  */
-export function parseResearchTopics(markdown: string, limit = 4): string[] {
-  const out: string[] = [];
+export interface ResearchTopic {
+  topic: string;
+  kind?: "new" | "change" | "confirms";
+  summary?: string;
+  source?: string;
+  link?: string;
+}
+
+function researchKind(raw: string | undefined): ResearchTopic["kind"] | undefined {
+  const k = raw?.toLowerCase() ?? "";
+  return k.startsWith("confirm") ? "confirms" : k === "new" ? "new" : k === "change" ? "change" : undefined;
+}
+/** Drop a "(NEW|CHANGE|CONFIRMS)" qualifier + tidy surrounding punctuation from a topic / heading. */
+function cleanTopic(s: string): string {
+  return s.replace(RESEARCH_KIND, "").replace(/^[\s:–-]+|[\s:.]+$/g, "").trim();
+}
+/** A proposed-prior sentence: drop a leading kind qualifier + bullet punctuation, keep the text. */
+function cleanSummary(s: string): string {
+  return s.replace(RESEARCH_KIND, "").replace(/^[\s:–-]+/, "").trim();
+}
+/** A source attribution with any trailing URL stripped (the URL is captured separately as the link). */
+function cleanSource(s: string): string {
+  return s.replace(RESEARCH_URL, "").replace(/[\s—–-]+$/, "").replace(/[\s.]+$/, "").trim();
+}
+
+/**
+ * Parse a research-digest markdown into structured items (topic + what-it-says + source + link), grouping a
+ * `### Heading` (or a flat `- **Topic** (KIND): …` bullet) with the labelled sub-bullets that follow it
+ * (`- **Proposed prior**: …`, `- **Source**: …`). Pure + tolerant: format drift yields thinner items (or
+ * none, and the caller falls back to a generic "review the digest" pointer). Deduped by topic, capped.
+ */
+export function parseResearchItems(markdown: string, limit = 4): ResearchTopic[] {
+  const out: ResearchTopic[] = [];
   const seen = new Set<string>();
-  const add = (raw: string) => {
-    // Drop a trailing "(NEW)" / "(CHANGE)" qualifier and any trailing punctuation.
-    const topic = raw.replace(/\s*\((?:new|change|confirms?)\)\s*$/i, "").replace(/[:.\s]+$/, "").trim();
-    const k = topic.toLowerCase();
-    if (!topic || topic.length > 80 || seen.has(k) || out.length >= limit) return;
-    seen.add(k);
-    out.push(topic);
+  let cur: ResearchTopic | null = null;
+  const flush = () => {
+    if (!cur) return;
+    const topic = cleanTopic(cur.topic);
+    const key = topic.toLowerCase();
+    if (topic && topic.length <= 80 && !RESEARCH_LABELS.test(key) && !seen.has(key)) {
+      seen.add(key);
+      out.push({ ...cur, topic });
+    }
+    cur = null;
+  };
+  const noteUrl = (line: string) => {
+    if (cur && !cur.link) {
+      const m = line.match(RESEARCH_URL);
+      if (m) cur.link = m[1];
+    }
   };
   for (const line of markdown.split("\n")) {
     if (out.length >= limit) break;
     const heading = line.match(/^#{2,4}\s+(.*\S)/); // a "### Topic" heading (skip the digest's own H1)
-    if (heading && !RESEARCH_LABELS.test(heading[1].trim())) {
-      add(heading[1]);
+    if (heading && !RESEARCH_LABELS.test(cleanTopic(heading[1]).toLowerCase())) {
+      flush();
+      cur = { topic: heading[1] };
+      const kind = researchKind(heading[1].match(RESEARCH_KIND)?.[1]);
+      if (kind) cur.kind = kind;
       continue;
     }
     const bullet = line.match(/^\s*[-*]\s*\*\*(.+?)\*\*\s*(.*)$/); // "- **Lead** rest"
-    if (!bullet) continue;
-    const lead = bullet[1].replace(/[:.\s]+$/, "").trim();
-    if (RESEARCH_LABELS.test(lead)) {
-      // A labelled bullet: "**Topic**: value" gives the value; "**Source**: …" etc. is skipped.
-      if (/^topic$/i.test(lead)) add(bullet[2].replace(/^[:\-\s]+/, ""));
+    if (!bullet) {
+      noteUrl(line);
       continue;
     }
-    add(lead); // the flat form — the bold lead IS the topic
+    const lead = bullet[1].replace(/[:.\s]+$/, "").trim();
+    const rest = bullet[2].trim();
+    if (RESEARCH_LABELS.test(lead)) {
+      const label = lead.toLowerCase();
+      const value = rest.replace(/^[:\-–\s]+/, "").trim();
+      if (label === "topic") {
+        cur ??= { topic: "" };
+        cur.topic = value;
+        cur.kind = researchKind(value.match(RESEARCH_KIND)?.[1]) ?? cur.kind;
+      } else if (/^(proposed prior|prior|proposed|apply)$/.test(label)) {
+        if (cur && !cur.summary) cur.summary = cleanSummary(value);
+      } else if (label === "source" || label === "sources") {
+        if (cur && !cur.source) cur.source = cleanSource(value);
+        noteUrl(line);
+      } else if (label === "link") {
+        if (cur) cur.link = value.match(RESEARCH_URL)?.[1] ?? cur.link;
+      }
+      continue; // confidence / reviewer notes / evidence → noise, skipped
+    }
+    // Flat form: the bold lead IS a new topic; the trailing text is its one-line summary.
+    flush();
+    cur = { topic: lead };
+    const kind = researchKind(lead.match(RESEARCH_KIND)?.[1] ?? rest.match(RESEARCH_KIND)?.[1]);
+    if (kind) cur.kind = kind;
+    const summary = cleanSummary(rest);
+    if (summary) cur.summary = summary;
+    noteUrl(line);
   }
-  return out;
+  flush();
+  return out.slice(0, limit);
 }
 
 /**
@@ -882,8 +1020,8 @@ export interface SetupOptions {
   surfacedInsightKeys?: Set<string>;
   /** Latest persisted weekly review (date + the parsed "## Next week" action bullets); drops when stale. */
   weeklyReview?: { date: string; actions: string[] };
-  /** Latest research digest (date + parsed topics) for the "Worth considering" group (drops when stale). */
-  researchDigest?: { date: string; topics: string[] };
+  /** Latest research digest (date + file + parsed items) for the "Worth considering" group (drops when stale). */
+  researchDigest?: { date: string; file: string; items: ResearchTopic[] };
   /** Tool/integration health signals (computed in the IO layer) → operational "Finish setup" nudges. */
   setupHealth?: { lastSyncAgeHours?: number; hasApiKey?: boolean; waterTempSet?: boolean };
   /** Clock for staleness (defaults to Date.now()). */
@@ -995,13 +1133,14 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
   if (opts.researchDigest) {
     const age = ageDaysFrom(opts.researchDigest.date, now);
     if (age != null && age <= RESEARCH_FRESH_DAYS) {
-      const topics = opts.researchDigest.topics.slice(0, GROUP_CAP.worth_considering);
+      const { file } = opts.researchDigest;
+      const topics = opts.researchDigest.items.slice(0, GROUP_CAP.worth_considering);
       if (topics.length) {
         for (const t of topics) {
-          items.push({ key: setupKey("research", dedupeKey(t)), label: t, why: `from the research digest — ${asOf(age)}`, source: "research", group: "worth_considering", route: "discuss with coach", action: RESEARCH_ITEM_ACTION, priority: SETUP_PRIORITY.research });
+          items.push({ key: setupKey("research", dedupeKey(t.topic)), label: t.topic, why: `from the research digest — ${asOf(age)}`, source: "research", group: "worth_considering", route: "discuss with coach", action: researchItemAction(t, file), links: researchLinks(t), priority: SETUP_PRIORITY.research });
         }
       } else {
-        items.push({ key: setupKey("research", "digest"), label: "Review the latest research digest", why: asOf(age), source: "research", group: "worth_considering", route: "discuss with coach", action: RESEARCH_ITEM_ACTION, priority: SETUP_PRIORITY.research });
+        items.push({ key: setupKey("research", "digest"), label: "Review the latest research digest", why: asOf(age), source: "research", group: "worth_considering", route: "discuss with coach", action: researchDigestPointerAction(file), links: [{ label: "Read the full digest", href: "/digest" }], priority: SETUP_PRIORITY.research });
       }
     }
   }
@@ -1103,7 +1242,17 @@ function applyableCardHtml(it: SetupItem): string {
 function setupTaskHtml(it: SetupItem): string {
   const note = it.why ? ` — <span class="muted">${escapeHtml(it.why)}</span>` : "";
   const body = it.action ? `<div class="setup-action">${escapeHtml(it.action)}</div>` : "";
-  return `<details class="setup-item" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><summary><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> <button class="dismiss" title="Dismiss — hide this for ~2 weeks" onclick="event.stopPropagation();dismissSetup(this)">✕</button></summary>${body}</details>`;
+  const links = it.links?.length ? `<div class="setup-links">${it.links.map(setupLinkHtml).join("")}</div>` : "";
+  return `<details class="setup-item" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><summary><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> <button class="dismiss" title="Dismiss — hide this for ~2 weeks" onclick="event.stopPropagation();dismissSetup(this)">✕</button></summary>${body}${links}</details>`;
+}
+
+/** One safe anchor in a setup item's dropdown. Only renders `/`-relative (in-app) or http(s) hrefs — an
+ *  external link opens in a new tab with `noopener`; anything else is dropped (the escaping convention). */
+function setupLinkHtml(l: SetupLink): string {
+  const external = /^https?:\/\//i.test(l.href);
+  if (!external && !l.href.startsWith("/")) return "";
+  const attrs = external ? ' target="_blank" rel="noopener noreferrer"' : "";
+  return `<a class="setup-link" href="${escapeHtml(l.href)}"${attrs}>${escapeHtml(l.label)} →</a>`;
 }
 
 /** Dispatch a setup item to the right surface: an applyable training card, a "your call" reaction card, or
@@ -1551,6 +1700,8 @@ details.setup-item>summary::-webkit-details-marker{display:none}
 details.setup-item>summary::before{content:"▸";color:#b9aa93;display:inline-block;width:14px}
 details.setup-item[open]>summary::before{content:"▾"}
 .setup-action{margin:6px 0 8px 14px;padding:8px 11px;background:#faf8f3;border-left:2px solid #e7d9c6;border-radius:4px;font-size:13px;line-height:1.55;color:#444;white-space:pre-wrap}
+.setup-links{margin:0 0 9px 14px;display:flex;flex-wrap:wrap;gap:14px}
+.setup-link{font-size:12px;font-weight:600;color:#c8642d;text-decoration:none}.setup-link:hover{text-decoration:underline}
 .setup-item .dismiss{font-size:11px;line-height:1;color:#b9aa93;background:none;border:0;cursor:pointer;padding:0 3px;margin-left:2px}.setup-item .dismiss:hover{color:#c0392b}
 .setup-group{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#9a8a72;margin:10px 0 3px}
 .actbtn{font-size:13px;padding:7px 14px;border:1px solid #c8642d;border-radius:8px;background:#fff;color:#c8642d;cursor:pointer}.actbtn:hover{background:#c8642d;color:#fff}
