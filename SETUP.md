@@ -154,6 +154,10 @@ Ask the user, then write the answers into `.env` (uncomment the relevant lines f
 7. **`ask` intent routing** (optional) — `COACH_INTENT_ROUTER`. Leave `regex` (default, zero-cost) for
    most people. The cheap upgrade is `haiku` (a `claude-haiku-4-5` micro-call on the API key you already
    set — no extra server). Only pick `local` if you specifically want the separate `local-llm-server`.
+8. **Deep session feedback** (optional) — `COACH_AUTO_SESSION_FEEDBACK`. Per-session feedback is
+   generated automatically at sync and shown inline on the "Last session" card. Leave `on` (default —
+   every recent session with its raw `.FIT`, one LLM call each), set `latest` (only the most recent
+   session) to spend less, or `off` (generate on demand with `npm run session`). Needs `ANTHROPIC_API_KEY`.
 
 ### Step 3a — (optional) athlete profile
 

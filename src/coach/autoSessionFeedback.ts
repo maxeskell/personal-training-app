@@ -8,6 +8,7 @@ import { ArchiveStore } from "../archive/store.js";
 import { loadSystemPrompt } from "./persona.js";
 import { runSessionFeedback } from "./session.js";
 import { loadSessionFeedbacks, latestByDate, saveSessionFeedback } from "./sessionFeedbackStore.js";
+import { shiftIso } from "../util/today.js";
 
 /**
  * Auto deep-feedback: at sync, generate + persist a session deep-dive for every recent session that
@@ -19,12 +20,6 @@ import { loadSessionFeedbacks, latestByDate, saveSessionFeedback } from "./sessi
  *    costs no tokens (runSessionFeedback returns the no-FIT note without calling the model);
  *  - capped per run so a first sync over a long history can't fire a burst of calls.
  */
-
-function shiftIso(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
 
 export interface AutoFeedbackOpts {
   lookbackDays?: number;

@@ -13,6 +13,8 @@
  * Garmin capability facts are gathered by the caller (orchestrator) and fed in.
  */
 
+import { shiftIso } from "../util/today.js";
+
 export interface MissingStreamSession {
   date: string;
   sport: string;
@@ -67,12 +69,6 @@ function sportTokens(sport: string): string[] {
   if (/run/.test(s)) return ["run"];
   if (/swim/.test(s)) return ["swim"];
   return [s];
-}
-
-function shiftIso(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
 }
 
 /** Does a present stream match this activity by date + (fuzzy) sport? */

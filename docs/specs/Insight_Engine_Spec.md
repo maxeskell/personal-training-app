@@ -163,7 +163,8 @@ goes and the practical rate/token cost of bulk detail pulls.
 - `npm run deep-dive` → dated markdown report (the prioritised insight narrative).
 - A **"Signals"** panel on the dashboard (top flags + key metric sparklines).
 - Optional weekly auto-run (reuse the launchd scheduler), feeding the weekly review.
-- `npm run insights pending` → flags that haven't been actioned.
+- Unactioned flags surface on the dashboard **Signals / Top-insights** card and the MCP `insights` tool
+  (there is no `insights` CLI script — you react to them in-app; `npm run decisions` reviews what was actioned).
 
 **Surfaced-insight history + engagement model (added 2026-06-17).** Whenever findings are surfaced
 (dashboard Top-insights card, MCP `insights` tool) the full surfaced set is appended to

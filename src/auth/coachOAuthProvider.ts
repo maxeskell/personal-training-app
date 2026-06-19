@@ -8,6 +8,7 @@ import type { OAuthRegisteredClientsStore } from "@modelcontextprotocol/sdk/serv
 import type { OAuthClientInformationFull, OAuthTokens } from "@modelcontextprotocol/sdk/shared/auth.js";
 import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
 import { timingSafeEqualStr } from "../serverAuth.js";
+import { escapeHtml as esc } from "../util/html.js";
 
 /**
  * Single-user OAuth 2.1 provider for the coach MCP server — what a remote Claude client (Cowork)
@@ -33,10 +34,6 @@ const REFRESH_TTL_MS = 30 * 24 * 60 * 60_000; // refresh tokens: 30 days
 const MAX_CLIENTS = 100; // registered clients kept (oldest evicted past this)
 const MAX_CODES = 500; // outstanding auth codes
 const MAX_TOKENS = 1000; // outstanding access/refresh tokens
-
-function esc(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
-}
 
 /** A redirect URI is allowed only if it's HTTPS or a loopback http URL (the standard OAuth exceptions). */
 export function isAllowedRedirectUri(uri: string): boolean {
