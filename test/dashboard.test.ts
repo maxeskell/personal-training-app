@@ -508,13 +508,67 @@ test("buildSetupItems: integration/config-health nudges + an incomplete race ent
   assert.equal(clean.length, 0);
 });
 
-test("buildSetupItems: weekly review with no parseable actions falls back to a pointer", () => {
+test("buildSetupItems: weekly review with no parseable actions surfaces nothing (no report pointer)", () => {
   const items = buildSetupItems({ schema_version: 1, identity: {} } as Profile, {
     questions: [],
     weeklyReview: { date: "2026-06-13", actions: [] },
     now: NOW,
   });
-  assert.deepEqual(items.map((i) => [i.key, i.group]), [["setup:weekly:review", "this_week"]]);
+  assert.deepEqual(items, [], "no actions → no 'revisit the report' pointer; the card just isn't shown");
+});
+
+test("buildSetupItems: This-week items are typed 'your call' cards — training applies, the rest react", () => {
+  const profile = { schema_version: 1, identity: {} } as Profile;
+  const insights = insightsWith([
+    F({ family: "Aerobic efficiency", title: "Brick pacing", severity: "watch", recommendation: "Start the brick run 5s/km easier", confidence: 0.8 }),
+  ]);
+  const items = buildSetupItems(profile, {
+    questions: [],
+    insights,
+    weeklyReview: {
+      date: "2026-06-12",
+      actions: ["Cut one grey-zone ride", "Take 60 g/h carb on rides over 90 min"],
+    },
+    now: NOW,
+  });
+  const byLabel = new Map(items.map((i) => [i.label, i]));
+
+  // A training plan edit → applyable (gated "Make this change"), carries the rec text, NOT a reaction card.
+  const ride = byLabel.get("Cut one grey-zone ride")!;
+  assert.equal(ride.category, "training");
+  assert.equal(ride.applyable, true);
+  assert.ok(!ride.reactable, "a training plan edit is applyable, not a reaction card");
+  assert.equal(ride.rec, "Cut one grey-zone ride");
+  assert.equal(ride.route, "your call");
+
+  // A fuelling cue → reactable (agree/disagree/snooze), never auto-written to the plan.
+  const fuel = byLabel.get("Take 60 g/h carb on rides over 90 min")!;
+  assert.equal(fuel.category, "fuelling");
+  assert.equal(fuel.reactable, true);
+  assert.ok(!fuel.applyable, "a fuelling cue is never auto-applied to the plan");
+
+  // A marginal-gain execution cue → reactable, never applyable (it's not a schedule edit).
+  const gain = byLabel.get("Start the brick run 5s/km easier")!;
+  assert.equal(gain.reactable, true);
+  assert.ok(!gain.applyable, "an execution cue is not a schedule edit");
+  assert.equal(gain.source, "tune");
+});
+
+test("renderSetupImprove: This-week cards action in-app — no 'saved under reports' pointer anywhere", () => {
+  const profile = { schema_version: 1, identity: {} } as Profile;
+  const insights = insightsWith([
+    F({ family: "Aerobic efficiency", title: "Brick", recommendation: "Start the brick run 5s/km easier", confidence: 0.7 }),
+  ]);
+  const html = renderSetupImprove(profile, false, {
+    insights,
+    weeklyReview: { date: "2026-06-12", actions: ["Cut one grey-zone ride"] },
+    now: NOW,
+  });
+  assert.doesNotMatch(html, /saved under reports|weekly-review\.md|open that report|ask the coach to expand/i, "no out-of-app report pointers");
+  assert.match(html, /Make this change/, "the training plan edit gets an in-app apply button");
+  assert.match(html, /actItem\(this\)/, "Make this change wires to the gated drafter");
+  assert.match(html, /👍 Agree[\s\S]*👎 Disagree[\s\S]*💤 Snooze/, "the reaction card carries agree/disagree/snooze");
+  assert.match(html, /data-rec="Cut one grey-zone ride"/, "the applyable card carries the recommendation text");
 });
 
 test("buildSetupItems: stale weekly/research reports drop out (the freshness windows)", () => {
