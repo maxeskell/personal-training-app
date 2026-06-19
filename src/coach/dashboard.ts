@@ -446,10 +446,32 @@ export interface SetupItem {
   source: "ai_endurance" | "open_item" | "profile_question";
   /** Where the athlete actions it. */
   route: SetupRoute;
+  /** Ranking weight (higher = surfaces first); the ~5-item cap keeps the highest-value items. */
+  priority: number;
 }
 
 /** ~5 keeps the card a calm hub, not a backlog (issue #112). */
 const SETUP_ITEM_CAP = 5;
+
+/**
+ * Per-source ranking weights (higher = surfaces first) so the ~5 cap keeps the highest-VALUE items, not
+ * just the first ones in catalogue order. AI-Endurance gaps block a whole discipline model / zones, and
+ * open items are actions the athlete explicitly flagged, so both outrank profile questions; among
+ * questions, a field the coach actually READS beats a reference-only one (so "what's your height?" never
+ * crowds out a real gap).
+ */
+const SETUP_PRIORITY = { ai_endurance: 100, open_item: 70, question_coach: 50, question_reference: 20 } as const;
+
+/**
+ * A profile question is "reference-only" (lower priority) when its `why` follows the questions.ts honesty
+ * convention for fields no flow reads yet — "for your reference", "for future use", "not yet read…". This
+ * only nudges ORDERING, so a reworded `why` at worst mis-ranks an item; it never breaks the card.
+ */
+const REFERENCE_ONLY_WHY = /for (your )?reference|for future use|not (yet )?read|not (yet )?pulled into/i;
+
+function questionPriority(q: ProfileQuestion): number {
+  return REFERENCE_ONLY_WHY.test(q.why) ? SETUP_PRIORITY.question_reference : SETUP_PRIORITY.question_coach;
+}
 
 /** Treat null / blank string / empty collection as "not filled in" when scanning for open questions. */
 function isBlank(v: unknown): boolean {
@@ -476,13 +498,14 @@ function dedupeKey(label: string): string {
 }
 
 /**
- * Build the deduped, capped list of "Set up & improve" items from data the dashboard ALREADY loads (the
- * profile) — no LLM, no new flow wiring (issue #112, Phase 1). Three sources, each tagged + routed:
+ * Build the ranked, deduped, capped list of "Set up & improve" items from data the dashboard ALREADY
+ * loads (the profile) — no LLM, no new flow wiring (issue #112, Phase 1). Three sources, each tagged +
+ * routed:
  *   • `ai_endurance_todo` → things only you can set in AI Endurance (non-actionable keys dropped).
  *   • `open_items`        → your running list of unresolved actions → talk them through with the coach.
  *   • unfilled profile    → optional profile questions you haven't answered → edit profile.
- * Higher-value sources lead (AIE gaps, then open items, then profile questions); items are deduped by
- * normalised label and the list is capped so the card stays a calm hub. Pure.
+ * Items are ranked by value (see SETUP_PRIORITY) so the cap keeps the highest-impact gaps, deduped by
+ * normalised label (highest-priority duplicate wins), and capped so the card stays a calm hub. Pure.
  */
 export function buildSetupItems(profile: Profile | undefined, questions: ProfileQuestion[] = PROFILE_QUESTIONS): SetupItem[] {
   if (!profile) return [];
@@ -494,26 +517,31 @@ export function buildSetupItems(profile: Profile | undefined, questions: Profile
     const v = value == null ? "" : String(value).trim();
     if (v === "" || v.toLowerCase() === "resolved") continue;
     const { label, why } = aieTodoCopy(key, v);
-    items.push({ label, why, source: "ai_endurance", route: "in AI Endurance" });
+    items.push({ label, why, source: "ai_endurance", route: "in AI Endurance", priority: SETUP_PRIORITY.ai_endurance });
   }
 
   // 2) Free-text open items (a running list of unresolved actions) → raise them with the coach.
   for (const raw of profile.open_items ?? []) {
     const text = typeof raw === "string" ? raw.trim() : "";
     if (!text) continue;
-    items.push({ label: text, why: "", source: "open_item", route: "discuss with coach" });
+    items.push({ label: text, why: "", source: "open_item", route: "discuss with coach", priority: SETUP_PRIORITY.open_item });
   }
 
   // 3) Unfilled optional profile questions → fill them in (or tell Claude via update_profile).
   for (const q of questions) {
     if (!isBlank(valueAtPath(profile, q.field))) continue;
-    items.push({ label: `Answer: ${q.question}`, why: q.why, source: "profile_question", route: "edit profile" });
+    items.push({ label: `Answer: ${q.question}`, why: q.why, source: "profile_question", route: "edit profile", priority: questionPriority(q) });
   }
 
-  // Dedupe across sources (first wins → the higher-value source is kept) and cap to keep the card calm.
+  // Rank by priority (stable: original order breaks ties, so catalogue / source order is preserved
+  // within a tier), then dedupe across sources (highest-priority duplicate wins) and cap the list.
+  const ranked = items
+    .map((item, i) => ({ item, i }))
+    .sort((a, b) => b.item.priority - a.item.priority || a.i - b.i)
+    .map((d) => d.item);
   const seen = new Set<string>();
   const deduped: SetupItem[] = [];
-  for (const item of items) {
+  for (const item of ranked) {
     const k = dedupeKey(item.label);
     if (seen.has(k)) continue;
     seen.add(k);

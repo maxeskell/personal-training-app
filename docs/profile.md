@@ -175,7 +175,9 @@ the coach reads them from the profile, so the card only ever shows things you ca
 
 That card is a small, deterministic (no-AI) action hub: alongside the AI-Endurance gaps it also lists
 your free-text `open_items` (tagged *discuss with coach*) and any unfilled optional profile questions
-(tagged *edit profile*), deduped and capped to ~5 so it stays a calm prompt, not a backlog.
+(tagged *edit profile*). Items are **ranked by value** — AI-Endurance gaps and open items outrank
+profile questions, and a field the coach actually reads outranks a reference-only one — then deduped and
+capped to ~5, so the slots go to the highest-impact gaps and the card stays a calm prompt, not a backlog.
 
 ## The coaching brief is separate
 

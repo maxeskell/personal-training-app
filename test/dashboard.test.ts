@@ -329,6 +329,28 @@ test("buildSetupItems: dedupes across sources (first/higher-value wins) and caps
   assert.equal(capped[0].source, "ai_endurance", "AIE gaps lead the list");
 });
 
+test("buildSetupItems: ranks by value so high-impact gaps win the cap (coach-read > reference-only)", () => {
+  // A reference-only question (sits FIRST in catalogue order) must rank below a coach-read one, and
+  // both must rank below an AIE gap and an open item — so the cap keeps the high-value items.
+  const questions: ProfileQuestion[] = [
+    { area: "identity", field: "identity.height_cm", question: "Standing height (cm)?", why: "Stable anthropometry kept for reference." },
+    { area: "fuelling", field: "fuelling.carb_target_g_per_hour", question: "Typical long-run fuel?", why: "Read into the coaching context as your per-session fuelling plan." },
+  ];
+  const items = buildSetupItems(
+    { schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" }, open_items: ["Shim the cleat"] } as Profile,
+    questions,
+  );
+  assert.deepEqual(
+    items.map((i) => i.source),
+    ["ai_endurance", "open_item", "profile_question", "profile_question"],
+    "AIE > open item > profile questions",
+  );
+  // Within the questions, the coach-read one outranks the reference-only one despite catalogue order.
+  const labels = items.filter((i) => i.source === "profile_question").map((i) => i.label);
+  assert.deepEqual(labels, ["Answer: Typical long-run fuel?", "Answer: Standing height (cm)?"]);
+  assert.ok(items[0].priority > items[items.length - 1].priority, "priority is monotonic across the ranked list");
+});
+
 test("renderSetupImprove: renders the card, tags routes, hides in share mode, escapes values", () => {
   const profile = {
     schema_version: 1,

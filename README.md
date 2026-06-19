@@ -144,8 +144,8 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
 - **A "Set up & improve" card on the dashboard.** A small, deterministic (no-AI) action hub that pulls
   from data already loaded with your profile: actionable AI-Endurance gaps, your free-text `open_items`,
   and any unfilled optional profile questions — each tagged with where to action it (*in AI Endurance* /
-  *edit profile* / *discuss with coach*), deduped and capped to ~5. Display-only; hidden from the
-  shared/screenshot view.
+  *edit profile* / *discuss with coach*), **ranked by value** (so the ~5 slots go to the highest-impact
+  gaps, not whatever's first), deduped and capped. Display-only; hidden from the shared/screenshot view.
 - **The coaching brief ships as a default prompt.** [`coach-instructions.md`](coach-instructions.md)
   is the default system prompt a fresh clone gets (a prompt, *not* data — kept separate from the
   profile); edit it to taste. Full schema + privacy detail: [docs/profile.md](docs/profile.md).
