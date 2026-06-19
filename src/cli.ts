@@ -286,6 +286,18 @@ async function cmdSplits(): Promise<void> {
   console.log(lines.join("\n") + "\n");
 }
 
+/**
+ * `ingest-fit [path]` — the manual-export fallback for raw .FIT streams. With a path, validate an exported
+ * .FIT (Garmin Connect → Export Original) and copy it into the watched streams dir; with no path, report
+ * what's there + confirm the watched dir. Deterministic, no LLM. Read-only to AI Endurance.
+ */
+async function cmdIngestFit(): Promise<void> {
+  const { reportStreamsDir, ingestFitFile, formatStreamsReport, formatIngest } = await import("./archive/fitIngest.js");
+  const path = process.argv.slice(3).find((a) => !a.startsWith("-"));
+  const lines = path ? formatIngest(ingestFitFile(path)) : formatStreamsReport(reportStreamsDir());
+  console.log("\n" + lines.join("\n") + "\n");
+}
+
 function printReadiness(v: { verdict: string; why: string; drivers: Array<{ signal: string; reading: string; source: string }>; cautions: string[] }, risk: ReturnType<typeof assessHealthRisk>): void {
   if (risk.level !== "none") console.log(`\n⚠ Wellbeing (${risk.level}): ${risk.message}\n`);
   const dot = v.verdict === "green" ? "🟢" : v.verdict === "amber" ? "🟡" : "🔴";
@@ -907,6 +919,7 @@ const commands: Record<string, () => Promise<void>> = {
   "health-remote": cmdHealthRemote,
   state: cmdState,
   splits: cmdSplits,
+  "ingest-fit": cmdIngestFit,
   readiness: cmdReadiness,
   ping: cmdPing,
   weekly: cmdWeekly,

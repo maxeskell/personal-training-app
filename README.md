@@ -209,9 +209,16 @@ to read, so the LLM call is skipped (zero cost). The stream now **auto-downloads
 the MCP `sync` tool and `fit-sync` all pull recent ones into `data/fit-streams/`, and the *Deep feedback*
 button fetches a missing one on demand (~10s) before analysing. The button only disappears (replaced by
 unlock instructions) when no automatic path exists — Garmin off, an old `garmin_mcp` build, or no archived
-activity id — in which case export the original `.FIT` manually (Garmin Connect → ⚙ → *Export Original*).
-To analyse from summary data anyway: `npm run session -- --force`. Ask-box questions fall back to general
-Q&A instead.
+activity id — in which case export the original `.FIT` manually (Garmin Connect → ⚙ → *Export Original*)
+and drop it into `data/fit-streams/`. The **`ingest_fit` tool** (`npm run ingest-fit <path>`) validates a
+dropped/exported `.FIT` and confirms it's now readable; with no argument it reports what's in the watched
+dir. To analyse from summary data anyway: `npm run session -- --force`. Ask-box questions fall back to
+general Q&A instead.
+
+When the `.FIT` *is* present, the deep dive now also reads the **run dynamics** the chest strap records —
+vertical ratio, step length and GCT (stance-time) L/R balance — and, on the bike, **normalized power**
+(with its variability index vs average) and **L/R power balance** from the pedals. These were decoded but
+previously dropped before the readout; each is omitted (never faked) when the device didn't record it.
 
 **A missing `.FIT` is now loud, not silent.** `sync` / `get_state` / `npm run state` print a
 **data-completeness** line: when a recent session's raw `.FIT` isn't present (so its per-interval splits
@@ -438,6 +445,7 @@ see and blocking for minutes (which used to surface in Cowork as a mystery timeo
 | --- | --- | --- |
 | `sync` / `get_state` | assemble (or read) today's AthleteState — plan, recovery, HRV/RHR, weight, thresholds, zones. `sync` also **auto-fetches recent raw `.FIT` streams** (parity with the dashboard Sync) and both surface a **granular-data completeness** readout — which recent sessions are missing their raw `.FIT` (so their per-interval splits / biomechanics are unreachable) and *why* (Garmin off / not reachable / download capability missing / a download that failed), never a silent zero | none |
 | `splits` | per-interval splits (laps/lengths) for a session from its raw `.FIT` — run/bike reps, swim lengths — **and a swim CSS estimate** by the 400/200 method with a maximal-effort confidence check. Pass `t400`/`t200` (sec or m:ss) to compute CSS from times with no `.FIT` needed; else it auto-detects the 400/200 pair from the FIT laps. Read-only: computes & recommends — you set CSS in AI Endurance | none |
+| `ingest_fit` | the manual-export fallback for raw `.FIT` streams: with no args, report the watched streams dir (each file's validity + summary) and confirm the path/convention; with `path`, validate an exported `.FIT` (Garmin Connect → Export Original) and copy it in so `splits` / `session_feedback` can read it | none |
 | `get_profile` | the validated athlete profile (stable context: body, kit, medical, availability, race targets) + a computed `dose_cycle` (days_since_dose, in_gi_trough). NO live numbers — those are in `get_state` | none |
 | `insights` | run the n=1 insight engine: CTL/ATL/TSB & ramp, EF, durability, correlations, change-points, taper target, validated monitoring rules — each top finding annotated with its **key, age (NEW/Nd old) and your saved reaction** | none |
 | `react_to_insight` | like / dislike / snooze / clear a surfaced insight by `key` — full parity with the dashboard buttons (persists, reshapes surfacing); a local decision-log write, **available even on the read-only Cowork surface** | none |

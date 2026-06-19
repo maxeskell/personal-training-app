@@ -34,6 +34,10 @@ interface Sample {
   power?: number;
   speed?: number;
   temperature?: number;
+  verticalRatio?: number; // %
+  stepLength?: number; // mm
+  gctBalance?: number; // stance-time L/R balance, %
+  lrBalance?: number; // bike left/right power balance, %
 }
 interface StreamFile {
   activityId?: string;
@@ -56,6 +60,13 @@ export interface SessionDecay {
   avgTempC: number | null; // session mean temperature (°C) — for the heat confounder
   avgPowerW: number | null; // for per-session EF (power÷HR) in the heat analysis
   avgHr: number | null;
+  // Run dynamics (HRM-Pro/600 chest strap) + bike power detail — decoded by the .FIT parser but, until now,
+  // dropped before the session readout. All null when the device didn't record them (degrade, don't invent).
+  avgVerticalRatioPct: number | null; // running economy: vertical oscillation ÷ step length (lower = better)
+  avgStepLengthMm: number | null;
+  avgGctBalancePct: number | null; // run stance-time L/R balance (50% = even)
+  avgLrBalancePct: number | null; // bike left/right power balance (50% = even)
+  normalizedPowerW: number | null; // bike NP (30s-rolling 4th-power mean) — pacing/variability vs avg power
 }
 
 function quartileMeans(vals: Maybe[]): { first: number | null; last: number | null } {
@@ -106,12 +117,39 @@ export function analyseSession(f: StreamFile): SessionDecay | null {
     avgTempC: temps.length ? +mean(temps)!.toFixed(1) : null,
     avgPowerW: avgOf(s.map((x) => x.power)),
     avgHr: avgOf(s.map((x) => x.hr)),
+    avgVerticalRatioPct: avgOf(s.map((x) => x.verticalRatio)),
+    avgStepLengthMm: avgOf(s.map((x) => x.stepLength)),
+    avgGctBalancePct: avgOf(s.map((x) => x.gctBalance)),
+    avgLrBalancePct: avgOf(s.map((x) => x.lrBalance)),
+    normalizedPowerW: normalizedPower(s.map((x) => x.power)),
   };
 }
 
 function avgOf(xs: Array<number | undefined>): number | null {
   const v = xs.filter((x): x is number => typeof x === "number" && x > 0);
   return v.length ? +mean(v)!.toFixed(1) : null;
+}
+
+/**
+ * Normalized Power (Coggan): 30-sample rolling mean of power, then the 4th-power mean, then the 4th root.
+ * Surfaces how variable/surgey a ride was vs its flat average (NP > avg ⇒ punchy). Assumes ~1 Hz samples;
+ * gaps are dropped (a MODEL approximation). Null when there's too little power data to be meaningful.
+ */
+function normalizedPower(power: Array<number | undefined>): number | null {
+  const vals = power.filter((x): x is number => typeof x === "number" && x >= 0);
+  const win = 30;
+  if (vals.length < win) return null;
+  let mean4 = 0;
+  let n = 0;
+  for (let i = win - 1; i < vals.length; i++) {
+    let sum = 0;
+    for (let j = i - win + 1; j <= i; j++) sum += vals[j];
+    const avg = sum / win;
+    mean4 += avg ** 4;
+    n++;
+  }
+  if (!n) return null;
+  return +Math.pow(mean4 / n, 0.25).toFixed(0);
 }
 
 /** Convert a decoded .FIT activity into the StreamFile shape analyseSession consumes. */
@@ -131,6 +169,10 @@ function fitToStreamFile(act: FitActivity, name: string): StreamFile {
       power: s.power,
       speed: s.speed,
       temperature: s.temperature,
+      verticalRatio: s.verticalRatio,
+      stepLength: s.stepLength,
+      gctBalance: s.gctBalance,
+      lrBalance: s.lrBalance,
     })),
   };
 }

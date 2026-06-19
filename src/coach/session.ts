@@ -154,6 +154,19 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
       `- Cadence drop ${fmt(dy.cadenceDropPct, 1)}%, GCT rise ${fmt(dy.gctRisePct, 1)}%, vertical-osc rise ${fmt(dy.voRisePct, 1)}%, HR drift ${fmt(dy.hrDriftPct, 1)}% (late vs early quartile)`,
       `- Session mean temperature ${fmt(dy.avgTempC, 1)}°C`,
     );
+    // Run economy/dynamics (chest-strap) — only when the device recorded them; omitted, never faked, otherwise.
+    if (dy.avgVerticalRatioPct != null || dy.avgStepLengthMm != null || dy.avgGctBalancePct != null) {
+      lines.push(
+        `- Run dynamics: vertical ratio ${fmt(dy.avgVerticalRatioPct, 1)}% (lower = more economical), step length ${fmt(dy.avgStepLengthMm)}mm, GCT L/R balance ${fmt(dy.avgGctBalancePct, 1)}% (50% = even)`,
+      );
+    }
+    // Bike power detail (NP + L/R balance from power meter / Rally pedals).
+    if (dy.normalizedPowerW != null || dy.avgLrBalancePct != null) {
+      const npNote = dy.normalizedPowerW != null && dy.avgPowerW != null ? ` (avg ${fmt(dy.avgPowerW)}W → variability index ${(dy.normalizedPowerW / dy.avgPowerW).toFixed(2)})` : "";
+      lines.push(
+        `- Bike power: normalized power ${fmt(dy.normalizedPowerW)}W${npNote}${dy.avgLrBalancePct != null ? `, L/R balance ${fmt(dy.avgLrBalancePct, 1)}% (50% = even)` : ""}`,
+      );
+    }
   } else {
     lines.push("", `IN-SESSION BIOMECHANICS: no raw .FIT stream for this session — cadence/GCT/decoupling unavailable. Sync/fit-sync auto-downloads these when the Garmin download tool is available; the fallback is a per-second .FIT exported from Garmin Connect into data/fit-streams/.`);
   }
