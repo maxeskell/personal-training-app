@@ -3,6 +3,8 @@ import type { DecisionRecord, InsightReaction } from "../state/decisionLog.js";
 import type { FitSummary } from "../archive/store.js";
 import type { SessionFeedbackRecord } from "./sessionFeedbackStore.js";
 import type { InsightReport } from "../insights/engine.js";
+import type { SurfacedFinding } from "../state/insightLog.js";
+import { renderCoachRecs } from "./adviceRecs.js";
 import { findingKey } from "../insights/metrics.js";
 import { detectMetricChanges, detectSourceConflicts, formatMetricValue, metricLabel } from "./metricChanges.js";
 import type { MetricOverrides } from "../state/metricOverrides.js";
@@ -150,6 +152,8 @@ export interface DashboardInput {
   sessionFeedbacks?: SessionFeedbackRecord[];
   /** Your pins on auto-detected metrics (the Data-changes card's 👎): surfaced with an un-pin control. */
   metricOverrides?: MetricOverrides;
+  /** Reactable recommendations distilled from your latest readiness + deep-dive write-ups (item 4-iii). */
+  coachRecs?: SurfacedFinding[];
 }
 
 const SEV_COLOR: Record<string, string> = { red: "#c0392b", amber: "#c98a00", green: "#1a8a3a", flag: "#c0392b", watch: "#c98a00", info: "#1a8a3a" };
@@ -825,7 +829,7 @@ function freshnessLine(today: AthleteState): string {
   return line;
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // One synthesised "Today" call, computed once and shared: the header leads on it, the Top-insights box
@@ -1135,6 +1139,8 @@ async function declineProposal(btn){var box=btn.closest('.proposal');var id=box.
 </script>
 
 ${renderSetupImprove(profile, share, { suppressed, reactions, insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined })}
+
+${renderCoachRecs(coachRecs ?? [], reactions, share)}
 
 ${insights ? renderSignals(insights) : ""}
 
