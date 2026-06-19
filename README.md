@@ -181,8 +181,9 @@ plan changes diffed from daily snapshots.
 ## Deep session feedback
 
 Deep feedback is **generated automatically at sync for every session** (no button) and **persisted** — so
-the dashboard's **Last session** card shows it **inline** (no LLM call on page load), and the history is
-kept for later analysis (`data/session-feedback.jsonl`). Generation is best-effort and cost-aware: it runs
+the dashboard's **Last session** card shows it **inline** (rendering a stored readout makes no LLM call),
+and the history is kept for later analysis (`data/session-feedback.jsonl`). When the latest session has no
+stored readout yet, the card fetches one on page load (see below) rather than showing a static placeholder. Generation is best-effort and cost-aware: it runs
 once per session after `fit-sync` has pulled the raw **.FIT** (so it's a real deep dive), is API-key-gated,
 cost-logged, and capped per sync; a session without its .FIT yet is picked up on a later sync (skipped
 cheaply, no tokens). Since each session generated is one LLM call, **`COACH_AUTO_SESSION_FEEDBACK`** throttles
@@ -206,14 +207,21 @@ back to the regex, never blocking the Q&A.
 
 **The deep dive only runs with the session's raw `.FIT` stream** — without it there are no biomechanics
 to read, so the LLM call is skipped (zero cost). The stream now **auto-downloads**: the dashboard Sync,
-the MCP `sync` tool and `fit-sync` all pull recent ones into `data/fit-streams/`, and the *Deep feedback*
-button fetches a missing one on demand (~10s) before analysing. The button only disappears (replaced by
-unlock instructions) when no automatic path exists — Garmin off, an old `garmin_mcp` build, or no archived
-activity id — in which case export the original `.FIT` manually (Garmin Connect → ⚙ → *Export Original*)
-and drop it into `data/fit-streams/`. The **`ingest_fit` tool** (`npm run ingest-fit <path>`) validates a
-dropped/exported `.FIT` and confirms it's now readable; with no argument it reports what's in the watched
-dir. To analyse from summary data anyway: `npm run session -- --force`. Ask-box questions fall back to
-general Q&A instead.
+the MCP `sync` tool and `fit-sync` all pull recent ones into `data/fit-streams/`.
+
+**If the latest session has no readout yet when you open the dashboard, the card fetches it for you on
+load** — no waiting for the next full sync. It shows the live state instead of a static line: *"Downloading
+this session's .FIT and generating deep feedback…"* (it pulls the raw `.FIT` on demand, ~10s, when it isn't
+local but the archive knows the Garmin id), or *"Generating…"* when the `.FIT` is already present. The
+result is rendered inline **and persisted**, so the next open is instant with no further LLM spend. A stale
+snapshot (older than `COACH_AUTOSYNC_MIN`) still kicks a full background Sync instead, which downloads and
+backfills the same way before reloading. The card only falls back to a note — never a spinner that goes
+nowhere — when it genuinely can't produce one: *no `ANTHROPIC_API_KEY`*, or *no `.FIT` and no automatic way
+to fetch it* (Garmin off, an old `garmin_mcp` build, or no archived activity id), in which case export the
+original `.FIT` manually (Garmin Connect → ⚙ → *Export Original*) and drop it into `data/fit-streams/`. The
+**`ingest_fit` tool** (`npm run ingest-fit <path>`) validates a dropped/exported `.FIT` and confirms it's
+now readable; with no argument it reports what's in the watched dir. To analyse from summary data anyway:
+`npm run session -- --force`. Ask-box questions fall back to general Q&A instead.
 
 When the `.FIT` *is* present, the deep dive now also reads the **run dynamics** the chest strap records —
 vertical ratio, step length and GCT (stance-time) L/R balance — and, on the bike, **normalized power**
