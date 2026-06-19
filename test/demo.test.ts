@@ -61,6 +61,27 @@ test("demo data is rich enough for a hero screenshot: load model, Garmin scores 
   assert.ok((t.racePredictions.value?.predictions.length ?? 0) >= 3);
 });
 
+test("the enriched demo fills the activity-driven cards: brick decoupling, monitoring, last session", () => {
+  const today = "2026-06-14";
+  const w = buildDemoWindow(today, 42);
+  const t = w[w.length - 1];
+  const ins = buildInsights(t, { garminDays: buildDemoGarminDays(today) }, { history: w });
+  // Power-equipped runs → the brick decoupling proxy computes (no more "need power-equipped runs").
+  assert.ok(ins.brick.decouplingPct != null, "brick decoupling computes from the demo's power-equipped runs");
+  // A real sample history for the monitoring backtest (no more "0d history"); an exploratory rule surfaces.
+  assert.ok(ins.monitoring.days > 0, "monitoring runs over real sample history");
+  assert.ok(ins.monitoring.best, "an (exploratory) watch rule surfaces from the demo HRV→recovery relationship");
+  // The Last-session card renders for the most recent demo activity (a run) with stored feedback inline.
+  const html = renderDashboard({
+    window: w,
+    decisions: [],
+    insights: ins,
+    sessionFeedbacks: [{ schemaVersion: 1, date: "2026-06-13", sport: "Run", deep: true, generatedAt: new Date().toISOString(), costUsd: 0.2, markdown: "## Verdict\n**Solid** run." }],
+  });
+  assert.match(html, /Last session — 2026-06-13 Run/);
+  assert.match(html, /<b>Solid<\/b> run/, "the stored session feedback renders inline");
+});
+
 test("buildDemoGarminDays: a 42-day series ending today with the Trends-card fields", () => {
   const today = "2026-06-14";
   const days = buildDemoGarminDays(today);
