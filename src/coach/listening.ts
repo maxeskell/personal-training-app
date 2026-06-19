@@ -362,8 +362,18 @@ export function buildEngagementContext(model: ListeningModel): EngagementContext
   return { familyWeights, recurringDismissed, adherence };
 }
 
-function pct(x: number | null): string {
-  return x == null ? "—" : `${Math.round(x * 100)}%`;
+/**
+ * Format a plan-adherence ratio for the report. Two honest edge cases the raw ratio gets wrong:
+ *  - `null` means nothing was planned in that zone. If you still trained there it's not "no data" (—),
+ *    it's off-plan work → "unplanned"; only a genuinely empty zone (nothing planned, nothing done) is "—".
+ *  - A tiny planned denominator (e.g. 8 min planned, 28 min done) yields a noisy ratio like 370% that
+ *    reads as broken. The planned/done columns already show the magnitude, so we clamp the % to "200%+"
+ *    — still honestly "well over plan", without the alarming figure. Normal over-delivery (≤200%) is exact.
+ */
+export function adherencePct(x: number | null, actualH = 0): string {
+  if (x == null) return actualH > 0 ? "unplanned" : "—";
+  const p = Math.round(x * 100);
+  return p > 200 ? "200%+" : `${p}%`;
 }
 
 /** Hours as H:MM (repo convention: durations display h:mm, never a bare decimal). */
@@ -374,14 +384,14 @@ function hm(hours: number): string {
 
 function adherenceSection(a: AdherenceSummary): string[] {
   const lines: string[] = [`## Adherence to the plan (AI Endurance plan progress, as of ${a.asOf})`, ""];
-  let head = `Overall: **${hm(a.totalActualH)}** done of **${hm(a.totalPlannedH)}** planned (**${pct(a.pct)}**)`;
+  let head = `Overall: **${hm(a.totalActualH)}** done of **${hm(a.totalPlannedH)}** planned (**${adherencePct(a.pct, a.totalActualH)}**)`;
   if (a.trend?.deltaPts != null) {
     const arrow = a.trend.deltaPts > 0 ? "▲" : a.trend.deltaPts < 0 ? "▼" : "→";
-    head += ` · vs ~1wk earlier ${pct(a.trend.priorPct)} (${arrow} ${Math.abs(a.trend.deltaPts)} pts)`;
+    head += ` · vs ~1wk earlier ${adherencePct(a.trend.priorPct)} (${arrow} ${Math.abs(a.trend.deltaPts)} pts)`;
   }
   lines.push(head, "");
   lines.push("| Zone | planned | done | % |", "| --- | --: | --: | --: |");
-  for (const z of a.byZone) lines.push(`| ${z.zone} | ${hm(z.plannedH)} | ${hm(z.actualH)} | ${pct(z.pct)} |`);
+  for (const z of a.byZone) lines.push(`| ${z.zone} | ${hm(z.plannedH)} | ${hm(z.actualH)} | ${adherencePct(z.pct, z.actualH)} |`);
   lines.push("");
   return lines;
 }
@@ -415,7 +425,7 @@ export function formatListening(m: ListeningModel, date: string): string {
   if (m.snapshots) {
     lines.push(`Window: ${m.window!.from} → ${m.window!.to} · ${m.snapshots} snapshot(s) logged`);
     lines.push(
-      `Insights shown: **${m.surfacedKeys}** distinct · reacted to **${m.reactedKeys}** (${pct(m.reactionRate)}) · ` +
+      `Insights shown: **${m.surfacedKeys}** distinct · reacted to **${m.reactedKeys}** (${m.reactionRate == null ? "—" : `${Math.round(m.reactionRate * 100)}%`}) · ` +
         `${m.surfacedKeys - m.reactedKeys} never got a call`,
     );
     lines.push(`Reactions: 👍 ${m.reactions.agree} agree · 👎 ${m.reactions.disagree} disagree · ✕ ${m.reactions.ignore} ignore`);

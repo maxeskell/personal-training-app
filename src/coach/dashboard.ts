@@ -389,6 +389,12 @@ export function ftpEstimateGapNote(configuredFtpW: number | undefined, estimateW
   return `${pct}% under your configured ${configuredFtpW} W FTP — the curve only sees power-equipped rides and revises up on hard sustained efforts, so read it as a floor, not a downgrade. Zones use the ${configuredFtpW} W figure.`;
 }
 
+/** Heading for the Garmin trends card. A single snapshot (or none) can't trend, so below 2 days we drop
+ *  the "(last N days)" suffix rather than print a nonsensical "(last 0 days)" / ungrammatical "1 days". */
+export function trendsHeading(days: number): string {
+  return days >= 2 ? `Trends (last ${days} days)` : "Trends";
+}
+
 /** Garmin model scores: endurance score, hill score, and the power-duration curve (MMP). */
 function renderScores(today: AthleteState): string {
   const e = today.enduranceScore.value;
@@ -838,7 +844,7 @@ ${insights ? renderSignals(insights) : ""}
 
 ${share ? "" : renderWeather(weather)}
 
-<div class="card"><h2>Trends (last ${gar.length || 0} days)</h2>
+<div class="card"><h2>${trendsHeading(gar.length)}</h2>
   ${trendRows ? `<table>${trendRows}</table>` : '<div class="muted">Backfill the Garmin daily archive to populate trends (npm run backfill).</div>'}
   <div class="k" style="margin-top:8px">From the backfilled Garmin daily history.</div>
 </div>

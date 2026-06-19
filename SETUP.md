@@ -67,6 +67,24 @@ Three external connections, each with its own login and token store — all kept
 | **`uv`/`uvx` + Python 3.12** | Only if you enable Garmin | https://docs.astral.sh/uv/ . Skip if you won't use Garmin. |
 | **macOS** | Only for extras | The CLI + dashboard run on Linux too; only desktop notifications and the auto-start installers are macOS-specific (they print a Linux equivalent and no-op elsewhere). |
 
+### What it will cost you (know this before you start)
+
+Nothing in *this repo* charges you, but two prerequisites above are paid third-party services and the AI
+write-ups spend Anthropic tokens. Set expectations up front:
+
+- **AI Endurance** — a **paid subscription you hold directly with them** (it's your plan/recovery/threshold
+  data spine). You pay AI Endurance whatever their plan costs; nothing extra flows through this repo.
+- **Anthropic API** — **pay-as-you-go per token**, billed by Anthropic on the key you provide. On a daily
+  coaching cadence this is **roughly $5–10/month** in practice. Every call is logged locally — run
+  `npm run cost` any time for today / 7-day / 30-day totals and a monthly projection.
+- **The $0 path:** the dashboard, zones, health checks and weather make **no LLM calls and need no key** —
+  you can run the coach display-only for free, and only spend when you ask for a readiness/weekly/race/ask
+  write-up. (`npm run demo` shows the whole dashboard on sample data with no account and no key at all.)
+- **Garmin, weather, the optional local-LLM server:** free.
+
+You stay in control of spend: nothing runs on autoplay, the deterministic flows are free, and the cost log
+is a purely local tally (it never sends anything anywhere).
+
 ## Step 1 — Get the code building
 
 ```bash
