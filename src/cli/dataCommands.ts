@@ -175,7 +175,10 @@ export async function cmdFitSync(): Promise<void> {
     console.log(`\nfit-sync: scanning ${limit} recent activities → fit-summaries archive\n`);
     const r = await syncFitSummaries(g, store, limit, (m) => console.log(m));
     console.log(`\nfit-sync: +${r.added} new summaries, ${r.skipped} already archived, ${r.failed} failed → data/archive/fit-summaries.jsonl`);
-    console.log(`fit-sync: ⬇ ${r.streamsDownloaded} raw .FIT streams → data/fit-streams/ ${r.streamsSupported ? "(biomechanics layer)" : "(download tool unavailable — garmin_mcp too old; streams need a manual Export Original)"}`);
+    console.log(`fit-sync: ⬇ ${r.streamsDownloaded} raw .FIT streams, ${r.streamsFailed} failed → data/fit-streams/ ${r.streamsSupported ? "(biomechanics layer)" : "(download tool unavailable — garmin_mcp too old; streams need a manual Export Original)"}`);
+    // Surface WHY a stream download failed (was previously swallowed to a single log line) so a missing
+    // biomechanics layer is never a silent zero.
+    for (const f of r.streamFailures) console.log(`  ! ${f}`);
     console.log("Summaries feed the heat confounder + the session card's thermal block; streams unlock decoupling/cadence/GCT.");
   } finally {
     await g.close();

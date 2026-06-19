@@ -9,7 +9,10 @@ import { assessReadiness } from "./readiness.js";
 import { assessHealthRisk } from "../guardrails/wellbeing.js";
 import { DecisionLog, decisionId, nowIso } from "../state/decisionLog.js";
 import { ArchiveStore } from "../archive/store.js";
-import { mapRichActivity } from "../insights/metrics.js";
+import { mapRichActivity, richActivities } from "../insights/metrics.js";
+import { loadSessionDecays } from "../insights/fit.js";
+import { syncFitSummaries, type FitSyncResult } from "../archive/fitSync.js";
+import { assessCompleteness, type DataCompletenessReport } from "../state/dataCompleteness.js";
 import { todayIso } from "../util/today.js";
 import { loadProfileSafe } from "../profile/load.js";
 import { nearestRaceName, racePredictedSec, type ArchiveInput } from "../insights/engine.js";
@@ -55,14 +58,63 @@ export async function loadArchive(): Promise<ArchiveInput | undefined> {
   };
 }
 
+export interface BuildStateOpts {
+  /**
+   * Also pull recent raw `.FIT` streams (and per-activity summaries) while the Garmin client is open,
+   * then attach a `dataCompleteness` readout. ONLY the explicit `sync` surface sets this — the FIT pull
+   * is a network round-trip we don't want on every readiness/ask/weekly assemble. Mirrors the dashboard
+   * refresh, which fit-syncs on its own Sync. Best-effort: a fetch failure never breaks the assemble.
+   */
+  syncFit?: boolean;
+}
+
+/**
+ * Gather the granular-data completeness readout for a state: which recent sessions have their raw `.FIT`
+ * present locally, plus the Garmin capability + this-sync fetch outcome. Pure-ish (reads the local streams
+ * dir + the state's own activities); the Garmin facts are passed in by the caller.
+ */
+export function gatherCompleteness(
+  state: AthleteState,
+  opts: { garminConnected?: boolean; fitSync?: FitSyncResult } = {},
+): DataCompletenessReport {
+  return assessCompleteness({
+    recent: richActivities(state.raw).map((a) => ({ date: a.date, sport: a.sport })),
+    streams: loadSessionDecays().map((d) => ({ date: d.date, sport: d.sport })),
+    today: state.date,
+    garminEnabled: config.garmin.enabled,
+    garminConnected: opts.garminConnected,
+    fitSync: opts.fitSync
+      ? {
+          streamsDownloaded: opts.fitSync.streamsDownloaded,
+          streamsFailed: opts.fitSync.streamsFailed,
+          streamsSupported: opts.fitSync.streamsSupported,
+          streamFailures: opts.fitSync.streamFailures,
+        }
+      : undefined,
+  });
+}
+
 /** Assemble (and persist) today's state + trailing window. Handles Garmin lifecycle. */
-export async function buildTodayState(): Promise<{ state: AthleteState; window: AthleteState[] }> {
+export async function buildTodayState(opts: BuildStateOpts = {}): Promise<{ state: AthleteState; window: AthleteState[]; fitSync?: FitSyncResult }> {
   const store = new StateStore();
   const garmin = config.garmin.enabled ? new GarminClient() : undefined;
   if (garmin) await garmin.connect();
+  const garminConnected = garmin ? garmin.available : undefined; // capture before close()
   const today = todayIso();
   // Assemble via the configured data-source spine (AI Endurance by default; see src/sources/).
   const state = await selectDataSource().assemble({ store, garmin, date: today, assembledAt: new Date().toISOString() });
+
+  // On the explicit `sync` surface, also pull recent raw .FIT streams while Garmin is open — so the MCP
+  // `sync` has parity with the dashboard's Sync (which fit-syncs) and a session's deep analysis isn't
+  // silently missing its stream the next time it's asked for. Best-effort.
+  let fitSync: FitSyncResult | undefined;
+  if (opts.syncFit && garmin && garminConnected) {
+    try {
+      fitSync = await syncFitSummaries(garmin, new ArchiveStore(), 8);
+    } catch (e) {
+      console.warn(`sync: raw .FIT fetch failed (non-fatal): ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   await garmin?.close();
   await store.save(state);
 
@@ -86,7 +138,15 @@ export async function buildTodayState(): Promise<{ state: AthleteState; window: 
     if (window.length) window[window.length - 1].profile = loaded.profile;
   }
 
-  return { state, window };
+  // On the `sync` surface, attach the granular-data completeness readout (after the .FIT fetch above, so
+  // it reflects what was just pulled). In-memory + AFTER save, like the profile — it's derived and stripped
+  // by the store regardless. Loud-over-silent: a recent session missing its .FIT shows here.
+  if (opts.syncFit) {
+    state.dataCompleteness = gatherCompleteness(state, { garminConnected, fitSync });
+    if (window.length) window[window.length - 1].dataCompleteness = state.dataCompleteness;
+  }
+
+  return { state, window, fitSync };
 }
 
 /**

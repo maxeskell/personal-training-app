@@ -200,12 +200,19 @@ It is used only for this low-stakes routing — coaching output always stays on 
 back to the regex, never blocking the Q&A.
 
 **The deep dive only runs with the session's raw `.FIT` stream** — without it there are no biomechanics
-to read, so the LLM call is skipped (zero cost). The stream now **auto-downloads**: Sync / `fit-sync`
-pulls recent ones into `data/fit-streams/`, and the *Deep feedback* button fetches a missing one on
-demand (~10s) before analysing. The button only disappears (replaced by unlock instructions) when no
-automatic path exists — Garmin off, an old `garmin_mcp` build, or no archived activity id — in which case
-export the original `.FIT` manually (Garmin Connect → ⚙ → *Export Original*). To analyse from summary
-data anyway: `npm run session -- --force`. Ask-box questions fall back to general Q&A instead.
+to read, so the LLM call is skipped (zero cost). The stream now **auto-downloads**: the dashboard Sync,
+the MCP `sync` tool and `fit-sync` all pull recent ones into `data/fit-streams/`, and the *Deep feedback*
+button fetches a missing one on demand (~10s) before analysing. The button only disappears (replaced by
+unlock instructions) when no automatic path exists — Garmin off, an old `garmin_mcp` build, or no archived
+activity id — in which case export the original `.FIT` manually (Garmin Connect → ⚙ → *Export Original*).
+To analyse from summary data anyway: `npm run session -- --force`. Ask-box questions fall back to general
+Q&A instead.
+
+**A missing `.FIT` is now loud, not silent.** `sync` / `get_state` / `npm run state` print a
+**data-completeness** line: when a recent session's raw `.FIT` isn't present (so its per-interval splits
+and biomechanics are unreachable), it's named explicitly with the reason — Garmin disabled, not reachable
+(re-auth), the `download_activity_file` capability absent, or a download that *attempted and failed*
+(the reason is surfaced, no longer swallowed). A clean sync no longer hides a missing stream.
 
 ## Marginal gains + keeping the knowledge current
 
@@ -424,7 +431,7 @@ see and blocking for minutes (which used to surface in Cowork as a mystery timeo
 
 | Tool | What it does | Cost |
 | --- | --- | --- |
-| `sync` / `get_state` | assemble (or read) today's AthleteState — plan, recovery, HRV/RHR, weight, thresholds, zones | none |
+| `sync` / `get_state` | assemble (or read) today's AthleteState — plan, recovery, HRV/RHR, weight, thresholds, zones. `sync` also **auto-fetches recent raw `.FIT` streams** (parity with the dashboard Sync) and both surface a **granular-data completeness** readout — which recent sessions are missing their raw `.FIT` (so their per-interval splits / biomechanics are unreachable) and *why* (Garmin off / not reachable / download capability missing / a download that failed), never a silent zero | none |
 | `get_profile` | the validated athlete profile (stable context: body, kit, medical, availability, race targets) + a computed `dose_cycle` (days_since_dose, in_gi_trough). NO live numbers — those are in `get_state` | none |
 | `insights` | run the n=1 insight engine: CTL/ATL/TSB & ramp, EF, durability, correlations, change-points, taper target, validated monitoring rules — each top finding annotated with its **key, age (NEW/Nd old) and your saved reaction** | none |
 | `react_to_insight` | like / dislike / snooze / clear a surfaced insight by `key` — full parity with the dashboard buttons (persists, reshapes surfacing); a local decision-log write, **available even on the read-only Cowork surface** | none |

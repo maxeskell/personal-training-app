@@ -35,10 +35,13 @@ autocorrelation-aware, effect-sizes-with-CIs, and every MODEL caveat attached.
     watch. No manual step.
   - **In-session biomechanics** (aerobic decoupling, cadence/GCT/vertical-osc decay) needs **raw
     per-second `.FIT` files** in `FIT_STREAMS_DIR` (default `data/fit-streams/`); the dependency-free
-    parser decodes them in-process. These now **auto-download during Sync / `fit-sync`** (and on demand
-    when you ask for deep session feedback) via `download_activity_file`. On older builds, or for
-    activities outside the sync window, export the original `.FIT` from Garmin Connect (Activity → ⚙ →
-    *Export Original*) into that folder. See `.env.example`.
+    parser decodes them in-process. These now **auto-download during the dashboard Sync, the MCP `sync`
+    tool and `fit-sync`** (and on demand when you ask for deep session feedback) via
+    `download_activity_file`. On older builds, or for activities outside the sync window, export the
+    original `.FIT` from Garmin Connect (Activity → ⚙ → *Export Original*) into that folder. See
+    `.env.example`. **When a recent session's stream is missing, that's surfaced as an explicit
+    data-completeness gap** on `sync` / `get_state` / `npm run state` (with the reason: Garmin off / not
+    reachable / capability absent / a download that failed) — a missing stream is never a silent zero.
 
 Every finding carries a **confidence score**; only good-signal findings are surfaced, and the most
 important also feed a multiple-comparisons guard: the exploratory correlation scan is **FDR-controlled**

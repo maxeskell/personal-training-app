@@ -38,8 +38,10 @@ export class StateStore {
       const tmp = `${final}.${process.pid}.tmp`;
       // The athlete profile is ambient context attached in-memory for the coaching prompts — it must
       // NEVER reach disk (medical data, DOB, …). Strip it here so the privacy guarantee is enforced at
-      // the store layer, not left to every caller saving before it attaches the profile.
-      const { profile: _profile, ...persistable } = state;
+      // the store layer, not left to every caller saving before it attaches the profile. The completeness
+      // readout is DERIVED + time-sensitive (a snapshot's stream presence is "as of now"), so it's stripped
+      // too — a persisted one would go stale and read as a false gap.
+      const { profile: _profile, dataCompleteness: _dataCompleteness, ...persistable } = state;
       await writeFile(tmp, JSON.stringify(persistable, null, 2));
       await rename(tmp, final);
     } finally {
