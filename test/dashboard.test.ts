@@ -2,8 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyState } from "../src/state/types.js";
 import { buildInsights } from "../src/insights/engine.js";
-import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy } from "../src/coach/dashboard.js";
+import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, parseResearchTopics } from "../src/coach/dashboard.js";
 import type { ProfileQuestion } from "../src/profile/questions.js";
+import type { InsightReport } from "../src/insights/engine.js";
+import type { Finding } from "../src/insights/metrics.js";
 import type { Profile } from "../src/profile/schema.js";
 import type { Finding } from "../src/insights/metrics.js";
 import type { SessionDecay } from "../src/insights/fit.js";
@@ -405,6 +407,93 @@ test("buildSetupItems: stable keys + a dismissed (snoozed) key is dropped, freei
   const freed = buildSetupItems({ schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile, { questions: many, suppressed: new Set(["setup:aie:swim_css"]) });
   assert.equal(freed.length, 5);
   assert.ok(freed.some((i) => i.key === "setup:q:health.q4"), "dismissing one item lets the next-best fill the freed slot");
+});
+
+// --- Phase 2/3: "This week" (marginal gains + weekly pointer) and "Worth considering" (research) ---
+const NOW = Date.parse("2026-06-15T12:00:00Z");
+const F = (o: Partial<Finding>): Finding => ({ family: "Aerobic efficiency", title: "t", severity: "watch", detail: "d", evidence: "e", confidence: 0.6, ...o });
+const insightsWith = (findings: Finding[]) => ({ findings, topFindings: [] } as unknown as InsightReport);
+
+test("parseResearchTopics: pulls bold topic headlines, deduped + capped, tolerant of format drift", () => {
+  const md = [
+    "# Research digest — 2026-06-01 (PROPOSED)",
+    "- **Wider tyres** (CHANGE): 28–32mm at lower pressure.",
+    "- **Carb intake 90 g/h** (NEW): for long course.",
+    "* **Wider tyres** again — a duplicate, dropped.",
+    "Some prose with no bold lead.",
+    "- not bold either",
+  ].join("\n");
+  assert.deepEqual(parseResearchTopics(md), ["Wider tyres", "Carb intake 90 g/h"]);
+  assert.deepEqual(parseResearchTopics(md, 1), ["Wider tyres"]);
+  assert.deepEqual(parseResearchTopics("no parseable topics here"), []);
+});
+
+test("buildSetupItems: groups This week (gains + weekly pointer) and Worth considering (research) with as-of tags", () => {
+  const profile = { schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile;
+  const insights = insightsWith([
+    F({ family: "Durability", title: "Brick pacing", severity: "watch", recommendation: "Start the brick run 5s/km easier", confidence: 0.8 }),
+  ]);
+  const items = buildSetupItems(profile, {
+    questions: [],
+    insights,
+    weeklyReviewDate: "2026-06-12", // 3 days before NOW → fresh
+    researchDigest: { date: "2026-06-10", topics: ["90 g/h carb", "165mm cranks"] }, // 5 days → fresh
+    now: NOW,
+  });
+  assert.deepEqual([...new Set(items.map((i) => i.group))], ["finish_setup", "this_week", "worth_considering"]);
+
+  const week = items.filter((i) => i.group === "this_week");
+  assert.equal(week[0].label, "Start the brick run 5s/km easier", "marginal gain (its recommendation) leads This week");
+  assert.equal(week[0].source, "tune");
+  assert.ok(week[0].key.startsWith("setup:tune:"), "tune item carries a namespaced finding key");
+  assert.ok(week.some((i) => i.source === "weekly" && /as of 3d ago/.test(i.why)), "weekly pointer carries an as-of tag");
+
+  const consider = items.filter((i) => i.group === "worth_considering");
+  assert.deepEqual(consider.map((i) => i.label), ["90 g/h carb", "165mm cranks"]);
+  assert.ok(consider.every((i) => i.route === "discuss with coach" && /as of 5d ago/.test(i.why)));
+  assert.equal(consider[0].key, "setup:research:90 g h carb");
+});
+
+test("buildSetupItems: stale weekly/research reports drop out (the freshness windows)", () => {
+  const items = buildSetupItems({ schema_version: 1, identity: {} } as Profile, {
+    questions: [],
+    weeklyReviewDate: "2026-05-01", // >10d before NOW → stale
+    researchDigest: { date: "2026-01-01", topics: ["old topic"] }, // >45d → stale
+    now: NOW,
+  });
+  assert.equal(items.length, 0, "nothing fresh, nothing to surface");
+});
+
+test("buildSetupItems: a research digest with no parseable topics falls back to a single review pointer", () => {
+  const items = buildSetupItems({ schema_version: 1, identity: {} } as Profile, {
+    questions: [],
+    researchDigest: { date: "2026-06-14", topics: [] },
+    now: NOW,
+  });
+  assert.deepEqual(items.map((i) => [i.label, i.key, i.group]), [["Review the latest research digest", "setup:research:digest", "worth_considering"]]);
+});
+
+test("buildSetupItems: a This-week item restating a finish-setup item is deduped (finish-setup wins)", () => {
+  const profile = { schema_version: 1, identity: {}, open_items: ["Start the brick run easier"] } as Profile;
+  const insights = insightsWith([F({ family: "Durability", title: "Brick", recommendation: "Start the brick run easier" })]);
+  const items = buildSetupItems(profile, { questions: [], insights, now: NOW });
+  const matching = items.filter((i) => /start the brick run easier/i.test(i.label));
+  assert.equal(matching.length, 1, "the cross-group restatement is deduped");
+  assert.equal(matching[0].group, "finish_setup", "and the finish-setup item is the one kept");
+});
+
+test("renderSetupImprove: group subheadings appear only when more than one section is present", () => {
+  const profile = { schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile;
+  const flat = renderSetupImprove(profile, false, { questions: [] });
+  assert.doesNotMatch(flat, /setup-group/, "finish-setup only → flat, no subheadings");
+  const grouped = renderSetupImprove(profile, false, {
+    questions: [],
+    researchDigest: { date: "2026-06-14", topics: ["90 g/h carb"] },
+    now: NOW,
+  });
+  assert.match(grouped, /class="setup-group">Finish setup</);
+  assert.match(grouped, /class="setup-group">Worth considering</);
+  assert.match(grouped, /90 g\/h carb/);
 });
 
 test("dashboard shows the Set-up-&-improve card only when a profile with outstanding items is supplied", () => {
