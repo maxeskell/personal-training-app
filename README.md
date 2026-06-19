@@ -213,7 +213,11 @@ plan changes diffed from daily snapshots. The loop now spans the whole hub, not 
 **reactions on the "This week" cards count toward their family weight too** (a `setup:*` card carries its
 finding family so the listening model can attribute it), and your **gated plan-proposal accept/decline
 history** feeds back into the proposer — decline most of them and it turns conservative (smallest viable
-change, or nothing), rather than re-pitching edits you keep waving off.
+change, or nothing), rather than re-pitching edits you keep waving off. The **weekly review and research
+digest** read the same signal: they're told which families you set aside and stop re-pitching them. And you
+can record a **retrospective** on any insight (`retrospect` MCP tool) — *did it hold up?* — which `listening`
+joins back into an **"Outcomes you recorded"** view (insight → your reaction → outcome), so the loop answers
+"what advice did I get, what did I do, and did it work" — not just "what was I shown".
 
 **→ Full detail — the Q1–Q7 methods, the like/dislike/snooze mechanics and the engagement loop:
 [docs/insight-engine.md](docs/insight-engine.md).**

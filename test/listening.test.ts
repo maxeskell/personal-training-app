@@ -221,6 +221,31 @@ test("buildEngagementContext: weights families by act-vs-dismiss, maps recurring
   assert.equal(ctx.adherence!.plannedH, 8);
 });
 
+test("analyseListening: retrospectives join an outcome note to the insight + your reaction", () => {
+  const snapshots = [snap("2026-06-01T07:00:00.000Z", [sf("k1", "Fuelling & body comp", "Carb intake low")])];
+  const decisions: DecisionRecord[] = [
+    feedback("k1", "accepted", "2026-06-02T08:00:00.000Z"), // you agreed at the time
+    { id: "n1", timestamp: "2026-06-15T08:00:00.000Z", kind: "note", insightKey: "k1", retro: "the carb advice was right — fewer late fades", summary: "Carb intake low", status: "note" },
+    // A retro on a card-only key (never in the insight log) still resolves family/title from the card record.
+    cardFeedback("setup:tune:gear-tyres", "dismissed", "2026-06-03T09:00:00.000Z", "Gear"),
+    { id: "n2", timestamp: "2026-06-16T08:00:00.000Z", kind: "note", insightKey: "setup:tune:gear-tyres", retro: "ignoring the tyre tip was fine", summary: "Wider tyres", status: "note" },
+  ];
+  const m = analyseListening({ snapshots, decisions, now: new Date("2026-06-17T08:00:00.000Z") });
+
+  assert.equal(m.retrospectives.length, 2);
+  assert.equal(m.retrospectives[0].key, "setup:tune:gear-tyres"); // most recent first
+  const fuel = m.retrospectives.find((r) => r.key === "k1")!;
+  assert.equal(fuel.family, "Fuelling & body comp");
+  assert.equal(fuel.reaction, "agree");
+  assert.match(fuel.note, /carb advice was right/);
+  const gear = m.retrospectives.find((r) => r.key === "setup:tune:gear-tyres")!;
+  assert.equal(gear.family, "Gear"); // resolved from the card reaction record
+  assert.equal(gear.reaction, "dismiss");
+
+  // A note record never alters the reaction it annotates.
+  assert.match(formatListening(m, "2026-06-17"), /Outcomes you recorded — did the advice hold up\? \(2\)/);
+});
+
 test("analyseListening: empty input is well-formed, and the formatter degrades gracefully", () => {
   const m = analyseListening({ snapshots: [], decisions: [] });
   assert.equal(m.window, null);

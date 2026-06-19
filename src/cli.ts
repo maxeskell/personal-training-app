@@ -412,7 +412,7 @@ async function cmdResearch(): Promise<void> {
   if (!requireLLM()) process.exit(1);
   const today = todayIso();
   try {
-    const { markdown, costUsd } = await runResearchDigest(new CoachLLM(await loadSystemPrompt(), "research", "high"), await readKnowledge(), today);
+    const { markdown, costUsd } = await runResearchDigest(new CoachLLM(await loadSystemPrompt(), "research", "high"), await readKnowledge(), today, await loadEngagementContext([]));
     const path = await writePendingDigest(today, markdown);
     console.log(`\nDrafted a research digest for review → ${path}`);
     console.log(`Read it, then apply with:  cd ${process.cwd()} && npm run knowledge -- approve ${pendingName(today)}`);
@@ -684,7 +684,7 @@ async function cmdWeekly(): Promise<void> {
   if (!requireLLM()) process.exit(1);
   const { window } = await buildTodayState();
   const llm = new CoachLLM(await loadSystemPrompt(), "weekly");
-  const { markdown, cacheRead, costUsd } = await runWeeklyReview(llm, window);
+  const { markdown, cacheRead, costUsd } = await runWeeklyReview(llm, window, await loadEngagementContext(window));
   console.log("\n" + markdown + "\n");
   const path = await writeReport("weekly-review", todayIso(), markdown);
   console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);

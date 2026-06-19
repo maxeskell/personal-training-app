@@ -127,6 +127,13 @@ dashboard, `insights` and `deep-dive`:
   a change it's highly confident clears the bar — smallest viable edit, or nothing — instead of re-pitching
   edits you keep waving off. (Surfacing of deterministic findings is untouched; this only shapes the LLM
   plan-edit drafter.)
+- **The prose flows skip what you wave off.** The weekly review and research digest get an *engagement
+  steer* — the families you consistently set aside — so they stop re-pitching them and spend their picks on
+  what you act on. (Prompt-level only; it never gates the deterministic engine.)
+- **Retrospectives — did it hold up?** Record an outcome note on any insight with `retrospect` (MCP) — it's
+  logged against the key **without changing your reaction**, then `listening` joins it back into an
+  *"Outcomes you recorded"* section (insight → your reaction → how it worked out) and `decisions` shows it.
+  This is what makes "advice → what I did → outcome" answerable later.
 - **New "Follow-through" findings.** Two insights are now **generated from your own behaviour**: a
   *recurring signal you've set aside* (something you snoozed that the engine keeps re-raising — surfaced
   only after it recurs ≥2×) and *plan adherence is slipping* (you're doing <70% of planned hours, or it

@@ -130,6 +130,34 @@ export class DecisionLog {
   async insightReactions(): Promise<Map<string, { reaction: InsightReaction; timestamp: string }>> {
     return latestInsightReactions(await this.all());
   }
+
+  /**
+   * Record a RETROSPECTIVE on a surfaced insight / setup item — "how did this advice hold up?". Stored as a
+   * `note` record (NOT an insight-feedback record, so it never alters the reaction) carrying the same
+   * `insightKey` + a free-text `retro`. Joined back to the insight by `listening` and shown by `decisions`,
+   * so the athlete can later answer "advice → my reaction → outcome".
+   */
+  async recordRetro(insightKey: string, note: string, summary?: string): Promise<void> {
+    await this.append({
+      id: randomUUID(),
+      timestamp: nowIso(),
+      kind: "note",
+      summary: summary ?? insightKey,
+      insightKey,
+      retro: note,
+      status: "note",
+    });
+  }
+}
+
+/** Latest retrospective note per insight key (most recent wins) — from the `note` records carrying a retro. */
+export function latestRetros(records: DecisionRecord[]): Map<string, { note: string; timestamp: string }> {
+  const out = new Map<string, { note: string; timestamp: string }>();
+  for (const r of records) {
+    if (r.kind !== "note" || !r.insightKey || !r.retro) continue;
+    out.set(r.insightKey, { note: r.retro, timestamp: r.timestamp });
+  }
+  return out;
 }
 
 /** Map a stored insight-feedback status back to the athlete's reaction (inverse of REACTION_STATUS;
