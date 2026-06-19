@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDemoWindow } from "../src/demo/sampleData.js";
+import { buildDemoWindow, buildDemoGarminDays, demoCostRecords } from "../src/demo/sampleData.js";
 import { renderDashboard } from "../src/coach/dashboard.js";
 import { buildInsights } from "../src/insights/engine.js";
 import { assessHealthRisk } from "../src/guardrails/wellbeing.js";
+import { summarizeCost } from "../src/llm/costLog.js";
 
 /**
  * The demo mode must let a no-account user see the coach working, so its sample window has to be valid
@@ -41,4 +42,58 @@ test("the insight engine and dashboard render the demo state without throwing", 
   const html = renderDashboard({ window: w, decisions: [], insights, canFetchFit: false });
   assert.match(html, /<html/i);
   assert.match(html, /250/); // the demo bike FTP (250 W) renders in the Zones & thresholds card
+});
+
+test("demo data is rich enough for a hero screenshot: load model, Garmin scores + race predictions", () => {
+  const today = "2026-06-14";
+  const w = buildDemoWindow(today, 42);
+  const t = w[w.length - 1];
+  // The 42-day ESS series under getRecoveryModel.data drives a non-empty Load & trends card.
+  const rec = (t.raw?.getRecoveryModel as { data: { date: string[]; external_stress_score: number[] } }).data;
+  assert.equal(rec.date.length, 42);
+  assert.equal(rec.external_stress_score.length, 42);
+  const insights = buildInsights(t, undefined, { history: w });
+  assert.ok(insights.load && typeof insights.load.ctl === "number", "loadModel derives CTL/ATL/TSB from the demo ESS series");
+  // Garmin model scores are populated, with the FTP estimate intentionally below the configured 250 W.
+  assert.ok((t.powerCurve.value?.ftpEstimateW ?? 0) < 250, "power-curve FTP estimate sits below the configured FTP (shows the gap note)");
+  assert.ok((t.enduranceScore.value?.current ?? 0) > 0);
+  assert.ok((t.hillScore.value?.overall ?? 0) > 0);
+  assert.ok((t.racePredictions.value?.predictions.length ?? 0) >= 3);
+});
+
+test("buildDemoGarminDays: a 42-day series ending today with the Trends-card fields", () => {
+  const today = "2026-06-14";
+  const days = buildDemoGarminDays(today);
+  assert.equal(days.length, 42);
+  assert.equal(days[days.length - 1].date, today);
+  assert.ok(days.every((d) => d.hrvMs != null && d.restingHr != null && d.sleepScore != null && d.avgStressLevel != null && d.deepSleepSec != null));
+});
+
+test("demoCostRecords: lands in the API-cost card's 7- and 30-day windows", () => {
+  const recs = demoCostRecords(new Date().toISOString().slice(0, 10));
+  const w7 = summarizeCost(recs, 7).total;
+  const w30 = summarizeCost(recs, 30).total;
+  assert.ok(w7.costUsd > 0, "some spend in the last 7 days");
+  assert.ok(w30.costUsd >= w7.costUsd, "30-day spend includes the 7-day window");
+  assert.ok(summarizeCost(recs, 30).byOperation.length >= 3, "a few distinct flows for the breakdown line");
+});
+
+test("the enriched demo renders the load, trends, Garmin-scores and cost cards", () => {
+  const today = "2026-06-14";
+  const w = buildDemoWindow(today, 42);
+  const insights = buildInsights(w[w.length - 1], undefined, { history: w });
+  const html = renderDashboard({
+    window: w,
+    decisions: [],
+    insights,
+    garminDays: buildDemoGarminDays(today),
+    costRecords: demoCostRecords(new Date().toISOString().slice(0, 10)),
+    canFetchFit: false,
+  });
+  assert.match(html, /Load &amp; trends/);
+  assert.match(html, /Trends \(last \d+ days\)/);
+  assert.match(html, /Garmin scores/);
+  assert.match(html, /FTP estimate/);
+  assert.match(html, /Estimated race times/);
+  assert.match(html, /API cost/);
 });

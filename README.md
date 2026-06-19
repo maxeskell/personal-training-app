@@ -22,13 +22,11 @@ npm install && npm run demo
 no Garmin, no API key, no network. The fastest way to see what the coach produces before you wire up
 anything of your own.
 
-<!-- 📸 DROP-IN: a dashboard screenshot is the single highest-impact thing for a first impression.
-     To add it: run `npm run demo`, open reports/demo-dashboard.html in a browser, screenshot the top
-     of the page (Today + Top insights + a card or two), save it as docs/dashboard.png, then delete
-     this comment and uncomment the image line below. Alt text is already written.
 ![The Endurance Coach dashboard — today's readiness verdict, top insights, weekly load by sport, multi-week trends, and the race countdown](docs/dashboard.png)
--->
-> 📸 _Want to share it? Run `npm run demo` and screenshot `reports/demo-dashboard.html` — the quickest pitch._
+
+<sub>Generated from the built-in sample data — regenerate with `npm run demo`, then `python3 scripts/render_dashboard_png.py reports/demo-dashboard.html docs/dashboard.png` (needs `weasyprint` + `pymupdf`).</sub>
+
+> 📸 _Want to share your own? Run `npm run demo` and screenshot `reports/demo-dashboard.html` — the quickest pitch._
 
 ## What you need to run it for real
 

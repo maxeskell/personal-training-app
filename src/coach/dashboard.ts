@@ -1071,7 +1071,7 @@ code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 @media print {
   body{background:#fff}
   .card{break-inside:avoid;box-shadow:none;border:1px solid #ddd}
-  .acts, .syncbtn, .actbtn, button, #ask, #proposals, .sharelink, .sharebanner a, .syncbar{display:none !important}
+  .acts, .syncbtn, .actbtn, button, #ask, #askcard, #proposals, .sharelink, .sharebanner a, .syncbar{display:none !important}
   details{display:block}
   details > summary{display:none}
   a{color:inherit;text-decoration:none}
@@ -1111,7 +1111,7 @@ ${insights ? renderHeader(today, insights, decisions, garminDays) : ""}
 ${insights ? renderInsightsBox(insights, reactions, firstSeen) : ""}
 ${renderLastSession(window, insights, fitSummaries, canFetchFit)}
 
-<div class="card"><h2>Ask your data</h2>
+<div class="card" id="askcard"><h2>Ask your data</h2>
   <form id="askform" onsubmit="return ask(event)">
     <input id="q" placeholder="e.g. how were my long rides this month? am I overtraining?" autocomplete="off"
       style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box"/>
