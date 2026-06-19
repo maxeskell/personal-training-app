@@ -31,6 +31,7 @@ import { getForecast, refreshForecast } from "./weather/store.js";
 import { assessWeek, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
 import { config } from "./config.js";
 import { todayIso } from "./util/today.js";
+import { coalesce } from "./util/coalesce.js";
 
 /**
  * Local dashboard server (N1, Path-B need #2 upgraded to "online"). Binds to the LAN so a phone on
@@ -200,6 +201,54 @@ async function latestInsights() {
   return { state, insights };
 }
 
+type LatestInsights = NonNullable<Awaited<ReturnType<typeof latestInsights>>>;
+type SessionFeedbackResult = { status: string; markdown: string; deep?: boolean };
+
+/** In-flight session-feedback generations, keyed by `${date}:${force}` — see the /session-feedback route. */
+const sessionFeedbackInFlight = new Map<string, Promise<SessionFeedbackResult>>();
+
+/**
+ * Generate + persist deep feedback for ONE session — the expensive path: an optional on-demand .FIT
+ * download, then one LLM call. Re-checks the store first so a sibling sync that just wrote it short-circuits
+ * (no spend). Returns the card's response shape. Wrapped by coalesce() in the route so two concurrent
+ * requests for the same session run it once and share the result (no double LLM spend).
+ */
+async function produceSessionFeedback(li: LatestInsights, date: string, force: boolean): Promise<SessionFeedbackResult> {
+  let decays = loadSessionDecays();
+  const fitSummaries = await new ArchiveStore().loadFitSummaries();
+  const probe = assembleSession(li.state, li.insights, { date, decays, fitSummaries });
+  if (!probe) return { status: "no-data", markdown: "No recent activity found to analyse." };
+  const existing = latestByDate(await loadSessionFeedbacks()).get(probe.date);
+  if (existing) return { status: "ready", markdown: existing.markdown, deep: existing.deep };
+  // On-demand stream fetch: if the raw .FIT isn't local but the archive knows the Garmin id, pull it now
+  // (~seconds) so the deep dive runs with biomechanics. Best-effort — the no-fit gate below still protects spend.
+  if (!probe.decay && probe.fit?.activityId && config.garmin.enabled) {
+    const g = new GarminClient();
+    if (await g.connect()) {
+      try {
+        if ((await hasStreamDownloadTool(g)) && (await downloadFitStream(g, probe.fit.activityId, fitStreamsDir())).ok) {
+          decays = loadSessionDecays();
+        }
+      } finally {
+        await g.close();
+      }
+    }
+  }
+  const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), li.state, li.insights, { date, force, decays, fitSummaries });
+  if (!feedback) return { status: "no-data", markdown: "No recent activity found to analyse." };
+  if (feedback.skippedNoFit) return { status: "no-fit", markdown: feedback.markdown };
+  // Persist so subsequent page loads serve it inline (no LLM on render) — same store the auto-backfill writes.
+  await saveSessionFeedback({
+    date: feedback.detail.date,
+    sport: String(feedback.detail.sport),
+    deep: !!feedback.detail.decay,
+    generatedAt: new Date().toISOString(),
+    costUsd: feedback.costUsd,
+    markdown: feedback.markdown,
+  });
+  return { status: "ready", markdown: feedback.markdown, deep: !!feedback.detail.decay };
+}
+
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = "";
@@ -288,48 +337,17 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       const body = JSON.parse((await readBody(req)) || "{}") as { date?: string; force?: boolean };
       const reqDate = String(body.date ?? "");
       const date = /^\d{4}-\d{2}-\d{2}$/.test(reqDate) ? reqDate : undefined;
-      let decays = loadSessionDecays();
-      const fitSummaries = await new ArchiveStore().loadFitSummaries();
-      const probe = assembleSession(li.state, li.insights, { date, decays, fitSummaries });
+      const force = body.force === true; // escape hatch: summary-only analysis without the raw .FIT
+      // Resolve the target session up front (cheap — no network/LLM) so we can dedupe by its date and
+      // short-circuit when it's already stored.
+      const probe = assembleSession(li.state, li.insights, { date, decays: loadSessionDecays(), fitSummaries: await new ArchiveStore().loadFitSummaries() });
       if (!probe) return json({ status: "no-data", markdown: "No recent activity found to analyse." });
-      // Already generated (e.g. a sync produced it between render and this fetch) — serve the stored one,
-      // never re-spend tokens.
       const existing = latestByDate(await loadSessionFeedbacks()).get(probe.date);
       if (existing) return json({ status: "ready", markdown: existing.markdown, deep: existing.deep });
-      // On-demand stream fetch: if the target session's raw .FIT isn't local but the archive knows its
-      // Garmin id, pull it now (~seconds) so the deep dive runs with biomechanics instead of skipping.
-      // Best-effort — on any failure the no-fit gate below still protects the LLM spend.
-      if (!probe.decay && probe.fit?.activityId && config.garmin.enabled) {
-        const g = new GarminClient();
-        if (await g.connect()) {
-          try {
-            if ((await hasStreamDownloadTool(g)) && (await downloadFitStream(g, probe.fit.activityId, fitStreamsDir())).ok) {
-              decays = loadSessionDecays();
-            }
-          } finally {
-            await g.close();
-          }
-        }
-      }
-      const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), li.state, li.insights, {
-        date,
-        force: body.force === true, // escape hatch: summary-only analysis without the raw .FIT
-        decays,
-        fitSummaries,
-      });
-      if (!feedback) return json({ status: "no-data", markdown: "No recent activity found to analyse." });
-      if (feedback.skippedNoFit) return json({ status: "no-fit", markdown: feedback.markdown });
-      // Persist so subsequent page loads serve it inline (no LLM on render) — same store the auto-backfill
-      // writes to. Best-effort inside saveSessionFeedback; a logging failure never blocks the response.
-      await saveSessionFeedback({
-        date: feedback.detail.date,
-        sport: String(feedback.detail.sport),
-        deep: !!feedback.detail.decay,
-        generatedAt: new Date().toISOString(),
-        costUsd: feedback.costUsd,
-        markdown: feedback.markdown,
-      });
-      return json({ status: "ready", markdown: feedback.markdown, deep: !!feedback.detail.decay });
+      // Coalesce concurrent requests for the SAME session into ONE generate: two dashboard tabs opened
+      // together (or a quick double-load) must not each fire the LLM — the expensive download+analyse runs
+      // once and both await it. Keyed by date(+force); the slot frees when it settles.
+      return json(await coalesce(sessionFeedbackInFlight, `${probe.date}:${force ? "force" : ""}`, () => produceSessionFeedback(li, probe.date, force)));
     }
 
     // Insight feedback (the insights box posts like/dislike/snooze/clear here). The UI vocabulary maps to

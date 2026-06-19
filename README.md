@@ -219,7 +219,9 @@ the MCP `sync` tool and `fit-sync` all pull recent ones into `data/fit-streams/`
 load** — no waiting for the next full sync. It shows the live state instead of a static line: *"Downloading
 this session's .FIT and generating deep feedback…"* (it pulls the raw `.FIT` on demand, ~10s, when it isn't
 local but the archive knows the Garmin id), or *"Generating…"* when the `.FIT` is already present. The
-result is rendered inline **and persisted**, so the next open is instant with no further LLM spend. A stale
+result is rendered inline **and persisted**, so the next open is instant with no further LLM spend.
+Concurrent requests for the same session (e.g. two tabs opened together) are **coalesced into one
+generate** — the download + LLM call run once and both await it, never a double spend. A stale
 snapshot (older than `COACH_AUTOSYNC_MIN`) still kicks a full background Sync instead, which downloads and
 backfills the same way before reloading. The card only falls back to a note — never a spinner that goes
 nowhere — when it genuinely can't produce one: *no `ANTHROPIC_API_KEY`*, or *no `.FIT` and no automatic way
