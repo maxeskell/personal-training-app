@@ -140,14 +140,16 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   `ai_endurance_todo` block is a reminder, not a write path. (Race *target times* aren't on it — AIE has
   no field for them; they live in `races[].target_time` and the coach reads them from the profile.)
 - **A "Set up & improve" card on the dashboard.** A small, deterministic (no-AI) action hub in three
-  sections: **Finish setup** (actionable AI-Endurance gaps, your free-text `open_items`, and any unfilled
-  optional profile questions), **This week** (the marginal-gains tweaks + a pointer to your last weekly
-  review) and **Worth considering** (the topics from your last research digest). The time-bound sections
-  **read your last saved reports** — they never re-run the weekly/research LLM flows — and each carries an
-  *"as of …"* tag, dropping once the report goes stale. Every item is tagged with where to action it
-  (*in AI Endurance* / *edit profile* / *discuss with coach*), **ranked by value**, deduped and capped, and
-  has a **✕ dismiss** that hides it for ~2 weeks (reusing the insights' snooze machinery — a calm hub, not
-  a nag). Display-only; hidden from the shared/screenshot view.
+  sections: **Finish setup** (actionable AI-Endurance gaps, your free-text `open_items`, unfilled optional
+  profile questions, a few **integration-health** nudges — missing API key, long-stale sync, unset
+  open-water temp — and any **race with no date yet**), **This week** (the marginal-gains tweaks + the
+  action items parsed from your last weekly review) and **Worth considering** (the topics from your last
+  research digest). The time-bound sections **read your last saved reports** — they never re-run the
+  weekly/research LLM flows — and each carries an *"as of …"* tag, dropping once the report goes stale.
+  Every item is tagged with where to action it (*in AI Endurance* / *edit profile* / *discuss with coach*
+  / *in your setup*), **ranked by value**, deduped and capped, and has a **✕ dismiss** that hides it for
+  ~2 weeks (reusing the insights' snooze machinery — a calm hub, not a nag). Display-only; hidden from the
+  shared/screenshot view.
 - **The coaching brief ships as a default prompt.** [`coach-instructions.md`](coach-instructions.md)
   is the default system prompt a fresh clone gets (a prompt, *not* data — kept separate from the
   profile); edit it to taste. Full schema + privacy detail: [docs/profile.md](docs/profile.md).

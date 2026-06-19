@@ -10,7 +10,7 @@ import { DecisionLog, suppressedInsightKeys, reactionFromLabel } from "./state/d
 import { InsightLog } from "./state/insightLog.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard } from "./coach/dashboard.js";
-import { latestWeeklyReviewDate, latestResearchDigest } from "./coach/setupSources.js";
+import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
 import { loadSessionFeedbacks } from "./coach/sessionFeedbackStore.js";
 import { backfillSessionFeedback } from "./coach/autoSessionFeedback.js";
 import { buildInsights } from "./insights/engine.js";
@@ -120,9 +120,14 @@ async function renderLatest(share = false): Promise<string> {
     profile: (await loadProfileSafe())?.profile,
     autoSyncStaleMin,
     suppressed, // dismissed "Set up & improve" items (shares the insight snooze machinery)
-    weeklyReviewDate: await latestWeeklyReviewDate(), // "This week" group — read persisted, never re-run
+    weeklyReview: await latestWeeklyReview(), // "This week" group — read persisted, never re-run
     researchDigest: await latestResearchDigest(), // "Worth considering" group — read persisted, never re-run
     sessionFeedbacks: await loadSessionFeedbacks(), // auto-generated at sync; shown inline, no LLM here
+    setupHealth: {
+      hasApiKey: CoachLLM.hasApiKey(),
+      waterTempSet: config.weather.waterTempC != null,
+      lastSyncAgeHours: (Date.now() - new Date(latest.assembledAt).getTime()) / 3_600_000,
+    },
   });
 }
 

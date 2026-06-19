@@ -112,17 +112,23 @@ export interface DashboardInput {
    */
   suppressed?: Set<string>;
   /**
-   * Leading date (YYYY-MM-DD) of the most recent persisted weekly-review report, if any — feeds the
-   * "Set up & improve → This week" group a "review saved Nd ago" pointer that drops when stale. The card
-   * reads only this date, never re-runs the (LLM) weekly flow.
+   * Latest persisted weekly review (from `reports/`): its date + the action bullets parsed from the
+   * "## Next week" section. Feeds the "This week" group with real, as-of-tagged actions (falling back to
+   * a "revisit the review" pointer when there's no parseable section); drops when stale. Read-only — the
+   * card never re-runs the (LLM) weekly flow.
    */
-  weeklyReviewDate?: string;
+  weeklyReview?: { date: string; actions: string[] };
   /**
    * Latest persisted research digest (from `knowledge/pending/`): its date + the topic headlines parsed
    * from the markdown. Feeds the "Worth considering" group as-of-tagged items; drops when stale. Read
    * only — the card never re-runs the (LLM + web-search) research flow.
    */
   researchDigest?: { date: string; topics: string[] };
+  /**
+   * Tool/integration health (computed in the IO layer): drives operational "Finish setup" nudges — a
+   * missing API key, a long-stale sync, an unset open-water temperature.
+   */
+  setupHealth?: { lastSyncAgeHours?: number; hasApiKey?: boolean; waterTempSet?: boolean };
   /** Clock for deterministic "as of N days ago" staleness (defaults to Date.now()); injectable in tests. */
   now?: number;
   /**
@@ -482,13 +488,13 @@ export function aieTodoCopy(key: string, value: string): { label: string; why: s
 }
 
 /** Where an item is actioned — shown as a tag so the source can be trusted/weighted at a glance. */
-export type SetupRoute = "in AI Endurance" | "edit profile" | "discuss with coach";
+export type SetupRoute = "in AI Endurance" | "edit profile" | "discuss with coach" | "in your setup";
 
 /** The three sections of the card (issue #112). Finish setup first, then time-bound advice. */
 export type SetupGroup = "finish_setup" | "this_week" | "worth_considering";
 
 /** Which producer an item came from (used for tagging, dedupe ordering and the dismissal key). */
-export type SetupSource = "ai_endurance" | "open_item" | "profile_question" | "tune" | "weekly" | "research";
+export type SetupSource = "ai_endurance" | "open_item" | "profile_question" | "tune" | "weekly" | "research" | "health" | "race";
 
 /** One actionable item on the "Set up & improve" card, tagged by its source and where to act on it. */
 export interface SetupItem {
@@ -521,6 +527,8 @@ const SOURCE_TAG: Record<SetupSource, string> = {
   tune: "tune",
   weekly: "weekly",
   research: "research",
+  health: "health",
+  race: "race",
 };
 function setupKey(source: SetupSource, id: string): string {
   return `setup:${SOURCE_TAG[source]}:${id}`;
@@ -567,13 +575,41 @@ export function parseResearchTopics(markdown: string, limit = 4): string[] {
 }
 
 /**
+ * Extract the bullet actions under the first heading matching `headingRe` (e.g. the weekly review's
+ * "## Next week" section), stripping markdown emphasis. Pure + tolerant: a missing/renamed section just
+ * yields fewer (or no) items, so the caller falls back to a "revisit the review" pointer. Deduped, capped.
+ */
+export function parseActionBullets(markdown: string, headingRe: RegExp, limit = 4): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  let inSection = false;
+  for (const line of markdown.split("\n")) {
+    const heading = /^#{1,4}\s+(.*)$/.exec(line);
+    if (heading) {
+      inSection = headingRe.test(heading[1]); // entering the matched section ends at the next heading
+      continue;
+    }
+    if (!inSection) continue;
+    const m = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (!m) continue;
+    const text = m[1].replace(/\*\*/g, "").replace(/`/g, "").replace(/[:.]+$/, "").trim();
+    const k = text.toLowerCase();
+    if (!text || seen.has(k)) continue;
+    seen.add(k);
+    out.push(text);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/**
  * Per-source ranking weights (higher = surfaces first) so the ~5 cap keeps the highest-VALUE items, not
  * just the first ones in catalogue order. AI-Endurance gaps block a whole discipline model / zones, and
  * open items are actions the athlete explicitly flagged, so both outrank profile questions; among
  * questions, a field the coach actually READS beats a reference-only one (so "what's your height?" never
  * crowds out a real gap).
  */
-const SETUP_PRIORITY = { ai_endurance: 100, open_item: 70, question_coach: 50, question_reference: 20, tune: 60, weekly: 40, research: 30 } as const;
+const SETUP_PRIORITY = { health: 90, race: 80, ai_endurance: 100, open_item: 70, question_coach: 50, question_reference: 20, health_low: 60, tune: 60, weekly: 40, research: 30 } as const;
 
 /**
  * A profile question is "reference-only" (lower priority) when its `why` follows the questions.ts honesty
@@ -618,10 +654,12 @@ export interface SetupOptions {
   suppressed?: Set<string>;
   /** Already-built insight report — its deterministic marginal-gains feed the "This week" group (no LLM). */
   insights?: InsightReport;
-  /** Date of the latest persisted weekly-review report (drops from "This week" once stale). */
-  weeklyReviewDate?: string;
+  /** Latest persisted weekly review (date + the parsed "## Next week" action bullets); drops when stale. */
+  weeklyReview?: { date: string; actions: string[] };
   /** Latest research digest (date + parsed topics) for the "Worth considering" group (drops when stale). */
   researchDigest?: { date: string; topics: string[] };
+  /** Tool/integration health signals (computed in the IO layer) → operational "Finish setup" nudges. */
+  setupHealth?: { lastSyncAgeHours?: number; hasApiKey?: boolean; waterTempSet?: boolean };
   /** Clock for staleness (defaults to Date.now()). */
   now?: number;
 }
@@ -667,17 +705,43 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
     if (!isBlank(valueAtPath(profile, q.field))) continue;
     items.push({ key: setupKey("profile_question", q.field), label: `Answer: ${q.question}`, why: q.why, source: "profile_question", group: "finish_setup", route: "edit profile", priority: questionPriority(q) });
   }
+  // 4) Tool/integration health (operational nudges) — things that block the app doing its best work.
+  const h = opts.setupHealth;
+  if (h?.hasApiKey === false) {
+    items.push({ key: setupKey("health", "apikey"), label: "Add your ANTHROPIC_API_KEY", why: "unlocks the AI write-ups — readiness, weekly, ask and session feedback", source: "health", group: "finish_setup", route: "in your setup", priority: SETUP_PRIORITY.health });
+  }
+  if (h?.lastSyncAgeHours != null && h.lastSyncAgeHours >= 72) {
+    items.push({ key: setupKey("health", "sync"), label: "Sync your training data", why: `last synced ${Math.round(h.lastSyncAgeHours / 24)}d ago — the cards are reading stale data`, source: "health", group: "finish_setup", route: "in your setup", priority: SETUP_PRIORITY.health });
+  }
+  if (h?.waterTempSet === false) {
+    items.push({ key: setupKey("health", "watertemp"), label: "Set your open-water temperature", why: "COACH_WATER_TEMP_C has no public feed — set it when the venue posts a reading", source: "health", group: "finish_setup", route: "in your setup", priority: SETUP_PRIORITY.health_low });
+  }
+  // 5) Incomplete race entries — a named race with no date can't drive the countdown/taper/race-day plan.
+  for (const r of (profile.races ?? []).slice(0, 4)) {
+    const name = typeof r?.name === "string" ? r.name.trim() : "";
+    if (!name || r?.date) continue;
+    items.push({ key: setupKey("race", dedupeKey(name)), label: `Add the date for ${name}`, why: "so the countdown, periodisation and race-day plan line up", source: "race", group: "finish_setup", route: "edit profile", priority: SETUP_PRIORITY.race });
+  }
 
-  // --- This week (Phase 2: marginal gains + last weekly review, read-only/LLM-free) -----------------
+  // --- This week (Phase 2: marginal gains + last weekly review's actions, read-only/LLM-free) --------
   if (opts.insights) {
     for (const f of selectMarginalGains(opts.insights, GROUP_CAP.this_week)) {
       items.push({ key: setupKey("tune", findingKey(f)), label: f.recommendation ?? f.title, why: f.title, source: "tune", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.tune });
     }
   }
-  if (opts.weeklyReviewDate) {
-    const age = ageDaysFrom(opts.weeklyReviewDate, now);
+  if (opts.weeklyReview) {
+    const age = ageDaysFrom(opts.weeklyReview.date, now);
     if (age != null && age <= WEEKLY_FRESH_DAYS) {
-      items.push({ key: setupKey("weekly", "review"), label: "Revisit this week's training review", why: `weekly review saved — ${asOf(age)}`, source: "weekly", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.weekly });
+      const acts = opts.weeklyReview.actions.slice(0, GROUP_CAP.this_week);
+      if (acts.length) {
+        // The weekly review's own "Next week" action items.
+        for (const a of acts) {
+          items.push({ key: setupKey("weekly", dedupeKey(a)), label: a, why: `from this week's review — ${asOf(age)}`, source: "weekly", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.weekly });
+        }
+      } else {
+        // The report had no parseable action section → fall back to a pointer.
+        items.push({ key: setupKey("weekly", "review"), label: "Revisit this week's training review", why: `weekly review saved — ${asOf(age)}`, source: "weekly", group: "this_week", route: "discuss with coach", priority: SETUP_PRIORITY.weekly });
+      }
     }
   }
 
@@ -1001,7 +1065,7 @@ function freshnessLine(today: AthleteState): string {
   return line;
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReviewDate, researchDigest, sessionFeedbacks, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Week: load by sport. Time in h:mm (user ask); a zero distance renders "—" not a misleading 0.0 km.
@@ -1229,7 +1293,7 @@ ${renderZones(today)}
 
 ${renderScores(today)}
 
-${renderSetupImprove(profile, share, { suppressed, insights, weeklyReviewDate, researchDigest })}
+${renderSetupImprove(profile, share, { suppressed, insights, weeklyReview, researchDigest, setupHealth })}
 
 <div class="card"><h2>Race</h2>
   <table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>

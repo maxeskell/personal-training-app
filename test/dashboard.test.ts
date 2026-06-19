@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { emptyState } from "../src/state/types.js";
 import { buildInsights } from "../src/insights/engine.js";
-import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, parseResearchTopics, mdLite } from "../src/coach/dashboard.js";
+import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, parseResearchTopics, parseActionBullets, mdLite } from "../src/coach/dashboard.js";
 import type { ProfileQuestion } from "../src/profile/questions.js";
 import type { InsightReport } from "../src/insights/engine.js";
 import type { Finding } from "../src/insights/metrics.js";
@@ -439,7 +439,7 @@ test("buildSetupItems: groups This week (gains + weekly pointer) and Worth consi
   const items = buildSetupItems(profile, {
     questions: [],
     insights,
-    weeklyReviewDate: "2026-06-12", // 3 days before NOW → fresh
+    weeklyReview: { date: "2026-06-12", actions: ["Cut one grey-zone ride"] }, // 3 days before NOW → fresh
     researchDigest: { date: "2026-06-10", topics: ["90 g/h carb", "165mm cranks"] }, // 5 days → fresh
     now: NOW,
   });
@@ -449,7 +449,7 @@ test("buildSetupItems: groups This week (gains + weekly pointer) and Worth consi
   assert.equal(week[0].label, "Start the brick run 5s/km easier", "marginal gain (its recommendation) leads This week");
   assert.equal(week[0].source, "tune");
   assert.ok(week[0].key.startsWith("setup:tune:"), "tune item carries a namespaced finding key");
-  assert.ok(week.some((i) => i.source === "weekly" && /as of 3d ago/.test(i.why)), "weekly pointer carries an as-of tag");
+  assert.ok(week.some((i) => i.source === "weekly" && i.label === "Cut one grey-zone ride" && /as of 3d ago/.test(i.why)), "the weekly review's own action item, as-of tagged");
 
   const consider = items.filter((i) => i.group === "worth_considering");
   assert.deepEqual(consider.map((i) => i.label), ["90 g/h carb", "165mm cranks"]);
@@ -457,10 +457,56 @@ test("buildSetupItems: groups This week (gains + weekly pointer) and Worth consi
   assert.equal(consider[0].key, "setup:research:90 g h carb");
 });
 
+test("parseActionBullets: pulls the bullets under the matched section only, deduped + capped", () => {
+  const md = [
+    "# Weekly review — 2026-06-12",
+    "## Load by sport",
+    "- Run: 3 sessions", // wrong section → ignored
+    "## Next week",
+    "- **Cut** one grey-zone ride",
+    "- Move the long run off your GI-trough day",
+    "- Cut one grey-zone ride", // a duplicate (after emphasis strip) → dropped
+    "## Recovery",
+    "- sleep was good", // after the section → ignored
+  ].join("\n");
+  const got = parseActionBullets(md, /next week/i);
+  assert.deepEqual(got, ["Cut one grey-zone ride", "Move the long run off your GI-trough day"]);
+  assert.deepEqual(parseActionBullets(md, /no such heading/i), [], "no matching section → no items");
+});
+
+test("buildSetupItems: integration/config-health nudges + an incomplete race entry (Finish setup)", () => {
+  const profile = { schema_version: 1, identity: {}, races: [{ name: "Demo City Tri" /* no date */ }, { name: "Has Date", date: "2026-09-01" }] } as Profile;
+  const items = buildSetupItems(profile, {
+    questions: [],
+    setupHealth: { hasApiKey: false, waterTempSet: false, lastSyncAgeHours: 96 },
+    now: NOW,
+  });
+  const byKey = new Map(items.map((i) => [i.key, i]));
+  // Operational nudges route to "in your setup".
+  assert.ok(byKey.get("setup:health:apikey")?.route === "in your setup");
+  assert.ok(byKey.get("setup:health:sync")?.label === "Sync your training data");
+  assert.ok(byKey.get("setup:health:watertemp"), "open-water temp nudge present when unset");
+  // A named race with no date gets an "edit profile" nudge; the dated one does not.
+  assert.equal(byKey.get("setup:race:demo city tri")?.route, "edit profile");
+  assert.ok(![...byKey.keys()].some((k) => k.includes("has date")), "a race with a date isn't nudged");
+  // A healthy setup surfaces none of these.
+  const clean = buildSetupItems({ schema_version: 1, identity: {} } as Profile, { questions: [], setupHealth: { hasApiKey: true, waterTempSet: true, lastSyncAgeHours: 2 }, now: NOW });
+  assert.equal(clean.length, 0);
+});
+
+test("buildSetupItems: weekly review with no parseable actions falls back to a pointer", () => {
+  const items = buildSetupItems({ schema_version: 1, identity: {} } as Profile, {
+    questions: [],
+    weeklyReview: { date: "2026-06-13", actions: [] },
+    now: NOW,
+  });
+  assert.deepEqual(items.map((i) => [i.key, i.group]), [["setup:weekly:review", "this_week"]]);
+});
+
 test("buildSetupItems: stale weekly/research reports drop out (the freshness windows)", () => {
   const items = buildSetupItems({ schema_version: 1, identity: {} } as Profile, {
     questions: [],
-    weeklyReviewDate: "2026-05-01", // >10d before NOW → stale
+    weeklyReview: { date: "2026-05-01", actions: ["old action"] }, // >10d before NOW → stale
     researchDigest: { date: "2026-01-01", topics: ["old topic"] }, // >45d → stale
     now: NOW,
   });
