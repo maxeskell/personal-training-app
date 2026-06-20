@@ -303,6 +303,42 @@ and biomechanics are unreachable), it's named explicitly with the reason — Gar
 (re-auth), the `download_activity_file` capability absent, or a download that *attempted and failed*
 (the reason is surfaced, no longer swallowed). A clean sync no longer hides a missing stream.
 
+## Fuelling guidance (from the nutrition you actually use)
+
+Tell the coach what's in your nutrition cupboard once, and it gives **per-session fuelling** — pre,
+during and after — built from *your own* products, not generic advice. It is deliberately quiet: a short
+easy run returns **"nothing needed — water's fine"**, and pre/during/after sections appear only when a
+session's duration, intensity (and the day's forecast heat) actually cross a threshold.
+
+**1 — Log your inventory** (once, in `profile.local.yaml`). Each product is per-serving; `category` is one
+of `drink_mix | gel | chew | bar | real_food | electrolyte | recovery | nitrate | caffeine | supplement`
+(omit it and it's inferred from the name). See `profile.example.yaml` for the full format:
+
+```yaml
+fuelling:
+  products:
+    - { name: Beta Fuel Gel, brand: SIS, category: gel, serving: "1 gel", carbs_g: 40 }
+    - { name: Flapjack, brand: Flapjack Co, category: bar, serving: "1 bar (120 g)", carbs_g: 65 }
+    - { name: 5 Electrolytes (Lemon), brand: PowerBar, category: electrolyte, caffeine_mg: 75 }
+    - { name: REGO Whey, brand: SIS, category: recovery, serving: "1 scoop", protein_g: 21, carbs_g: 4 }
+    - { name: Beet It RE:GEN, brand: Beet It, category: nitrate }
+    - { name: Beta-Alanine, brand: XXL, category: supplement, timing: [daily] }
+```
+
+**2 — See it on the dashboard.** The **"Fuelling — week ahead"** card shows each upcoming session's plan:
+e.g. a 3 h endurance ride gets `~75 g carb/hr (≈225 g): 3× Flapjack + 1 gel`, `~500 ml/hr + an electrolyte
+tab`, a nitrate-timing line for a key effort, and a recovery line. It auto-picks your **caffeine-free**
+electrolyte for an evening session, scales fluid/sodium up in heat, and respects your **learned carb/hr
+ceiling**. Everything is labelled a MODEL with its assumptions. From Claude/MCP, the `fuelling` tool gives
+the same plan on demand.
+
+**3 — Close the loop.** Tap **👍 went well / 👎 felt rough** on a session's plan (or call `log_fuel`); it
+appends one line to a local `data/fuel-log.jsonl`. Once you've logged a few, **"Review my fuelling"** (the
+`fuel_review` tool) reads them back and tunes the model to *you* — your real carb/hr tolerance, what sits
+well on the bike vs running, caffeine timing — and suggests `fuelling.preferences` values to set. It's
+n=1 and descriptive (a MODEL), **wellbeing-screened** (about fuelling *enough* for the work — never
+restriction, deficits or weight targets), and needs ≥3 logged sessions before it'll say anything.
+
 ## Marginal gains + keeping the knowledge current
 
 Two flows answer "what small thing can I improve?" and "is the coach's thinking up to date?" — on a
@@ -550,9 +586,12 @@ see and blocking for minutes (which used to surface in Cowork as a mystery timeo
 | `list_reports` / `read_report` | list and read the dated markdown reports under `reports/` | none |
 | `decisions` | the decision-log audit trail (`filter=pending` for proposals awaiting a call) | none |
 | `listening` | your engagement model — insight families you act on vs dismiss, proposal accept/decline, dismissed-but-recurred findings, plan **adherence** (done vs planned, deferring to AI Endurance) and **plan changes** (added/moved/dropped, diffed from daily snapshots) | none |
+| `fuelling` | per-session **pre / during / after** fuelling for your upcoming sessions, built from *your own* logged nutrition (`profile.local.yaml → fuelling.products`). Honours "only what you need" — easy/short sessions return "water's fine". Carb/hr targets are a MODEL, capped by your learned tolerance | none |
+| `log_fuel` | record how a session's fuelling went (`good` / `rough` / `bonked` / `skipped`, + optional carb/hr and note) — the one-tap feedback that improves future guidance. A **local** log write, no AI Endurance mutation | none |
 | `cost` | local token-cost report (today / 7d / 30d / all-time + monthly projection) | none |
 | `ask` | free-form Q&A over your assembled state + insights | LLM (logged) |
 | `readiness` / `weekly` / `race_prep` / `deep_dive` / `session_feedback` | the coaching flows, each also writing its dated report | LLM (logged) |
+| `fuel_review` | learning review over your fuel log — observed carb/hr tolerance, what sits well per sport, caffeine/timing, and suggested profile tweaks (you apply them). Wellbeing-screened; needs ≥3 logged sessions | LLM (logged) |
 | `propose_adjustment` → `confirm` / `decline` | **the only write path** — `propose_adjustment` logs proposals + trade-offs and writes nothing; `confirm <id>` is the sole tool that mutates AI Endurance; `decline <id>` dismisses | gated write |
 
 The LLM tools need `ANTHROPIC_API_KEY` in `.env` (the deterministic tools don't) and every call is
@@ -598,6 +637,7 @@ are in the [Product one-pager](docs/PRODUCT.md).
 - [Project Instructions](docs/specs/AI_Triathlon_Coach_Project_Instructions.md) — the coach persona / system prompt.
 - [Integration Spec](docs/specs/Endurance_Coach_Integration_Spec.md) — data-integration detail.
 - [Insight Engine Spec](docs/specs/Insight_Engine_Spec.md) — **next layer**: deeper data-mining (EF, aerobic decoupling, run-load ACWR, CTL/ATL/TSB, TID, prediction-vs-goal) — the trends/issues a pro coach pulls out.
+- [Fuelling Spec](docs/specs/Fuelling_Spec.md) — the per-session fuelling engine, inventory schema, feedback loop + the learning review.
 
 ## Principles
 

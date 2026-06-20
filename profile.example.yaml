@@ -80,6 +80,50 @@ fuelling:
   notes: []
   caffeine:
 
+  # The nutrition you ACTUALLY use — drives the "Fuelling — week ahead" dashboard card and the
+  # `fuelling` MCP tool (per-session pre/during/after, only when a session needs it). All values are
+  # per SERVING. category is one of: drink_mix | gel | chew | bar | real_food | electrolyte |
+  # recovery | nitrate | caffeine | supplement (omit it and it's inferred from the name). timing is
+  # any of [pre, during, after, daily] (omit it and it's inferred from the category). These are stable
+  # context, never live numbers, so they belong here — gitignored — not in AI Endurance.
+  products: []
+  #   - name: Beta Fuel Gel
+  #     brand: SIS
+  #     category: gel
+  #     serving: 1 gel (60 ml)
+  #     carbs_g: 40
+  #     caffeine_mg: 0
+  #     timing: [during]
+  #   - name: Flapjack
+  #     brand: Flapjack Co
+  #     category: bar
+  #     serving: 1 bar (120 g)
+  #     carbs_g: 65
+  #     timing: [pre, during]
+  #   - name: 5 Electrolytes (Mango)
+  #     brand: PowerBar
+  #     category: electrolyte
+  #     serving: 1 tab in 500 ml
+  #     sodium_mg: 200
+  #     caffeine_mg: 0
+  #   - name: REGO Whey Protein (Chocolate)
+  #     brand: SIS
+  #     category: recovery
+  #     serving: 1 scoop (30 g)
+  #     protein_g: 21
+  #     carbs_g: 4
+  #   - name: Beta-Alanine
+  #     brand: XXL Nutrition
+  #     category: supplement
+  #     serving: 3-5 g/day
+  #     timing: [daily]
+
+  # Learned over time (or set by hand). The fuelling review (`fuel_review` MCP tool / dashboard button)
+  # suggests values here from your logged outcomes; nothing is auto-written.
+  preferences:
+    carb_ceiling_g_per_hour:   # your gut-trained per-hour cap — the plan never exceeds it, e.g. 90
+    caffeine_cutoff_hour:      # local hour after which to avoid caffeine (steers to caffeine-free), e.g. 16
+
 races:
   # Your own targets. Mirror these into AI Endurance manually: this connector is
   # read-only and cannot set them there.

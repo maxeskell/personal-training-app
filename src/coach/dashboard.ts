@@ -14,8 +14,12 @@ import { assembleSession, listRecentSessions, type SessionRef, type SessionDetai
 import { config } from "../config.js";
 import type { Profile } from "../profile/schema.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
-import { weekday, type WeekWeather } from "../weather/assess.js";
+import { weekday, upcomingPlanned, type WeekWeather } from "../weather/assess.js";
 import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
+import { renderFuelCard } from "./fuelCard.js";
+import { buildWeekFuelPlans, loadFuelPrefs } from "./fuelPlan.js";
+import { loadInventory } from "./fuelInventory.js";
+import type { FuelLogRecord } from "./fuelLogStore.js";
 import {
   escapeHtml,
   TONE_COLOR,
@@ -156,6 +160,11 @@ export interface DashboardInput {
   metricOverrides?: MetricOverrides;
   /** Reactable recommendations distilled from your latest readiness + deep-dive write-ups (item 4-iii). */
   coachRecs?: SurfacedFinding[];
+  /**
+   * One-tap fuelling feedback log (data/fuel-log.jsonl) — renders the "Fuelling — week ahead" card's
+   * per-session 👍/👎 in its logged state and powers the learning review. Omitted → buttons render fresh.
+   */
+  fuelLog?: FuelLogRecord[];
 }
 
 const SEV_COLOR: Record<string, string> = { red: "#c0392b", amber: "#c98a00", green: "#1a8a3a", flag: "#c0392b", watch: "#c98a00", info: "#1a8a3a" };
@@ -912,8 +921,23 @@ function shareRaceNames(today: AthleteState, profile?: Profile): string[] {
   return names.filter(Boolean);
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, fuelLog, share }: DashboardInput): string {
   const today = window[window.length - 1];
+
+  // Fuelling — week ahead (deterministic, no LLM on render): per-session pre/during/after from the
+  // athlete's own inventory, only where a threshold is crossed. Heat comes from the week's forecast highs.
+  const fuelInventory = loadInventory(profile);
+  const tempByDate: Record<string, number | undefined> = {};
+  for (const d of weather?.days ?? []) tempByDate[d.date.slice(0, 10)] = d.tempMaxC;
+  const fuelKeyDates = new Set<string>(sortedUpcomingGoals(today).filter((g) => String(g.priority ?? "").toUpperCase() === "A" && g.event_date).map((g) => String(g.event_date).slice(0, 10)));
+  const fuelPlans = buildWeekFuelPlans(upcomingPlanned(window, today.date, 7).sessions, {
+    weightKg: today.weightKg.value,
+    inventory: fuelInventory,
+    prefs: loadFuelPrefs(profile?.fuelling),
+    tempByDate,
+    keyDates: fuelKeyDates,
+  });
+  const fuelCard = renderFuelCard({ plans: fuelPlans, inventory: fuelInventory, fuelLog, share, hasApiKey: setupHealth?.hasApiKey });
 
   // Share view scrubs real race names out of every free-text card — not just the structured race cards.
   // The deep session feedback, an insight title ("Birmingham: behind target"), the headline and the
@@ -1090,6 +1114,8 @@ ${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedback
 </div>
 
 ${share ? "" : renderWeather(weather)}
+
+${fuelCard}
 
 ${insights ? renderInsightsBox(insights, reactions, firstSeen, leadKey, redact) : ""}
 ${renderDataChanges(window, reactions, suppressed, metricOverrides)}
