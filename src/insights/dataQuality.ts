@@ -53,6 +53,11 @@ const STREAMS: StreamSpec[] = [
 
 const EPS = 1e-9;
 const STUCK_RUN = 5; // identical readings in a row before a daily-varying signal is called flatlined
+// A data-quality flag exists to protect the trends ACTUALLY in use (the ~6-week health strip, the rolling
+// baselines, the under-fuelling/illness flags) — none of which reach back further than this. A bad reading
+// older than the window feeds no live trend, so surfacing it (e.g. a decade-old backfilled scale glitch as
+// "today's call") is just noise. Bounds the scan to the active period; see detectDataQuality.
+const RELEVANCE_WINDOW_DAYS = 180;
 
 interface Dated {
   date: string;
@@ -146,9 +151,16 @@ function scanStream(spec: StreamSpec, daysAsc: GarminDaily[]): Finding | null {
  */
 export function detectDataQuality(days: GarminDaily[]): Finding[] {
   const asc = [...days].sort((a, b) => a.date.localeCompare(b.date));
+  if (!asc.length) return [];
+  // Only scan readings recent enough to feed a live trend/baseline. Window is measured from the MOST RECENT
+  // reading (relative to the data, not wall-clock) so a fully-backfilled-but-stale series still scans its
+  // active cluster — but a long-dead outlier (a 2016 archive glitch under a 2026 cluster) is left alone
+  // rather than surfaced as a current finding.
+  const latest = asc[asc.length - 1].date;
+  const recent = asc.filter((d) => daysBetween(d.date, latest) <= RELEVANCE_WINDOW_DAYS);
   const out: Finding[] = [];
   for (const spec of STREAMS) {
-    const f = scanStream(spec, asc);
+    const f = scanStream(spec, recent);
     if (f) out.push(f);
   }
   return out;
