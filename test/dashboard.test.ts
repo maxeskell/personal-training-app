@@ -24,7 +24,11 @@ function render(): string {
 
 test("every inline <script> in the dashboard is syntactically valid JS", () => {
   const html = render();
-  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  // Match <script> blocks the way an HTML parser would so CodeQL's js/bad-tag-filter is satisfied:
+  // case-insensitive (gi), attribute-tolerant open tag (\b[^>]*), and an end tag that allows trailing
+  // whitespace/junk like </script\n bar> ((?:\s[^>]*)?). The dashboard only emits lowercase,
+  // attribute-less <script>, so the blocks these tests extract are unchanged.
+  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].map((m) => m[1]);
   assert.ok(scripts.length >= 2, "has script blocks");
   for (const [i, sc] of scripts.entries()) {
     // new Function throws on a syntax error — the failure mode that silently killed Ask/feedback/act.
@@ -50,7 +54,7 @@ test("adversarial finding/goal text can't break handlers or inject markup (Spec 
   assert.match(html, /data-reaction="like" onclick="feedback\(this\)"/);
   assert.match(html, /data-summary="/);
   // The page still has valid scripts (this is the test that would FAIL pre-fix on the apostrophe).
-  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].map((m) => m[1]);
   for (const [i, sc] of scripts.entries()) assert.doesNotThrow(() => new Function(sc), `script ${i}`);
 });
 
@@ -77,7 +81,7 @@ test("insights box: a saved like is highlighted + reversible, snooze is separate
   assert.match(html, /class="newbadge">NEW</);
   assert.match(html, /1 new/);
   // The page still parses (the rewritten feedback() handler included).
-  for (const [i, sc] of [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].entries()) assert.doesNotThrow(() => new Function(sc[1]), `script ${i}`);
+  for (const [i, sc] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].entries()) assert.doesNotThrow(() => new Function(sc[1]), `script ${i}`);
 });
 
 test("share view: redacts real race names + dates and shows the banner; normal view offers the toggle", () => {
@@ -93,7 +97,7 @@ test("share view: redacts real race names + dates and shows the banner; normal v
   assert.ok(!shared.includes("2026-10-11"), "exact race date hidden");
   assert.match(shared, /Race 1/); // generic label instead
   assert.match(shared, /Share view/); // the redaction banner
-  for (const [i, sc] of [...shared.matchAll(/<script>([\s\S]*?)<\/script>/g)].entries()) assert.doesNotThrow(() => new Function(sc[1]), `script ${i}`);
+  for (const [i, sc] of [...shared.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].entries()) assert.doesNotThrow(() => new Function(sc[1]), `script ${i}`);
 });
 
 test("redactRaceNames: scrubs the full name AND the distinctive city token, keeps generic race words", () => {
@@ -279,7 +283,7 @@ test("Last-session card: stored inline; live fetch when producible; honest note 
   assert.ok(!withFb.includes('id="sessfb"'), "stored → no live placeholder");
 
   // Every inline <script> still parses (the new loadSessionFeedback + on-load trigger included).
-  for (const [i, sc] of [...fetchable.matchAll(/<script>([\s\S]*?)<\/script>/g)].entries()) {
+  for (const [i, sc] of [...fetchable.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].entries()) {
     assert.doesNotThrow(() => new Function(sc[1]), `script block ${i} must parse`);
   }
 });
@@ -296,7 +300,7 @@ test("mdLite: escapes injected markup before formatting headers/bold/code/bullet
 
 test("mdToHtml renders the LLM markdown readably and escapes injected markup first", () => {
   const html = render();
-  const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).find((sc) => sc.includes("function mdToHtml"));
+  const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].map((m) => m[1]).find((sc) => sc.includes("function mdToHtml"));
   assert.ok(script, "mdToHtml is defined in the page script");
   const { mdToHtml } = new Function(`${script}; return { mdToHtml: mdToHtml };`)() as { mdToHtml: (s: string) => string };
   assert.equal(mdToHtml("**(1) Verdict:** strong"), "<b>(1) Verdict:</b> strong");
@@ -314,7 +318,7 @@ test("stale snapshot triggers the on-load auto-sync; a fresh one (and the CLI fi
   const auto = renderDashboard({ window: [s], decisions: [], autoSyncStaleMin: 95 });
   assert.match(auto, /<script>autoSync\(95\)<\/script>/);
   assert.match(auto, /function autoSync\(min\)/);
-  for (const [i, sc] of [...auto.matchAll(/<script>([\s\S]*?)<\/script>/g)].entries()) {
+  for (const [i, sc] of [...auto.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].entries()) {
     assert.doesNotThrow(() => new Function(sc[1]), `script block ${i} must parse`);
   }
   const fresh = renderDashboard({ window: [s], decisions: [] });
