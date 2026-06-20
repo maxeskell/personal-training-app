@@ -26,6 +26,7 @@ test("analyseSession: surfaces run dynamics averages + normalized power", () => 
   assert.equal(d.normalizedPowerW, 200); // constant 200 W → NP = 200
   assert.equal(d.avgPowerW, 200);
   assert.equal(d.avgLrBalancePct, null, "no bike L/R balance on this run → null, not 0");
+  assert.equal(d.startTimeS, 1000, "session start = first sample timestamp (t starts at 1000)");
 });
 
 test("analyseSession: surfaces bike L/R power balance", () => {

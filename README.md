@@ -275,8 +275,12 @@ now readable; with no argument it reports what's in the watched dir. To analyse 
 
 **Multiple sessions in a day?** The card names exactly which session it's showing and, on a day with more
 than one activity (a brick, or a triathlete's swim + ride + run), notes how many there were — it shows your
-**longest** activity by default but no longer silently hides the rest. A **session switcher** under the card
-lists your recent sessions (one chip per day + sport); tap any to **dive into its deep feedback** in place —
+**longest** activity by default but no longer silently hides the rest. Each session also shows its **start
+time** (in the heading and on every switcher chip) so same-day sessions are easy to tell apart at a glance.
+The time comes from the synced **.FIT** stream and is shown in your local timezone (`COACH_TZ` → profile
+`identity.timezone` → Europe/London); a session without a stream shows the **date only**, never a guessed
+clock. A **session switcher** under the card lists your recent sessions (one chip per day + sport); tap any
+to **dive into its deep feedback** in place —
 served inline if it's stored, otherwise generated once and persisted like the latest. Feedback is keyed by
 **date + sport**, so each sport on a multi-sport day keeps its own readout (auto-backfill generates one per
 sport). Same-sport repeats in a single day still collapse to the longest — a known limitation noted on the

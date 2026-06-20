@@ -44,6 +44,8 @@ export interface ComparableContext {
 export interface SessionDetail {
   date: string;
   sport: RichActivity["sport"];
+  /** Session start, unix seconds (UTC) — from the .FIT stream; null when no stream. Formatted to local for display. */
+  startTimeS: number | null;
   durationMin: number | null;
   avgPowerW: number | null;
   avgHr: number | null;
@@ -89,16 +91,24 @@ function pickActivity(acts: RichActivity[], date?: string, sport?: RichActivity[
 export interface SessionRef {
   date: string;
   sport: RichActivity["sport"];
+  /** Session start, unix seconds (UTC) — joined from the .FIT stream; null when no stream for it. */
+  startTimeS: number | null;
   durationMin: number | null;
   isMostRecent: boolean;
 }
 
+/** Does a .FIT decay's raw sport name (e.g. "cycling") match a RichActivity sport ("Ride")? */
+function decayMatchesSport(decaySport: string, sport: RichActivity["sport"]): boolean {
+  const tokens = sport === "Ride" ? ["ride", "cycl", "bike"] : [sport.toLowerCase()];
+  return tokens.some((t) => decaySport.toLowerCase().includes(t));
+}
+
 /**
  * Recent sessions for the switcher: one row per (date, sport) — the longest when a sport repeats in a
- * day — newest first, capped. Lets the athlete see every session (not just the auto-shown latest) and
- * pick another to deep-dive. Pure.
+ * day — newest first, capped. Each row's start time is joined from the matching .FIT stream (the longest
+ * stream that day+sport, to line up with the shown activity); null when no stream exists for it. Pure.
  */
-export function listRecentSessions(state: AthleteState, limit = 8): SessionRef[] {
+export function listRecentSessions(state: AthleteState, decays: SessionDecay[] = [], limit = 8): SessionRef[] {
   const acts = richActivities(state.raw);
   const best = new Map<string, RichActivity>(); // key date|sport → longest activity in that group
   for (const a of acts) {
@@ -108,9 +118,14 @@ export function listRecentSessions(state: AthleteState, limit = 8): SessionRef[]
   }
   const rows = [...best.values()].sort((a, b) => b.date.localeCompare(a.date) || (b.movingSec ?? 0) - (a.movingSec ?? 0));
   const mostRecent = rows[0];
+  const startFor = (a: RichActivity): number | null =>
+    decays
+      .filter((d) => d.date === a.date && decayMatchesSport(d.sport, a.sport) && d.startTimeS != null)
+      .sort((x, y) => (y.durationMin ?? 0) - (x.durationMin ?? 0))[0]?.startTimeS ?? null;
   return rows.slice(0, limit).map((a) => ({
     date: a.date,
     sport: a.sport,
+    startTimeS: startFor(a),
     durationMin: a.movingSec ? Math.round(a.movingSec / 60) : null,
     isMostRecent: !!mostRecent && a.date === mostRecent.date && a.sport === mostRecent.sport,
   }));
@@ -147,6 +162,7 @@ export function assembleSession(state: AthleteState, insights: InsightReport | u
   return {
     date: target.date,
     sport: target.sport,
+    startTimeS: decay?.startTimeS ?? null,
     durationMin: target.movingSec ? Math.round(target.movingSec / 60) : null,
     avgPowerW: target.avwatts != null ? Math.round(target.avwatts) : null,
     avgHr: target.avhr != null ? Math.round(target.avhr) : null,

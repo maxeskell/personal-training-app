@@ -76,8 +76,15 @@ test("listRecentSessions: one row per date+sport, newest first, marks the most r
   assert.deepEqual(runs.map((r) => r.date), ["2026-06-09", "2026-06-05", "2026-06-02"]);
 });
 
+test("listRecentSessions: joins each row's start time from the matching .FIT stream (else null)", () => {
+  const rideDecay: SessionDecay = { activityId: "c1", date: "2026-06-09", sport: "cycling", startTimeS: 1750000000, durationMin: 120, cadenceDropPct: null, gctRisePct: null, voRisePct: null, hrDriftPct: null, decouplingPct: null, avgTempC: null, avgPowerW: 200, avgHr: 140, avgVerticalRatioPct: null, avgStepLengthMm: null, avgGctBalancePct: null, avgLrBalancePct: null, normalizedPowerW: null };
+  const rows = listRecentSessions(stateMultiSport(), [rideDecay]);
+  assert.equal(rows.find((r) => r.sport === "Ride")!.startTimeS, 1750000000, "cycling decay matches the Ride row");
+  assert.equal(rows.find((r) => r.sport === "Run")!.startTimeS, null, "no stream for the run → null, never a guess");
+});
+
 test("assembleSession: joins .FIT biomechanics and archive thermal summary by date+sport", () => {
-  const decay: SessionDecay = { activityId: "a1", date: "2026-06-09", sport: "running", durationMin: 60, cadenceDropPct: -3, gctRisePct: 4, voRisePct: 2, hrDriftPct: 6, decouplingPct: 7, avgTempC: 24, avgPowerW: 300, avgHr: 150 };
+  const decay: SessionDecay = { activityId: "a1", date: "2026-06-09", sport: "running", startTimeS: null, durationMin: 60, cadenceDropPct: -3, gctRisePct: 4, voRisePct: 2, hrDriftPct: 6, decouplingPct: 7, avgTempC: 24, avgPowerW: 300, avgHr: 150 };
   const fit: FitSummary = { activityId: "a1", date: "2026-06-09", sport: "Run", avgTempC: 24, weatherTempC: 22, trainingEffect: 3.4 };
   const d = assembleSession(stateWithRuns(), undefined, { decays: [decay], fitSummaries: [fit] })!;
   assert.equal(d.decay?.decouplingPct, 7);
@@ -112,7 +119,7 @@ test("buildSessionContext: includes the next-7-days plan so the model can adjust
   assert.ok(!buildSessionContext(assembleSession(stateWithRuns(), undefined)!, stateWithRuns(), undefined).includes("UPCOMING PLAN"));
 });
 
-const RUN_DECAY: SessionDecay = { activityId: "a1", date: "2026-06-09", sport: "running", durationMin: 60, cadenceDropPct: -3, gctRisePct: 4, voRisePct: 2, hrDriftPct: 6, decouplingPct: 7, avgTempC: 24, avgPowerW: 300, avgHr: 150 };
+const RUN_DECAY: SessionDecay = { activityId: "a1", date: "2026-06-09", sport: "running", startTimeS: null, durationMin: 60, cadenceDropPct: -3, gctRisePct: 4, voRisePct: 2, hrDriftPct: 6, decouplingPct: 7, avgTempC: 24, avgPowerW: 300, avgHr: 150 };
 const llmStub = (): CoachLLM => ({ text: async () => ({ text: "LLM FEEDBACK", cacheRead: 0, costUsd: 0.01 }) }) as unknown as CoachLLM;
 const llmMustNotRun = (): CoachLLM =>
   ({ text: async () => { throw new Error("LLM must not be called without the .FIT stream"); } }) as unknown as CoachLLM;
