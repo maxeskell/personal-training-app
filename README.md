@@ -331,12 +331,14 @@ fuelling:
     - { name: Beta-Alanine, brand: XXL, category: supplement, timing: [daily] }
 ```
 
-**2 — See it on the dashboard.** The **"Fuelling — week ahead"** card shows each upcoming session's plan:
-e.g. a 3 h endurance ride gets `~75 g carb/hr (≈225 g): 3× Flapjack + 1 gel`, `~500 ml/hr + an electrolyte
-tab`, a nitrate-timing line for a key effort, and a recovery line. It auto-picks your **caffeine-free**
-electrolyte for an evening session, scales fluid/sodium up in heat, and respects your **learned carb/hr
-ceiling**. Everything is labelled a MODEL with its assumptions. On the terminal `npm run fuelling` prints
-the same plan; from Claude/MCP the `fuelling` tool does too.
+**2 — See it on the dashboard.** The **"Fuelling — next session"** card shows just the *next* session's
+plan, short and sharp — pre/during/after as one line each (e.g. a 3 h endurance ride gets `During ~75 g
+carb/hr (≈225 g): 3× Flapjack · ~500 ml/hr + an electrolyte tab` and a recovery line), or a single
+"water's fine" line when nothing's needed. It auto-picks your **caffeine-free** electrolyte for an evening
+session, scales fluid/sodium up in heat, and respects your **learned carb/hr ceiling**; daily supplements,
+the model assumptions and the "Review my fuelling" button tuck behind a **More** disclosure. Everything is
+labelled a MODEL. On the terminal `npm run fuelling` prints the whole week's plans; from Claude/MCP the
+`fuelling` tool does too.
 
 Until you add an inventory it stays out of your way: the card shows a one-line nudge with the format, and
 the **"Set up & improve → Finish setup"** card lists "what nutrition do you use?" as an open item (it's an
@@ -386,7 +388,7 @@ to your own n=1 data**, no clinical claims, fuel-to-train. All three are also MC
 
 Every LLM call's token usage + dollar cost is logged locally (`data/cost-log.jsonl` — counts and cost only,
 no prompt text). `npm run cost` reports spend by flow over today / 7d / 30d / all-time with a monthly
-projection, and the dashboard carries an **API cost** card. To keep it down, the cheap, frequent flows
+projection (the dashboard stays decluttered — cost lives in `npm run cost` / the MCP `cost` tool, not a card). To keep it down, the cheap, frequent flows
 (`ask`, `readiness`, `session`) run at `effort: "medium"` while the deep flows (`weekly`, `race`,
 `deep-dive`, plan proposals) stay `"high"`. Rates are configurable in `src/config.ts` (`COACH_PRICE_*`).
 
