@@ -18,6 +18,7 @@ import { assessCompleteness, type DataCompletenessReport } from "../state/dataCo
 import { todayIso } from "../util/today.js";
 import { loadProfileSafe } from "../profile/load.js";
 import { nearestRaceName, racePredictedSec, type ArchiveInput } from "../insights/engine.js";
+import { withinPhysioHorizon } from "../insights/horizon.js";
 import type { AthleteState } from "../state/types.js";
 
 /** How far back the race-day projection's FALLBACK trend looks (days). Bounds the deep read; the
@@ -55,7 +56,10 @@ export async function loadArchive(): Promise<ArchiveInput | undefined> {
   if (!acts.length && !gar.length && !fitSummaries.length) return undefined;
   return {
     activities: acts.map((a) => mapRichActivity(a.raw, a.sport)),
-    garminDays: gar, // GarminDay already carries every field ArchiveInput needs (incl. slice-1b series)
+    // Floor the physio feed to the six-month horizon: every insight consumer (trends, baselines, the
+    // under-fuelling/illness/data-quality flags) only ever sees the last ~6 months of daily readings, so
+    // nothing leans on stale data. The race-time predictor is exempt — it reads its own StateStore series.
+    garminDays: withinPhysioHorizon(gar), // GarminDay already carries every field ArchiveInput needs (incl. slice-1b series)
     fitSummaries,
   };
 }
