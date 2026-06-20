@@ -386,9 +386,12 @@ splitting across pages, and expands the glossaries — so the whole thing captur
 **Share view (post a screenshot without doxxing yourself):** the served page carries a small **🔒 Share
 view** toggle (top-right) — flip it live, no data change. It hides the only identifying bits — your **real
 race names + exact dates** (shown as "Race 1", with just the countdown) and the **location-revealing weather
-card** — while keeping all the analysis, trends and zones intact. (Weight/body-comp aren't on the dashboard
-at all; HRV/RHR/sleep/VO2max are health numbers but don't identify *who* you are.) For the one-off HTML or a
-PDF, use `npm run dashboard -- --share`.
+card** — while keeping all the analysis, trends and zones intact. Crucially this isn't just the structured
+race cards: real race names are also **scrubbed out of the free-text coaching** — the deep session feedback,
+insight titles (e.g. a "behind target" finding), the daily headline and the decisions log — since that prose
+names a race by its city/venue, so each is replaced with the same neutral "Race 1" label. (Weight/body-comp
+aren't on the dashboard at all; HRV/RHR/sleep/VO2max are health numbers but don't identify *who* you are.)
+For the one-off HTML or a PDF, use `npm run dashboard -- --share`.
 
 ```bash
 # Foreground / DEV only — dies when you close the terminal. For the always-on server, see below.

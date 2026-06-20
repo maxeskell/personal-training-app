@@ -21,6 +21,7 @@ import {
   daysTo,
   spark,
   mdLite,
+  redactRaceNames,
   linkifyEscaped,
   ageDaysFrom,
   asOf,
@@ -238,7 +239,7 @@ function ageLabel(firstSeenIso: string | undefined, now: number): { badge: strin
  * Snooze that hides it for ~2 weeks; dislike stays visible (just down-ranked). A NEW badge + "first seen"
  * line flag freshness so a new signal isn't missed. Posts to /insight-feedback.
  */
-function renderInsightsBox(ins: InsightReport, reactions?: Map<string, InsightReaction>, firstSeen?: Map<string, string>, leadKey?: string): string {
+function renderInsightsBox(ins: InsightReport, reactions?: Map<string, InsightReaction>, firstSeen?: Map<string, string>, leadKey?: string, redact: (s: string) => string = (s) => s): string {
   const sevColor = (s: string) => (s === "flag" ? "#c0392b" : s === "watch" ? "#c98a00" : "#1a8a3a");
   const now = Date.now();
   const top = ins.topFindings.slice(0, 5);
@@ -256,12 +257,15 @@ function renderInsightsBox(ins: InsightReport, reactions?: Map<string, InsightRe
       const state = saved === "agree" ? "like" : saved === "disagree" ? "dislike" : "";
       const on = (which: string) => (state === which ? " on" : "");
       const { badge, line } = ageLabel(firstSeen?.get(key), now);
-      return `<div class="insight sev-${f.severity}" data-key="${escapeHtml(key)}" data-summary="${escapeHtml(f.title)}" data-reaction-state="${state}">
+      // Share view: scrub real race names from the title (shown AND in the data-summary reaction payload),
+      // detail, recommendation and evidence — findings like "Birmingham: behind target" carry the name.
+      const title = redact(f.title);
+      return `<div class="insight sev-${f.severity}" data-key="${escapeHtml(key)}" data-summary="${escapeHtml(title)}" data-reaction-state="${state}">
         <div><span class="badge" style="background:${sevColor(f.severity)}">${f.severity}</span>${badge}
-          <b style="${f.severity === "flag" ? "font-size:15px" : ""}">${escapeHtml(f.title)}</b> <span class="muted">· ${conf}% conf · ${escapeHtml(f.family)}${isLead ? ` · today's call ↑` : ""}</span></div>
-        <div class="fdetail">${escapeHtml(f.detail)}</div>
-        ${f.recommendation && !isLead ? `<div class="ev">→ ${escapeHtml(f.recommendation)}</div>` : ""}
-        <div class="ev">${escapeHtml(f.evidence)}</div>
+          <b style="${f.severity === "flag" ? "font-size:15px" : ""}">${escapeHtml(title)}</b> <span class="muted">· ${conf}% conf · ${escapeHtml(f.family)}${isLead ? ` · today's call ↑` : ""}</span></div>
+        <div class="fdetail">${escapeHtml(redact(f.detail))}</div>
+        ${f.recommendation && !isLead ? `<div class="ev">→ ${escapeHtml(redact(f.recommendation))}</div>` : ""}
+        <div class="ev">${escapeHtml(redact(f.evidence))}</div>
         <div class="age">${line}</div>
         <div class="acts">
           <button class="agree${on("like")}" data-reaction="like" onclick="feedback(this)">👍 Like</button>
@@ -336,6 +340,7 @@ function renderLastSession(
   sessionFeedbacks?: SessionFeedbackRecord[],
   hasApiKey?: boolean,
   share?: boolean,
+  redact: (s: string) => string = (s) => s,
 ): string {
   const today = window[window.length - 1];
   const d = assembleSession(today, insights, { decays: insights?.sessionDecays, fitSummaries });
@@ -379,8 +384,10 @@ function renderLastSession(
   let feedback: string;
   switch (cardState.kind) {
     case "stored":
+      // Share view: the deep feedback is generated prose that names the athlete's real races (e.g. "with
+      // Birmingham 22 days out") — redact those before rendering so a shared screenshot/PDF stays anonymous.
       feedback = `<div class="k" style="margin:8px 0 4px">🔍 Session feedback <span class="muted">(${stored.deep ? "deep analysis" : "summary"} · ${escapeHtml(fmtSince(Date.now() - new Date(stored.generatedAt).getTime()))})</span></div>
-      <div style="font-size:14px;color:#333;white-space:pre-wrap">${mdLite(stored.markdown.replace(/^# .*\n+/, ""))}</div>`;
+      <div style="font-size:14px;color:#333;white-space:pre-wrap">${mdLite(redact(stored.markdown.replace(/^# .*\n+/, "")))}</div>`;
       break;
     case "auto":
       // A screenshot can't run the fetch (and would freeze on "Downloading…"), so share view degrades to
@@ -742,7 +749,7 @@ function renderHealthBanner(risk: HealthRiskAssessment | null): string {
  * The "Today" decision header (#1) — leads with one synthesised call + the single action, corroborating
  * drivers, an always-visible health strip (#8), the LLM readiness narrative, and the key metrics.
  */
-function renderHeader(today: AthleteState, hl: Headline | null, decisions: DecisionRecord[], gar: DashboardInput["garminDays"]): string {
+function renderHeader(today: AthleteState, hl: Headline | null, decisions: DecisionRecord[], gar: DashboardInput["garminDays"], redact: (s: string) => string = (s) => s): string {
   const lastReadiness = [...decisions].reverse().find((d) => d.kind === "readiness");
   const verdictWord = lastReadiness?.summary.split(":")[0]?.trim().toLowerCase();
   const sev = hl?.severity ?? (verdictWord === "green" || verdictWord === "amber" || verdictWord === "red" ? verdictWord : "green");
@@ -776,12 +783,12 @@ function renderHeader(today: AthleteState, hl: Headline | null, decisions: Decis
     <h2>Today — ${today.date.slice(5)}</h2>
     <div class="verdict"><span class="dot" style="background:${color}"></span>
       <span class="big" style="color:${color}">${escapeHtml(sev)}</span></div>
-    ${hl ? `<p style="font-size:16px;color:#222;margin:10px 0 6px;font-weight:500">${escapeHtml(hl.line)}</p>` : ""}
-    ${hl?.action ? `<div style="background:${color};color:#fff;border-radius:8px;padding:10px 12px;font-size:14px;margin:6px 0 8px">➡️ ${escapeHtml(hl.action)}</div>
+    ${hl ? `<p style="font-size:16px;color:#222;margin:10px 0 6px;font-weight:500">${escapeHtml(redact(hl.line))}</p>` : ""}
+    ${hl?.action ? `<div style="background:${color};color:#fff;border-radius:8px;padding:10px 12px;font-size:14px;margin:6px 0 8px">➡️ ${escapeHtml(redact(hl.action))}</div>
       <button class="actbtn" onclick="actPlan()">⚙ Turn this into a plan change</button><div id="proposals"></div>` : ""}
-    ${hl && hl.drivers.length ? `<div class="k" style="margin-bottom:10px">${hl.drivers.map(escapeHtml).join(" · ")}</div>` : ""}
+    ${hl && hl.drivers.length ? `<div class="k" style="margin-bottom:10px">${hl.drivers.map((d) => escapeHtml(redact(d))).join(" · ")}</div>` : ""}
     <div style="margin:6px 0 12px">${chips}</div>
-    ${narrative ? `<details><summary style="cursor:pointer;font-size:13px;color:#888">Readiness detail</summary><p style="font-size:14px;color:#444;margin:8px 0">${escapeHtml(narrative)}</p></details>` : ""}
+    ${narrative ? `<details><summary style="cursor:pointer;font-size:13px;color:#888">Readiness detail</summary><p style="font-size:14px;color:#444;margin:8px 0">${escapeHtml(redact(narrative))}</p></details>` : ""}
     <div class="grid" style="margin-top:6px">
       <div><div class="k">HRV (ms)</div><div class="v">${fmt(today.hrvOvernight.value)}</div></div>
       <div><div class="k">Resting HR</div><div class="v">${fmt(today.restingHr.value)}</div></div>
@@ -829,8 +836,44 @@ function freshnessLine(today: AthleteState): string {
   return line;
 }
 
+type UpcomingGoal = { event_name?: string; event_date?: string; priority?: unknown; dt: number };
+
+/** Upcoming race goals in the dashboard's canonical order (date-sorted) — index i is "Race i+1" everywhere. */
+function sortedUpcomingGoals(today: AthleteState): UpcomingGoal[] {
+  const goals = (today.raw?.getRaceGoalEvent as { goals?: Array<{ event_name?: string; event_date?: string; priority?: unknown }> } | undefined)?.goals ?? [];
+  return goals
+    .filter((g) => g.event_date)
+    .map((g) => ({ ...g, dt: daysTo(today.date, g.event_date!) }))
+    .sort((a, b) => a.dt - b.dt);
+}
+
+/**
+ * The real race names to scrub from free text in share view, in the same order the cards label them
+ * "Race N": the date-sorted goal names first, then any profile race names not already covered (the LLM
+ * can name a race from the profile too). Empty unless sharing — see {@link redactRaceNames}.
+ */
+function shareRaceNames(today: AthleteState, profile?: Profile): string[] {
+  const names = sortedUpcomingGoals(today).map((g) => String(g.event_name ?? "").trim());
+  const seen = new Set(names.map((n) => n.toLowerCase()));
+  for (const r of profile?.races ?? []) {
+    const n = String(r.name ?? "").trim();
+    if (n && !seen.has(n.toLowerCase())) {
+      names.push(n);
+      seen.add(n.toLowerCase());
+    }
+  }
+  return names.filter(Boolean);
+}
+
 export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, share }: DashboardInput): string {
   const today = window[window.length - 1];
+
+  // Share view scrubs real race names out of every free-text card — not just the structured race cards.
+  // The deep session feedback, an insight title ("Birmingham: behind target"), the headline and the
+  // decisions log are generated prose that can name a race, so redact them all against the same ordered
+  // "Race N" list the cards use. `redact` is the identity on the normal page (raceNames empty).
+  const raceNames = share ? shareRaceNames(today, profile) : [];
+  const redact = (s: string) => redactRaceNames(s, raceNames);
 
   // One synthesised "Today" call, computed once and shared: the header leads on it, the Top-insights box
   // marks the same finding (without repeating its recommendation), and "Set up & improve → This week"
@@ -865,11 +908,7 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
   ].join("");
 
   // Race: next goals + countdown.
-  const goals = (today.raw?.getRaceGoalEvent as { goals?: Array<{ event_name?: string; event_date?: string; priority?: unknown }> } | undefined)?.goals ?? [];
-  const raceRows = goals
-    .filter((g) => g.event_date)
-    .map((g) => ({ ...g, dt: daysTo(today.date, g.event_date!) }))
-    .sort((a, b) => a.dt - b.dt)
+  const raceRows = sortedUpcomingGoals(today)
     .map((g, i) => {
       // Share view: redact the real name + exact date (the identifying bits); keep the countdown + priority.
       const name = share ? `Race ${i + 1}` : escapeHtml(g.event_name ?? "—");
@@ -894,7 +933,7 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
     })
     .slice(0, 8)
     .map((d) => {
-      const summary = (d.summary ?? "").replace(/\s*\(?id=\d+\)?/g, "").replace(/^[a-z]+:\s*/i, "").trim();
+      const summary = redact((d.summary ?? "").replace(/\s*\(?id=\d+\)?/g, "").replace(/^[a-z]+:\s*/i, "").trim());
       return `<tr><td>${escapeHtml(KIND_LABEL[d.kind] ?? d.kind)}</td><td class="muted">${escapeHtml(STATUS_LABEL[d.status] ?? d.status)}</td><td>${escapeHtml(summary.slice(0, 90))}</td></tr>`;
     })
     .join("");
@@ -994,9 +1033,9 @@ function autoSync(min){ sync('Data is '+min+' min old — auto-refreshing:'); }
 }
 
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
-${insights ? renderHeader(today, hl, decisions, garminDays) : ""}
+${insights ? renderHeader(today, hl, decisions, garminDays, redact) : ""}
 
-${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks, setupHealth?.hasApiKey, share)}
+${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks, setupHealth?.hasApiKey, share, redact)}
 
 <div class="card"><h2>This week — load by sport</h2>
   <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows || '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
@@ -1004,7 +1043,7 @@ ${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedback
 
 ${share ? "" : renderWeather(weather)}
 
-${insights ? renderInsightsBox(insights, reactions, firstSeen, leadKey) : ""}
+${insights ? renderInsightsBox(insights, reactions, firstSeen, leadKey, redact) : ""}
 ${renderDataChanges(window, reactions, suppressed, metricOverrides)}
 
 <div class="card" id="askcard"><h2>Ask your data</h2>

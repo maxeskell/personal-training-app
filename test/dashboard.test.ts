@@ -4,6 +4,7 @@ import { emptyState } from "../src/state/types.js";
 import { todayIso } from "../src/util/today.js";
 import { buildInsights } from "../src/insights/engine.js";
 import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, aieGapKeyFromSetupKey, parseResearchItems, parseActionBullets, mdLite, commonTrailingSentences, sessionFeedbackCardState, renderResearchDigestPage } from "../src/coach/dashboard.js";
+import { redactRaceNames } from "../src/coach/dashboardHelpers.js";
 import type { ProfileQuestion } from "../src/profile/questions.js";
 import type { InsightReport } from "../src/insights/engine.js";
 import type { Finding } from "../src/insights/metrics.js";
@@ -93,6 +94,50 @@ test("share view: redacts real race names + dates and shows the banner; normal v
   assert.match(shared, /Race 1/); // generic label instead
   assert.match(shared, /Share view/); // the redaction banner
   for (const [i, sc] of [...shared.matchAll(/<script>([\s\S]*?)<\/script>/g)].entries()) assert.doesNotThrow(() => new Function(sc[1]), `script ${i}`);
+});
+
+test("redactRaceNames: scrubs the full name AND the distinctive city token, keeps generic race words", () => {
+  const names = ["Birmingham Triathlon", "Outlaw Half"];
+  // Full name and the standalone city the LLM tends to use both go to the indexed label.
+  assert.equal(redactRaceNames("with Birmingham 22 days out", names), "with Race 1 22 days out");
+  assert.equal(redactRaceNames("ahead of Birmingham Triathlon", names), "ahead of Race 1");
+  assert.equal(redactRaceNames("the Outlaw is your B-race", names), "the Race 2 is your B-race");
+  // Generic race words are NOT redacted on their own — only the identifying token is.
+  assert.equal(redactRaceNames("a steady aerobic swim before the marathon", names), "a steady aerobic swim before the marathon");
+  // No-op when there are no names (the normal, non-share page) or the text is empty.
+  assert.equal(redactRaceNames("Birmingham", []), "Birmingham");
+  assert.equal(redactRaceNames("", names), "");
+});
+
+test("share view: also scrubs race names out of FREE TEXT — session feedback, insight titles, decisions", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.raw = {
+    getRaceGoalEvent: { goals: [{ event_name: "Birmingham Triathlon", event_date: "2026-07-11", priority: "A" }] },
+    getRunningActivity: { activities: [{ activity_date_local: "2026-06-09", activity_movingtime: 3600, activity_avhr: 150 }] },
+  };
+  const ins = buildInsights(s, undefined, {});
+  // A deterministic finding that embeds the race name (engine.ts titles prediction-vs-goal findings this way).
+  ins.topFindings.unshift({ family: "Race readiness", title: "Birmingham: behind target", severity: "watch", detail: "Behind your Birmingham goal pace.", evidence: "predicted vs target [derived]", confidence: 0.7 } as Finding);
+  const input = {
+    window: [s],
+    decisions: [{ kind: "plan-adjust", status: "proposed", summary: "Move the long run earlier, ahead of Birmingham" } as DecisionRecord],
+    insights: ins,
+    setupHealth: { hasApiKey: true, waterTempSet: true, lastSyncAgeHours: 1 },
+    // Stored deep feedback that names the race in prose — the exact leak the share toggle missed.
+    sessionFeedbacks: [
+      { schemaVersion: 1, date: "2026-06-09", sport: "Run", deep: true, generatedAt: new Date().toISOString(), costUsd: 0.2, markdown: "# Session feedback — 2026-06-09 Run\n\n## Verdict\nGood aerobic work. With **Birmingham** 22 days out (A), an FTP test now is well-timed; the open-water swim is unaffected." },
+    ],
+  };
+
+  // Normal view shows the real name in all three places (the regression guard).
+  const normal = renderDashboard(input);
+  assert.ok(normal.includes("Birmingham"), "real name shown on the normal page");
+
+  // Share view scrubs it EVERYWHERE — not just the structured race card.
+  const shared = renderDashboard({ ...input, share: true });
+  assert.ok(!shared.includes("Birmingham"), "no real race name anywhere in the shared HTML (free text included)");
+  assert.match(shared, /Race 1/); // the neutral label is used instead
+  assert.match(shared, /open-water swim is unaffected/); // generic words survive — no over-redaction
 });
 
 test("dashboard surfaces the wellbeing escalation banner; Share mode suppresses it", () => {
