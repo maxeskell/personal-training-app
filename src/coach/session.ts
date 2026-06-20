@@ -57,28 +57,68 @@ export interface SessionDetail {
   comparable: ComparableContext;
   tsbOnDay: number | null; // form (TSB) on the session date, for fatigue context
   ctlOnDay: number | null;
+  /** How many activities (any sport) landed on this date — >1 ⇒ a multi-session day to disambiguate. */
+  sessionsOnDate: number;
+  /** How many activities share this date AND sport — >1 ⇒ same-sport repeats (longest is shown). */
+  sameSportOnDate: number;
 }
 
 export interface AssembleSessionOpts {
   date?: string; // YYYY-MM-DD; defaults to the most recent activity
+  sport?: RichActivity["sport"]; // pick a specific sport on a multi-sport day (else longest activity wins)
   decays?: SessionDecay[];
   fitSummaries?: FitSummary[];
   /** Run the LLM even without the raw .FIT stream (summary-only feedback). */
   force?: boolean;
 }
 
-/** Pick the target activity: the named date, else the most recent; ties broken by longest moving time. */
-function pickActivity(acts: RichActivity[], date?: string): RichActivity | null {
-  const pool = date ? acts.filter((a) => a.date === date) : acts;
+/**
+ * Pick the target activity: the named date (else the most recent), optionally narrowed to one sport;
+ * remaining ties broken by longest moving time. Sport-narrowing is what lets a multi-sport day (a
+ * triathlete's swim + ride + run) be addressed session-by-session instead of collapsing to the longest.
+ */
+function pickActivity(acts: RichActivity[], date?: string, sport?: RichActivity["sport"]): RichActivity | null {
+  const pool = (date ? acts.filter((a) => a.date === date) : acts).filter((a) => !sport || a.sport === sport);
   if (!pool.length) return null;
   const latestDate = date ?? pool.reduce((m, a) => (a.date > m ? a.date : m), pool[0].date);
   const sameDay = pool.filter((a) => a.date === latestDate);
   return sameDay.sort((a, b) => (b.movingSec ?? 0) - (a.movingSec ?? 0))[0];
 }
 
+/** One selectable session for the dashboard's session switcher (deduped to one row per date+sport). */
+export interface SessionRef {
+  date: string;
+  sport: RichActivity["sport"];
+  durationMin: number | null;
+  isMostRecent: boolean;
+}
+
+/**
+ * Recent sessions for the switcher: one row per (date, sport) — the longest when a sport repeats in a
+ * day — newest first, capped. Lets the athlete see every session (not just the auto-shown latest) and
+ * pick another to deep-dive. Pure.
+ */
+export function listRecentSessions(state: AthleteState, limit = 8): SessionRef[] {
+  const acts = richActivities(state.raw);
+  const best = new Map<string, RichActivity>(); // key date|sport → longest activity in that group
+  for (const a of acts) {
+    const k = `${a.date}|${a.sport}`;
+    const prev = best.get(k);
+    if (!prev || (a.movingSec ?? 0) > (prev.movingSec ?? 0)) best.set(k, a);
+  }
+  const rows = [...best.values()].sort((a, b) => b.date.localeCompare(a.date) || (b.movingSec ?? 0) - (a.movingSec ?? 0));
+  const mostRecent = rows[0];
+  return rows.slice(0, limit).map((a) => ({
+    date: a.date,
+    sport: a.sport,
+    durationMin: a.movingSec ? Math.round(a.movingSec / 60) : null,
+    isMostRecent: !!mostRecent && a.date === mostRecent.date && a.sport === mostRecent.sport,
+  }));
+}
+
 export function assembleSession(state: AthleteState, insights: InsightReport | undefined, opts: AssembleSessionOpts = {}): SessionDetail | null {
   const acts = richActivities(state.raw).sort((a, b) => b.date.localeCompare(a.date));
-  const target = pickActivity(acts, opts.date);
+  const target = pickActivity(acts, opts.date, opts.sport);
   if (!target) return null;
 
   const ef = target.avwatts != null && target.avhr != null && target.avhr > 0 ? +(target.avwatts / target.avhr).toFixed(3) : null;
@@ -120,6 +160,8 @@ export function assembleSession(state: AthleteState, insights: InsightReport | u
     comparable,
     tsbOnDay: loadPoint?.tsb ?? insights?.load?.tsb ?? null,
     ctlOnDay: loadPoint?.ctl ?? insights?.load?.ctl ?? null,
+    sessionsOnDate: acts.filter((a) => a.date === target.date).length,
+    sameSportOnDate: acts.filter((a) => a.date === target.date && a.sport === target.sport).length,
   };
 }
 
@@ -144,6 +186,11 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
     `- That day's form: TSB ${fmt(d.tsbOnDay)}, CTL ${fmt(d.ctlOnDay)} ${d.tsbOnDay != null && d.tsbOnDay < -10 ? "(deep in fatigue — read output in that light)" : ""}`,
     `- Comparable norm: ESS ${fmt(c.essMean, 1)}, duration ${fmt(c.durMinMean)}min`,
   ];
+  if (d.sessionsOnDate > 1) {
+    lines.push(
+      `- NOTE: ${d.sessionsOnDate} sessions on ${d.date}${d.sameSportOnDate > 1 ? ` (${d.sameSportOnDate} ${d.sport.toLowerCase()}s — this is the longest one)` : ""}; this readout covers the ${d.sport} only.`,
+    );
+  }
 
   if (d.decay) {
     const dy = d.decay;
@@ -160,12 +207,14 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
         `- Run dynamics: vertical ratio ${fmt(dy.avgVerticalRatioPct, 1)}% (lower = more economical), step length ${fmt(dy.avgStepLengthMm)}mm, GCT L/R balance ${fmt(dy.avgGctBalancePct, 1)}% (50% = even)`,
       );
     }
-    // Bike power detail (NP + L/R balance from power meter / Rally pedals).
+    // Bike power detail (NP + L/R balance from power meter / Rally pedals). L/R is decoded to the left
+    // share (50% = even); a value outside 0–100 can only be a sensor/encoding artifact, so we say so
+    // rather than feed the model an impossible number to (over-)interpret.
     if (dy.normalizedPowerW != null || dy.avgLrBalancePct != null) {
       const npNote = dy.normalizedPowerW != null && dy.avgPowerW != null ? ` (avg ${fmt(dy.avgPowerW)}W → variability index ${(dy.normalizedPowerW / dy.avgPowerW).toFixed(2)})` : "";
-      lines.push(
-        `- Bike power: normalized power ${fmt(dy.normalizedPowerW)}W${npNote}${dy.avgLrBalancePct != null ? `, L/R balance ${fmt(dy.avgLrBalancePct, 1)}% (50% = even)` : ""}`,
-      );
+      const lr = dy.avgLrBalancePct;
+      const lrNote = lr == null ? "" : lr < 0 || lr > 100 ? `, L/R balance ${fmt(lr, 1)}% — outside 0–100, a sensor/encoding artifact, not assessable` : `, L/R balance ${fmt(lr, 1)}% (50% = even)`;
+      lines.push(`- Bike power: normalized power ${fmt(dy.normalizedPowerW)}W${npNote}${lrNote}`);
     }
   } else {
     lines.push("", `IN-SESSION BIOMECHANICS: no raw .FIT stream for this session — cadence/GCT/decoupling unavailable. Sync/fit-sync auto-downloads these when the Garmin download tool is available; the fallback is a per-second .FIT exported from Garmin Connect into data/fit-streams/.`);

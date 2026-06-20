@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { analyseSession } from "../src/insights/fit.js";
+import { decodeLrBalanceLeftPct } from "../src/insights/fitParser.js";
 
 /**
  * The .FIT parser decodes run dynamics (vertical ratio, step length, GCT balance) and bike L/R power
@@ -36,6 +37,25 @@ test("analyseSession: surfaces bike L/R power balance", () => {
   assert.equal(d.avgLrBalancePct, 52);
   assert.equal(d.normalizedPowerW, 220);
   assert.equal(d.avgVerticalRatioPct, null, "no run dynamics on a ride → null");
+});
+
+test("decodeLrBalanceLeftPct: masks Garmin's right-flag bit so the value is the left share (50% = even)", () => {
+  assert.equal(decodeLrBalanceLeftPct(52), 52, "≤127, flag clear → already a percentage, unchanged");
+  assert.equal(decodeLrBalanceLeftPct(50), 50, "even passes through");
+  // 174 = 0x80 | 46 → right share 46% → left share 54% (NOT the impossible 174% read raw).
+  assert.equal(decodeLrBalanceLeftPct(174), 54);
+  assert.equal(decodeLrBalanceLeftPct(0x80 | 40), 60, "right 40% → left 60%");
+  assert.equal(decodeLrBalanceLeftPct(54), 54, "an already-decoded value is left unchanged (idempotent)");
+});
+
+test("analyseSession: decodes a flag-encoded L/R balance instead of reporting an impossible >100%", () => {
+  // Raw 174 per sample (0x80 right-flag + 46) must surface as ~54% left, never 174%.
+  const d = analyseSession({
+    sport: "Ride",
+    date: "2026-06-19",
+    samples: samples(120, { power: 220, lrBalance: 174 }),
+  })!;
+  assert.equal(d.avgLrBalancePct, 54, "the sensor/encoding artifact is decoded, not passed through raw");
 });
 
 test("analyseSession: normalized power needs enough power data, else null", () => {

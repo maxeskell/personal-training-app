@@ -14,7 +14,7 @@ import { latestAdviceFindings } from "./coach/adviceRecs.js";
 import { updateLocalProfile } from "./profile/update.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
 import { listPending, readPending } from "./knowledge/store.js";
-import { loadSessionFeedbacks, saveSessionFeedback, latestByDate } from "./coach/sessionFeedbackStore.js";
+import { loadSessionFeedbacks, saveSessionFeedback, latestByDateSport, sessionFeedbackKey } from "./coach/sessionFeedbackStore.js";
 import { loadMetricOverrides, setMetricOverride, clearMetricOverride } from "./state/metricOverrides.js";
 import { TRACKED_METRICS } from "./coach/metricChanges.js";
 import { backfillSessionFeedback } from "./coach/autoSessionFeedback.js";
@@ -212,8 +212,14 @@ async function latestInsights() {
 
 type LatestInsights = NonNullable<Awaited<ReturnType<typeof latestInsights>>>;
 type SessionFeedbackResult = { status: string; markdown: string; deep?: boolean };
+type SessionSport = "Run" | "Ride" | "Swim";
+const SESSION_SPORTS: readonly SessionSport[] = ["Run", "Ride", "Swim"];
+/** Validate a request's `sport` field; anything else → undefined (fall back to the day's longest activity). */
+function parseSport(v: unknown): SessionSport | undefined {
+  return SESSION_SPORTS.includes(v as SessionSport) ? (v as SessionSport) : undefined;
+}
 
-/** In-flight session-feedback generations, keyed by `${date}:${force}` — see the /session-feedback route. */
+/** In-flight session-feedback generations, keyed by `${date}|${sport}:${force}` — see the /session-feedback route. */
 const sessionFeedbackInFlight = new Map<string, Promise<SessionFeedbackResult>>();
 
 /**
@@ -242,12 +248,12 @@ async function draftGatedProposals(li: LatestInsights, request: string) {
  * (no spend). Returns the card's response shape. Wrapped by coalesce() in the route so two concurrent
  * requests for the same session run it once and share the result (no double LLM spend).
  */
-async function produceSessionFeedback(li: LatestInsights, date: string, force: boolean): Promise<SessionFeedbackResult> {
+async function produceSessionFeedback(li: LatestInsights, date: string, sport: SessionSport, force: boolean): Promise<SessionFeedbackResult> {
   let decays = loadSessionDecays();
   const fitSummaries = await new ArchiveStore().loadFitSummaries();
-  const probe = assembleSession(li.state, li.insights, { date, decays, fitSummaries });
+  const probe = assembleSession(li.state, li.insights, { date, sport, decays, fitSummaries });
   if (!probe) return { status: "no-data", markdown: "No recent activity found to analyse." };
-  const existing = latestByDate(await loadSessionFeedbacks()).get(probe.date);
+  const existing = latestByDateSport(await loadSessionFeedbacks()).get(sessionFeedbackKey(probe.date, probe.sport));
   if (existing) return { status: "ready", markdown: existing.markdown, deep: existing.deep };
   // On-demand stream fetch: if the raw .FIT isn't local but the archive knows the Garmin id, pull it now
   // (~seconds) so the deep dive runs with biomechanics. Best-effort — the no-fit gate below still protects spend.
@@ -263,7 +269,7 @@ async function produceSessionFeedback(li: LatestInsights, date: string, force: b
       }
     }
   }
-  const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), li.state, li.insights, { date, force, decays, fitSummaries });
+  const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), li.state, li.insights, { date, sport, force, decays, fitSummaries });
   if (!feedback) return { status: "no-data", markdown: "No recent activity found to analyse." };
   if (feedback.skippedNoFit) return { status: "no-fit", markdown: feedback.markdown };
   // Persist so subsequent page loads serve it inline (no LLM on render) — same store the auto-backfill writes.
@@ -363,20 +369,22 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       if (!CoachLLM.hasApiKey()) return json({ status: "no-api-key", markdown: "ANTHROPIC_API_KEY isn't set on the server, so I can't analyse sessions yet." });
       const li = await latestInsights();
       if (!li) return json({ status: "no-data", markdown: "No data assembled yet — hit ↻ Sync first." });
-      const body = JSON.parse((await readBody(req)) || "{}") as { date?: string; force?: boolean };
+      const body = JSON.parse((await readBody(req)) || "{}") as { date?: string; sport?: string; force?: boolean };
       const reqDate = String(body.date ?? "");
       const date = /^\d{4}-\d{2}-\d{2}$/.test(reqDate) ? reqDate : undefined;
+      const sport = parseSport(body.sport); // which session on a multi-sport day (the switcher sends this)
       const force = body.force === true; // escape hatch: summary-only analysis without the raw .FIT
-      // Resolve the target session up front (cheap — no network/LLM) so we can dedupe by its date and
-      // short-circuit when it's already stored.
-      const probe = assembleSession(li.state, li.insights, { date, decays: loadSessionDecays(), fitSummaries: await new ArchiveStore().loadFitSummaries() });
+      // Resolve the target session up front (cheap — no network/LLM) so we can dedupe by its date+sport
+      // and short-circuit when it's already stored.
+      const probe = assembleSession(li.state, li.insights, { date, sport, decays: loadSessionDecays(), fitSummaries: await new ArchiveStore().loadFitSummaries() });
       if (!probe) return json({ status: "no-data", markdown: "No recent activity found to analyse." });
-      const existing = latestByDate(await loadSessionFeedbacks()).get(probe.date);
-      if (existing) return json({ status: "ready", markdown: existing.markdown, deep: existing.deep });
+      const existing = latestByDateSport(await loadSessionFeedbacks()).get(sessionFeedbackKey(probe.date, probe.sport));
+      if (existing) return json({ status: "ready", markdown: existing.markdown, deep: existing.deep, date: probe.date, sport: probe.sport });
       // Coalesce concurrent requests for the SAME session into ONE generate: two dashboard tabs opened
       // together (or a quick double-load) must not each fire the LLM — the expensive download+analyse runs
-      // once and both await it. Keyed by date(+force); the slot frees when it settles.
-      return json(await coalesce(sessionFeedbackInFlight, `${probe.date}:${force ? "force" : ""}`, () => produceSessionFeedback(li, probe.date, force)));
+      // once and both await it. Keyed by date|sport(+force); the slot frees when it settles.
+      const result = await coalesce(sessionFeedbackInFlight, `${probe.date}|${probe.sport}:${force ? "force" : ""}`, () => produceSessionFeedback(li, probe.date, probe.sport, force));
+      return json({ ...result, date: probe.date, sport: probe.sport });
     }
 
     // Insight feedback (the insights box + the Set-up card's task buttons post here). The UI vocabulary

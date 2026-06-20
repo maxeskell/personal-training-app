@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { assembleSession, buildSessionContext, runSessionFeedback } from "../src/coach/session.js";
+import { assembleSession, buildSessionContext, listRecentSessions, runSessionFeedback } from "../src/coach/session.js";
 import { isLastSessionQuestion } from "../src/coach/ask.js";
 import { emptyState } from "../src/state/types.js";
 import type { SessionDecay } from "../src/insights/fit.js";
@@ -36,6 +36,44 @@ test("assembleSession: picks the most recent activity, computes EF, and builds t
 test("assembleSession: a specific date selects that session; an unknown date returns null", () => {
   assert.equal(assembleSession(stateWithRuns(), undefined, { date: "2026-06-05" })!.ef, +(280 / 150).toFixed(3));
   assert.equal(assembleSession(stateWithRuns(), undefined, { date: "1999-01-01" }), null);
+});
+
+/** A triathlete's multi-sport day: a long ride + a shorter run + a swim, all on 2026-06-09. */
+function stateMultiSport() {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.raw = {
+    getRunningActivity: { activities: [{ activity_date_local: "2026-06-09", activity_avwatts: 300, activity_avhr: 150, activity_movingtime: 1800 }] },
+    getCyclingActivity: { activities: [{ activity_date_local: "2026-06-09", activity_avwatts: 200, activity_avhr: 140, activity_movingtime: 7200 }] },
+    getSwimmingActivity: { activities: [{ activity_date_local: "2026-06-09", activity_avhr: 130, activity_movingtime: 1500 }] },
+  };
+  return s;
+}
+
+test("assembleSession: a multi-sport day defaults to the longest, but `sport` selects a specific session", () => {
+  const def = assembleSession(stateMultiSport(), undefined)!; // no sport → longest (the 2h ride)
+  assert.equal(def.sport, "Ride");
+  assert.equal(def.durationMin, 120);
+  assert.equal(def.sessionsOnDate, 3, "all three sessions on the day are counted");
+  assert.equal(def.sameSportOnDate, 1);
+  // Sport-narrowing addresses the run + swim that the longest-wins rule used to hide.
+  assert.equal(assembleSession(stateMultiSport(), undefined, { sport: "Run" })!.durationMin, 30);
+  assert.equal(assembleSession(stateMultiSport(), undefined, { sport: "Swim" })!.durationMin, 25);
+});
+
+test("buildSessionContext: flags a multi-session day so the model knows the readout covers one sport", () => {
+  const d = assembleSession(stateMultiSport(), undefined, { sport: "Run" })!;
+  assert.match(buildSessionContext(d, stateMultiSport(), undefined), /3 sessions on 2026-06-09/);
+});
+
+test("listRecentSessions: one row per date+sport, newest first, marks the most recent", () => {
+  const rows = listRecentSessions(stateMultiSport());
+  assert.equal(rows.length, 3, "swim + ride + run on one day are three selectable sessions");
+  assert.equal(rows[0].sport, "Ride", "the longest of the most-recent day is marked most-recent first");
+  assert.ok(rows.find((r) => r.sport === "Ride")!.isMostRecent);
+  assert.ok(rows.filter((r) => r.isMostRecent).length === 1, "exactly one most-recent");
+  // Same-sport repeats collapse to the longest (a swim/ride/run day stays three rows above).
+  const runs = listRecentSessions(stateWithRuns());
+  assert.deepEqual(runs.map((r) => r.date), ["2026-06-09", "2026-06-05", "2026-06-02"]);
 });
 
 test("assembleSession: joins .FIT biomechanics and archive thermal summary by date+sport", () => {

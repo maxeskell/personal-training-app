@@ -10,7 +10,7 @@ import { detectMetricChanges, detectSourceConflicts, formatMetricValue, metricLa
 import type { MetricOverrides } from "../state/metricOverrides.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone, type Headline } from "../insights/headline.js";
-import { assembleSession } from "./session.js";
+import { assembleSession, listRecentSessions, type SessionRef, type SessionDetail } from "./session.js";
 import type { Profile } from "../profile/schema.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
 import { weekday, type WeekWeather } from "../weather/assess.js";
@@ -372,7 +372,7 @@ function renderLastSession(
   // needed); otherwise it says exactly why it can't (no key, or no .FIT and no way to fetch one). The
   // stored markdown leads with its own H1 — strip it (the card heading already names the session).
   const stored = (sessionFeedbacks ?? [])
-    .filter((f) => f.date === d.date)
+    .filter((f) => f.date === d.date && f.sport === d.sport)
     .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0];
   const cardState = sessionFeedbackCardState({
     hasStored: !!stored,
@@ -394,7 +394,7 @@ function renderLastSession(
       // a static line; the live page renders the placeholder the on-load loadSessionFeedback() swaps out.
       feedback = share
         ? `<div class="k">🔍 Deep feedback generates automatically on sync.</div>`
-        : `<div id="sessfb" data-date="${escapeHtml(d.date)}"><div class="k">🔍 ${escapeHtml(
+        : `<div id="sessfb" data-date="${escapeHtml(d.date)}" data-sport="${escapeHtml(d.sport)}"><div class="k">🔍 ${escapeHtml(
             cardState.needsDownload
               ? "Downloading this session's .FIT and generating deep feedback…"
               : "Generating deep feedback for this session…",
@@ -407,11 +407,40 @@ function renderLastSession(
       feedback = `<div class="k">🔍 No raw .FIT for this session and no automatic way to fetch it (Garmin off, an old garmin_mcp build, or no archived activity id). Export it from Garmin Connect → activity → ⚙ → Export Original into data/fit-streams/ and it'll be analysed on the next sync.</div>`;
       break;
   }
+  // Multi-session days (a brick, or a triathlete's swim/ride/run) silently collapsed to the longest
+  // activity before — say which session this card is about, and offer the others to dive into.
+  const multiNote =
+    d.sessionsOnDate > 1
+      ? `<div class="k" style="margin-top:10px">📅 ${d.sessionsOnDate} sessions on ${escapeHtml(d.date)}${d.sameSportOnDate > 1 ? ` (${d.sameSportOnDate} ${escapeHtml(d.sport.toLowerCase())}s — showing the longest)` : ""} — this card is your <b>${escapeHtml(d.sport)}</b>.</div>`
+      : "";
+  const switcher = share ? "" : renderSessionSwitcher(listRecentSessions(today), d);
   return `<div class="card"><h2>Last session — ${escapeHtml(d.date)} ${escapeHtml(d.sport)}</h2>
     <div style="font-size:14px;margin-bottom:6px">${escapeHtml(bits)}</div>
     ${planLine}
+    ${multiNote}
     ${feedback}
+    ${switcher}
   </div>`;
+}
+
+/**
+ * The session switcher: recent sessions as tap-to-dive chips + an empty panel the selection fills. Lets
+ * the athlete see every session (not just the auto-shown latest) and pull any one's deep dive on demand
+ * (the existing /session-feedback route, now sport-aware). Hidden when there's only one session to show.
+ */
+function renderSessionSwitcher(recent: SessionRef[], d: SessionDetail): string {
+  if (recent.length < 2) return "";
+  const chips = recent
+    .map((r) => {
+      const active = r.date === d.date && r.sport === d.sport;
+      const dur = r.durationMin != null ? ` ${r.durationMin}min` : "";
+      const label = `${weekday(r.date)} ${SPORT_EMOJI[r.sport] ?? ""}${escapeHtml(r.sport)}${dur}${r.isMostRecent ? " ·latest" : ""}`;
+      return `<button class="sess-chip${active ? " on" : ""}" data-date="${escapeHtml(r.date)}" data-sport="${escapeHtml(r.sport)}" onclick="selectSession(this)" title="${escapeHtml(`${r.date} ${r.sport}`)}" style="padding:5px 10px;border:1px solid ${active ? "#c8642d" : "#ddd"};border-radius:14px;background:${active ? "#fdeee4" : "#fff"};font-size:12px;color:#333;cursor:pointer">${label}</button>`;
+    })
+    .join("");
+  return `<div class="k" style="margin-top:14px">🗂️ Dive into another session:</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${chips}</div>
+    <div id="dive" style="margin-top:10px"><div class="k muted">Tap a session above to load its deep feedback here (the one shown up top is highlighted).</div></div>`;
 }
 
 const VERDICT_COLOR: Record<string, string> = { good: "#1a8a3a", marginal: "#c98a00", poor: "#c0392b", indoor: "#9a9a9a" };
@@ -1084,6 +1113,25 @@ async function loadSessionFeedback(){
         +'<div style="font-size:14px;color:#333;white-space:pre-wrap">'+mdToHtml(md)+'</div>';
     } else { box.innerHTML='<div class="k">'+mdToHtml(md||'No feedback available.')+'</div>'; }
   }catch(e){ box.innerHTML='<div class="k">Could not fetch feedback for this session ('+esc(''+e)+'). Hit 🔄 Sync to retry.</div>'; }
+}
+// Session switcher: load the picked session's deep dive into the #dive panel (the same /session-feedback
+// route, now with a sport so a multi-sport day resolves to the right session). Stored → inline; otherwise
+// it generates once and persists, exactly like the latest-session card.
+async function selectSession(el){
+  var dive=document.getElementById('dive'); if(!dive) return;
+  var date=el.getAttribute('data-date'), sport=el.getAttribute('data-sport');
+  var chips=el.parentNode.querySelectorAll('.sess-chip');
+  for(var i=0;i<chips.length;i++){chips[i].classList.remove('on');chips[i].style.border='1px solid #ddd';chips[i].style.background='#fff';}
+  el.classList.add('on');el.style.border='1px solid #c8642d';el.style.background='#fdeee4';
+  dive.innerHTML='<div class="k">🔍 Loading deep dive for '+esc(date)+' '+esc(sport)+'…</div>';
+  try{
+    var r=await fetch('/session-feedback',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({date:date,sport:sport})});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    var j=await r.json(); var md=String(j.markdown||'').replace(/^# .*\\n+/,'');
+    var tag=j.status==='ready'?' <span class="muted">('+(j.deep?'deep analysis':'summary')+')</span>':'';
+    dive.innerHTML='<div class="k" style="margin:8px 0 4px">🔍 Deep dive — '+esc(date)+' '+esc(sport)+tag+'</div>'
+      +'<div style="font-size:14px;color:#333;white-space:pre-wrap">'+mdToHtml(md||'No feedback available.')+'</div>';
+  }catch(e){ dive.innerHTML='<div class="k">Could not load that session ('+esc(''+e)+'). Hit 🔄 Sync to retry.</div>'; }
 }
 function setReactionState(box,state){
   box.setAttribute('data-reaction-state',state);
