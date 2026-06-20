@@ -1030,6 +1030,35 @@ test("race splits: caveats every race repeats are hoisted into one shared note, 
   assert.match(html, /~4\.7%/);
 });
 
+test("fuelling folds into the Week-ahead card as a per-session ⛽ dropdown; standalone card suppressed", () => {
+  const s = emptyState("2026-06-20", new Date().toISOString());
+  s.weightKg = { value: 72, source: "garmin" };
+  s.plannedSessions = { value: [{ date: "2026-06-22", sport: "Ride", durationMin: 180, title: "Long ride" }], source: "ai-endurance" };
+  const profile = { schema_version: 1, identity: {}, fuelling: { products: [{ name: "Flapjack", category: "bar", carbs_g: 65 }, { name: "Tab", category: "electrolyte" }] } } as unknown as Profile;
+  const weather = {
+    fetchedAt: "2026-06-20T06:00:00Z",
+    days: [{ date: "2026-06-22", label: "cloudy", tempMinC: 12, tempMaxC: 18, precipSumMm: 0, precipProbMaxPct: 10, gustMaxKmh: 15, roads: "dry all day" }],
+    sessions: [{ date: "2026-06-22", sport: "Ride", title: "Long ride", verdict: "good" as const, reason: "dry + low wind" }],
+  };
+  const html = renderDashboard({ window: [s], decisions: [], profile, weather, setupHealth: { hasApiKey: true } });
+  assert.match(html, /Week ahead — plan vs weather/);
+  assert.match(html, /⛽ Fuelling/, "per-session fuelling dropdown rendered in the weather card");
+  assert.match(html, /data-date="2026-06-22"/);
+  assert.doesNotMatch(html, /Fuelling — next session/, "standalone fallback card is suppressed when weather carries the fuelling");
+  // Scripts still parse (the fuel handlers are emitted by the weather card here).
+  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].map((m) => m[1]);
+  for (const [i, sc] of scripts.entries()) assert.doesNotThrow(() => new Function(sc), `script ${i} must parse`);
+});
+
+test("with no weather forecast, fuelling falls back to the standalone next-session card", () => {
+  const s = emptyState("2026-06-20", new Date().toISOString());
+  s.plannedSessions = { value: [{ date: "2026-06-22", sport: "Ride", durationMin: 180, title: "Long ride" }], source: "ai-endurance" };
+  const profile = { schema_version: 1, identity: {}, fuelling: { products: [{ name: "Flapjack", category: "bar", carbs_g: 65 }] } } as unknown as Profile;
+  const html = renderDashboard({ window: [s], decisions: [], profile });
+  assert.match(html, /Fuelling — next session/, "fallback card shows when there is no weather card");
+  assert.doesNotMatch(html, /⛽ Fuelling/, "no weather dropdown without a forecast");
+});
+
 test("API cost is no longer shown on the dashboard (decluttered — it lives in `npm run cost` / the MCP cost tool)", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
   const costRecords = [
