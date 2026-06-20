@@ -80,7 +80,7 @@ export interface FitSample {
   verticalRatio?: number; // %
   stepLength?: number; // mm
   gctBalance?: number; // stance-time L/R balance, %
-  lrBalance?: number; // raw bike left/right power balance field
+  lrBalance?: number; // raw bike left/right power balance field (FIT-encoded; decode with decodeLrBalanceLeftPct)
 }
 
 /** One `lap` message (global 19) — a rep/segment the device or athlete marked (run/bike reps, swim sets). */
@@ -127,6 +127,24 @@ export interface FitActivity {
 const SPORT_NAMES: Record<number, string> = { 0: "generic", 1: "Run", 2: "Ride", 5: "Swim", 11: "Walk", 17: "Hike" };
 const FIT_EPOCH_OFFSET = 631065600; // FIT timestamps are seconds since 1989-12-31
 
+/**
+ * Decode the FIT `left_right_balance` field (record field 30) to the LEFT-pedal share, so 50% = even.
+ *
+ * Garmin/FIT pack the balance into one byte: the low 7 bits hold a percentage and the high bit (0x80)
+ * is the `right` flag — when set, the percentage is the RIGHT pedal's contribution. Read raw, a
+ * left-dominant pedal stroke surfaces as e.g. 174 (0x80 | 46) and looks "physiologically impossible"
+ * (>100%). We mask the flag and, when it's set, report the left side as 100 − right, so the value is
+ * always the left share against a 50% = even reference (the same convention as GCT balance).
+ *
+ * Values ≤127 with the flag clear are already a plain percentage (e.g. a pre-extracted JSON stream, or
+ * an already-decoded sample) and pass through unchanged — so the decode is idempotent and safe to apply
+ * at the single chokepoint (analyseSession) regardless of which path produced the sample.
+ */
+export function decodeLrBalanceLeftPct(raw: number): number {
+  const pct = raw & 0x7f; // low 7 bits = the encoded percentage
+  return raw & 0x80 ? 100 - pct : pct; // flag set ⇒ pct is the RIGHT share ⇒ left = 100 − right
+}
+
 /** Map a record's raw field map into a typed sample, applying FIT scales/offsets. */
 function toSample(f: Record<number, number | null>): FitSample {
   const g = (k: number) => (f[k] == null ? undefined : (f[k] as number));
@@ -144,7 +162,7 @@ function toSample(f: Record<number, number | null>): FitSample {
     verticalRatio: g(83) != null ? g(83)! / 100 : undefined, // field 83 (verified on a real run), %
     stepLength: g(85) != null ? g(85)! / 10 : undefined, // mm
     gctBalance: g(84) != null ? g(84)! / 100 : undefined, // stance_time_balance, %
-    lrBalance: g(30), // bike left/right power balance (raw)
+    lrBalance: g(30), // bike left/right power balance (raw, FIT-encoded — decoded in analyseSession)
   };
   return s;
 }

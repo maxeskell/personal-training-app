@@ -252,7 +252,7 @@ test("Last-session card: stored inline; live fetch when producible; honest note 
     fitSummaries: [{ activityId: "123", date: "2026-06-09", sport: "Run" }],
     setupHealth: { hasApiKey: true, waterTempSet: true, lastSyncAgeHours: 1 },
   });
-  assert.match(fetchable, /<div id="sessfb" data-date="2026-06-09">/);
+  assert.match(fetchable, /<div id="sessfb" data-date="2026-06-09" data-sport="Run">/);
   assert.match(fetchable, /Downloading this session&#39;s \.FIT/); // the message is HTML-escaped
   assert.match(fetchable, /async function loadSessionFeedback\(\)/);
   assert.match(fetchable, /if\(document\.getElementById\('sessfb'\)\)loadSessionFeedback\(\);/);
@@ -284,6 +284,36 @@ test("Last-session card: stored inline; live fetch when producible; honest note 
 
   // Every inline <script> still parses (the new loadSessionFeedback + on-load trigger included).
   for (const [i, sc] of [...fetchable.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].entries()) {
+    assert.doesNotThrow(() => new Function(sc[1]), `script block ${i} must parse`);
+  }
+});
+
+test("Last session card: a multi-sport day is disambiguated and the session switcher lets you dive into the others", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.raw = {
+    getCyclingActivity: { activities: [{ activity_date_local: "2026-06-09", activity_avwatts: 200, activity_avhr: 140, activity_movingtime: 7200 }] },
+    getRunningActivity: { activities: [{ activity_date_local: "2026-06-09", activity_avhr: 150, activity_movingtime: 1800 }] },
+    getSwimmingActivity: { activities: [{ activity_date_local: "2026-06-09", activity_avhr: 130, activity_movingtime: 1500 }] },
+  };
+  const ins = buildInsights(s, undefined, {});
+  const html = renderDashboard({ window: [s], decisions: [], insights: ins, setupHealth: { hasApiKey: true, waterTempSet: true, lastSyncAgeHours: 1 } });
+
+  // The card names which session it is, and says how many ran that day (the longest — the ride — is shown).
+  assert.match(html, /Last session — 2026-06-09 Ride/);
+  assert.match(html, /3 sessions on 2026-06-09/);
+  // A switcher chip exists for the run and the swim, carrying their sport so the route resolves the right one.
+  assert.match(html, /data-date="2026-06-09" data-sport="Run" onclick="selectSession\(this\)"/);
+  assert.match(html, /data-date="2026-06-09" data-sport="Swim" onclick="selectSession\(this\)"/);
+  assert.match(html, /<div id="dive"/, "an empty panel the selection fills");
+  assert.match(html, /async function selectSession\(el\)/);
+
+  // The switcher chips + dive panel are hidden in share view (a screenshot can't run the fetch).
+  const shared = renderDashboard({ window: [s], decisions: [], insights: ins, share: true, setupHealth: { hasApiKey: true, waterTempSet: true, lastSyncAgeHours: 1 } });
+  assert.ok(!shared.includes('onclick="selectSession(this)"'), "no switcher chips in share view");
+  assert.ok(!shared.includes('id="dive"'), "no dive panel in share view");
+
+  // Every inline <script> still parses with the new selectSession handler included.
+  for (const [i, sc] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].entries()) {
     assert.doesNotThrow(() => new Function(sc[1]), `script block ${i} must parse`);
   }
 });

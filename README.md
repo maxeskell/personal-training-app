@@ -273,6 +273,21 @@ original `.FIT` manually (Garmin Connect → ⚙ → *Export Original*) and drop
 now readable; with no argument it reports what's in the watched dir. To analyse from summary data anyway:
 `npm run session -- --force`. Ask-box questions fall back to general Q&A instead.
 
+**Multiple sessions in a day?** The card names exactly which session it's showing and, on a day with more
+than one activity (a brick, or a triathlete's swim + ride + run), notes how many there were — it shows your
+**longest** activity by default but no longer silently hides the rest. A **session switcher** under the card
+lists your recent sessions (one chip per day + sport); tap any to **dive into its deep feedback** in place —
+served inline if it's stored, otherwise generated once and persisted like the latest. Feedback is keyed by
+**date + sport**, so each sport on a multi-sport day keeps its own readout (auto-backfill generates one per
+sport). Same-sport repeats in a single day still collapse to the longest — a known limitation noted on the
+card — because AI Endurance activities expose no stable per-activity id to separate them.
+
+**Bike L/R power balance** is decoded honestly: Garmin packs left/right balance with a flag bit, so read
+raw a left-leaning stroke can surface as an impossible *174%*. The parser masks the flag and reports the
+**left-side share** against a 50% = even reference (e.g. that 174 is really ~54/46) — so the readout never
+mistakes a normal mild asymmetry for a power-meter fault, and a value still outside 0–100 is labelled a
+sensor/encoding artifact rather than analysed.
+
 When the `.FIT` *is* present, the deep dive now also reads the **run dynamics** the chest strap records —
 vertical ratio, step length and GCT (stance-time) L/R balance — and, on the bike, **normalized power**
 (with its variability index vs average) and **L/R power balance** from the pedals. These were decoded but

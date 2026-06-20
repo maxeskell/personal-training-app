@@ -17,7 +17,7 @@ import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { mean, sd, type Maybe } from "./stats.js";
 import type { Finding } from "./metrics.js";
-import { parseFit, type FitActivity } from "./fitParser.js";
+import { parseFit, decodeLrBalanceLeftPct, type FitActivity } from "./fitParser.js";
 import { config } from "../config.js";
 
 /** Where synced/raw .FIT streams live: $FIT_STREAMS_DIR, else <dataDir>/fit-streams. */
@@ -120,7 +120,7 @@ export function analyseSession(f: StreamFile): SessionDecay | null {
     avgVerticalRatioPct: avgOf(s.map((x) => x.verticalRatio)),
     avgStepLengthMm: avgOf(s.map((x) => x.stepLength)),
     avgGctBalancePct: avgOf(s.map((x) => x.gctBalance)),
-    avgLrBalancePct: avgOf(s.map((x) => x.lrBalance)),
+    avgLrBalancePct: avgOf(s.map((x) => (x.lrBalance == null ? undefined : decodeLrBalanceLeftPct(x.lrBalance)))),
     normalizedPowerW: normalizedPower(s.map((x) => x.power)),
   };
 }

@@ -68,3 +68,22 @@ export function latestByDate(records: SessionFeedbackRecord[]): Map<string, Sess
   }
   return m;
 }
+
+/** The composite session key — `${date}|${sport}` — so a multi-sport day keeps one readout per session. */
+export function sessionFeedbackKey(date: string, sport: string): string {
+  return `${date}|${sport}`;
+}
+
+/**
+ * Latest record per (date, sport) — the key the dashboard and the on-demand route look up. A triathlete's
+ * swim + ride + run on one day each get their own readout instead of colliding on the date alone. Pure.
+ */
+export function latestByDateSport(records: SessionFeedbackRecord[]): Map<string, SessionFeedbackRecord> {
+  const m = new Map<string, SessionFeedbackRecord>();
+  for (const r of records) {
+    const k = sessionFeedbackKey(r.date, r.sport);
+    const prev = m.get(k);
+    if (!prev || r.generatedAt > prev.generatedAt) m.set(k, r);
+  }
+  return m;
+}
