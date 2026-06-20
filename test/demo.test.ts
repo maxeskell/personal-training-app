@@ -116,5 +116,4 @@ test("the enriched demo renders the load, trends, Garmin-scores and cost cards",
   assert.match(html, /Garmin scores/);
   assert.match(html, /FTP estimate/);
   assert.match(html, /Estimated race times/);
-  assert.match(html, /API cost/);
 });

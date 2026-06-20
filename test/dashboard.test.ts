@@ -435,7 +435,8 @@ test("trends heading drops the window suffix until there are ≥2 days to trend 
   // And the rendered demo-style dashboard (no garminDays) never emits the broken label.
   const html = renderDashboard({ window: [emptyState("2026-06-18", new Date().toISOString())], decisions: [] });
   assert.doesNotMatch(html, /last 0 days|last 1 days/, "no broken window label on a single-snapshot dashboard");
-  assert.match(html, /<h2>Trends<\/h2>/, "shows a clean 'Trends' heading instead");
+  // The Trends card is collapsed behind a disclosure (density pass), so the heading is the <summary>.
+  assert.match(html, /<summary>Trends<\/summary>/, "shows a clean 'Trends' heading instead");
 });
 
 test("aieTodoCopy: status tokens get the curated 'why', free text passes through, unknown keys title-case", () => {
@@ -1000,18 +1001,6 @@ test("buildSetupItems: a differently-worded restatement of the swim-CSS / FTP ga
   assert.ok(items.every((i) => i.source !== "open_item"), "the open-item restatements folded into the AIE gaps");
 });
 
-test("recent decisions: re-reacting to the same insight is listed once (latest), not 2-3 times", () => {
-  const s = emptyState("2026-06-08", new Date().toISOString());
-  const decisions = [
-    { kind: "insight-feedback", status: "accepted", summary: "Grey-zone creep" },
-    { kind: "insight-feedback", status: "accepted", summary: "Cadence fades late in long runs" },
-    { kind: "insight-feedback", status: "accepted", summary: "Grey-zone creep" },
-  ] as unknown as DecisionRecord[];
-  const html = renderDashboard({ window: [s], decisions });
-  assert.equal((html.match(/Grey-zone creep/g) || []).length, 1, "the repeated reaction is shown once");
-  assert.match(html, /Cadence fades late in long runs/);
-});
-
 test("commonTrailingSentences: returns the longest identical trailing run shared by all strings", () => {
   assert.equal(
     commonTrailingSentences(["A x. Shared one. Shared two.", "B y. Shared one. Shared two."]),
@@ -1041,16 +1030,12 @@ test("race splits: caveats every race repeats are hoisted into one shared note, 
   assert.match(html, /~4\.7%/);
 });
 
-test("API cost card renders windowed totals + a monthly projection when records are present", () => {
+test("API cost is no longer shown on the dashboard (decluttered — it lives in `npm run cost` / the MCP cost tool)", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
   const costRecords = [
     { ts: new Date().toISOString(), operation: "ask", model: "claude-opus-4-8", input: 100, output: 200, cacheWrite: 0, cacheRead: 0, costUsd: 0.05, schemaVersion: 1 },
     { ts: new Date().toISOString(), operation: "weekly", model: "claude-opus-4-8", input: 100, output: 800, cacheWrite: 0, cacheRead: 0, costUsd: 0.2, schemaVersion: 1 },
   ];
-  const html = renderDashboard({ window: [s], decisions: [], costRecords });
-  assert.match(html, /API cost/);
-  assert.match(html, /\/mo/); // monthly projection present
-  assert.match(html, /weekly \$0\.200/); // top-flow breakdown, cost-desc
-  // No card when there are no records.
-  assert.ok(!renderDashboard({ window: [s], decisions: [] }).includes("API cost"));
+  // Even with records present, the dashboard no longer renders a cost card (density pass).
+  assert.ok(!renderDashboard({ window: [s], decisions: [], costRecords }).includes("API cost"));
 });

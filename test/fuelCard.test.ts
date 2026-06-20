@@ -8,9 +8,9 @@ import type { PlannedSession } from "../src/state/types.js";
 
 /**
  * The fuelling card must: render nothing when there's no inventory AND no plan (stay quiet); show a setup
- * nudge when there's no inventory but sessions exist; render needed sessions with one-tap feedback buttons
- * carrying data-* (not quoted JS args); collapse quiet sessions to one line; ESCAPE adversarial product
- * names; and emit a <script> that parses (the dashboard's script-safety invariant).
+ * nudge when there's no inventory but sessions exist; show ONLY the next (soonest) session with one-tap
+ * feedback buttons carrying data-* (not quoted JS args); tuck secondary content behind a disclosure;
+ * ESCAPE adversarial product names; and emit a <script> that parses (the dashboard's script invariant).
  */
 
 const NASTY = `O'Brien "</script><b>x</b>"`;
@@ -50,21 +50,32 @@ test("shows a setup nudge when sessions exist but no inventory is logged", () =>
   assert.match(html, /fuelling\.products/);
 });
 
-test("renders needed sessions with escaped names, feedback buttons, and quiet collapse", () => {
+test("shows ONLY the next session, with escaped names + one-tap feedback; later sessions are not shown", () => {
   const plans = buildWeekFuelPlans(longRide, { inventory: inv, weightKg: 72 });
   const html = renderFuelCard({ plans, inventory: inv, hasApiKey: true });
   // Adversarial product name never appears literally.
   assert.ok(!html.includes(NASTY), "nasty product name must be escaped");
   assert.ok(!html.includes("</script><b>x</b>"), "no injected closing tag");
-  // The long ride is rendered with one-tap feedback using data-* (no quoted JS arg).
+  // The next session (soonest date = the 06-22 ride) is rendered with one-tap feedback using data-* args.
   assert.match(html, /data-outcome="good" onclick="fuelFeedback\(this,'good'\)"/);
   assert.match(html, /data-date="2026-06-22"/);
-  // The easy run collapses into the quiet line.
-  assert.match(html, /Nothing needed \(water's fine\)/);
-  // Daily stack reference present (the supplement), and the review button (key present).
+  // The LATER session (06-23 run) is NOT shown — only the next one.
+  assert.doesNotMatch(html, /data-date="2026-06-23"/);
+  // Secondary content (daily stack + review) is present but tucked behind the disclosure.
+  assert.match(html, /<details/);
   assert.match(html, /Daily stack/);
   assert.match(html, /Review my fuelling/);
   scriptsParse(html);
+});
+
+test("a next session that needs nothing renders a single 'water's fine' line", () => {
+  const easyFirst = [
+    { date: "2026-06-21", sport: "Run", durationMin: 40, title: "Easy run" },
+    { date: "2026-06-22", sport: "Ride", durationMin: 180, title: "Long ride" },
+  ] as PlannedSession[];
+  const html = renderFuelCard({ plans: buildWeekFuelPlans(easyFirst, { inventory: inv }), inventory: inv });
+  assert.match(html, /water's fine/);
+  assert.doesNotMatch(html, /g carb\/hr/, "no during-carbs section for an easy next run");
 });
 
 test("share view drops interactive controls but keeps the analysis", () => {

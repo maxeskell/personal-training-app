@@ -169,6 +169,22 @@ export interface DashboardInput {
 
 const SEV_COLOR: Record<string, string> = { red: "#c0392b", amber: "#c98a00", green: "#1a8a3a", flag: "#c0392b", watch: "#c98a00", info: "#1a8a3a" };
 
+/**
+ * Collapse a rendered card behind a disclosure so the page stays glanceable: the card's `<div class="card">`
+ * becomes a `<details class="card">` and its `<h2>` title becomes the `<summary>` (so it reads identically
+ * when closed). Pure string surgery — each render function returns exactly one `<div class="card">…</div>`,
+ * so the first `<h2>` is the title and the trailing `</div>` is the card's own closer. An empty card (a
+ * renderer that returned "") passes straight through, so nothing is shown for it.
+ */
+function collapse(card: string): string {
+  const s = card.trim();
+  if (!s) return s;
+  return s
+    .replace(/^<div class="[^"]*">/, '<details class="card">')
+    .replace(/<h2>([\s\S]*?)<\/h2>/, "<summary>$1</summary>")
+    .replace(/<\/div>\s*$/, "</details>");
+}
+
 function renderSignals(ins: InsightReport): string {
   const L = ins.load;
   const band = tsbBand(L?.tsb);
@@ -515,19 +531,6 @@ function renderWeather(w: WeekWeather | undefined): string {
 }
 
 /** API-cost card: windowed token spend + a monthly projection + the top flows. */
-function renderCost(records: CostRecord[] | undefined): string {
-  if (!records || !records.length) return "";
-  const w7 = summarizeCost(records, 7).total;
-  const w30 = summarizeCost(records, 30);
-  const all = summarizeCost(records).total;
-  const monthly = w7.calls ? (w7.costUsd / 7) * 30 : 0;
-  const top = w30.byOperation.slice(0, 4).map((o) => `${o.operation} $${o.costUsd.toFixed(3)}`).join(" · ");
-  return `<div class="card"><h2>API cost</h2>
-    <div style="font-size:14px;margin-bottom:8px">7d <b>$${w7.costUsd.toFixed(3)}</b> · 30d <b>$${w30.total.costUsd.toFixed(3)}</b> · all <b>$${all.costUsd.toFixed(3)}</b> · ≈ <b>$${monthly.toFixed(2)}/mo</b> at the 7-day rate</div>
-    ${top ? `<div class="k">last 30d by flow: ${escapeHtml(top)}</div>` : ""}
-  </div>`;
-}
-
 /** Zones + FTP/threshold markers, grouped per discipline (swim / bike / run) for clear separation. */
 function renderZones(today: AthleteState): string {
   const z = today.zones.value;
@@ -992,26 +995,6 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
     })
     .join("");
 
-  // Humanised activity log — plain labels, status icon, dev ids stripped from the summary.
-  const KIND_LABEL: Record<string, string> = { readiness: "Readiness", "plan-adjust": "Plan change", "insight-feedback": "Your feedback", note: "Note" };
-  const STATUS_LABEL: Record<string, string> = { accepted: "✓ agreed", declined: "✕ dismissed", deferred: "○ ignored", completed: "✓ done", dismissed: "🚫 ignored", proposed: "• proposed", executed: "✓ applied", note: "" };
-  // Dedupe by kind+summary keeping the most recent — re-reacting to the same insight (👍 then 👍 again,
-  // or flip-flopping) logs a fresh row each time, which otherwise listed the same signal 2–3× here.
-  const seenDecision = new Set<string>();
-  const recentDecisions = [...decisions]
-    .reverse()
-    .filter((d) => {
-      const dk = `${d.kind}|${(d.summary ?? "").toLowerCase().replace(/\s+/g, " ").trim()}`;
-      if (seenDecision.has(dk)) return false;
-      seenDecision.add(dk);
-      return true;
-    })
-    .slice(0, 8)
-    .map((d) => {
-      const summary = redact((d.summary ?? "").replace(/\s*\(?id=\d+\)?/g, "").replace(/^[a-z]+:\s*/i, "").trim());
-      return `<tr><td>${escapeHtml(KIND_LABEL[d.kind] ?? d.kind)}</td><td class="muted">${escapeHtml(STATUS_LABEL[d.status] ?? d.status)}</td><td>${escapeHtml(summary.slice(0, 90))}</td></tr>`;
-    })
-    .join("");
 
   return `<!doctype html><html><head><meta charset="utf-8"><title>Endurance Coach — ${today.date}</title>
 <style>
@@ -1020,6 +1003,11 @@ body{margin:0;background:#f4f1ea;padding:24px;max-width:760px;margin:auto}
 h1{font-size:20px;margin:0 0 2px} .sub{color:#777;font-size:13px;margin-bottom:18px}
 .card{background:#fff;border-radius:10px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
 .card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#999;margin:0 0 12px}
+details.card>summary{list-style:none;cursor:pointer;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#999;font-weight:600}
+details.card>summary::-webkit-details-marker{display:none}
+details.card>summary::before{content:"▸";color:#b9aa93;margin-right:6px}
+details.card[open]>summary{margin-bottom:12px}
+details.card[open]>summary::before{content:"▾"}
 .verdict{display:flex;align-items:center;gap:12px}
 .dot{width:16px;height:16px;border-radius:50%}
 .big{font-size:22px;font-weight:600;text-transform:capitalize}
@@ -1123,7 +1111,7 @@ ${share ? "" : renderWeather(weather)}
 ${fuelCard}
 
 ${insights ? renderInsightsBox(insights, reactions, firstSeen, leadKey, redact) : ""}
-${renderDataChanges(window, reactions, suppressed, metricOverrides)}
+${collapse(renderDataChanges(window, reactions, suppressed, metricOverrides))}
 
 <div class="card" id="askcard"><h2>Ask your data</h2>
   <form id="askform" onsubmit="return ask(event)">
@@ -1280,30 +1268,24 @@ ${renderSetupImprove(profile, share, { suppressed, reactions, insights, surfaced
 
 ${renderCoachRecs(coachRecs ?? [], reactions, share)}
 
-${insights ? renderSignals(insights) : ""}
+${insights ? collapse(renderSignals(insights)) : ""}
 
-<div class="card"><h2>${trendsHeading(gar.length)}</h2>
+${collapse(`<div class="card"><h2>${trendsHeading(gar.length)}</h2>
   ${trendRows ? `<table>${trendRows}</table>` : '<div class="muted">Backfill the Garmin daily archive to populate trends (npm run backfill).</div>'}
   <div class="k" style="margin-top:8px">From the backfilled Garmin daily history.</div>
-</div>
+</div>`)}
 
-${renderZones(today)}
+${collapse(renderZones(today))}
 
-${renderScores(today)}
+${collapse(renderScores(today))}
 
 <div class="card"><h2>Race</h2>
   <table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>
 </div>
 
-${renderRacePredictions(today)}
+${collapse(renderRacePredictions(today))}
 
-${insights ? renderSplits(insights, share) : ""}
-
-<div class="card"><h2>Recent decisions</h2>
-  <table><tr class="k"><td>Kind</td><td>Status</td><td>Summary</td></tr>${recentDecisions || '<tr><td colspan="3" class="muted">none yet</td></tr>'}</table>
-</div>
-
-${renderCost(costRecords)}
+${insights ? collapse(renderSplits(insights, share)) : ""}
 <footer style="max-width:880px;margin:24px auto 8px;padding:0 16px;color:#aaa;font-size:12px;line-height:1.5">
   Not medical advice. This is a personal training tool, not a medical professional — estimates are labelled MODEL.
   For pain, injury, illness or any acute symptom, stop and consult a doctor or sports physician.
