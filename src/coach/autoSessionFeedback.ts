@@ -7,7 +7,7 @@ import { loadSessionDecays } from "../insights/fit.js";
 import { ArchiveStore } from "../archive/store.js";
 import { loadSystemPrompt } from "./persona.js";
 import { runSessionFeedback } from "./session.js";
-import { loadSessionFeedbacks, latestByDateSport, sessionFeedbackKey, saveSessionFeedback } from "./sessionFeedbackStore.js";
+import { loadSessionFeedbacks, latestBySession, sessionFeedbackKey, saveSessionFeedback } from "./sessionFeedbackStore.js";
 import type { RichActivity } from "../insights/metrics.js";
 import { shiftIso } from "../util/today.js";
 
@@ -33,12 +33,13 @@ export function feedbackLimitForMode(mode: "off" | "latest" | "on", base = 5): n
 }
 
 /**
- * The recent sessions that still need feedback, keyed `${date}|${sport}` so each sport on a multi-sport
- * day is generated separately: within `lookbackDays` of `today`, not already stored, newest first,
- * capped at `limit`. Pure — the testable core of the generation loop.
+ * The recent sessions that still need feedback, keyed `${date}|${sport}|${durationMin}` so each distinct
+ * session — every sport on a multi-sport day, AND two same-sport sessions in one day — is generated
+ * separately: within `lookbackDays` of `today`, not already stored, newest first, capped at `limit`.
+ * Pure — the testable core of the generation loop. (Date is the key's first 10 chars, so it still sorts.)
  */
 export function sessionsNeedingFeedback(
-  sessionKeys: string[], // `${date}|${sport}`
+  sessionKeys: string[], // `${date}|${sport}|${durationMin}`
   stored: Set<string>, // keys already stored
   today: string,
   lookbackDays: number,
@@ -65,9 +66,9 @@ export async function backfillSessionFeedback(
   if (limit === 0) return 0; // COACH_AUTO_SESSION_FEEDBACK=off → on-demand only
   const lookbackDays = opts.lookbackDays ?? 10;
 
-  const stored = new Set(latestByDateSport(await loadSessionFeedbacks()).keys());
+  const stored = new Set(latestBySession(await loadSessionFeedbacks()).keys());
   const keys = sessionsNeedingFeedback(
-    richActivities(state.raw).map((a) => sessionFeedbackKey(a.date, a.sport)),
+    richActivities(state.raw).map((a) => sessionFeedbackKey(a.date, a.sport, a.movingSec != null ? Math.round(a.movingSec / 60) : null)),
     stored,
     state.date,
     lookbackDays,
@@ -80,14 +81,16 @@ export async function backfillSessionFeedback(
   const prompt = await loadSystemPrompt();
   let generated = 0;
   for (const key of keys) {
-    const [date, sport] = [key.slice(0, 10), key.slice(11) as RichActivity["sport"]];
+    const [date, sport, durStr] = key.split("|");
+    const durationMin = durStr ? Number(durStr) : undefined;
     try {
-      const fb = await runSessionFeedback(new CoachLLM(prompt, "session", "medium"), state, insights, { date, sport, decays, fitSummaries });
+      const fb = await runSessionFeedback(new CoachLLM(prompt, "session", "medium"), state, insights, { date, sport: sport as RichActivity["sport"], durationMin, decays, fitSummaries });
       // No .FIT yet → leave unstored (no tokens were spent); a later sync retries once it's downloaded.
       if (!fb || fb.skippedNoFit) continue;
       await saveSessionFeedback({
         date: fb.detail.date,
         sport: String(fb.detail.sport),
+        durationMin: fb.detail.durationMin ?? undefined,
         deep: !!fb.detail.decay,
         generatedAt: new Date().toISOString(),
         costUsd: fb.costUsd,

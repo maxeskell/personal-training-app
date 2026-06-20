@@ -76,6 +76,47 @@ test("listRecentSessions: one row per date+sport, newest first, marks the most r
   assert.deepEqual(runs.map((r) => r.date), ["2026-06-09", "2026-06-05", "2026-06-02"]);
 });
 
+/** Two SAME-sport sessions on one day (a recovery spin + the main ride), distinguishable only by duration. */
+function stateDoubleRide() {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.raw = {
+    getCyclingActivity: {
+      activities: [
+        { activity_date_local: "2026-06-09", activity_avwatts: 120, activity_avhr: 120, activity_movingtime: 1800 }, // 30min spin
+        { activity_date_local: "2026-06-09", activity_avwatts: 230, activity_avhr: 150, activity_movingtime: 7200 }, // 120min ride
+      ],
+    },
+  };
+  return s;
+}
+const decay = (extra: Partial<SessionDecay>): SessionDecay => ({
+  activityId: "x", date: "2026-06-09", sport: "cycling", startTimeS: null, durationMin: 60, cadenceDropPct: null, gctRisePct: null, voRisePct: null, hrDriftPct: null, decouplingPct: null, avgTempC: null, avgPowerW: null, avgHr: null, avgVerticalRatioPct: null, avgStepLengthMm: null, avgGctBalancePct: null, avgLrBalancePct: null, normalizedPowerW: null, ...extra,
+});
+
+test("Tier 1: a duration selects the right one of two same-sport sessions in a day", () => {
+  assert.equal(assembleSession(stateDoubleRide(), undefined, { sport: "Ride" })!.durationMin, 120, "no duration → longest");
+  assert.equal(assembleSession(stateDoubleRide(), undefined, { sport: "Ride", durationMin: 30 })!.durationMin, 30, "duration picks the spin");
+  assert.equal(assembleSession(stateDoubleRide(), undefined, { sport: "Ride", durationMin: 120 })!.avgPowerW, 230, "duration picks the main ride");
+  // The duration match is fuzzy — a few minutes of drift still resolves to the nearer session.
+  assert.equal(assembleSession(stateDoubleRide(), undefined, { sport: "Ride", durationMin: 33 })!.durationMin, 30, "closest, not exact");
+});
+
+test("Tier 2: each session best-matches its OWN .FIT by duration, not the longest", () => {
+  const decays = [decay({ durationMin: 30, startTimeS: 111 }), decay({ durationMin: 120, startTimeS: 999 })];
+  const spin = assembleSession(stateDoubleRide(), undefined, { sport: "Ride", durationMin: 30, decays })!;
+  const main = assembleSession(stateDoubleRide(), undefined, { sport: "Ride", durationMin: 120, decays })!;
+  assert.equal(spin.startTimeS, 111, "the 30min ride links the 30min stream");
+  assert.equal(main.startTimeS, 999, "the 120min ride links the 120min stream (not the first match)");
+});
+
+test("listRecentSessions: two same-sport sessions in a day are two distinct rows (Tier 1)", () => {
+  const rows = listRecentSessions(stateDoubleRide(), [decay({ durationMin: 30, startTimeS: 111 }), decay({ durationMin: 120, startTimeS: 999 })]);
+  assert.equal(rows.length, 2, "the spin and the main ride are separate chips");
+  assert.deepEqual(rows.map((r) => r.durationMin).sort((a, b) => a! - b!), [30, 120]);
+  assert.equal(rows.find((r) => r.durationMin === 30)!.startTimeS, 111, "each row best-matches its own stream's time");
+  assert.equal(rows.find((r) => r.durationMin === 120)!.startTimeS, 999);
+});
+
 test("listRecentSessions: joins each row's start time from the matching .FIT stream (else null)", () => {
   const rideDecay: SessionDecay = { activityId: "c1", date: "2026-06-09", sport: "cycling", startTimeS: 1750000000, durationMin: 120, cadenceDropPct: null, gctRisePct: null, voRisePct: null, hrDriftPct: null, decouplingPct: null, avgTempC: null, avgPowerW: 200, avgHr: 140, avgVerticalRatioPct: null, avgStepLengthMm: null, avgGctBalancePct: null, avgLrBalancePct: null, normalizedPowerW: null };
   const rows = listRecentSessions(stateMultiSport(), [rideDecay]);

@@ -301,9 +301,10 @@ test("Last session card: a multi-sport day is disambiguated and the session swit
   // The card names which session it is, and says how many ran that day (the longest — the ride — is shown).
   assert.match(html, /Last session — 2026-06-09 Ride/);
   assert.match(html, /3 sessions on 2026-06-09/);
-  // A switcher chip exists for the run and the swim, carrying their sport so the route resolves the right one.
-  assert.match(html, /data-date="2026-06-09" data-sport="Run" onclick="selectSession\(this\)"/);
-  assert.match(html, /data-date="2026-06-09" data-sport="Swim" onclick="selectSession\(this\)"/);
+  // A switcher chip exists for the run and the swim, carrying their sport + duration so the route resolves
+  // the right one (the run is 1800s → 30min, the swim 1500s → 25min).
+  assert.match(html, /data-date="2026-06-09" data-sport="Run" data-dur="30" onclick="selectSession\(this\)"/);
+  assert.match(html, /data-date="2026-06-09" data-sport="Swim" data-dur="25" onclick="selectSession\(this\)"/);
   assert.match(html, /<div id="dive"/, "an empty panel the selection fills");
   assert.match(html, /async function selectSession\(el\)/);
 
