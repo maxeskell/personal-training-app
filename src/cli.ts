@@ -9,6 +9,10 @@ import { runWeeklyReview } from "./coach/weekly.js";
 import { runRacePrep } from "./coach/racePrep.js";
 import { runDeepDive } from "./coach/deepDive.js";
 import { runTuneUp } from "./coach/tuneUp.js";
+import { buildWeekFuelPlans, loadFuelPrefs, formatWeekFuelText } from "./coach/fuelPlan.js";
+import { loadInventory } from "./coach/fuelInventory.js";
+import { loadFuelLog } from "./coach/fuelLogStore.js";
+import { runFuelReview } from "./coach/fuelReview.js";
 import { runResearchDigest } from "./coach/research.js";
 import { readKnowledge, writePendingDigest, pendingName, approvePending, knowledgeFreshness, listPending } from "./knowledge/store.js";
 import { buildTodayState, gatherCompleteness, gatherReadiness, loadArchive, loadPredictionTrajectory, todayIso, withAie } from "./coach/orchestrator.js";
@@ -405,6 +409,31 @@ async function cmdTune(): Promise<void> {
     const path = await writeReport("tune-up", todayIso(), markdown);
     console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
   }
+}
+
+/** `fuelling` — per-session pre/during/after from your logged inventory (deterministic, no LLM). */
+async function cmdFuelling(): Promise<void> {
+  const { state, window } = await buildTodayState();
+  const inv = loadInventory(state.profile);
+  if (!inv.length) {
+    console.log("\nNo fuel inventory yet. Add the nutrition you use to profile.local.yaml under fuelling.products (see profile.example.yaml), then rerun.\n");
+    return;
+  }
+  const plans = buildWeekFuelPlans(upcomingPlanned(window, todayIso(), 7).sessions, {
+    weightKg: state.weightKg.value,
+    inventory: inv,
+    prefs: loadFuelPrefs(state.profile?.fuelling),
+  });
+  console.log("\n" + formatWeekFuelText(plans) + "\n");
+}
+
+/** `fuel-review` — learning review over your fuel log (one LLM call; wellbeing-screened; ≥3 logs). */
+async function cmdFuelReview(): Promise<void> {
+  if (!requireLLM()) process.exit(1);
+  const { state } = await buildTodayState();
+  const { markdown, costUsd, cacheRead } = await runFuelReview(new CoachLLM(await loadSystemPrompt(), "fuel-review", "medium"), await loadFuelLog(), loadInventory(state.profile), state);
+  console.log("\n" + markdown + "\n");
+  if (costUsd) console.log(`(${costNote(costUsd, cacheRead)})`);
 }
 
 /** `research` — monthly web-grounded digest of new training/gear thinking → a review proposal (gated). */
@@ -961,6 +990,8 @@ const commands: Record<string, () => Promise<void>> = {
   demo: cmdDemo,
   "deep-dive": cmdDeepDive,
   tune: cmdTune,
+  fuelling: cmdFuelling,
+  "fuel-review": cmdFuelReview,
   research: cmdResearch,
   knowledge: cmdKnowledge,
   act: cmdAct,
@@ -999,6 +1030,8 @@ if (!run) {
   console.log("  demo       render the dashboard from built-in SAMPLE data (no account/Garmin/key needed)");
   console.log("  deep-dive  insight-engine analysis (load/EF/durability/ramp/goal) → report");
   console.log("  tune       weekly marginal-gains: the smaller, easy-to-action tweaks (not 'train more') → report");
+  console.log("  fuelling   per-session pre/during/after from your logged nutrition (deterministic, only what a session needs)");
+  console.log("  fuel-review  learning review over your fuel log: carb/hr tolerance, what sits well, suggested tweaks (≥3 logs)");
   console.log("  research   monthly web-grounded digest of new training/gear thinking → review proposal (gated)");
   console.log('  knowledge [approve <file>]   knowledge-layer freshness + pending digests / approve one');
   console.log("  act        turn surfaced (gated, feedback-aware) findings into gated plan-adjustment proposals");

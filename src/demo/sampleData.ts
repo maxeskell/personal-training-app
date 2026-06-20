@@ -15,6 +15,17 @@ export const demoProfile: Profile = {
     ftp_w: "unresolved",
   },
   open_items: ["Shim the bike cleat after the next race"],
+  // A small sample fuel inventory so `npm run demo` showcases the "Fuelling — week ahead" card with real
+  // picks (a real user lists their own under fuelling.products in profile.local.yaml).
+  fuelling: {
+    products: [
+      { name: "Energy Gel", brand: "Demo", category: "gel", serving: "1 gel", carbs_g: 22, caffeine_mg: 0 },
+      { name: "Oat Flapjack", brand: "Demo", category: "bar", serving: "1 bar", carbs_g: 40 },
+      { name: "Electrolyte Tab", brand: "Demo", category: "electrolyte", serving: "1 tab in 500 ml", sodium_mg: 250 },
+      { name: "Recovery Shake", brand: "Demo", category: "recovery", serving: "1 scoop", protein_g: 20, carbs_g: 25 },
+    ],
+    preferences: { carb_ceiling_g_per_hour: 90, caffeine_cutoff_hour: 16 },
+  },
 };
 
 /**

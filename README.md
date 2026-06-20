@@ -329,8 +329,13 @@ fuelling:
 e.g. a 3 h endurance ride gets `~75 g carb/hr (≈225 g): 3× Flapjack + 1 gel`, `~500 ml/hr + an electrolyte
 tab`, a nitrate-timing line for a key effort, and a recovery line. It auto-picks your **caffeine-free**
 electrolyte for an evening session, scales fluid/sodium up in heat, and respects your **learned carb/hr
-ceiling**. Everything is labelled a MODEL with its assumptions. From Claude/MCP, the `fuelling` tool gives
-the same plan on demand.
+ceiling**. Everything is labelled a MODEL with its assumptions. On the terminal `npm run fuelling` prints
+the same plan; from Claude/MCP the `fuelling` tool does too.
+
+Until you add an inventory it stays out of your way: the card shows a one-line nudge with the format, and
+the **"Set up & improve → Finish setup"** card lists "what nutrition do you use?" as an open item (it's an
+optional profile question like the rest — see `npm run profile:questions`). Nothing breaks; it's an empty
+inventory waiting on you.
 
 **3 — Close the loop.** Tap **👍 went well / 👎 felt rough** on a session's plan (or call `log_fuel`); it
 appends one line to a local `data/fuel-log.jsonl`. Once you've logged a few, **"Review my fuelling"** (the
