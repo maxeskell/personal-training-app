@@ -197,6 +197,35 @@ test("week table uses h:mm, missing swim distance shows — , planned session jo
   assert.match(html, /1h 30m planned → 1h 35m done/);
 });
 
+test("load card is labelled 'Last 7 days' (trailing window, not the ambiguous 'This week')", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  const html = renderDashboard({ window: [s], decisions: [] });
+  assert.match(html, /Last 7 days — load by sport/);
+  assert.doesNotMatch(html, /This week — load by sport/);
+});
+
+test("load card adds a Total row summing sessions/time/distance across sports", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.actualActivities = {
+    value: [
+      { date: "2026-06-08", sport: "Run", durationMin: 95, distanceKm: 18.2 },
+      { date: "2026-06-07", sport: "Swim", durationMin: 45 }, // no distance — still counted in the total
+      { date: "2026-06-05", sport: "Ride", durationMin: 120, distanceKm: 41.8 },
+    ],
+    source: "ai-endurance",
+  };
+  const html = renderDashboard({ window: [s], decisions: [] });
+  // 3 sessions, 95+45+120 = 260 min → 4h 20m, 18.2+41.8 = 60.0 km
+  assert.match(html, /<tr class="total"><td>Total<\/td><td>3<\/td><td>4h 20m<\/td><td>60.0 km<\/td><\/tr>/);
+});
+
+test("load card shows no Total row when there are no activities", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  const html = renderDashboard({ window: [s], decisions: [] });
+  assert.match(html, /no activities/);
+  assert.doesNotMatch(html, /class="total"/);
+});
+
 test("trends keep one sleep graph (score); power-curve bests carry the date they were set", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
   s.powerCurve = {
