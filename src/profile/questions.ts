@@ -284,13 +284,15 @@ export function renderQuestionsMarkdown(questions: ProfileQuestion[] = PROFILE_Q
   lines.push("");
   for (const w of WAYS_TO_ANSWER) lines.push(`- ${w}`);
   lines.push("");
+  // Escape for a Markdown table cell. Escape the backslash FIRST (otherwise a literal `\` in the
+  // text would combine with the pipe-escape we add and mis-encode), then the cell separator.
+  const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
   for (const { area, items } of questionsByArea(questions)) {
     lines.push(`## ${area}`);
     lines.push("");
     lines.push("| Field | Question | Why it matters |");
     lines.push("|---|---|---|");
     for (const q of items) {
-      const esc = (s: string) => s.replace(/\|/g, "\\|");
       lines.push(`| \`${esc(q.field)}\` | ${esc(q.question)} | ${esc(q.why)} |`);
     }
     lines.push("");

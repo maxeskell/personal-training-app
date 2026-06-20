@@ -93,6 +93,19 @@ test("the CLI text and the generated doc both render every question and state th
   assert.match(md, /GENERATED FROM src\/profile\/questions\.ts/);
 });
 
+test("the Markdown renderer escapes table-breaking characters (backslash before pipe)", () => {
+  const tricky: ProfileQuestion[] = [
+    { area: "demo", field: "demo.a|b", question: "pipe | here and a back\\slash", why: "ends with a backslash\\" },
+  ];
+  const md = renderQuestionsMarkdown(tricky);
+  // Every literal pipe inside a cell is escaped so it can't be read as a column separator…
+  assert.ok(md.includes("`demo.a\\|b`"), "field pipe should be escaped");
+  assert.ok(md.includes("pipe \\| here"), "question pipe should be escaped");
+  // …and the backslash itself is escaped FIRST, so a trailing `\` can't swallow the pipe-escape.
+  assert.ok(md.includes("back\\\\slash"), "interior backslash should be doubled");
+  assert.ok(md.includes("a backslash\\\\ |"), "a trailing backslash should be doubled, not left to escape the cell border");
+});
+
 test("docs/profile-questions.md on disk matches the renderer (no drift)", () => {
   const onDisk = readFileSync(new URL("../docs/profile-questions.md", import.meta.url), "utf8");
   assert.equal(onDisk, renderQuestionsMarkdown(), "regenerate with: npm run profile:questions -- --write-doc");
