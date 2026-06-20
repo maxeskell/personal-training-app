@@ -68,23 +68,47 @@ export interface SessionDetail {
 export interface AssembleSessionOpts {
   date?: string; // YYYY-MM-DD; defaults to the most recent activity
   sport?: RichActivity["sport"]; // pick a specific sport on a multi-sport day (else longest activity wins)
+  /** Rounded moving minutes — disambiguates two SAME-sport sessions in one day (Tier 1 composite key). */
+  durationMin?: number;
   decays?: SessionDecay[];
   fitSummaries?: FitSummary[];
   /** Run the LLM even without the raw .FIT stream (summary-only feedback). */
   force?: boolean;
 }
 
+/** An activity's rounded moving minutes — the duration discriminator used across keys and matching. */
+function activityDurationMin(a: RichActivity): number | null {
+  return a.movingSec != null ? Math.round(a.movingSec / 60) : null;
+}
+
 /**
- * Pick the target activity: the named date (else the most recent), optionally narrowed to one sport;
- * remaining ties broken by longest moving time. Sport-narrowing is what lets a multi-sport day (a
- * triathlete's swim + ride + run) be addressed session-by-session instead of collapsing to the longest.
+ * From a candidate list, the item whose duration is closest to `target` minutes (nulls sort last) — the
+ * fuzzy best-match used to link an AI Endurance activity to the right .FIT/decay when a day has more than
+ * one same-sport session (record-linkage: no shared id, so match on the duration fingerprint). `target`
+ * null ⇒ the first candidate (the caller pre-sorts longest-first). Pure.
  */
-function pickActivity(acts: RichActivity[], date?: string, sport?: RichActivity["sport"]): RichActivity | null {
+function closestByDuration<T>(items: T[], durMinOf: (t: T) => number | null | undefined, target: number | null): T | null {
+  if (!items.length) return null;
+  if (target == null) return items[0];
+  const gap = (t: T) => {
+    const d = durMinOf(t);
+    return d == null ? Number.POSITIVE_INFINITY : Math.abs(d - target);
+  };
+  return items.slice().sort((a, b) => gap(a) - gap(b))[0];
+}
+
+/**
+ * Pick the target activity: the named date (else the most recent), optionally narrowed to one sport, and
+ * — when two same-sport sessions land on the day — to the one closest to `durationMin`. Sport-narrowing
+ * addresses a multi-sport day (a triathlete's swim + ride + run); the duration match addresses same-sport
+ * repeats (a double-run day). Remaining ties break to the longest moving time.
+ */
+function pickActivity(acts: RichActivity[], date?: string, sport?: RichActivity["sport"], durationMin?: number): RichActivity | null {
   const pool = (date ? acts.filter((a) => a.date === date) : acts).filter((a) => !sport || a.sport === sport);
   if (!pool.length) return null;
   const latestDate = date ?? pool.reduce((m, a) => (a.date > m ? a.date : m), pool[0].date);
-  const sameDay = pool.filter((a) => a.date === latestDate);
-  return sameDay.sort((a, b) => (b.movingSec ?? 0) - (a.movingSec ?? 0))[0];
+  const sameDay = pool.filter((a) => a.date === latestDate).sort((a, b) => (b.movingSec ?? 0) - (a.movingSec ?? 0));
+  return durationMin != null ? closestByDuration(sameDay, activityDurationMin, durationMin)! : sameDay[0];
 }
 
 /** One selectable session for the dashboard's session switcher (deduped to one row per date+sport). */
@@ -104,37 +128,39 @@ function decayMatchesSport(decaySport: string, sport: RichActivity["sport"]): bo
 }
 
 /**
- * Recent sessions for the switcher: one row per (date, sport) — the longest when a sport repeats in a
- * day — newest first, capped. Each row's start time is joined from the matching .FIT stream (the longest
- * stream that day+sport, to line up with the shown activity); null when no stream exists for it. Pure.
+ * Recent sessions for the switcher: one row per DISTINCT session — keyed by date + sport + rounded
+ * minutes, so two same-sport sessions in a day are two separate rows (Tier 1) — newest first, capped.
+ * Each row's start time is best-matched to the .FIT stream closest in duration (Tier 2); null when no
+ * stream exists for it. Truly identical date+sport+minutes collapse to one (a real duplicate). Pure.
  */
 export function listRecentSessions(state: AthleteState, decays: SessionDecay[] = [], limit = 8): SessionRef[] {
   const acts = richActivities(state.raw);
-  const best = new Map<string, RichActivity>(); // key date|sport → longest activity in that group
+  const best = new Map<string, RichActivity>(); // key date|sport|durMin → longest in that exact group (collapse dupes)
   for (const a of acts) {
-    const k = `${a.date}|${a.sport}`;
+    const k = `${a.date}|${a.sport}|${activityDurationMin(a) ?? ""}`;
     const prev = best.get(k);
     if (!prev || (a.movingSec ?? 0) > (prev.movingSec ?? 0)) best.set(k, a);
   }
   const rows = [...best.values()].sort((a, b) => b.date.localeCompare(a.date) || (b.movingSec ?? 0) - (a.movingSec ?? 0));
   const mostRecent = rows[0];
-  const startFor = (a: RichActivity): number | null =>
-    decays
-      .filter((d) => d.date === a.date && decayMatchesSport(d.sport, a.sport) && d.startTimeS != null)
-      .sort((x, y) => (y.durationMin ?? 0) - (x.durationMin ?? 0))[0]?.startTimeS ?? null;
+  const startFor = (a: RichActivity): number | null => {
+    const cand = decays.filter((d) => d.date === a.date && decayMatchesSport(d.sport, a.sport) && d.startTimeS != null);
+    return closestByDuration(cand, (d) => d.durationMin, activityDurationMin(a))?.startTimeS ?? null;
+  };
   return rows.slice(0, limit).map((a) => ({
     date: a.date,
     sport: a.sport,
     startTimeS: startFor(a),
-    durationMin: a.movingSec ? Math.round(a.movingSec / 60) : null,
-    isMostRecent: !!mostRecent && a.date === mostRecent.date && a.sport === mostRecent.sport,
+    durationMin: activityDurationMin(a),
+    isMostRecent: !!mostRecent && a === mostRecent,
   }));
 }
 
 export function assembleSession(state: AthleteState, insights: InsightReport | undefined, opts: AssembleSessionOpts = {}): SessionDetail | null {
   const acts = richActivities(state.raw).sort((a, b) => b.date.localeCompare(a.date));
-  const target = pickActivity(acts, opts.date, opts.sport);
+  const target = pickActivity(acts, opts.date, opts.sport, opts.durationMin);
   if (!target) return null;
+  const targetDurMin = activityDurationMin(target);
 
   const ef = target.avwatts != null && target.avhr != null && target.avhr > 0 ? +(target.avwatts / target.avhr).toFixed(3) : null;
 
@@ -151,11 +177,13 @@ export function assembleSession(state: AthleteState, insights: InsightReport | u
     durMinMean: r1(mean(prior.map((a) => (a.movingSec ? a.movingSec / 60 : NaN)).filter((x) => Number.isFinite(x)))),
   };
 
-  // Join the .FIT biomechanics + archive thermal summary by date+sport (RichActivity carries no id).
-  const sportTokens = target.sport === "Ride" ? ["ride", "cycl", "bike"] : [target.sport.toLowerCase()];
-  const sameSport = (s: string) => sportTokens.some((t) => s.toLowerCase().includes(t));
-  const decay = (opts.decays ?? []).find((d) => d.date === target.date && sameSport(d.sport)) ?? null;
-  const fit = (opts.fitSummaries ?? []).find((f) => f.date === target.date && sameSport(f.sport)) ?? null;
+  // Join the .FIT biomechanics + archive thermal summary. RichActivity carries no id, so on a day with
+  // two same-sport sessions we best-match by duration (Tier 2 record-linkage) rather than grabbing the
+  // first — so each session gets ITS stream, not the longer one's.
+  const decayCand = (opts.decays ?? []).filter((d) => d.date === target.date && decayMatchesSport(d.sport, target.sport));
+  const fitCand = (opts.fitSummaries ?? []).filter((f) => f.date === target.date && decayMatchesSport(f.sport, target.sport));
+  const decay = closestByDuration(decayCand, (d) => d.durationMin, targetDurMin);
+  const fit = closestByDuration(fitCand, (f) => (f.durationS != null ? f.durationS / 60 : null), targetDurMin);
 
   const loadPoint = insights?.load?.series.find((p) => p.date === target.date) ?? null;
 
@@ -203,9 +231,8 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
     `- Comparable norm: ESS ${fmt(c.essMean, 1)}, duration ${fmt(c.durMinMean)}min`,
   ];
   if (d.sessionsOnDate > 1) {
-    lines.push(
-      `- NOTE: ${d.sessionsOnDate} sessions on ${d.date}${d.sameSportOnDate > 1 ? ` (${d.sameSportOnDate} ${d.sport.toLowerCase()}s — this is the longest one)` : ""}; this readout covers the ${d.sport} only.`,
-    );
+    const sameSportNote = d.sameSportOnDate > 1 ? ` (${d.sameSportOnDate} ${d.sport.toLowerCase()}s — this is the ${fmt(d.durationMin)}min one)` : "";
+    lines.push(`- NOTE: ${d.sessionsOnDate} sessions on ${d.date}${sameSportNote}; this readout covers this ${d.sport} only.`);
   }
 
   if (d.decay) {

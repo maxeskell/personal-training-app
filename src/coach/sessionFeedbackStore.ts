@@ -14,9 +14,12 @@ export const SESSION_FEEDBACK_SCHEMA_VERSION = 1;
 
 export interface SessionFeedbackRecord {
   schemaVersion: number;
-  /** Session date (YYYY-MM-DD) — the key the dashboard's "Last session" card looks up. */
+  /** Session date (YYYY-MM-DD) — part of the key the dashboard's "Last session" card looks up. */
   date: string;
   sport: string;
+  /** Rounded moving minutes — the discriminator that separates two same-sport sessions in one day.
+   *  Absent on legacy records (pre-composite-key); lookups fall back to date+sport for those. */
+  durationMin?: number;
   /** True when the raw .FIT biomechanics were present (a full deep dive); false = summary-only. */
   deep: boolean;
   generatedAt: string; // ISO
@@ -69,21 +72,36 @@ export function latestByDate(records: SessionFeedbackRecord[]): Map<string, Sess
   return m;
 }
 
-/** The composite session key — `${date}|${sport}` — so a multi-sport day keeps one readout per session. */
-export function sessionFeedbackKey(date: string, sport: string): string {
-  return `${date}|${sport}`;
+/**
+ * The composite session key — `${date}|${sport}` plus, when known, the rounded moving minutes. The
+ * duration is what separates two same-sport sessions in a single day (a double-run day, two rides); a
+ * multi-sport day is already separated by sport. Legacy records (no duration) key on date+sport alone.
+ */
+export function sessionFeedbackKey(date: string, sport: string, durationMin?: number | null): string {
+  return durationMin != null ? `${date}|${sport}|${durationMin}` : `${date}|${sport}`;
 }
 
-/**
- * Latest record per (date, sport) — the key the dashboard and the on-demand route look up. A triathlete's
- * swim + ride + run on one day each get their own readout instead of colliding on the date alone. Pure.
- */
-export function latestByDateSport(records: SessionFeedbackRecord[]): Map<string, SessionFeedbackRecord> {
+/** Latest record per composite key (most recent `generatedAt` wins) — append-only history collapsed. Pure. */
+export function latestBySession(records: SessionFeedbackRecord[]): Map<string, SessionFeedbackRecord> {
   const m = new Map<string, SessionFeedbackRecord>();
   for (const r of records) {
-    const k = sessionFeedbackKey(r.date, r.sport);
+    const k = sessionFeedbackKey(r.date, r.sport, r.durationMin);
     const prev = m.get(k);
     if (!prev || r.generatedAt > prev.generatedAt) m.set(k, r);
   }
   return m;
+}
+
+/**
+ * Find the stored feedback for one session: the exact (date, sport, duration) record, else fall back to a
+ * date+sport record (a legacy single-session-per-day readout written before durations were keyed). Pure.
+ */
+export function findSessionFeedback(
+  records: SessionFeedbackRecord[],
+  date: string,
+  sport: string,
+  durationMin?: number | null,
+): SessionFeedbackRecord | undefined {
+  const m = latestBySession(records);
+  return m.get(sessionFeedbackKey(date, sport, durationMin)) ?? m.get(sessionFeedbackKey(date, sport));
 }
