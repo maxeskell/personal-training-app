@@ -314,33 +314,48 @@ const SWIM_CSS_KEYS = [
   "css_sec_per_100m", "swim_css", "css", "critical_swim_speed",
   "cssPace", "css_pace", "swimCss", "cssSecPer100", "swim_threshold_pace",
 ];
+const RUN_PACE_KEYS = ["run_threshold_pace_sec_per_km", "threshold_pace", "run_threshold_pace", "running_threshold_pace"];
 
 /**
- * Resolve swim CSS (sec/100m) from a getUser payload, tolerant of the shapes AI Endurance actually uses:
- * a pace STRING ("1:52" or "1:52/100m") — which the numeric-only `firstNum` silently drops, the bug this
- * fixes — a speed in m/s (<5 → converted), or a number already in sec/100m. Also checks a nested `swim`
- * block. Gated to a sane 60–240 s/100m so a stray field can't masquerade as CSS. Undefined when nothing
- * parses. Exported for unit tests.
+ * Resolve a pace/speed (seconds in the target unit) from a getUser payload, tolerant of the shapes the
+ * platforms actually use: a "m:ss" STRING — which the numeric-only `firstNum` silently drops, the bug class
+ * this fixes — a speed to convert (a bare number below `speedBelow`, via `fromSpeed`), or a number already
+ * in the target unit. Checks each key at top level and under an optional nested block; gated to [min,max]
+ * so a stray field can't masquerade. Undefined when nothing parses.
  */
-export function resolveSwimCssSec(payload: unknown): number | undefined {
-  const sane = (s: number | null): number | undefined => (s != null && s >= 60 && s <= 240 ? Math.round(s) : undefined);
-  for (const src of [payload, get(payload, "swim")]) {
-    // Pace string first — AI Endurance surfaces CSS as "m:ss" per 100m, e.g. "1:52".
-    for (const k of SWIM_CSS_KEYS) {
+function resolvePaceSec(
+  payload: unknown,
+  keys: string[],
+  opts: { speedBelow: number; fromSpeed: (v: number) => number; min: number; max: number; nested?: string },
+): number | undefined {
+  const sane = (s: number | null): number | undefined => (s != null && s >= opts.min && s <= opts.max ? Math.round(s) : undefined);
+  for (const src of opts.nested ? [payload, get(payload, opts.nested)] : [payload]) {
+    // Pace string first — platforms surface CSS / threshold pace as "m:ss" (e.g. "1:52", "4:50").
+    for (const k of keys) {
       const v = get(src, k);
       if (typeof v === "string" && v.includes(":")) {
         const hit = sane(parseClock(v.replace(/\/.*$/, "").trim()));
         if (hit != null) return hit;
       }
     }
-    // Numeric: m/s (<5) → sec/100m, else already sec/100m.
-    const n = firstNum(src, SWIM_CSS_KEYS);
+    // Numeric: a small value is a speed to convert, else it's already in target units.
+    const n = firstNum(src, keys);
     if (n != null && n > 0) {
-      const hit = sane(n < 5 ? 100 / n : n);
+      const hit = sane(n < opts.speedBelow ? opts.fromSpeed(n) : n);
       if (hit != null) return hit;
     }
   }
   return undefined;
+}
+
+/** Swim CSS (sec/100m) from getUser — pace string ("1:52"/100m), m/s speed, or sec/100m. Exported for tests. */
+export function resolveSwimCssSec(payload: unknown): number | undefined {
+  return resolvePaceSec(payload, SWIM_CSS_KEYS, { speedBelow: 5, fromSpeed: (v) => 100 / v, min: 60, max: 240, nested: "swim" });
+}
+
+/** Run threshold pace (sec/km) from getUser — pace string ("4:50"/km), m/s speed, or sec/km. Exported for tests. */
+export function resolveRunPaceSec(payload: unknown): number | undefined {
+  return resolvePaceSec(payload, RUN_PACE_KEYS, { speedBelow: 12, fromSpeed: (v) => 1000 / v, min: 150, max: 600, nested: "run" });
 }
 
 /**
@@ -430,12 +445,9 @@ function mapZonesThresholds(state: AthleteState, payload: unknown): void {
   if (runHr != null && runHr > 0) thresholds.runThresholdHr = Math.round(runHr);
   const bikeHr = firstNum(payload, ["bike_threshold_hr", "cycling_threshold_hr", "bike_lactate_threshold_hr", "cycling_lactate_threshold_hr"]);
   if (bikeHr != null && bikeHr > 0) thresholds.bikeThresholdHr = Math.round(bikeHr);
-  // Pace fields may be sec/km already, or m/s (convert). Accept a sane sec/km range.
-  const paceRaw = firstNum(payload, ["run_threshold_pace_sec_per_km", "threshold_pace", "run_threshold_pace", "running_threshold_pace"]);
-  if (paceRaw != null && paceRaw > 0) {
-    const secPerKm = paceRaw < 12 ? Math.round(1000 / paceRaw) : Math.round(paceRaw); // m/s → sec/km if tiny
-    if (secPerKm >= 150 && secPerKm <= 600) thresholds.runThresholdPaceSecPerKm = secPerKm;
-  }
+  // Pace may be a "m:ss" string, m/s speed, or sec/km already — resolve all three (same class as CSS).
+  const pace = resolveRunPaceSec(payload);
+  if (pace != null) thresholds.runThresholdPaceSecPerKm = pace;
   const css = resolveSwimCssSec(payload);
   if (css != null) thresholds.swimCssSecPer100 = css;
   const maxHr = firstNum(payload, ["max_hr", "max_heart_rate", "maximum_heart_rate", "hr_max"]);
