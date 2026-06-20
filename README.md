@@ -202,9 +202,15 @@ questions (a data-scientist brief, Q1–Q7) from your own history, with honest u
 autocorrelation-aware correlations (Fisher-z CIs, FDR-controlled), out-of-sample-validated HRV/RHR
 monitoring rules, change-point detection, brick decoupling, taper-target form bands, economy-vs-fitness
 separation, an under-fuelling red flag, and `.FIT` stream analysis (thermal + in-session biomechanics).
-Each detector self-gates until there's enough of your data behind it, every finding carries a confidence
-score, and anything estimated is labelled a MODEL. Surfaced in `deep-dive`, `ask` and the dashboard
-**Signals** / **Top insights** cards.
+Your full physio history (HRV, resting HR, sleep, stress, Body-Battery, respiration, body composition) is
+**held in detail but kept quiet** — each stream has its own watcher that only speaks up on a **worrying
+trend** (illness signals stacking, deep- or total-sleep slipping, stress chronically high, recovery not
+recharging, weight + muscle falling together), a **danger** (a rapid weight drop, flagged on its own), or a
+**possible data error** — a uniform data-quality check that surfaces any reading outside the plausible
+human range, an impossible overnight body-comp jump, or a flatlined/stale sensor, so a bad measurement
+can't silently corrupt the trend it feeds. Each detector self-gates until there's enough of your data
+behind it, every finding carries a confidence score, and anything estimated is labelled a MODEL. Surfaced
+in `deep-dive`, `ask` and the dashboard **Signals** / **Top insights** cards.
 
 The **Top insights** card also closes a feedback loop: 👍/👎/💤 on each finding is saved and reversible,
 down-ranks or lifts its family **within a severity tier** (flags are never buried), and `npm run listening`
