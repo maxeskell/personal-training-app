@@ -15,6 +15,9 @@ import { updateLocalProfile } from "./profile/update.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
 import { listPending, readPending } from "./knowledge/store.js";
 import { loadSessionFeedbacks, saveSessionFeedback, findSessionFeedback, sessionFeedbackKey } from "./coach/sessionFeedbackStore.js";
+import { loadFuelLog, saveFuelLog, isFuelOutcome } from "./coach/fuelLogStore.js";
+import { loadInventory } from "./coach/fuelInventory.js";
+import { runFuelReview } from "./coach/fuelReview.js";
 import { loadMetricOverrides, setMetricOverride, clearMetricOverride } from "./state/metricOverrides.js";
 import { TRACKED_METRICS } from "./coach/metricChanges.js";
 import { backfillSessionFeedback } from "./coach/autoSessionFeedback.js";
@@ -131,6 +134,7 @@ async function renderLatest(share = false): Promise<string> {
     weeklyReview: await latestWeeklyReview(), // "This week" group — read persisted, never re-run
     researchDigest: await latestResearchDigest(), // "Worth considering" group — read persisted, never re-run
     sessionFeedbacks: await loadSessionFeedbacks(), // auto-generated at sync; shown inline, no LLM here
+    fuelLog: await loadFuelLog(), // one-tap fuelling feedback — renders the week-ahead card's logged state
     metricOverrides: await loadMetricOverrides(), // your pins on auto-detected metrics (Data-changes card)
     coachRecs, // reactable recommendations from your latest readiness + deep-dive write-ups
     setupHealth: {
@@ -387,6 +391,43 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       // once and both await it. Keyed by the composite session key (+force); the slot frees when it settles.
       const result = await coalesce(sessionFeedbackInFlight, `${sessionFeedbackKey(probe.date, probe.sport, probe.durationMin)}:${force ? "force" : ""}`, () => produceSessionFeedback(li, probe.date, probe.sport, probe.durationMin ?? undefined, force));
       return json({ ...result, date: probe.date, sport: probe.sport });
+    }
+
+    // One-tap fuelling feedback — the "Fuelling — week ahead" card's 👍/👎 posts here. Appends one line to
+    // data/fuel-log.jsonl (the learning loop's input). No LLM, no AIE write — a local append, best-effort.
+    if (url.pathname === "/fuel-feedback" && req.method === "POST") {
+      const json = (code: number, b: object) => res.writeHead(code, { "content-type": "application/json" }).end(JSON.stringify(b));
+      const body = JSON.parse((await readBody(req)) || "{}") as { date?: string; sport?: string; outcome?: string; carbTargetGPerHour?: number; planned?: string; note?: string };
+      const date = String(body.date ?? "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !body.sport || !isFuelOutcome(body.outcome)) return json(400, { ok: false, error: "need date, sport and a valid outcome" });
+      await saveFuelLog({
+        date,
+        sport: String(body.sport).slice(0, 16),
+        outcome: body.outcome,
+        carbTargetGPerHour: typeof body.carbTargetGPerHour === "number" && Number.isFinite(body.carbTargetGPerHour) ? body.carbTargetGPerHour : undefined,
+        planned: typeof body.planned === "string" ? body.planned.slice(0, 200) : undefined,
+        note: typeof body.note === "string" && body.note.trim() ? body.note.slice(0, 300) : undefined,
+        loggedAt: new Date().toISOString(),
+      });
+      return json(200, { ok: true });
+    }
+
+    // On-demand fuelling learning review — the card's "Review my fuelling" button. ONE LLM call over the
+    // fuel log (wellbeing-screened inside). Degrades to a clean message with no key / not enough data.
+    if (url.pathname === "/fuel-review" && req.method === "POST") {
+      const json = (b: object) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(b));
+      if (!CoachLLM.hasApiKey()) return json({ markdown: "ANTHROPIC_API_KEY isn't set on the server, so I can't run the fuelling review yet." });
+      const records = await loadFuelLog();
+      const store = new StateStore();
+      const window = await store.recent(todayIso(), 1);
+      const state = window[window.length - 1];
+      if (state) {
+        const loaded = await loadProfileSafe();
+        if (loaded) state.profile = loaded.profile;
+      }
+      const inventory = loadInventory((await loadProfileSafe())?.profile);
+      const { markdown } = await runFuelReview(new CoachLLM(await loadSystemPrompt(), "fuel-review", "medium"), records, inventory, state);
+      return json({ markdown });
     }
 
     // Insight feedback (the insights box + the Set-up card's task buttons post here). The UI vocabulary

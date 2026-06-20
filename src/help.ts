@@ -16,6 +16,7 @@ export function helpText(): string {
     "    npm run readiness    today's green / amber / red verdict, with cited reasons",
     "    npm run weekly       weekly review → a saved report",
     "    npm run tune         the small, easy wins to apply this week",
+    "    npm run fuelling     per-session pre/during/after from the nutrition you use",
     '    npm run ask -- "..." ask your own data',
     "",
     "  Good to know:",

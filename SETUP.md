@@ -187,6 +187,15 @@ file afterwards to fill in biomechanics/kit/medical/fuelling (no integration hol
 live numbers** (FTP, weight, paces, CSS, HRV, load) in it — those stay live from AI Endurance/Garmin,
 and a schema guard rejects them if you try. Full schema and privacy detail: [docs/profile.md](docs/profile.md).
 
+**Worth filling in: your fuelling inventory.** Under `fuelling.products` list the nutrition you actually
+use (gels, bars, drink mix, electrolytes, recovery, supplements — per-serving carbs/sodium/caffeine);
+`profile.example.yaml` carries a commented draft to copy. With it set, the dashboard's **"Fuelling —
+week ahead"** card gives per-session pre/during/after guidance from *your* products (and stays quiet when
+a session needs nothing), and `npm run fuelling` / the `fuelling` MCP tool do the same on demand. Until
+you add it, the card shows a one-line nudge with the format, and the **"Finish setup"** card lists it as
+an open item — nothing breaks, it's just an empty inventory waiting on you. See the
+[Fuelling Spec](docs/specs/Fuelling_Spec.md) for the full picture.
+
 For the optional fields worth filling in later — each with a plain-language question and a one-line
 *why it helps the coach* — run `npm run profile:questions` (or read
 [docs/profile-questions.md](docs/profile-questions.md)). All of them are optional.

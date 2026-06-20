@@ -17,6 +17,16 @@
 3. **Commit, push, PR.** Commit with a clear message, push the working branch, and open a draft
    PR if one doesn't exist. Don't leave work uncommitted in the session.
 4. **Report honestly.** If tests fail or something was skipped, say so — never present it as done.
+5. **Gitignored user data ships a committed template + guidance.** Any new *user-authored* gitignored
+   file or structure (a new block in `profile.local.yaml`, a new local data file the user fills in) lands
+   in the SAME commit with: (a) a committed example/template carrying placeholders or a commented draft
+   (the `profile.example.yaml` / `.env.example` pattern), (b) `README.md` + `SETUP.md` guidance on how to
+   fill it, and (c) an in-app nudge where one fits — an optional `profile/questions.ts` entry (which
+   surfaces in the "Set up & improve → Finish setup" card) and/or a card empty-state hint. **Exempt:**
+   runtime-generated files (`data/`, `knowledge/pending/`, logs) — the app writes them, the user doesn't
+   author them — and secrets/tokens (`.env`, `*.tokens.json`, token dirs), which must NEVER be templated
+   with real values. The test in `test/profileQuestions.test.ts` (every question's field exists in the
+   example profile) keeps a profile addition honest.
 
 ## Talking to the user
 

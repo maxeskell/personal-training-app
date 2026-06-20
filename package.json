@@ -61,6 +61,8 @@
     "cost": "tsx src/cli.ts cost",
     "listening": "tsx src/cli.ts listening",
     "tune": "tsx src/cli.ts tune",
+    "fuelling": "tsx src/cli.ts fuelling",
+    "fuel-review": "tsx src/cli.ts fuel-review",
     "research": "tsx src/cli.ts research",
     "knowledge": "tsx src/cli.ts knowledge",
     "test": "tsx --test test/*.test.ts",

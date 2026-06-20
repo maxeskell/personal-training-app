@@ -29,6 +29,11 @@ import { runResearchDigest } from "./coach/research.js";
 import { readKnowledge, writePendingDigest, pendingName, knowledgeFreshness, listPending } from "./knowledge/store.js";
 import { runSessionFeedback } from "./coach/session.js";
 import { loadSessionDecays } from "./insights/fit.js";
+import { buildWeekFuelPlans, loadFuelPrefs, formatWeekFuelText } from "./coach/fuelPlan.js";
+import { loadInventory } from "./coach/fuelInventory.js";
+import { loadFuelLog, saveFuelLog, isFuelOutcome } from "./coach/fuelLogStore.js";
+import { runFuelReview } from "./coach/fuelReview.js";
+import { upcomingPlanned } from "./weather/assess.js";
 import { writeReport, listReports, readReport } from "./coach/reports.js";
 import { proposeAdjustments, validateProposals, buildProposerContext, writeContextFor } from "./coach/planAdjust.js";
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
@@ -396,7 +401,54 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
     async ({ days }) => ok(formatCost(await readCostRecords(), days)),
   );
 
+  server.tool(
+    "fuelling",
+    "Per-session fuelling plan (pre / during / after) for your UPCOMING sessions, built from YOUR own logged nutrition (profile.local.yaml → fuelling.products). Deterministic — no LLM cost. Honours 'only what you need': a short/easy session returns 'water's fine'. Carb/hr targets are a MODEL and respect your learned tolerance ceiling.",
+    { days: z.number().int().positive().max(14).optional().describe("Horizon in days (default 7).") },
+    async ({ days }) => {
+      const { state, window } = await buildTodayState();
+      const inv = loadInventory(state.profile);
+      if (!inv.length) return ok("No fuel inventory yet. Add the nutrition you use to profile.local.yaml under fuelling.products (see profile.example.yaml), then ask again.");
+      const plans = buildWeekFuelPlans(upcomingPlanned(window, todayIso(), days ?? 7).sessions, {
+        weightKg: state.weightKg.value,
+        inventory: inv,
+        prefs: loadFuelPrefs(state.profile?.fuelling),
+      });
+      return ok(formatWeekFuelText(plans));
+    },
+  );
+
+  server.tool(
+    "log_fuel",
+    "Log how a session's fuelling actually went — the one-tap feedback that improves future guidance over time. Appends to your LOCAL fuel log only (no AI Endurance write).",
+    {
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      sport: z.string().min(1),
+      outcome: z.enum(["good", "rough", "bonked", "skipped"]),
+      carb_g_per_hour: z.number().positive().optional().describe("The carb/hr you actually took, if known — sharpens the tolerance model."),
+      note: z.string().optional(),
+    },
+    async ({ date, sport, outcome, carb_g_per_hour, note }) => {
+      if (!isFuelOutcome(outcome)) return fail("outcome must be one of: good, rough, bonked, skipped");
+      await saveFuelLog({ date, sport: sport.slice(0, 16), outcome, carbTargetGPerHour: carb_g_per_hour, note: note?.slice(0, 300), loggedAt: new Date().toISOString() });
+      return ok(`Logged "${outcome}" for ${date} ${sport}. I'll factor it into your fuelling review.`);
+    },
+  );
+
   // ---- LLM flows (need ANTHROPIC_API_KEY; every call is cost-logged) ----
+  server.tool(
+    "fuel_review",
+    "Learning review over your fuel log: observed carb/hr tolerance, what sits well per sport, caffeine/timing, and suggested profile tweaks to apply yourself. ONE LLM call; wellbeing-screened (fuel adequately for the work, never restriction). Needs ≥3 logged sessions.",
+    {},
+    async () => {
+      const miss = missingKey();
+      if (miss) return fail(miss);
+      const { state } = await buildTodayState();
+      const { markdown } = await runFuelReview(new CoachLLM(await loadSystemPrompt(), "fuel-review", "medium"), await loadFuelLog(), loadInventory(state.profile), state);
+      return ok(markdown);
+    },
+  );
+
   server.tool(
     "ask",
     "Free-form question over your assembled data + insights (the same engine as the dashboard 'Ask your data' box). e.g. 'how were my long rides this month?'",
