@@ -76,7 +76,7 @@ This page is generated from `src/profile/questions.ts` (the same data behind
 |---|---|---|
 | `fuelling.carb_target_g_per_hour` | What's your carb target per hour by session type (e.g. long 80, sprint 0)? | Read into the coaching context as your per-session fuelling plan, so race/long-session advice references YOUR carb targets (the live nutrition ranges come from AI Endurance). |
 | `fuelling.caffeine` | How do you use caffeine on race day? (your strategy) | Surfaced in the coaching context as your caffeine lever, so race-prep advice respects your own plan. |
-| `fuelling.products` | What nutrition do you actually use? (gels, bars, drink mix, electrolytes, recovery, supplements — per-serving carbs/sodium/caffeine) | Powers the 'Fuelling — week ahead' dashboard card and the `fuelling` tool: per-session pre/during/after built from YOUR products, only when a session needs it. See profile.example.yaml → fuelling.products for the format. |
+| `fuelling.products` | What nutrition do you actually use? (gels, bars, drink mix, electrolytes, recovery, supplements — per-serving carbs/sodium/caffeine) | Powers the 'Fuelling — next session' dashboard card and the `fuelling` tool: per-session pre/during/after built from YOUR products, only when a session needs it. See profile.example.yaml → fuelling.products for the format. |
 
 ## races
 
