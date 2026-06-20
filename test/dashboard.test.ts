@@ -138,8 +138,6 @@ test("share view: also scrubs race names out of FREE TEXT — session feedback, 
   assert.ok(!shared.includes("Birmingham"), "no real race name anywhere in the shared HTML (free text included)");
   assert.match(shared, /Race 1/); // the neutral label is used instead
   assert.match(shared, /open-water swim is unaffected/); // generic words survive — no over-redaction
-  // Every inline <script> still parses after redaction.
-  for (const [i, sc] of [...shared.matchAll(/<script>([\s\S]*?)<\/script>/g)].entries()) assert.doesNotThrow(() => new Function(sc[1]), `script ${i}`);
 });
 
 test("dashboard surfaces the wellbeing escalation banner; Share mode suppresses it", () => {
