@@ -423,9 +423,9 @@ function renderWeather(w: WeekWeather | undefined): string {
   const sessions = w.sessions.length
     ? w.sessions
         .map(
-          (s) => `<div class="finding">
+          (s) => `<div class="finding${s.done ? " done" : ""}">
       <div><span class="badge" style="background:${VERDICT_COLOR[s.verdict] ?? "#777"}">${escapeHtml(s.verdict)}</span>
-        <b>${escapeHtml(weekday(s.date))} · ${SPORT_EMOJI[s.sport] ?? ""} ${escapeHtml(s.sport)}</b>${s.title ? ` <span class="muted">· ${escapeHtml(s.title)}</span>` : ""}</div>
+        <b>${escapeHtml(weekday(s.date))} · ${SPORT_EMOJI[s.sport] ?? ""} ${escapeHtml(s.sport)}</b>${s.title ? ` <span class="muted">· ${escapeHtml(s.title)}</span>` : ""}${s.done ? ` <span class="donetag">✓ done</span>` : ""}</div>
       <div class="fdetail">${escapeHtml(s.reason)}</div>
       ${s.suggestion ? `<div class="ev">→ ${escapeHtml(s.suggestion)}</div>` : ""}
     </div>`,
@@ -956,6 +956,7 @@ table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;bor
 .disch{font-size:13px;font-weight:600;color:#555;margin-bottom:6px}
 .k{color:#999;font-size:12px}.v{font-size:18px;font-weight:600}
 .finding{padding:8px 0;border-bottom:1px solid #f0ede5}.finding:last-child{border:0}
+.finding.done{opacity:.5}.donetag{font-size:10px;color:#1a8a3a;font-weight:600;margin-left:4px}
 .badge{color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:10px;margin-right:8px}
 .fdetail{font-size:13px;color:#444;margin:3px 0}.ev{font-size:11px;color:#999}
 .syncbtn{padding:8px 16px;border:0;border-radius:8px;background:#c8642d;color:#fff;font-size:14px;cursor:pointer}

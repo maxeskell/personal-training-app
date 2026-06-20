@@ -409,7 +409,9 @@ against your `COACH_SWIM_MIN_WATER_C` (default 13°C) floor via the manually-upd
 `COACH_WATER_TEMP_C` (no public feed exists). "Roads dry from ~HH:00" comes from an hour-by-hour
 drying MODEL (rain wets the surface; time, temperature, sun and wind dry it) — an estimate to plan
 around, not a guarantee. Indoor sessions (gym/strength) are listed as muted weather-n/a rows so the
-card always mirrors the full week. The card shows **two timestamps**: "plan as of" (the sessions are
+card always mirrors the full week. Sessions you've **already done** are greyed out and tagged `✓ done`
+once a logged activity matches that day and sport (so the now-moot weather verdict stops competing for
+attention) — this needs the activity synced in, so nothing greys until it lands. The card shows **two timestamps**: "plan as of" (the sessions are
 a snapshot from the last Sync — edits/deletions in AI Endurance appear after the next Sync) and the
 forecast fetch time (re-pulled on Sync, or when older than ~3h). The card is display-only: plan
 writes stay behind the gated propose → confirm flow.

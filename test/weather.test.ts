@@ -2,10 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mapOpenMeteo, type DayForecast, type Forecast, type HourForecast } from "../src/weather/forecast.js";
 import { evapMmPerHour, roadWetness } from "../src/weather/roadDry.js";
-import { assessWeek, upcomingPlanned, weekday, type AssessOpts } from "../src/weather/assess.js";
+import { assessWeek, latestActuals, upcomingPlanned, weekday, type AssessOpts } from "../src/weather/assess.js";
 import { renderDashboard } from "../src/coach/dashboard.js";
 import { emptyState } from "../src/state/types.js";
-import type { PlannedSession } from "../src/state/types.js";
+import type { ActualActivity, PlannedSession } from "../src/state/types.js";
 
 const OPTS: AssessOpts = { swimMinWaterC: 13, rideMaxGustKmh: 38, rideMaxRainProbPct: 40, now: "2026-06-08T00:00" };
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -199,6 +199,28 @@ test("upcomingPlanned takes the freshest plan and clips to the 7-day horizon", (
   assert.equal(got.asOf, fresh.assembledAt, "reports which snapshot the plan came from");
 });
 
+test("a session with a matching logged activity is marked done; others are not", () => {
+  const actuals: ActualActivity[] = [{ date: "2026-06-09", sport: "Ride", durationMin: 118 }];
+  const w = assessWeek(PLAN, stormyWeek(), OPTS, actuals);
+  assert.equal(w.sessions.find((s) => s.date === "2026-06-09" && s.sport === "Ride")!.done, true, "matched ride is done");
+  assert.ok(!w.sessions.find((s) => s.date === "2026-06-12" && s.sport === "Ride")!.done, "a later ride of the same sport is not done");
+  assert.ok(!w.sessions.find((s) => s.sport === "Run")!.done, "no activity that day → not done");
+  assert.ok(!w.sessions.find((s) => s.sport === "Strength")!.done, "strength has no actual-side sport → never matches");
+  // No actuals passed (the default) leaves everything un-done — the flag stays absent.
+  assert.ok(assessWeek(PLAN, stormyWeek(), OPTS).sessions.every((s) => !s.done), "no actuals → nothing greyed");
+});
+
+test("latestActuals returns the freshest non-empty actuals in the window", () => {
+  const old = emptyState("2026-06-07", new Date().toISOString());
+  old.actualActivities = { value: [{ date: "2026-06-06", sport: "Run" }], source: "ai-endurance" };
+  const fresh = emptyState("2026-06-08", new Date().toISOString());
+  fresh.actualActivities = { value: [{ date: "2026-06-08", sport: "Ride" }], source: "ai-endurance" };
+  const got = latestActuals([old, fresh]);
+  assert.equal(got.length, 1);
+  assert.equal(got[0].sport, "Ride");
+  assert.deepEqual(latestActuals([emptyState("2026-06-08", new Date().toISOString())]), [], "no actuals anywhere → empty");
+});
+
 // --- dashboard card ---
 
 test("dashboard renders the week-ahead card escaped, scripts stay valid", () => {
@@ -218,6 +240,21 @@ test("dashboard renders the week-ahead card escaped, scripts stay valid", () => 
   for (const [i, sc] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].entries()) {
     assert.doesNotThrow(() => new Function(sc[1]), `script block ${i} must parse`);
   }
+});
+
+test("week-ahead card greys out and tags only the sessions already done", () => {
+  const s = emptyState("2026-06-08", new Date().toISOString());
+  const plan: PlannedSession[] = [
+    { date: "2026-06-09", sport: "Ride", title: "Endurance ride" },
+    { date: "2026-06-10", sport: "Run", title: "Easy run" },
+  ];
+  const actuals: ActualActivity[] = [{ date: "2026-06-09", sport: "Ride" }];
+  const fc = mkForecast([mkDay("2026-06-08"), mkDay("2026-06-09"), mkDay("2026-06-10")]);
+  const w = assessWeek(plan, fc, OPTS, actuals);
+  const html = renderDashboard({ window: [s], decisions: [], weather: w });
+  assert.match(html, /class="finding done"/, "the done ride gets the greyed class");
+  assert.match(html, /✓ done/, "and a visible done tag");
+  assert.equal((html.match(/class="finding done"/g) ?? []).length, 1, "only the matched session is greyed");
 });
 
 test("dashboard omits the card cleanly when no forecast is available", () => {
