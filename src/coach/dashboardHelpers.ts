@@ -49,6 +49,56 @@ export function mdLite(md: string): string {
   return h;
 }
 
+/**
+ * Generic race words that are NOT identifying on their own — never redacted as a standalone token, so a
+ * race called "Birmingham Marathon" doesn't blank the word "marathon" everywhere else on the page. The
+ * distinctive part (the city/venue) still goes.
+ */
+const RACE_WORD_STOP = new Set([
+  "triathlon", "ironman", "duathlon", "aquathlon", "aquabike", "marathon", "half", "full", "sprint",
+  "olympic", "standard", "middle", "long", "short", "super", "distance", "race", "races", "series",
+  "challenge", "classic", "festival", "national", "international", "championship", "championships",
+  "open", "water", "swim", "bike", "ride", "run", "running", "cycling", "the", "and", "of", "at",
+  "city", "park", "lake", "reservoir", "trail", "relay", "grand", "prix",
+]);
+
+function raceTokenRegex(token: string): RegExp {
+  const esc = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${esc}\\b`, "gi");
+}
+
+/**
+ * Share view: scrub real race names out of free-text coaching output, replacing each with the neutral
+ * "Race N" label the cards already use. The structured race cards redact by swapping `event_name` for
+ * "Race N", but free text — the deep session feedback, an insight title like "Birmingham: behind target",
+ * the headline — is generated prose, and the LLM (and some findings) refer to a race by a single
+ * distinctive word, its city/venue. So we redact both the full event name AND each distinctive token,
+ * longest match first. `names` MUST be in the dashboard's canonical date-sorted order (index i → "Race i+1")
+ * so the redaction is consistent with the cards. No-op when `names` is empty (i.e. not sharing), so the
+ * normal page is byte-for-byte unchanged. Pure.
+ */
+export function redactRaceNames(text: string, names: string[]): string {
+  if (!text || !names.length) return text;
+  const subs: Array<{ re: RegExp; to: string; len: number }> = [];
+  names.forEach((raw, i) => {
+    const label = `Race ${i + 1}`;
+    const name = (raw ?? "").trim();
+    if (!name || name === "—") return;
+    subs.push({ re: raceTokenRegex(name), to: label, len: name.length });
+    for (const tok of name.split(/[^A-Za-z0-9]+/)) {
+      if (tok.length >= 4 && !RACE_WORD_STOP.has(tok.toLowerCase())) {
+        subs.push({ re: raceTokenRegex(tok), to: label, len: tok.length });
+      }
+    }
+  });
+  // Longest match first: a full multi-word name wins over its own single-word tokens, and a longer
+  // distinctive token wins over a shorter one it contains.
+  subs.sort((a, b) => b.len - a.len);
+  let out = text;
+  for (const { re, to } of subs) out = out.replace(re, to);
+  return out;
+}
+
 /** Wrap bare http(s) URLs in ALREADY-ESCAPED text with anchors. The input has no raw `<` (it's escaped),
  *  so the matched URL can't break out — used by the read-only digest page so sources are one click away. */
 export function linkifyEscaped(escaped: string): string {
