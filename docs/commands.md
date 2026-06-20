@@ -61,6 +61,12 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 | `npm run deep-dive` | insight-engine analysis (load/EF/durability/ramp/goal) → report |
 | `npm run listening` | engagement model: what you act on vs dismiss, plan adherence + plan changes |
 
+## Fuelling
+| Command | What it does |
+|---|---|
+| `npm run fuelling` | per-session pre/during/after from the nutrition you log in `profile.local.yaml` (`fuelling.products`) — deterministic, only what a session needs ("water's fine" for short/easy). The dashboard shows just the **next** session; this prints the week |
+| `npm run fuel-review` | learning review over your fuel log: observed carb/hr tolerance, what sits well per sport, caffeine/timing, suggested profile tweaks (needs ≥3 logged sessions; wellbeing-screened) |
+
 ## Marginal gains & keeping knowledge current
 | Command | What it does |
 |---|---|

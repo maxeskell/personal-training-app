@@ -68,10 +68,13 @@ Strength). Heat comes from the weather card's per-day `tempMaxC`; key dates from
 
 ## Surfaces
 
-- **Dashboard card** (`src/coach/fuelCard.ts`, "Fuelling — week ahead") — needed sessions in full with a
-  one-tap 👍/👎 (`/fuel-feedback`), quiet sessions collapsed to one line, a static **daily-stack** reference
-  (consistency, not timing; honest evidence note), and a **"Review my fuelling"** button (`/fuel-review`).
-  Escaped; `data-*` handlers; hidden controls in share view. No LLM on render.
+- **Dashboard card** (`src/coach/fuelCard.ts`, "Fuelling — next session") — shows ONLY the soonest
+  upcoming session (the user doesn't want the whole week here): pre/during/after as one tight line each,
+  or a single "water's fine" line, with a one-tap 👍/👎 (`/fuel-feedback`). Secondary content — the
+  **daily-stack** reference (consistency, not timing; honest evidence note), the model assumptions, and the
+  **"Review my fuelling"** button (`/fuel-review`) — sits behind a "More" disclosure to keep the card short.
+  Escaped; `data-*` handlers; hidden controls in share view. No LLM on render. (`npm run fuelling` / the
+  `fuelling` MCP tool print the whole week.)
 - **MCP / on-demand** — `fuelling` (deterministic plan), `log_fuel` (record an outcome), `fuel_review`
   (the learning pass). Same engine as the card.
 

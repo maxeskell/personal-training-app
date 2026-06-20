@@ -207,7 +207,7 @@ export const PROFILE_QUESTIONS: ProfileQuestion[] = [
     area: "fuelling",
     field: "fuelling.products",
     question: "What nutrition do you actually use? (gels, bars, drink mix, electrolytes, recovery, supplements — per-serving carbs/sodium/caffeine)",
-    why: "Powers the 'Fuelling — week ahead' dashboard card and the `fuelling` tool: per-session pre/during/after built from YOUR products, only when a session needs it. See profile.example.yaml → fuelling.products for the format.",
+    why: "Powers the 'Fuelling — next session' dashboard card and the `fuelling` tool: per-session pre/during/after built from YOUR products, only when a session needs it. See profile.example.yaml → fuelling.products for the format.",
   },
 
   // --- races (extra targets beyond the first; the first is set in profile:init) ---
