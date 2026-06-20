@@ -172,6 +172,8 @@ dashboard's **Set up & improve** card (display-only, hidden from the shared view
 set to `resolved` or removed. Two things set it to `resolved` for you: clicking **✓ Done** on the card
 (see below), or the **auto-resolve** — once the matching live number is synced from AI Endurance (a
 **swim CSS** lands in `thresholds.swimCssSecPer100`), the task drops on the next sync without any edit.
+(Swim CSS is read whether AI Endurance returns it as a **pace string** like `1:52` or a speed; if
+`getUser` doesn't expose it at all, set **`COACH_SWIM_CSS`** — `m:ss` or seconds — as a manual fallback.)
 (FTP is **not** auto-resolved: its `ftp_w` gap is a Garmin-vs-AIE *disagreement*, not an absence, so a
 present value doesn't mean it's settled.) **Race target times are NOT an `ai_endurance_todo` item** — AI
 Endurance has no field for them, so they can't be "set" there; they live in `races[].target_time` and

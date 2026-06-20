@@ -33,7 +33,7 @@ import { runSessionFeedback } from "./coach/session.js";
 import { loadSessionDecays } from "./insights/fit.js";
 import { readCostRecords, summarizeCost } from "./llm/costLog.js";
 import { getForecast } from "./weather/store.js";
-import { assessWeek, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
+import { assessWeek, latestActuals, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
 
 import { notify } from "./notify.js";
 import { fileChecks, redactSecrets, checkRemoteHealth } from "./health.js";
@@ -519,7 +519,7 @@ async function cmdDashboard(): Promise<void> {
     const fc = await getForecast();
     if (fc) {
       const plan = upcomingPlanned(window, todayIso());
-      weather = assessWeek(plan.sessions, fc, { ...config.weather, planAsOf: plan.asOf });
+      weather = assessWeek(plan.sessions, fc, { ...config.weather, planAsOf: plan.asOf }, latestActuals(window));
     }
   }
   const html = renderDashboard({

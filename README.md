@@ -344,7 +344,10 @@ projection, and the dashboard carries an **API cost** card. To keep it down, the
 - **Zones & thresholds** card, grouped 🏊 swim / 🚴 bike / 🏃 run for clear separation, plus your headline
   numbers — **bike FTP (W and W/kg), run threshold pace + LTHR, swim CSS**. Pulled from `getUser`; where
   only thresholds are exposed, zones are derived with standard models (Coggan power, %-LTHR, %-threshold
-  pace). **Bike HR zones** use your bike LTHR when the profile exposes one, else fall back to run LTHR
+  pace). **Swim CSS and run threshold pace** are read whether AI Endurance returns them as a **pace
+  string** (`1:52`, `4:50`) or a speed; if swim CSS isn't exposed via `getUser` at all, set
+  **`COACH_SWIM_CSS`** (m:ss or seconds) as a manual fallback so the swim model still populates (the
+  platform's value always wins when present). **Bike HR zones** use your bike LTHR when the profile exposes one, else fall back to run LTHR
   with a visible note (bike LTHR typically sits a few bpm lower — treat zone tops conservatively).
   When Garmin's **power-duration FTP *estimate*** (in the Garmin scores card) sits materially below your
   configured bike FTP, the card flags the gap rather than leaving two conflicting numbers on the page:
@@ -424,7 +427,9 @@ against your `COACH_SWIM_MIN_WATER_C` (default 13°C) floor via the manually-upd
 `COACH_WATER_TEMP_C` (no public feed exists). "Roads dry from ~HH:00" comes from an hour-by-hour
 drying MODEL (rain wets the surface; time, temperature, sun and wind dry it) — an estimate to plan
 around, not a guarantee. Indoor sessions (gym/strength) are listed as muted weather-n/a rows so the
-card always mirrors the full week. The card shows **two timestamps**: "plan as of" (the sessions are
+card always mirrors the full week. Sessions you've **already done** are greyed out and tagged `✓ done`
+once a logged activity matches that day and sport (so the now-moot weather verdict stops competing for
+attention) — this needs the activity synced in, so nothing greys until it lands. The card shows **two timestamps**: "plan as of" (the sessions are
 a snapshot from the last Sync — edits/deletions in AI Endurance appear after the next Sync) and the
 forecast fetch time (re-pulled on Sync, or when older than ~3h). The card is display-only: plan
 writes stay behind the gated propose → confirm flow.

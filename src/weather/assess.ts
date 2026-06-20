@@ -1,4 +1,4 @@
-import type { AthleteState, PlannedSession } from "../state/types.js";
+import type { ActualActivity, AthleteState, PlannedSession } from "../state/types.js";
 import { weatherLabel, type DayForecast, type Forecast, type HourForecast } from "./forecast.js";
 import { DEFAULT_ROAD_OPTS, roadWetness, type RoadHour } from "./roadDry.js";
 
@@ -31,6 +31,8 @@ export interface SessionVerdict {
   reason: string;
   window?: { from: string; to: string };
   suggestion?: string;
+  /** Already completed — a logged activity matches this day + sport, so the weather verdict is moot. */
+  done?: boolean;
 }
 
 export interface DayOutlook {
@@ -210,7 +212,7 @@ function swimVerdict(p: PlannedSession, day: DayForecast, opts: AssessOpts): Ses
   return { ...base, verdict: "good", reason: `water ~${opts.waterTempC}°C, at/above your ${opts.swimMinWaterC}°C floor` };
 }
 
-export function assessWeek(planned: PlannedSession[], fc: Forecast, opts: AssessOpts): WeekWeather {
+export function assessWeek(planned: PlannedSession[], fc: Forecast, opts: AssessOpts, actuals: ActualActivity[] = []): WeekWeather {
   const now = opts.now ?? localIsoNow();
   const today = now.slice(0, 10);
   // Dryness marches over ALL hours (incl. yesterday's lead-in) so earlier rain carries forward.
@@ -236,21 +238,45 @@ export function assessWeek(planned: PlannedSession[], fc: Forecast, opts: Assess
   for (const p of planned) {
     const day = shown.find((d) => d.date === p.date.slice(0, 10));
     if (!day) continue;
-    if (p.sport === "Ride") sessions.push(rideVerdict(p, day, shown, road, opts, now));
-    else if (p.sport === "Run") sessions.push(runVerdict(p, day));
-    else if (p.sport === "Swim") sessions.push(swimVerdict(p, day, opts));
+    let v: SessionVerdict;
+    if (p.sport === "Ride") v = rideVerdict(p, day, shown, road, opts, now);
+    else if (p.sport === "Run") v = runVerdict(p, day);
+    else if (p.sport === "Swim") v = swimVerdict(p, day, opts);
     else
       // Indoor/unknown sessions are listed (not silently dropped) so the card mirrors the full week.
-      sessions.push({
+      v = {
         date: day.date,
         sport: p.sport ?? "Other",
         title: p.title,
         verdict: "indoor",
         reason: p.sport === "Strength" ? "indoor — weather doesn't apply" : "no weather rules for this session type",
-      });
+      };
+    // Grey it out once a logged activity matches the day + sport — the weather call is moot after the fact.
+    if (sessionDone(p, actuals)) v.done = true;
+    sessions.push(v);
   }
   sessions.sort((a, b) => a.date.localeCompare(b.date));
   return { fetchedAt: fc.fetchedAt, planAsOf: opts.planAsOf, days, sessions };
+}
+
+/**
+ * Has this planned session already been done? True when a logged activity shares its day and sport.
+ * Existence-based (we can't link a planned workoutId to an actual activityId), so it degrades safely:
+ * no actuals → never marked done. Strength has no actual-side sport, so gym sessions never match.
+ */
+function sessionDone(p: PlannedSession, actuals: ActualActivity[]): boolean {
+  if (!p.sport) return false;
+  const day = p.date.slice(0, 10);
+  return actuals.some((a) => a.sport === p.sport && a.date.slice(0, 10) === day);
+}
+
+/** Freshest logged activities in the state window — used to mark already-done sessions in the week card. */
+export function latestActuals(window: AthleteState[]): ActualActivity[] {
+  for (let i = window.length - 1; i >= 0; i--) {
+    const a = window[i].actualActivities.value;
+    if (a?.length) return a;
+  }
+  return [];
 }
 
 export interface UpcomingPlan {

@@ -33,7 +33,7 @@ import { proposeAdjustments, validateProposals, buildProposerContext, writeConte
 import { WriteGate } from "./guardrails/writeGate.js";
 import { alertFindings } from "./insights/metrics.js";
 import { getForecast, refreshForecast } from "./weather/store.js";
-import { assessWeek, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
+import { assessWeek, latestActuals, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
 import { config } from "./config.js";
 import { todayIso } from "./util/today.js";
 import { coalesce } from "./util/coalesce.js";
@@ -106,7 +106,7 @@ async function renderLatest(share = false): Promise<string> {
     const fc = await getForecast();
     if (fc) {
       const plan = upcomingPlanned(window, today);
-      weather = assessWeek(plan.sessions, fc, { ...config.weather, planAsOf: plan.asOf });
+      weather = assessWeek(plan.sessions, fc, { ...config.weather, planAsOf: plan.asOf }, latestActuals(window));
     }
   }
   // Stale-while-revalidate (user ask: "sync when we load the page"): render instantly from the
