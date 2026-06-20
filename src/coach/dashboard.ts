@@ -16,10 +16,10 @@ import type { Profile } from "../profile/schema.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
 import { weekday, upcomingPlanned, type WeekWeather } from "../weather/assess.js";
 import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
-import { renderFuelCard } from "./fuelCard.js";
-import { buildWeekFuelPlans, loadFuelPrefs } from "./fuelPlan.js";
-import { loadInventory } from "./fuelInventory.js";
-import type { FuelLogRecord } from "./fuelLogStore.js";
+import { renderFuelCard, fuelSessionInner, renderFuelExtras, fuelScript } from "./fuelCard.js";
+import { buildWeekFuelPlans, loadFuelPrefs, type FuelPlan } from "./fuelPlan.js";
+import { loadInventory, type FuelProduct } from "./fuelInventory.js";
+import { latestFuelByDateSport, fuelLogKey, type FuelLogRecord } from "./fuelLogStore.js";
 import {
   escapeHtml,
   TONE_COLOR,
@@ -487,19 +487,36 @@ function renderSessionSwitcher(recent: SessionRef[], d: SessionDetail): string {
 const VERDICT_COLOR: Record<string, string> = { good: "#1a8a3a", marginal: "#c98a00", poor: "#c0392b", indoor: "#9a9a9a" };
 const SPORT_EMOJI: Record<string, string> = { Swim: "🏊", Ride: "🚴", Run: "🏃", Strength: "🏋️" };
 
+/** Per-session fuelling folded into the Week-ahead card: a dropdown per row that needs fuel, + the shared
+ *  extras/script emitted once. Absent → the standalone fallback card carries it instead. */
+interface WeatherFuelCtx {
+  byKey: Map<string, FuelPlan>;
+  logged: Map<string, FuelLogRecord>;
+  inventory: FuelProduct[];
+  hasApiKey?: boolean;
+}
+
 /** "Week ahead — plan vs weather": per-session verdicts + day outlook incl. estimated road dryness. */
-function renderWeather(w: WeekWeather | undefined): string {
+function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx): string {
   if (!w) return "";
+  let anyFuel = false;
   const sessions = w.sessions.length
     ? w.sessions
-        .map(
-          (s) => `<div class="finding${s.done ? " done" : ""}">
+        .map((s) => {
+          const plan = fuel?.byKey.get(fuelLogKey(s.date.slice(0, 10), s.sport));
+          const fuelDrop =
+            plan?.needed
+              ? ((anyFuel = true),
+                `<details class="fueldrop" style="margin-top:5px"><summary style="cursor:pointer;font-size:12px;color:#c8642d;font-weight:600">⛽ Fuelling</summary><div style="margin-top:5px">${fuelSessionInner(plan, fuel!.logged.get(fuelLogKey(s.date.slice(0, 10), s.sport)), false, false)}</div></details>`)
+              : "";
+          return `<div class="finding${s.done ? " done" : ""}">
       <div><span class="badge" style="background:${VERDICT_COLOR[s.verdict] ?? "#777"}">${escapeHtml(s.verdict)}</span>
         <b>${escapeHtml(weekday(s.date))} · ${SPORT_EMOJI[s.sport] ?? ""} ${escapeHtml(s.sport)}</b>${s.title ? ` <span class="muted">· ${escapeHtml(s.title)}</span>` : ""}${s.done ? ` <span class="donetag">✓ done</span>` : ""}</div>
       <div class="fdetail">${escapeHtml(s.reason)}</div>
       ${s.suggestion ? `<div class="ev">→ ${escapeHtml(s.suggestion)}</div>` : ""}
-    </div>`,
-        )
+      ${fuelDrop}
+    </div>`;
+        })
         .join("")
     : `<div class="k" style="margin-bottom:6px">No outdoor sessions in the visible plan window — day outlook below.</div>`;
   const rows = w.days
@@ -523,11 +540,16 @@ function renderWeather(w: WeekWeather | undefined): string {
   // Both timestamps are load-bearing: a deleted/edited workout keeps showing until the NEXT Sync,
   // so the card must say how fresh its plan snapshot is.
   const planNote = w.planAsOf ? `Plan as of ${stamp(w.planAsOf)} · ` : "";
+  // Fuelling folded in: the per-row dropdowns above + the shared extras (daily stack + review) and the
+  // handler script, emitted once, only when at least one session actually surfaced a plan.
+  const fuelExtras = fuel && anyFuel ? renderFuelExtras(fuel.inventory, fuel.hasApiKey, false) : "";
+  const fuelJs = fuel && anyFuel ? fuelScript(false) : "";
   return `<div class="card"><h2>Week ahead — plan vs weather</h2>
     ${sessions}
+    ${fuelExtras}
     <table style="margin-top:8px"><tr class="k"><td>Day</td><td>Sky</td><td>°C</td><td>Rain</td><td>Gusts km/h</td><td>Roads</td><td>Ride window</td></tr>${rows}</table>
     <div class="k" style="margin-top:8px">${planNote}Open-Meteo forecast as of ${stamp(w.fetchedAt)} — Sync re-pulls both. "Roads" and ride windows are a MODEL drying estimate from rain, temperature, sun and wind — eyeball the tarmac before committing. Open-water temp has no public feed: set COACH_WATER_TEMP_C when the venue posts a reading.</div>
-  </div>`;
+  </div>${fuelJs}`;
 }
 
 /** API-cost card: windowed token spend + a monthly projection + the top flows. */
@@ -938,7 +960,16 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
     tempByDate,
     keyDates: fuelKeyDates,
   });
-  const fuelCard = renderFuelCard({ plans: fuelPlans, inventory: fuelInventory, fuelLog, share, hasApiKey: setupHealth?.hasApiKey });
+  const fuelByKey = new Map<string, FuelPlan>(fuelPlans.map((p) => [fuelLogKey(p.date ?? "", p.sport), p]));
+  const loggedFuel = latestFuelByDateSport(fuelLog ?? []);
+  // Fold per-session fuelling into the Week-ahead card when it's shown; otherwise the standalone
+  // "next session" card is the fallback (so fuelling never disappears when the forecast is unavailable).
+  const showWeather = !share && !!weather;
+  const weatherCarriesFuel = showWeather && fuelInventory.length > 0 && fuelPlans.some((p) => p.needed);
+  const weatherHtml = showWeather
+    ? renderWeather(weather, weatherCarriesFuel ? { byKey: fuelByKey, logged: loggedFuel, inventory: fuelInventory, hasApiKey: setupHealth?.hasApiKey } : undefined)
+    : "";
+  const fuelCard = weatherCarriesFuel ? "" : renderFuelCard({ plans: fuelPlans, inventory: fuelInventory, fuelLog, share, hasApiKey: setupHealth?.hasApiKey });
 
   // Share view scrubs real race names out of every free-text card — not just the structured race cards.
   // The deep session feedback, an insight title ("Birmingham: behind target"), the headline and the
@@ -1106,7 +1137,7 @@ ${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedback
   <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows ? loadRows + loadTotalRow : '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
 </div>
 
-${share ? "" : renderWeather(weather)}
+${weatherHtml}
 
 ${fuelCard}
 
