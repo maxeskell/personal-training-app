@@ -22,7 +22,7 @@ npm install && npm run demo
 no Garmin, no API key, no network. The fastest way to see what the coach produces before you wire up
 anything of your own.
 
-![The Endurance Coach dashboard — today's readiness verdict, top insights, weekly load by sport, multi-week trends, and the race countdown](docs/dashboard.png)
+![The Endurance Coach dashboard — today's readiness verdict, top insights, load by sport over the last 7 days (with a Total row), multi-week trends, and the race countdown](docs/dashboard.png)
 
 <sub>Generated from the built-in sample data — regenerate with `npm run demo`, then `python3 scripts/render_dashboard_png.py reports/demo-dashboard.html docs/dashboard.png` (needs `weasyprint` + `pymupdf`).</sub>
 

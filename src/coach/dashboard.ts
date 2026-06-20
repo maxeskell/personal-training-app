@@ -953,11 +953,17 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
   const surfacedInsightKeys = new Set<string>(insights ? insights.topFindings.slice(0, 5).map((f) => findingKey(f)) : []);
   if (leadKey) surfacedInsightKeys.add(leadKey);
 
-  // Week: load by sport. Time in h:mm (user ask); a zero distance renders "—" not a misleading 0.0 km.
+  // Load by sport over a trailing 7 days (cutoff today-7 inclusive — the same window weekly.ts calls
+  // "last 7 days", NOT the calendar week). Time in h:mm (user ask); a zero distance renders "—" not a
+  // misleading 0.0 km. A bottom Total row sums sessions/time/distance across every sport.
   const load = activitiesLast7(today);
   const loadRows = [...load.entries()]
     .map(([s, e]) => `<tr><td>${s}</td><td>${e.n}</td><td>${hMin(e.min)}</td><td>${e.km > 0 ? `${e.km.toFixed(1)} km` : '<span class="muted">—</span>'}</td></tr>`)
     .join("");
+  const loadTotal = [...load.values()].reduce((t, e) => ({ n: t.n + e.n, min: t.min + e.min, km: t.km + e.km }), { n: 0, min: 0, km: 0 });
+  const loadTotalRow = load.size
+    ? `<tr class="total"><td>Total</td><td>${loadTotal.n}</td><td>${hMin(loadTotal.min)}</td><td>${loadTotal.km > 0 ? `${loadTotal.km.toFixed(1)} km` : '<span class="muted">—</span>'}</td></tr>`
+    : "";
 
   // Trends from the backfilled Garmin daily series (the multi-week archive), not the 1-day state store.
   const gar = (garminDays ?? []).slice(-42);
@@ -1018,6 +1024,7 @@ h1{font-size:20px;margin:0 0 2px} .sub{color:#777;font-size:13px;margin-bottom:1
 .dot{width:16px;height:16px;border-radius:50%}
 .big{font-size:22px;font-weight:600;text-transform:capitalize}
 table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;border-bottom:1px solid #f0ede5}
+tr.total td{border-top:2px solid #e7d9c6;border-bottom:0;font-weight:600}
 .num{text-align:right;font-variant-numeric:tabular-nums} .muted{color:#bbb}
 .spark polyline{stroke:#888}.spark.up polyline{stroke:#1a8a3a}.spark.down polyline{stroke:#c0392b}
 .grid{display:flex;gap:14px;flex-wrap:wrap}.grid>div{flex:1;min-width:120px}
@@ -1107,8 +1114,8 @@ ${insights ? renderHeader(today, hl, decisions, garminDays, redact) : ""}
 
 ${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks, setupHealth?.hasApiKey, share, redact)}
 
-<div class="card"><h2>This week — load by sport</h2>
-  <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows || '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
+<div class="card"><h2>Last 7 days — load by sport</h2>
+  <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows ? loadRows + loadTotalRow : '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
 </div>
 
 ${share ? "" : renderWeather(weather)}
