@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { emptyState } from "../src/state/types.js";
 import { todayIso } from "../src/util/today.js";
 import { buildInsights } from "../src/insights/engine.js";
-import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, aieGapKeyFromSetupKey, parseResearchItems, parseActionBullets, mdLite, commonTrailingSentences, sessionFeedbackCardState, renderResearchDigestPage } from "../src/coach/dashboard.js";
+import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, aieGapKeyFromSetupKey, parseResearchItems, parseActionBullets, mdLite, commonTrailingSentences, sessionFeedbackCardState, renderResearchDigestPage, clockHM } from "../src/coach/dashboard.js";
 import { redactRaceNames } from "../src/coach/dashboardHelpers.js";
 import type { ProfileQuestion } from "../src/profile/questions.js";
 import type { InsightReport } from "../src/insights/engine.js";
@@ -316,6 +316,26 @@ test("Last session card: a multi-sport day is disambiguated and the session swit
   for (const [i, sc] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].entries()) {
     assert.doesNotThrow(() => new Function(sc[1]), `script block ${i} must parse`);
   }
+});
+
+test("clockHM: formats a UTC session-start into the athlete's local wall clock; blank when missing", () => {
+  const utc8am = Math.floor(Date.UTC(2026, 5, 20, 8, 5, 0) / 1000); // 2026-06-20 08:05 UTC
+  assert.equal(clockHM(utc8am, "UTC"), "08:05");
+  assert.equal(clockHM(utc8am, "Europe/London"), "09:05", "BST = UTC+1 in June");
+  assert.equal(clockHM(null, "UTC"), "", "no time → blank, never a guessed clock");
+  assert.equal(clockHM(undefined, "UTC"), "");
+});
+
+test("Last session card: shows the session start time (from the .FIT) in the heading when present", () => {
+  const s = emptyState("2026-06-20", new Date().toISOString());
+  s.raw = { getCyclingActivity: { activities: [{ activity_date_local: "2026-06-20", activity_avhr: 140, activity_movingtime: 4080 }] } };
+  const ins = buildInsights(s, undefined, {});
+  ins.sessionDecays = [
+    { activityId: "c1", date: "2026-06-20", sport: "cycling", startTimeS: Math.floor(Date.UTC(2026, 5, 20, 16, 30, 0) / 1000), durationMin: 68, cadenceDropPct: null, gctRisePct: null, voRisePct: null, hrDriftPct: null, decouplingPct: null, avgTempC: null, avgPowerW: 126, avgHr: 139, avgVerticalRatioPct: null, avgStepLengthMm: null, avgGctBalancePct: null, avgLrBalancePct: null, normalizedPowerW: null },
+  ];
+  const html = renderDashboard({ window: [s], decisions: [], insights: ins, setupHealth: { hasApiKey: true, waterTempSet: true, lastSyncAgeHours: 1 } });
+  // 16:30 UTC → 17:30 Europe/London (default tz in tests). Heading carries the date + clock.
+  assert.match(html, /Last session — 2026-06-20 \d{2}:\d{2} Ride/);
 });
 
 test("mdLite: escapes injected markup before formatting headers/bold/code/bullets", () => {

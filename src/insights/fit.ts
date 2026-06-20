@@ -50,6 +50,8 @@ export interface SessionDecay {
   activityId: string;
   date: string;
   sport: string;
+  /** Session start, unix seconds (UTC) — the first sample's timestamp. Null when the stream carried none. */
+  startTimeS: number | null;
   durationMin: number;
   cadenceDropPct: number | null; // last quartile vs first quartile (drop = fatigue)
   gctRisePct: number | null; // GCT climbing late = fatigue
@@ -108,6 +110,7 @@ export function analyseSession(f: StreamFile): SessionDecay | null {
     activityId: String(f.activityId ?? "—"),
     date: String(f.date ?? "").slice(0, 10),
     sport: String(f.sport ?? "—"),
+    startTimeS: ts.length ? ts[0] : null, // first record timestamp = session start (UTC); formatted to local at display
     durationMin,
     cadenceDropPct: deltaPct(cad.first, cad.last),
     gctRisePct: deltaPct(gct.first, gct.last),

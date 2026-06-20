@@ -11,6 +11,7 @@ import type { MetricOverrides } from "../state/metricOverrides.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone, type Headline } from "../insights/headline.js";
 import { assembleSession, listRecentSessions, type SessionRef, type SessionDetail } from "./session.js";
+import { config } from "../config.js";
 import type { Profile } from "../profile/schema.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
 import { weekday, type WeekWeather } from "../weather/assess.js";
@@ -332,6 +333,20 @@ export function sessionFeedbackCardState(opts: {
   return { kind: "manual" };
 }
 
+/**
+ * Format a UTC-seconds session start as a local "HH:MM" clock in the given IANA timezone. The .FIT
+ * stores UTC timestamps; the athlete reads their own wall clock, so we convert (default Europe/London).
+ * Returns "" for a missing/invalid time — the caller then shows the date alone (degrade, don't guess).
+ */
+export function clockHM(unixSec: number | null | undefined, tz: string = config.athlete.timezone): string {
+  if (unixSec == null || !Number.isFinite(unixSec)) return "";
+  try {
+    return new Date(unixSec * 1000).toLocaleTimeString("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false });
+  } catch {
+    return "";
+  }
+}
+
 function renderLastSession(
   window: AthleteState[],
   insights: InsightReport | undefined,
@@ -413,8 +428,10 @@ function renderLastSession(
     d.sessionsOnDate > 1
       ? `<div class="k" style="margin-top:10px">📅 ${d.sessionsOnDate} sessions on ${escapeHtml(d.date)}${d.sameSportOnDate > 1 ? ` (${d.sameSportOnDate} ${escapeHtml(d.sport.toLowerCase())}s — showing the longest)` : ""} — this card is your <b>${escapeHtml(d.sport)}</b>.</div>`
       : "";
-  const switcher = share ? "" : renderSessionSwitcher(listRecentSessions(today), d);
-  return `<div class="card"><h2>Last session — ${escapeHtml(d.date)} ${escapeHtml(d.sport)}</h2>
+  const switcher = share ? "" : renderSessionSwitcher(listRecentSessions(today, insights?.sessionDecays ?? []), d);
+  const startClock = clockHM(d.startTimeS);
+  const when = `${d.date}${startClock ? ` ${startClock}` : ""}`;
+  return `<div class="card"><h2>Last session — ${escapeHtml(when)} ${escapeHtml(d.sport)}</h2>
     <div style="font-size:14px;margin-bottom:6px">${escapeHtml(bits)}</div>
     ${planLine}
     ${multiNote}
@@ -433,9 +450,10 @@ function renderSessionSwitcher(recent: SessionRef[], d: SessionDetail): string {
   const chips = recent
     .map((r) => {
       const active = r.date === d.date && r.sport === d.sport;
+      const clock = clockHM(r.startTimeS);
       const dur = r.durationMin != null ? ` ${r.durationMin}min` : "";
-      const label = `${weekday(r.date)} ${SPORT_EMOJI[r.sport] ?? ""}${escapeHtml(r.sport)}${dur}${r.isMostRecent ? " ·latest" : ""}`;
-      return `<button class="sess-chip${active ? " on" : ""}" data-date="${escapeHtml(r.date)}" data-sport="${escapeHtml(r.sport)}" onclick="selectSession(this)" title="${escapeHtml(`${r.date} ${r.sport}`)}" style="padding:5px 10px;border:1px solid ${active ? "#c8642d" : "#ddd"};border-radius:14px;background:${active ? "#fdeee4" : "#fff"};font-size:12px;color:#333;cursor:pointer">${label}</button>`;
+      const label = `${weekday(r.date)}${clock ? ` ${clock}` : ""} ${SPORT_EMOJI[r.sport] ?? ""}${escapeHtml(r.sport)}${dur}${r.isMostRecent ? " ·latest" : ""}`;
+      return `<button class="sess-chip${active ? " on" : ""}" data-date="${escapeHtml(r.date)}" data-sport="${escapeHtml(r.sport)}" onclick="selectSession(this)" title="${escapeHtml(`${r.date}${clock ? ` ${clock}` : ""} ${r.sport}`)}" style="padding:5px 10px;border:1px solid ${active ? "#c8642d" : "#ddd"};border-radius:14px;background:${active ? "#fdeee4" : "#fff"};font-size:12px;color:#333;cursor:pointer">${label}</button>`;
     })
     .join("");
   return `<div class="k" style="margin-top:14px">🗂️ Dive into another session:</div>
