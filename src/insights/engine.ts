@@ -592,7 +592,8 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   const pcF = powerCurveFinding(state.powerCurve.value);
   if (pcF) findings.push(pcF);
 
-  // 5c. Garmin daily-series trends (illness early-warning, stress, Body-Battery, sleep, fuelling).
+  // 5c. Garmin daily-series trends (illness early-warning, stress, Body-Battery, deep + total sleep)
+  // plus the uniform data-quality check (implausible / stale readings) across every physio stream.
   findings.push(...garminTrendFindings(archive?.garminDays));
 
   // 5d. Heat confounder — EF vs per-activity temperature (raw .FIT sessions + synced fit-summaries).

@@ -8,6 +8,8 @@
  *   - Stress trend: chronically elevated all-day stress vs baseline = total-life load red flag.
  *   - Body-Battery recharge: a falling overnight recharge = poor recovery.
  *   - Sleep architecture: a sustained deep-sleep decline.
+ *   - Sleep duration: total sleep trending short (and short in absolute terms) vs baseline.
+ *   - Data quality: any reading that looks like a measurement error (delegates to insights/dataQuality).
  *   - Fuelling: weight + skeletal-muscle both trending down (delegates to insights/fuelling).
  * Each self-gates on coverage and stays silent without enough history.
  */
@@ -15,6 +17,7 @@
 import { trailingZ, mean, type Maybe } from "./stats.js";
 import type { Finding } from "./metrics.js";
 import { analyseFuelling, fuellingFinding } from "./fuelling.js";
+import { detectDataQuality } from "./dataQuality.js";
 
 export interface GarminDaily {
   date: string;
@@ -123,6 +126,28 @@ export function sleepArchitecture(days: GarminDaily[]): Finding | null {
   };
 }
 
+/** Sustained SHORT sleep: total sleep both below personal baseline AND short in absolute terms. */
+export function sleepDurationLow(days: GarminDaily[]): Finding | null {
+  const s = series(days, "sleepHours");
+  const z = trailingZ(s);
+  const recent = recentMean(s, 7);
+  if (!z || recent == null) return null;
+  // Needs BOTH: a real dip below your own norm (z ≤ -1) and a short absolute average (< 7h) — so a
+  // long sleeper dropping from 9h to 8h doesn't trip it, but a genuine short-sleep block does.
+  if (z.z > -1 || recent >= 7) return null;
+  return {
+    family: "Sleep duration",
+    title: "Sleep duration trending short",
+    severity: "watch",
+    detail:
+      `Your 7-day average sleep (${recent.toFixed(1)} h/night) is ${z.z}σ below your baseline (${z.mean} h) and short in absolute terms. ` +
+      `Sustained short sleep through a training block blunts recovery and adaptation — often before HRV/RHR move.`,
+    evidence: `total sleep hours 7-day mean vs rolling baseline [garmin]`,
+    recommendation: "Protect the sleep opportunity (earlier lights-out, limit late alcohol/screens) and ease intensity until it recovers.",
+    confidence: 0.55,
+  };
+}
+
 /** Fuelling: feed the existing weight+muscle detector with the real Garmin body-composition series. */
 export function fuellingFromGarmin(days: GarminDaily[]): Finding | null {
   const weight = days.filter((d) => d.weightKg != null).map((d) => ({ date: d.date, kg: d.weightKg! }));
@@ -135,10 +160,13 @@ export function fuellingFromGarmin(days: GarminDaily[]): Finding | null {
 export function garminTrendFindings(days: GarminDaily[] | undefined): Finding[] {
   if (!days || days.length < 21) return [];
   const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
-  return [
+  const trends = [
     illnessEarlyWarning(sorted),
     stressTrend(sorted),
     bodyBatteryRecharge(sorted),
     sleepArchitecture(sorted),
+    sleepDurationLow(sorted),
   ].filter((f): f is Finding => f != null);
+  // Data-quality checks run across every stream — surfaced alongside the trend findings.
+  return trends.concat(detectDataQuality(sorted));
 }

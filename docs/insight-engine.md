@@ -28,6 +28,22 @@ autocorrelation-aware, effect-sizes-with-CIs, and every MODEL caveat attached.
 - **Fuelling red flag (Q7):** fires when weight *and* skeletal-muscle-mass trend down together (an
   under-fuelling stop-signal). A rapid weight drop on its own is separately flagged by the wellbeing
   guardrail, even without muscle-mass data.
+- **Physio-stream watchers — held in full, surfaced only when worrying / dangerous / a possible error.**
+  Your backfilled daily series (HRV, resting HR, total + deep sleep, all-day stress, Body-Battery,
+  respiration, skin-temp, body composition) is **retained in detail** but each stream stays silent until it
+  has something to say, in one of three buckets:
+  - **Worrying trend** — illness signals stacking (respiration + skin-temp ± RHR above baseline together),
+    deep-sleep decline, **total sleep trending short** (below your baseline *and* short in absolute terms),
+    all-day stress chronically high, overnight Body-Battery recharge falling, weight + muscle falling
+    together. Each scores deviation from your *own* rolling baseline, not an absolute target.
+  - **Dangerous** — a rapid/unexplained weight drop (wellbeing guardrail, on its own), a run-load spike, or
+    Garmin overreaching — surfaced as flags, never framed as a win.
+  - **Possible data error** — a uniform data-quality check (`insights/dataQuality.ts`) over every stream:
+    a reading **outside the plausible human range**, an **impossible overnight body-comp jump** (you can't
+    truly gain/lose kilos of weight or muscle in a day — that's the scale, not you), or a **flatlined/stale**
+    sensor (the same value carried across readings). It's deliberately conservative (wide bounds, one finding
+    per stream at most) so it only ever flags a value that could genuinely be wrong — because a bad reading
+    silently corrupts the baselines and the under-fuelling/illness flags that lean on it.
 - **Stream-level (.FIT) analysis (§1)** — two layers, two sources:
   - **Thermal / effort** (per-activity temperature for the heat confounder, hot/cool-third HR, training
     effect) comes from `fit-sync`, which pulls Garmin's *parsed summary* (`get_activity_fit_data`). This
