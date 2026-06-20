@@ -1,7 +1,7 @@
 import type { AthleteState, ActualActivity, PlannedSession, ZoneSet, DisciplineThresholds } from "../state/types.js";
 import type { DecisionRecord, InsightReaction } from "../state/decisionLog.js";
 import type { FitSummary } from "../archive/store.js";
-import type { SessionFeedbackRecord } from "./sessionFeedbackStore.js";
+import { findSessionFeedback, type SessionFeedbackRecord } from "./sessionFeedbackStore.js";
 import type { InsightReport } from "../insights/engine.js";
 import type { SurfacedFinding } from "../state/insightLog.js";
 import { renderCoachRecs } from "./adviceRecs.js";
@@ -395,9 +395,7 @@ function renderLastSession(
   // can produce it now it renders a placeholder + fetches it on load (downloading the raw .FIT first when
   // needed); otherwise it says exactly why it can't (no key, or no .FIT and no way to fetch one). The
   // stored markdown leads with its own H1 — strip it (the card heading already names the session).
-  const stored = (sessionFeedbacks ?? [])
-    .filter((f) => f.date === d.date && f.sport === d.sport)
-    .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0];
+  const stored = findSessionFeedback(sessionFeedbacks ?? [], d.date, d.sport, d.durationMin);
   const cardState = sessionFeedbackCardState({
     hasStored: !!stored,
     hasApiKey: !!hasApiKey,
@@ -410,8 +408,8 @@ function renderLastSession(
     case "stored":
       // Share view: the deep feedback is generated prose that names the athlete's real races (e.g. "with
       // Birmingham 22 days out") — redact those before rendering so a shared screenshot/PDF stays anonymous.
-      feedback = `<div class="k" style="margin:8px 0 4px">🔍 Session feedback <span class="muted">(${stored.deep ? "deep analysis" : "summary"} · ${escapeHtml(fmtSince(Date.now() - new Date(stored.generatedAt).getTime()))})</span></div>
-      <div style="font-size:14px;color:#333;white-space:pre-wrap">${mdLite(redact(stored.markdown.replace(/^# .*\n+/, "")))}</div>`;
+      feedback = `<div class="k" style="margin:8px 0 4px">🔍 Session feedback <span class="muted">(${stored!.deep ? "deep analysis" : "summary"} · ${escapeHtml(fmtSince(Date.now() - new Date(stored!.generatedAt).getTime()))})</span></div>
+      <div style="font-size:14px;color:#333;white-space:pre-wrap">${mdLite(redact(stored!.markdown.replace(/^# .*\n+/, "")))}</div>`;
       break;
     case "auto":
       // A screenshot can't run the fetch (and would freeze on "Downloading…"), so share view degrades to
@@ -462,7 +460,7 @@ function renderSessionSwitcher(recent: SessionRef[], d: SessionDetail): string {
       const clock = clockHM(r.startTimeS);
       const dur = r.durationMin != null ? ` ${r.durationMin}min` : "";
       const label = `${weekday(r.date)}${clock ? ` ${clock}` : ""} ${SPORT_EMOJI[r.sport] ?? ""}${escapeHtml(r.sport)}${dur}${r.isMostRecent ? " ·latest" : ""}`;
-      return `<button class="sess-chip${active ? " on" : ""}" data-date="${escapeHtml(r.date)}" data-sport="${escapeHtml(r.sport)}" onclick="selectSession(this)" title="${escapeHtml(`${r.date}${clock ? ` ${clock}` : ""} ${r.sport}`)}" style="padding:5px 10px;border:1px solid ${active ? "#c8642d" : "#ddd"};border-radius:14px;background:${active ? "#fdeee4" : "#fff"};font-size:12px;color:#333;cursor:pointer">${label}</button>`;
+      return `<button class="sess-chip${active ? " on" : ""}" data-date="${escapeHtml(r.date)}" data-sport="${escapeHtml(r.sport)}" data-dur="${r.durationMin ?? ""}" onclick="selectSession(this)" title="${escapeHtml(`${r.date}${clock ? ` ${clock}` : ""} ${r.sport}`)}" style="padding:5px 10px;border:1px solid ${active ? "#c8642d" : "#ddd"};border-radius:14px;background:${active ? "#fdeee4" : "#fff"};font-size:12px;color:#333;cursor:pointer">${label}</button>`;
     })
     .join("");
   return `<div class="k" style="margin-top:14px">🗂️ Dive into another session:</div>
@@ -1164,13 +1162,14 @@ async function loadSessionFeedback(){
 // it generates once and persists, exactly like the latest-session card.
 async function selectSession(el){
   var dive=document.getElementById('dive'); if(!dive) return;
-  var date=el.getAttribute('data-date'), sport=el.getAttribute('data-sport');
+  var date=el.getAttribute('data-date'), sport=el.getAttribute('data-sport'), dur=el.getAttribute('data-dur');
   var chips=el.parentNode.querySelectorAll('.sess-chip');
   for(var i=0;i<chips.length;i++){chips[i].classList.remove('on');chips[i].style.border='1px solid #ddd';chips[i].style.background='#fff';}
   el.classList.add('on');el.style.border='1px solid #c8642d';el.style.background='#fdeee4';
   dive.innerHTML='<div class="k">🔍 Loading deep dive for '+esc(date)+' '+esc(sport)+'…</div>';
   try{
-    var r=await fetch('/session-feedback',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({date:date,sport:sport})});
+    var body={date:date,sport:sport}; if(dur) body.durationMin=Number(dur);
+    var r=await fetch('/session-feedback',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
     if(!r.ok) throw new Error('HTTP '+r.status);
     var j=await r.json(); var md=String(j.markdown||'').replace(/^# .*\\n+/,'');
     var tag=j.status==='ready'?' <span class="muted">('+(j.deep?'deep analysis':'summary')+')</span>':'';

@@ -279,12 +279,18 @@ than one activity (a brick, or a triathlete's swim + ride + run), notes how many
 time** (in the heading and on every switcher chip) so same-day sessions are easy to tell apart at a glance.
 The time comes from the synced **.FIT** stream and is shown in your local timezone (`COACH_TZ` → profile
 `identity.timezone` → Europe/London); a session without a stream shows the **date only**, never a guessed
-clock. A **session switcher** under the card lists your recent sessions (one chip per day + sport); tap any
-to **dive into its deep feedback** in place —
-served inline if it's stored, otherwise generated once and persisted like the latest. Feedback is keyed by
-**date + sport**, so each sport on a multi-sport day keeps its own readout (auto-backfill generates one per
-sport). Same-sport repeats in a single day still collapse to the longest — a known limitation noted on the
-card — because AI Endurance activities expose no stable per-activity id to separate them.
+clock. A **session switcher** under the card lists your recent sessions (one chip per distinct session); tap
+any to **dive into its deep feedback** in place — served inline if it's stored, otherwise generated once and
+persisted like the latest.
+
+Because AI Endurance activities carry **no stable per-activity id** (only a date), sessions are identified
+by a **composite key — date + sport + rounded duration**. That separates not just a multi-sport day (swim +
+ride + run) but **two of the same sport in one day** (a double-run day, a recovery spin + the main ride):
+each gets its own chip and its own readout. The deep dive then **best-matches each session to its own `.FIT`
+stream by duration** (a fuzzy record-link, since there's no shared id), so the shorter session reads its own
+biomechanics and start time rather than the longer one's. The only residual case — two same-sport sessions
+of the *same* rounded duration with no `.FIT` to separate them — is rare; they collapse to one, and the card
+says how many sessions ran that day so nothing is silently hidden.
 
 **Bike L/R power balance** is decoded honestly: Garmin packs left/right balance with a flag bit, so read
 raw a left-leaning stroke can surface as an impossible *174%*. The parser masks the flag and reports the
