@@ -215,7 +215,7 @@ test("dashboard renders the week-ahead card escaped, scripts stay valid", () => 
   assert.match(html, />indoor</, "gym session renders with the muted indoor badge");
   assert.ok(!html.includes("</script><b>x</b>"), "session title is escaped");
   assert.ok(!html.includes("NaN") && !html.includes("undefined"));
-  for (const [i, sc] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)].entries()) {
+  for (const [i, sc] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].entries()) {
     assert.doesNotThrow(() => new Function(sc[1]), `script block ${i} must parse`);
   }
 });
