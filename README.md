@@ -329,7 +329,9 @@ projection, and the dashboard carries an **API cost** card. To keep it down, the
 - **Zones & thresholds** card, grouped 🏊 swim / 🚴 bike / 🏃 run for clear separation, plus your headline
   numbers — **bike FTP (W and W/kg), run threshold pace + LTHR, swim CSS**. Pulled from `getUser`; where
   only thresholds are exposed, zones are derived with standard models (Coggan power, %-LTHR, %-threshold
-  pace). **Bike HR zones** use your bike LTHR when the profile exposes one, else fall back to run LTHR
+  pace). Swim CSS is read whether AI Endurance returns it as a **pace string** (`1:52`) or a speed; if it
+  isn't exposed via `getUser` at all, set **`COACH_SWIM_CSS`** (m:ss or seconds) as a manual fallback so
+  the swim model still populates (the platform's value always wins when present). **Bike HR zones** use your bike LTHR when the profile exposes one, else fall back to run LTHR
   with a visible note (bike LTHR typically sits a few bpm lower — treat zone tops conservatively).
   When Garmin's **power-duration FTP *estimate*** (in the Garmin scores card) sits materially below your
   configured bike FTP, the card flags the gap rather than leaving two conflicting numbers on the page:

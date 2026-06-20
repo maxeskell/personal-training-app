@@ -15,6 +15,7 @@ import {
   type Source,
 } from "./types.js";
 import { deriveZones } from "../insights/zones.js";
+import { parseClock } from "../insights/sessionSplits.js";
 import { applyMetricOverrides, loadMetricOverrides } from "./metricOverrides.js";
 import { config } from "../config.js";
 import { extractJson, garminInner, asNumber, lastNum, lastVal, lastEl, daysAgoIso, get } from "./payload.js";
@@ -198,6 +199,9 @@ export async function assembleState(
     garminStale,
   });
 
+  // Swim CSS the platforms didn't surface: fill the COACH_SWIM_CSS manual fallback (never masks a real one).
+  applyManualSwimCss(state);
+
   // Athlete overrides for auto-detected metrics ("👎 disagree" on the Data-changes card): where the
   // platform still reports the value you rejected, use yours instead. Last word, after all source mapping.
   applyMetricOverrides(state, await loadMetricOverrides());
@@ -306,6 +310,39 @@ function firstStr(obj: unknown, keys: string[]): string | undefined {
   return undefined;
 }
 
+const SWIM_CSS_KEYS = [
+  "css_sec_per_100m", "swim_css", "css", "critical_swim_speed",
+  "cssPace", "css_pace", "swimCss", "cssSecPer100", "swim_threshold_pace",
+];
+
+/**
+ * Resolve swim CSS (sec/100m) from a getUser payload, tolerant of the shapes AI Endurance actually uses:
+ * a pace STRING ("1:52" or "1:52/100m") — which the numeric-only `firstNum` silently drops, the bug this
+ * fixes — a speed in m/s (<5 → converted), or a number already in sec/100m. Also checks a nested `swim`
+ * block. Gated to a sane 60–240 s/100m so a stray field can't masquerade as CSS. Undefined when nothing
+ * parses. Exported for unit tests.
+ */
+export function resolveSwimCssSec(payload: unknown): number | undefined {
+  const sane = (s: number | null): number | undefined => (s != null && s >= 60 && s <= 240 ? Math.round(s) : undefined);
+  for (const src of [payload, get(payload, "swim")]) {
+    // Pace string first — AI Endurance surfaces CSS as "m:ss" per 100m, e.g. "1:52".
+    for (const k of SWIM_CSS_KEYS) {
+      const v = get(src, k);
+      if (typeof v === "string" && v.includes(":")) {
+        const hit = sane(parseClock(v.replace(/\/.*$/, "").trim()));
+        if (hit != null) return hit;
+      }
+    }
+    // Numeric: m/s (<5) → sec/100m, else already sec/100m.
+    const n = firstNum(src, SWIM_CSS_KEYS);
+    if (n != null && n > 0) {
+      const hit = sane(n < 5 ? 100 / n : n);
+      if (hit != null) return hit;
+    }
+  }
+  return undefined;
+}
+
 /**
  * Athlete identity from getUser (name/age/sex) — so the coach's notion of WHO it's coaching follows
  * the platform instead of being frozen in the persona. Field shapes vary, so probe candidates and gate
@@ -399,11 +436,8 @@ function mapZonesThresholds(state: AthleteState, payload: unknown): void {
     const secPerKm = paceRaw < 12 ? Math.round(1000 / paceRaw) : Math.round(paceRaw); // m/s → sec/km if tiny
     if (secPerKm >= 150 && secPerKm <= 600) thresholds.runThresholdPaceSecPerKm = secPerKm;
   }
-  const cssRaw = firstNum(payload, ["css_sec_per_100m", "swim_css", "css", "critical_swim_speed"]);
-  if (cssRaw != null && cssRaw > 0) {
-    const secPer100 = cssRaw < 5 ? Math.round(100 / cssRaw) : Math.round(cssRaw); // m/s → sec/100m if tiny
-    if (secPer100 >= 60 && secPer100 <= 240) thresholds.swimCssSecPer100 = secPer100;
-  }
+  const css = resolveSwimCssSec(payload);
+  if (css != null) thresholds.swimCssSecPer100 = css;
   const maxHr = firstNum(payload, ["max_hr", "max_heart_rate", "maximum_heart_rate", "hr_max"]);
   if (maxHr != null && maxHr >= 120 && maxHr <= 230) thresholds.maxHr = Math.round(maxHr);
 
@@ -423,6 +457,25 @@ function recordSourceReading(state: AthleteState, source: Source, reading: Disci
   delete trimmed.bikeFtpNote; // a UI note, not a reading
   if (Object.keys(trimmed).length === 0) return;
   state.thresholdsBySource = { ...(state.thresholdsBySource ?? {}), [source]: trimmed };
+}
+
+/**
+ * Fill swim CSS from the COACH_SWIM_CSS manual fallback when no platform supplied one — AI Endurance's
+ * getUser doesn't always expose the CSS you set in its UI — so the dashboard still builds a swim model
+ * (zones + race swim split). Never masks a CSS that did come through. Re-derives zones. Pure (mutates state).
+ */
+function applyManualSwimCss(state: AthleteState): void {
+  const css = config.manualSwimCssSecPer100;
+  if (css == null) return;
+  const t: DisciplineThresholds = { ...(state.thresholds.value ?? {}) };
+  if (t.swimCssSecPer100 != null) return; // a platform value already won — don't override it
+  t.swimCssSecPer100 = css;
+  state.thresholds = {
+    value: t,
+    source: state.thresholds.source,
+    note: [state.thresholds.note, "swim CSS from COACH_SWIM_CSS"].filter(Boolean).join("; "),
+  };
+  state.zones = { value: deriveZones(t), source: "derived", note: "standard zone models from thresholds (incl. manual swim CSS)" };
 }
 
 /**

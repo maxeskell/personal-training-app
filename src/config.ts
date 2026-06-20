@@ -47,6 +47,22 @@ function parseArgsList(s: string): string[] {
 }
 
 /**
+ * Parse a manual swim-CSS pace into sec/100m. Accepts "m:ss" (e.g. "1:52"), bare seconds ("112"), or
+ * undefined. Gated to a sane 60–240 s/100m; anything outside that (or unparseable) → undefined.
+ */
+export function parseManualSwimCss(raw: string | undefined): number | undefined {
+  const s = raw?.trim();
+  if (!s) return undefined;
+  const sec = /^\d+(\.\d+)?$/.test(s)
+    ? Number(s)
+    : s.split(":").reduce((acc, p) => {
+        const n = Number(p);
+        return Number.isFinite(acc) && Number.isFinite(n) && n >= 0 ? acc * 60 + n : NaN;
+      }, 0);
+  return Number.isFinite(sec) && sec >= 60 && sec <= 240 ? Math.round(sec) : undefined;
+}
+
+/**
  * Central config. Secrets live OUTSIDE the repo by default (~/.endurance-coach),
  * per the privacy NFR (creds out of prompts/logs/repo). Override via env if needed.
  */
@@ -157,6 +173,14 @@ export const config = {
     rideMaxRainProbPct: Number(process.env.COACH_RIDE_MAX_RAIN_PROB ?? 40),
     timeoutMs: Number(process.env.COACH_WEATHER_TIMEOUT_MS ?? 6000),
   },
+
+  /**
+   * Manual swim CSS (Critical Swim Speed), pace per 100m — a fallback for when AI Endurance's `getUser`
+   * doesn't surface the CSS you set in its UI. Like COACH_WATER_TEMP_C (a value with no public feed), it
+   * lets the dashboard still build a swim model (zones + race swim split). Accepts "m:ss" (e.g. "1:52") or
+   * bare seconds ("112"). A CSS that DOES come through from AI Endurance always wins over this fallback.
+   */
+  manualSwimCssSecPer100: parseManualSwimCss(process.env.COACH_SWIM_CSS),
 
   /**
    * Dashboard auto-sync: a page load whose snapshot is older than this kicks a background
