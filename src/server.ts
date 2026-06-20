@@ -403,7 +403,9 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
           await updateLocalProfile({ ai_endurance_todo: { [gap]: "resolved" } });
           profileWritten = true;
         } catch (e) {
-          console.warn(`[insight-feedback] could not mark ${gap} resolved in profile:`, e);
+          // `gap` derives from request input, so keep it OUT of the format-string slot — pass a
+          // constant format string and let %s interpolate it safely (no tainted format directives).
+          console.warn("[insight-feedback] could not mark %s resolved in profile:", gap, e);
         }
       }
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, profileWritten }));
