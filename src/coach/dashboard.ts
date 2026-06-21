@@ -1119,6 +1119,7 @@ tr.total td{border-top:2px solid #e7d9c6;border-bottom:0;font-weight:600}
 .acts .agree:hover{background:#e6f5ea;border-color:#1a8a3a}.acts .disagree:hover{background:#fdeaea;border-color:#c0392b}
 .acts .ignore:hover{background:#f3f3f3}.reacted{font-size:11px;color:#1a8a3a;margin-left:4px}
 .acts .agree.on{background:#e6f5ea;border-color:#1a8a3a;font-weight:600}.acts .disagree.on{background:#fdeaea;border-color:#c0392b;font-weight:600}
+.insight[data-reaction-state="applied"]{opacity:.65}
 .newbadge{background:#1558d6;color:#fff;font-size:9px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:9px;margin-right:6px;vertical-align:middle}
 .age{font-size:11px;color:#bbb;margin-top:4px}
 .route{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.02em;color:#6b5b45;background:#f4f1ea;border:1px solid #e7d9c6;border-radius:9px;padding:1px 7px;margin-left:4px;white-space:nowrap}
@@ -1337,10 +1338,14 @@ async function actItem(btn){
     box.innerHTML=j.proposals.map(proposalHtml).join('');
   }catch(e){box.innerHTML='<div class="k">Error: '+esc(''+e)+'</div>';btn.disabled=false;}
 }
-async function confirmProposal(btn){var box=btn.closest('.proposal');var id=box.getAttribute('data-id');var s=box.querySelector('.reacted');s.textContent='Applying…';
-  try{var r=await fetch('/confirm-proposal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})});var j=await r.json();
-    box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
-    s.textContent=j.ok?'✓ applied to AI Endurance':'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
+async function confirmProposal(btn){var box=btn.closest('.proposal');var id=box.getAttribute('data-id');var s=box.querySelector('.reacted');
+  var card=btn.closest('.insight');var cardKey=card?card.getAttribute('data-key'):null;s.textContent='Applying…';
+  try{var r=await fetch('/confirm-proposal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,cardKey:cardKey})});var j=await r.json();
+    if(!j.ok){box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='failed: '+esc(j.error||'');return;}
+    // Mark the source 'This week' card applied in place, so it doesn't re-offer the change before a reload.
+    if(card){card.setAttribute('data-reaction-state','applied');var p=card.querySelector('.item-proposals');if(p)p.innerHTML='';var a=card.querySelector('.acts');if(a)a.innerHTML='<span class="reacted">✓ applied to AI Endurance</span>';}
+    else{box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='✓ applied to AI Endurance';}
+  }catch(e){s.textContent='error';}}
 async function declineProposal(btn){var box=btn.closest('.proposal');var id=box.getAttribute('data-id');var s=box.querySelector('.reacted');
   try{await fetch('/decline-proposal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})});
     box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='dismissed';box.style.opacity=0.5;}catch(e){s.textContent='error';}}

@@ -178,7 +178,9 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   - a **training plan edit** gets **➡️ Make this change**, which drafts the concrete edit and applies it to
     your plan in AI Endurance through the **gated propose→confirm write** (you confirm the exact change
     first; it's logged and reversible). If it can't be tied to a scheduled session, you get the **precise
-    steps** to make it yourself in AI Endurance or Garmin instead — never a dead end.
+    steps** to make it yourself in AI Endurance or Garmin instead — never a dead end. **Once you've applied
+    a change, the card marks itself ✓ applied** (recorded against the card, so it survives a reload) and
+    stops re-offering "Make this change" — the gated write is permanent, the card just reflects it.
 
   An `open_items` entry that just restates a setup gap (e.g. a hand-written "swim CSS not set" alongside the
   `swim_css` gap) folds into the canonical item, so each gap is listed once. **A gap the live data already

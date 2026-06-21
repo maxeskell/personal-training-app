@@ -56,3 +56,13 @@ test("latestInsightReactions: round-trips done + dismiss through their stored st
   assert.equal(map.get("a")?.reaction, "done");
   assert.equal(map.get("b")?.reaction, "dismiss");
 });
+
+test("applied: an applied card round-trips (executed → applied) and stays VISIBLE (not suppressed)", () => {
+  // Applying a gated change from a "This week" card marks it applied — shown with a "✓ applied" tag, not
+  // hidden like done/dismiss/snooze, so it doesn't re-offer the change but is still visible as actioned.
+  assert.equal(reactionFromLabel("applied"), "applied");
+  const reactions = latestInsightReactions([fb("setup:weekly:cut-ride", "executed", "2026-01-01T00:00:00Z")]);
+  assert.equal(reactions.get("setup:weekly:cut-ride")?.reaction, "applied");
+  const sup = suppressedInsightKeys(reactions, 14, new Date("2026-06-12T00:00:00Z"));
+  assert.equal(sup.size, 0, "applied never suppresses — even months later the card stays visible");
+});

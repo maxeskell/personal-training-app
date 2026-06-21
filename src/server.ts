@@ -548,12 +548,24 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
 
     // Confirm a proposal — the ONLY path that WRITES to AI Endurance (gated; two-step from /act).
     if (url.pathname === "/confirm-proposal" && req.method === "POST") {
-      const id = String((JSON.parse((await readBody(req)) || "{}") as { id?: string }).id ?? "");
+      const body = JSON.parse((await readBody(req)) || "{}") as { id?: string; cardKey?: string };
+      const id = String(body.id ?? "");
+      // The "This week" card this proposal was drafted from, so we can mark it applied (the card sends its key).
+      const cardKey = typeof body.cardKey === "string" && body.cardKey.startsWith("setup:") ? body.cardKey : "";
       if (!id) return void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "need id" }));
       const aie = new AieClient();
       await aie.connect();
       try {
         const result = await new WriteGate(aie, new DecisionLog()).confirm(id);
+        // Record the source card as "applied" so it shows the result instead of re-offering the change on
+        // the next render. Separate from the gated write's own plan-adjust/executed record; best-effort.
+        if (cardKey) {
+          try {
+            await new DecisionLog().recordInsightFeedback(cardKey, "applied", "Applied a plan change from this card");
+          } catch (e) {
+            console.warn("[confirm-proposal] could not mark card applied:", e);
+          }
+        }
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, result: typeof result === "string" ? result.slice(0, 200) : "applied" }));
       } catch (err) {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }));
