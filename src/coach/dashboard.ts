@@ -1,5 +1,6 @@
 import type { AthleteState, ActualActivity, PlannedSession, ZoneSet, DisciplineThresholds } from "../state/types.js";
 import type { DecisionRecord, InsightReaction } from "../state/decisionLog.js";
+import { executedSourceKeys } from "../state/decisionLog.js";
 import type { FitSummary } from "../archive/store.js";
 import { findSessionFeedback, type SessionFeedbackRecord } from "./sessionFeedbackStore.js";
 import type { InsightReport } from "../insights/engine.js";
@@ -1330,9 +1331,9 @@ async function actPlan(){
 // "Make this change" on a training card: draft THIS specific recommendation into a concrete, validated plan
 // edit (gated propose→confirm — confirming writes to AI Endurance). No match → the precise manual steps.
 async function actItem(btn){
-  var card=btn.closest('.insight');var box=card.querySelector('.item-proposals');var rec=card.getAttribute('data-rec');
+  var card=btn.closest('.insight');var box=card.querySelector('.item-proposals');var rec=card.getAttribute('data-rec');var cardKey=card.getAttribute('data-key');
   btn.disabled=true;box.innerHTML='<div class="k">Drafting the change…</div>';
-  try{var r=await fetch('/act-item',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({recommendation:rec})});
+  try{var r=await fetch('/act-item',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({recommendation:rec,cardKey:cardKey})});
     var j=await r.json();
     if(!j.proposals||!j.proposals.length){box.innerHTML='<div class="setup-action">'+esc(j.notes||'No automatic edit fits this — make the change in AI Endurance, then ↻ Sync.')+'</div>';btn.disabled=false;return;}
     box.innerHTML=j.proposals.map(proposalHtml).join('');
@@ -1365,7 +1366,7 @@ async function confirmWaterTemp(btn){var box=btn.closest('.watertemp');var s=box
     s.textContent=j.ok?('✓ confirmed ~'+j.waterTempC+'°C — reload to refresh the swim verdict'):'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
 </script>
 
-${renderSetupImprove(profile, share, { suppressed, reactions, insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined })}
+${renderSetupImprove(profile, share, { suppressed, reactions, appliedKeys: executedSourceKeys(decisions), insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined })}
 
 ${renderCoachRecs(coachRecs ?? [], reactions, share)}
 

@@ -808,6 +808,12 @@ test("renderSetupImprove: an applied training card shows '✓ applied', not 'Mak
   const after = renderSetupImprove(profile, false, { weeklyReview, now: NOW, reactions: new Map([[card.key, "applied" as const]]) });
   assert.match(after, /✓ applied to AI Endurance/);
   assert.doesNotMatch(after, /onclick="actItem/, "the applied card no longer re-offers the change");
+
+  // Same result driven by the WRITE LOG (appliedKeys) rather than the click-time reaction — the robust
+  // path that also covers a CLI confirm or a failed click marker.
+  const viaWriteLog = renderSetupImprove(profile, false, { weeklyReview, now: NOW, appliedKeys: new Set([card.key]) });
+  assert.match(viaWriteLog, /✓ applied to AI Endurance/);
+  assert.doesNotMatch(viaWriteLog, /onclick="actItem/, "an executed gated write marks the card applied too");
 });
 
 test("renderSetupImprove: This-week cards action in-app — no 'saved under reports' pointer anywhere", () => {
