@@ -74,18 +74,21 @@ test("httpStartupBanner spells out the exposed surface (incl. the medical profil
   const base = { host: "127.0.0.1", port: 8787, tokenFile: "/x/.endurance-coach/mcp.token" };
 
   // A read-only, token-authed server: names the data, says read-only, points at the token — no write/none scare lines.
-  const tokenRO = httpStartupBanner({ ...base, auth: "token", includeWrites: false, profileWrite: false }).join("\n");
+  const tokenRO = httpStartupBanner({ ...base, auth: "token", includeWrites: false, profileWrite: false, fileAccess: false }).join("\n");
   assert.match(tokenRO, /MEDICAL profile via get_profile/);
   assert.match(tokenRO, /health metrics/);
   assert.match(tokenRO, /READ-ONLY/);
   assert.match(tokenRO, /every request needs your bearer token/);
   assert.doesNotMatch(tokenRO, /plan-WRITE/, "read-only mode doesn't advertise write tools");
+  assert.doesNotMatch(tokenRO, /file-access/, "file access off → not advertised");
   assert.doesNotMatch(tokenRO, /auth=NONE/);
 
-  // The dangerous combo (no auth + writes + profile-write) gets the loud lines.
-  const none = httpStartupBanner({ ...base, auth: "none", includeWrites: true, profileWrite: true }).join("\n");
+  // The dangerous combo (no auth + writes + profile-write + file-access) gets the loud lines.
+  const none = httpStartupBanner({ ...base, auth: "none", includeWrites: true, profileWrite: true, fileAccess: true }).join("\n");
   assert.match(none, /auth=NONE: none of the above is password-protected/);
   assert.match(none, /plan-WRITE tools/);
   assert.match(none, /profile-write is ON/);
+  assert.match(none, /file-access is ON/);
+  assert.match(none, /read\/write project files/);
   assert.match(none, /PRIVATE tunnel/);
 });
