@@ -424,6 +424,8 @@ export interface SetupOptions {
   suppressed?: Set<string>;
   /** Saved agree/disagree per key — so a "your call" advice card shows its persisted reaction state. */
   reactions?: Map<string, InsightReaction>;
+  /** Card keys whose drafted gated write has executed — the card shows "✓ applied" (from the write log). */
+  appliedKeys?: Set<string>;
   /** Already-built insight report — its deterministic marginal-gains feed the "This week" group (no LLM). */
   insights?: InsightReport;
   /** Finding keys already shown in the Top-insights box — excluded from "This week" so a recommendation
@@ -640,12 +642,13 @@ function reactableCardHtml(it: SetupItem, reactions?: Map<string, InsightReactio
  * propose→confirm write to AI Endurance (you confirm the exact edit), rendered inline. When it can't be
  * tied to a scheduled session, the drafter returns the precise manual steps instead. Plus 💤 Snooze.
  */
-function applyableCardHtml(it: SetupItem, reactions?: Map<string, InsightReaction>): string {
+function applyableCardHtml(it: SetupItem, reactions?: Map<string, InsightReaction>, appliedKeys?: Set<string>): string {
   const why = it.why ? `<div class="age">${escapeHtml(it.why)}</div>` : "";
   const hint = it.action ? `<div class="ev">${escapeHtml(it.action)}</div>` : "";
   // Once a change drafted from this card has been confirmed (a gated write to AI Endurance), the card is
-  // marked "applied" so it shows the result instead of re-offering "Make this change" on the next render.
-  const applied = reactions?.get(it.key) === "applied";
+  // marked "applied" so it shows the result instead of re-offering "Make this change". Driven by the
+  // executed write log (appliedKeys — robust to CLI confirms / a failed click) OR the click-time reaction.
+  const applied = (appliedKeys?.has(it.key) ?? false) || reactions?.get(it.key) === "applied";
   const acts = applied
     ? `<div class="acts"><span class="reacted">✓ applied to AI Endurance</span></div>`
     : `<div class="acts">
@@ -699,14 +702,14 @@ function setupLinkHtml(l: SetupLink): string {
 
 /** Dispatch a setup item to the right surface: an applyable training card, a "your call" reaction card, or
  *  the plain `<details>` task. */
-function setupItemHtml(it: SetupItem, reactions?: Map<string, InsightReaction>): string {
-  if (it.applyable) return applyableCardHtml(it, reactions);
+function setupItemHtml(it: SetupItem, reactions?: Map<string, InsightReaction>, appliedKeys?: Set<string>): string {
+  if (it.applyable) return applyableCardHtml(it, reactions, appliedKeys);
   if (it.reactable) return reactableCardHtml(it, reactions);
   return setupTaskHtml(it);
 }
 
-const setupListHtml = (its: SetupItem[], reactions?: Map<string, InsightReaction>): string =>
-  `<div class="setup">${its.map((it) => setupItemHtml(it, reactions)).join("")}</div>`;
+const setupListHtml = (its: SetupItem[], reactions?: Map<string, InsightReaction>, appliedKeys?: Set<string>): string =>
+  `<div class="setup">${its.map((it) => setupItemHtml(it, reactions, appliedKeys)).join("")}</div>`;
 
 /**
  * "Set up & improve" — the dashboard's deterministic, LLM-free action hub (issue #112). Three sections:
@@ -726,10 +729,11 @@ export function renderSetupImprove(profile: Profile | undefined, share = false, 
   const groups: SetupGroup[] = ["finish_setup", "this_week", "worth_considering"];
   const present = groups.filter((g) => items.some((it) => it.group === g));
   const reactions = opts.reactions;
+  const appliedKeys = opts.appliedKeys;
   const body =
     present.length <= 1
-      ? setupListHtml(items, reactions)
-      : present.map((g) => `<h3 class="setup-group">${GROUP_HEADING[g]}</h3>${setupListHtml(items.filter((it) => it.group === g), reactions)}`).join("");
+      ? setupListHtml(items, reactions, appliedKeys)
+      : present.map((g) => `<h3 class="setup-group">${GROUP_HEADING[g]}</h3>${setupListHtml(items.filter((it) => it.group === g), reactions, appliedKeys)}`).join("");
   return `<div class="card"><h2>Set up &amp; improve</h2>
   <div class="k" style="margin-bottom:6px">What to do next — all actioned right here. <b>This week</b> cards are your call: 👍 Agree / 👎 Disagree / 💤 Snooze on fuelling, gear and recovery; a training change has <b>Make this change</b> (applies it in AI Endurance after you confirm the exact edit, or hands you the precise steps) — once applied it shows <b>✓ applied</b> and stops asking. <b>Finish setup</b> tasks open for exactly how to do them, and each carries <b>✓ Done</b> (mark it complete — an AI-Endurance gap is also written back to your profile so it stays gone), <b>💤 Snooze</b> (hide ~2 weeks) and <b>🚫 Ignore</b> (don't show again). A gap you've already filled in AI Endurance clears itself on the next sync.</div>
   ${body}</div>`;

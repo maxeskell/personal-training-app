@@ -242,14 +242,16 @@ const sessionFeedbackInFlight = new Map<string, Promise<SessionFeedbackResult>>(
  * (acts on one specific "This week" recommendation). The proposer is re-validated against the athlete's
  * real scheduled sessions, so anything un-targetable degrades to a `notes` explanation, never a bad write.
  */
-async function draftGatedProposals(li: LatestInsights, request: string) {
+async function draftGatedProposals(li: LatestInsights, request: string, sourceKey?: string) {
   const ctx = buildProposerContext(li.state, li.insights, li.engagement); // full picture: load/form + health + races + taper + decline-aware
   const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt(), "act"), request, li.state, ctx);
   const { valid, rejected } = validateProposals(result.proposals, li.state.plannedSessions.value ?? [], writeContextFor(li.state));
   const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
   const proposals = [];
   for (const p of valid) {
-    const pr = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human });
+    // sourceKey ties the gated write back to its "This week" card, so the card marks itself ✓ applied
+    // once the write executes — from the authoritative log, not the click.
+    const pr = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human, sourceKey });
     proposals.push({ id: pr.id, human: p.human, summary: p.summary, tradeoff: p.tradeoff, basis: p.basis });
   }
   const notes = [result.notes, rejected.length ? `Not applied: ${rejected.join("; ")}` : ""].filter(Boolean).join(" ");
@@ -533,9 +535,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (url.pathname === "/act-item" && req.method === "POST") {
       const json = (b: object) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(b));
       if (!CoachLLM.hasApiKey()) return json({ proposals: [], notes: "ANTHROPIC_API_KEY isn't set on the server." });
-      const body = JSON.parse((await readBody(req)) || "{}") as { recommendation?: string };
+      const body = JSON.parse((await readBody(req)) || "{}") as { recommendation?: string; cardKey?: string };
       const recommendation = String(body.recommendation ?? "").slice(0, 300).trim();
       if (!recommendation) return json({ proposals: [], notes: "No recommendation provided." });
+      // The card's key, so its drafted write carries it and the card self-marks ✓ applied once executed.
+      const sourceKey = typeof body.cardKey === "string" && body.cardKey.startsWith("setup:") ? body.cardKey : undefined;
       const li = await latestInsights();
       if (!li) return json({ proposals: [], notes: "No data assembled yet — hit Sync first." });
       const request =
@@ -543,7 +547,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         "(don't restructure the week). If it can't be tied to a specific scheduled session, propose nothing and use " +
         "`notes` to say — in plain English — exactly how to make it yourself in AI Endurance or Garmin:\n- " +
         recommendation;
-      return json(await draftGatedProposals(li, request));
+      return json(await draftGatedProposals(li, request, sourceKey));
     }
 
     // Confirm a proposal — the ONLY path that WRITES to AI Endurance (gated; two-step from /act).
