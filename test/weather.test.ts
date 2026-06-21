@@ -174,6 +174,19 @@ test("swim water-temp rule: unknown → check the venue; below the floor → mar
   assert.equal(fine.verdict, "good");
 });
 
+test("swim water-temp shows an 'as of' date when a reading time is set, and echoes it on the week", () => {
+  const calm = mkForecast([mkDay("2026-06-08"), mkDay("2026-06-09")]);
+  const swimPlan: PlannedSession[] = [{ date: "2026-06-09", sport: "Swim", title: "OW swim" }];
+  const w = assessWeek(swimPlan, calm, { ...OPTS, waterTempC: 21, waterTempAsOf: "2026-06-21T10:00:00.000Z" });
+  assert.match(w.sessions[0].reason, /water ~21°C \(as of 21 Jun\), at\/above your 13°C floor/);
+  // Echoed back so the card can show + prefill the current reading.
+  assert.equal(w.waterTempC, 21);
+  assert.equal(w.waterTempAsOf, "2026-06-21T10:00:00.000Z");
+  // No timestamp → no "as of" suffix (and no crash).
+  const noStamp = assessWeek(swimPlan, calm, { ...OPTS, waterTempC: 21 }).sessions[0];
+  assert.doesNotMatch(noStamp.reason, /as of/);
+});
+
 test("day outlook reports road state and only shows days from today on", () => {
   const w = assessWeek([], stormyWeek(), OPTS);
   assert.equal(w.days.length, 5);

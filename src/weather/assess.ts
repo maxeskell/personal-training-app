@@ -12,6 +12,8 @@ export interface AssessOpts {
   swimMinWaterC: number;
   /** Latest manual water-temp reading for the open-water venue — there is no public live feed. */
   waterTempC?: number;
+  /** ISO timestamp the water-temp reading was entered — surfaced as an "as of" freshness label. */
+  waterTempAsOf?: string;
   rideMaxGustKmh: number;
   rideMaxRainProbPct: number;
   /** Local ISO "now" — today's hours already past are not offered as ride windows. Defaults to wall clock. */
@@ -52,11 +54,23 @@ export interface WeekWeather {
   fetchedAt: string;
   /** Plan-snapshot time — the sessions below are only as fresh as the last Sync. */
   planAsOf?: string;
+  /** The open-water temp used for swim verdicts (echoed so the card can show + prefill the reading). */
+  waterTempC?: number;
+  /** ISO timestamp that reading was entered — drives the "as of" freshness label on the card. */
+  waterTempAsOf?: string;
   days: DayOutlook[];
   sessions: SessionVerdict[];
 }
 
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** " (as of 21 Jun)" from an ISO timestamp — UTC-anchored so it's deterministic; "" if unparseable. */
+export function asOfLabel(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "" : ` (as of ${d.getUTCDate()} ${MONTH[d.getUTCMonth()]})`;
+}
 
 /** "2026-06-11" → "Thu 11" (UTC-anchored so the label never slips a day). */
 export function weekday(date: string): string {
@@ -203,13 +217,14 @@ function swimVerdict(p: PlannedSession, day: DayForecast, opts: AssessOpts): Ses
       verdict: "good",
       reason: `swimmable in any weather; water temp unknown — check the venue's latest reading (your floor: ${opts.swimMinWaterC}°C)`,
     };
+  const asOf = asOfLabel(opts.waterTempAsOf);
   if (opts.waterTempC < opts.swimMinWaterC)
     return {
       ...base,
       verdict: "marginal",
-      reason: `water ~${opts.waterTempC}°C is below your ${opts.swimMinWaterC}°C floor — wetsuit and shorten, or take it to the pool`,
+      reason: `water ~${opts.waterTempC}°C${asOf} is below your ${opts.swimMinWaterC}°C floor — wetsuit and shorten, or take it to the pool`,
     };
-  return { ...base, verdict: "good", reason: `water ~${opts.waterTempC}°C, at/above your ${opts.swimMinWaterC}°C floor` };
+  return { ...base, verdict: "good", reason: `water ~${opts.waterTempC}°C${asOf}, at/above your ${opts.swimMinWaterC}°C floor` };
 }
 
 export function assessWeek(planned: PlannedSession[], fc: Forecast, opts: AssessOpts, actuals: ActualActivity[] = []): WeekWeather {
@@ -256,7 +271,7 @@ export function assessWeek(planned: PlannedSession[], fc: Forecast, opts: Assess
     sessions.push(v);
   }
   sessions.sort((a, b) => a.date.localeCompare(b.date));
-  return { fetchedAt: fc.fetchedAt, planAsOf: opts.planAsOf, days, sessions };
+  return { fetchedAt: fc.fetchedAt, planAsOf: opts.planAsOf, waterTempC: opts.waterTempC, waterTempAsOf: opts.waterTempAsOf, days, sessions };
 }
 
 /**
