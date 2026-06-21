@@ -145,9 +145,13 @@ Ask the user, then write the answers into `.env` (uncomment the relevant lines f
 4. **Training base for weather** → `COACH_WEATHER_LAT` / `COACH_WEATHER_LON` (where they ride/run/swim
    from). Default is the author's base in the UK — **change it.** Set `COACH_WEATHER_ENABLED=false` to
    skip the weather card entirely.
-5. **Open-water swimming?** If yes: `COACH_SWIM_MIN_WATER_C` (their cold-water comfort floor) and
-   `COACH_WATER_TEMP_C` (the latest posted venue temp — there is no public feed, so it's updated by
-   hand). If they don't open-water swim, leave these unset.
+5. **Open-water swimming?** If yes: set `COACH_SWIM_MIN_WATER_C` (their cold-water comfort floor). The
+   venue's **water temperature** has no public feed, so it's entered by hand — but the everyday way is the
+   **water-temp box at the bottom of the dashboard's "Week ahead" card** (saves live to `data/venue.json`,
+   no restart); once a reading is >7 days old the coach forecasts it (a damped air-temp-drift MODEL) and
+   asks them to Confirm/Correct. `COACH_WATER_TEMP_C` in `.env` is only an optional *seed* used before the
+   first reading — any confirmed reading wins over it, so you can leave it unset. If they don't open-water
+   swim, leave both unset.
 6. **Garmin?** (optional, degradable) — ask if they want device data (HRV, training status, raw `.FIT`
    biomechanics). If yes, do Step 5a; if no, leave `GARMIN_ENABLED=false` (default) and the coach runs
    on AI Endurance alone.
