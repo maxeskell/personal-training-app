@@ -1,5 +1,6 @@
 import type { AthleteState, ActualActivity, PlannedSession, ZoneSet, DisciplineThresholds } from "../state/types.js";
 import type { DecisionRecord, InsightReaction } from "../state/decisionLog.js";
+import { executedSourceKeys } from "../state/decisionLog.js";
 import type { FitSummary } from "../archive/store.js";
 import { findSessionFeedback, type SessionFeedbackRecord } from "./sessionFeedbackStore.js";
 import type { InsightReport } from "../insights/engine.js";
@@ -14,7 +15,8 @@ import { assembleSession, listRecentSessions, type SessionRef, type SessionDetai
 import { config } from "../config.js";
 import type { Profile } from "../profile/schema.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
-import { weekday, upcomingPlanned, type WeekWeather } from "../weather/assess.js";
+import { weekday, upcomingPlanned, asOfLabel, type WeekWeather } from "../weather/assess.js";
+import type { WaterTempCard } from "../weather/waterTemp.js";
 import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
 import { renderFuelCard, fuelSessionInner, renderFuelExtras, fuelScript } from "./fuelCard.js";
 import { buildWeekFuelPlans, loadFuelPrefs, type FuelPlan } from "./fuelPlan.js";
@@ -497,7 +499,52 @@ interface WeatherFuelCtx {
 }
 
 /** "Week ahead — plan vs weather": per-session verdicts + day outlook incl. estimated road dryness. */
-function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx): string {
+/**
+ * The open-water temp control at the bottom of the weather card. Four states: nothing set (type a
+ * reading), a fresh confirmed reading (shown + updatable), a stale reading drifted into a MODEL estimate
+ * (Confirm / Correct), or a stale reading with no air anchor (re-confirm). Static summary in share view.
+ */
+function renderWaterTemp(water: WaterTempCard | undefined, share: boolean): string {
+  const inputRow = (val?: number) =>
+    `<input type="number" step="0.5" min="-2" max="40" class="wt-input" value="${val != null ? escapeHtml(String(val)) : ""}" placeholder="°C" style="width:72px">` +
+    `<button onclick="setWaterTemp(this)">Save</button>` +
+    (water ? `<button class="ignore" onclick="clearWaterTemp(this)">Clear</button>` : "");
+  const wrap = (inner: string) => `<div class="watertemp" style="margin-top:8px">${inner}</div>`;
+
+  if (share) {
+    const txt = !water ? "not set" : water.estimated ? `estimated ~${water.tempC}°C (MODEL)` : `~${water.tempC}°C${asOfLabel(water.asOf)}`;
+    return `<div class="k" style="margin-top:8px">Open-water temp: ${escapeHtml(txt)}</div>`;
+  }
+  if (!water) {
+    return wrap(
+      `<span class="k">Open-water temp (no public feed — type the venue's latest reading; saves live, no restart):</span><br>` +
+        inputRow() +
+        `<span class="reacted wt-status">not set — open-water swim verdicts say “check the venue”</span>`,
+    );
+  }
+  if (water.stale) {
+    const head = water.estimated
+      ? `Estimated ~${water.tempC}°C — ${water.basis ?? "MODEL"}${asOfLabel(water.asOf)}`
+      : `Last reading ~${water.tempC}°C${asOfLabel(water.asOf)} — ${Math.round(water.ageDays)}d old`;
+    const lead = water.estimated
+      ? `<button data-est="${escapeHtml(String(water.tempC))}" onclick="confirmWaterTemp(this)">✓ Confirm ${escapeHtml(String(water.tempC))}°C</button> or correct it: `
+      : `Update it: `;
+    return wrap(
+      `<span class="k">Open-water temp — please confirm (no public feed):</span><br>` +
+        `<span class="fdetail">${escapeHtml(head)}</span><br>` +
+        lead +
+        inputRow() +
+        `<span class="reacted wt-status"></span>`,
+    );
+  }
+  return wrap(
+    `<span class="k">Open-water temp (no public feed — update from the venue's latest reading; saves live):</span><br>` +
+      inputRow(water.tempC) +
+      `<span class="reacted wt-status">${escapeHtml(`current: ~${water.tempC}°C${asOfLabel(water.asOf)}`)}</span>`,
+  );
+}
+
+function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx, share = false): string {
   if (!w) return "";
   let anyFuel = false;
   const sessions = w.sessions.length
@@ -544,11 +591,16 @@ function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx): strin
   // handler script, emitted once, only when at least one session actually surfaced a plan.
   const fuelExtras = fuel && anyFuel ? renderFuelExtras(fuel.inventory, fuel.hasApiKey, false) : "";
   const fuelJs = fuel && anyFuel ? fuelScript(false) : "";
+  // Open-water temp: confirm/correct loop driven by the forecaster (a stale reading is drifted on air temp
+  // and shown as a MODEL estimate to confirm). Saving writes data/venue.json (read live → no restart).
+  const water = w.water ?? (w.waterTempC != null ? { tempC: w.waterTempC, asOf: w.waterTempAsOf, estimated: false, stale: false, ageDays: 0 } : undefined);
+  const waterTemp = renderWaterTemp(water, share);
   return `<div class="card"><h2>Week ahead — plan vs weather</h2>
     ${sessions}
     ${fuelExtras}
     <table style="margin-top:8px"><tr class="k"><td>Day</td><td>Sky</td><td>°C</td><td>Rain</td><td>Gusts km/h</td><td>Roads</td><td>Ride window</td></tr>${rows}</table>
-    <div class="k" style="margin-top:8px">${planNote}Open-Meteo forecast as of ${stamp(w.fetchedAt)} — Sync re-pulls both. "Roads" and ride windows are a MODEL drying estimate from rain, temperature, sun and wind — eyeball the tarmac before committing. Open-water temp has no public feed: set COACH_WATER_TEMP_C when the venue posts a reading.</div>
+    <div class="k" style="margin-top:8px">${planNote}Open-Meteo forecast as of ${stamp(w.fetchedAt)} — Sync re-pulls both. "Roads" and ride windows are a MODEL drying estimate from rain, temperature, sun and wind — eyeball the tarmac before committing.</div>
+    ${waterTemp}
   </div>${fuelJs}`;
 }
 
@@ -967,7 +1019,7 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
   const showWeather = !share && !!weather;
   const weatherCarriesFuel = showWeather && fuelInventory.length > 0 && fuelPlans.some((p) => p.needed);
   const weatherHtml = showWeather
-    ? renderWeather(weather, weatherCarriesFuel ? { byKey: fuelByKey, logged: loggedFuel, inventory: fuelInventory, hasApiKey: setupHealth?.hasApiKey } : undefined)
+    ? renderWeather(weather, weatherCarriesFuel ? { byKey: fuelByKey, logged: loggedFuel, inventory: fuelInventory, hasApiKey: setupHealth?.hasApiKey } : undefined, share)
     : "";
   const fuelCard = weatherCarriesFuel ? "" : renderFuelCard({ plans: fuelPlans, inventory: fuelInventory, fuelLog, share, hasApiKey: setupHealth?.hasApiKey });
 
@@ -1068,6 +1120,7 @@ tr.total td{border-top:2px solid #e7d9c6;border-bottom:0;font-weight:600}
 .acts .agree:hover{background:#e6f5ea;border-color:#1a8a3a}.acts .disagree:hover{background:#fdeaea;border-color:#c0392b}
 .acts .ignore:hover{background:#f3f3f3}.reacted{font-size:11px;color:#1a8a3a;margin-left:4px}
 .acts .agree.on{background:#e6f5ea;border-color:#1a8a3a;font-weight:600}.acts .disagree.on{background:#fdeaea;border-color:#c0392b;font-weight:600}
+.insight[data-reaction-state="applied"]{opacity:.65}
 .newbadge{background:#1558d6;color:#fff;font-size:9px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:9px;margin-right:6px;vertical-align:middle}
 .age{font-size:11px;color:#bbb;margin-top:4px}
 .route{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.02em;color:#6b5b45;background:#f4f1ea;border:1px solid #e7d9c6;border-radius:9px;padding:1px 7px;margin-left:4px;white-space:nowrap}
@@ -1282,24 +1335,42 @@ async function actPlan(){
 // "Make this change" on a training card: draft THIS specific recommendation into a concrete, validated plan
 // edit (gated propose→confirm — confirming writes to AI Endurance). No match → the precise manual steps.
 async function actItem(btn){
-  var card=btn.closest('.insight');var box=card.querySelector('.item-proposals');var rec=card.getAttribute('data-rec');
+  var card=btn.closest('.insight');var box=card.querySelector('.item-proposals');var rec=card.getAttribute('data-rec');var cardKey=card.getAttribute('data-key');
   btn.disabled=true;box.innerHTML='<div class="k">Drafting the change…</div>';
-  try{var r=await fetch('/act-item',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({recommendation:rec})});
+  try{var r=await fetch('/act-item',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({recommendation:rec,cardKey:cardKey})});
     var j=await r.json();
     if(!j.proposals||!j.proposals.length){box.innerHTML='<div class="setup-action">'+esc(j.notes||'No automatic edit fits this — make the change in AI Endurance, then ↻ Sync.')+'</div>';btn.disabled=false;return;}
     box.innerHTML=j.proposals.map(proposalHtml).join('');
   }catch(e){box.innerHTML='<div class="k">Error: '+esc(''+e)+'</div>';btn.disabled=false;}
 }
-async function confirmProposal(btn){var box=btn.closest('.proposal');var id=box.getAttribute('data-id');var s=box.querySelector('.reacted');s.textContent='Applying…';
-  try{var r=await fetch('/confirm-proposal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})});var j=await r.json();
-    box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
-    s.textContent=j.ok?'✓ applied to AI Endurance':'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
+async function confirmProposal(btn){var box=btn.closest('.proposal');var id=box.getAttribute('data-id');var s=box.querySelector('.reacted');
+  var card=btn.closest('.insight');var cardKey=card?card.getAttribute('data-key'):null;s.textContent='Applying…';
+  try{var r=await fetch('/confirm-proposal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id,cardKey:cardKey})});var j=await r.json();
+    if(!j.ok){box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='failed: '+esc(j.error||'');return;}
+    // Mark the source 'This week' card applied in place, so it doesn't re-offer the change before a reload.
+    if(card){card.setAttribute('data-reaction-state','applied');var p=card.querySelector('.item-proposals');if(p)p.innerHTML='';var a=card.querySelector('.acts');if(a)a.innerHTML='<span class="reacted">✓ applied to AI Endurance</span>';}
+    else{box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='✓ applied to AI Endurance';}
+  }catch(e){s.textContent='error';}}
 async function declineProposal(btn){var box=btn.closest('.proposal');var id=box.getAttribute('data-id');var s=box.querySelector('.reacted');
   try{await fetch('/decline-proposal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})});
     box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='dismissed';box.style.opacity=0.5;}catch(e){s.textContent='error';}}
+// Open-water temp: save the venue's latest reading live (no .env edit, no restart). The swim verdict
+// uses it on the next page load, so we tell the user to reload rather than faking the new verdict here.
+async function setWaterTemp(btn){var box=btn.closest('.watertemp');var inp=box.querySelector('.wt-input');var s=box.querySelector('.wt-status');
+  var v=parseFloat(inp.value);if(!isFinite(v)){s.textContent='enter a number (°C)';return;}s.textContent='Saving…';
+  try{var r=await fetch('/set-water-temp',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tempC:v})});var j=await r.json();
+    s.textContent=j.ok?('✓ saved ~'+j.waterTempC+'°C — reload to refresh the swim verdict'):'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
+async function clearWaterTemp(btn){var box=btn.closest('.watertemp');var s=box.querySelector('.wt-status');s.textContent='Clearing…';
+  try{var r=await fetch('/set-water-temp',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({clear:true})});var j=await r.json();
+    s.textContent=j.ok?'✓ cleared — reload to go back to “check the venue”':'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
+// Confirm the MODEL estimate as-is (data-est carries the estimated value); same write path as a correction.
+async function confirmWaterTemp(btn){var box=btn.closest('.watertemp');var s=box.querySelector('.wt-status');var v=parseFloat(btn.getAttribute('data-est'));
+  if(!isFinite(v)){s.textContent='nothing to confirm';return;}s.textContent='Confirming…';
+  try{var r=await fetch('/set-water-temp',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tempC:v})});var j=await r.json();
+    s.textContent=j.ok?('✓ confirmed ~'+j.waterTempC+'°C — reload to refresh the swim verdict'):'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
 </script>
 
-${renderSetupImprove(profile, share, { suppressed, reactions, insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined })}
+${renderSetupImprove(profile, share, { suppressed, reactions, appliedKeys: executedSourceKeys(decisions), insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined })}
 
 ${renderCoachRecs(coachRecs ?? [], reactions, share)}
 

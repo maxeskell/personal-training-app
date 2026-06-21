@@ -18,6 +18,7 @@
 
 import type { GarminDaily } from "./garminTrends.js";
 import type { Finding } from "./metrics.js";
+import { withinPhysioHorizon } from "./horizon.js";
 
 interface StreamSpec {
   /** Number-free label used in the finding title (keeps the feedback key stable). */
@@ -146,9 +147,15 @@ function scanStream(spec: StreamSpec, daysAsc: GarminDaily[]): Finding | null {
  */
 export function detectDataQuality(days: GarminDaily[]): Finding[] {
   const asc = [...days].sort((a, b) => a.date.localeCompare(b.date));
+  if (!asc.length) return [];
+  // Only scan readings within the physio horizon (six months from the latest reading) — a long-dead
+  // outlier (a 2016 archive glitch under a 2026 cluster) feeds no live trend, so it's left alone rather
+  // than surfaced as a current finding. Same floor the feed applies (orchestrator.loadArchive); here as
+  // defence-in-depth for any direct caller.
+  const recent = withinPhysioHorizon(asc);
   const out: Finding[] = [];
   for (const spec of STREAMS) {
-    const f = scanStream(spec, asc);
+    const f = scanStream(spec, recent);
     if (f) out.push(f);
   }
   return out;

@@ -153,8 +153,8 @@ open — point Cowork at the stable `…/mcp` URL once and it keeps working.
 
 > **What it exposes — shown on every start.** The server prints a banner to its log naming exactly
 > what's reachable: your training data, health metrics, and your **medical** profile via `get_profile`
-> (conditions, medication), plus the gated plan-write tools unless read-only. `auth=none` and
-> `COACH_MCP_PROFILE_WRITE=true` get extra warning lines. It's there so the stakes are visible at the
+> (conditions, medication), plus the gated plan-write tools unless read-only. `auth=none`,
+> `COACH_MCP_PROFILE_WRITE=true` and `COACH_MCP_FILE_ACCESS=true` get extra warning lines. It's there so the stakes are visible at the
 > moment you stand the server up, not just in this doc — keep it behind your private, authenticated tunnel.
 
 > The launchd job runs the server as a **single node process** (`node --import tsx src/mcpHttp.ts`),
@@ -207,6 +207,22 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
   never be written. **Gating:** always available to **local** Claude Desktop/Code (stdio); on the
   **HTTP/Cowork** surface it's **off unless `COACH_MCP_PROFILE_WRITE=true`** (it writes a file on your
   Mac from a remote session). Writes a local file only — never AI Endurance.
+- **`list_files`** `{ path? }` / **`read_file`** `{ path }` / **`write_file`** `{ path, content }` —
+  read and update the project's **gitignored files** that a fresh web-session clone never has on disk
+  (`profile.local.yaml`, `data/`, `reports/`, `knowledge/`). The capability the purpose-built tools
+  don't cover, so a remote Claude session can browse and edit your own files directly. **Two hard
+  rails, always enforced** (see `src/mcp/fileAccess.ts`): (1) **containment** — every path resolves
+  inside the repo root; `..`, absolute escapes and symlinks pointing outside are refused; (2) a
+  **secrets deny-list** — `.env*` (templates excepted), `*.token(s)`/`*.json` token files, keys
+  (`*.pem`/`*.key`/SSH), `.git/` and `node_modules/` are **never** listed, read or written, whatever
+  the flags. `read_file` caps at ~1 MB and returns the file's **exact contents** — no `# <path>` header
+  or label is added — so what you read can be edited and written straight back without corruption (a
+  prepended header would otherwise be copied back into the file and silently duplicate on every
+  round-trip, nastily so for YAML/shell where `#` is a real comment). `write_file` replaces the whole
+  file (read it first to edit).
+  **Gating:** always on for **local** Claude Desktop/Code (stdio); on the **HTTP/Cowork** surface it's
+  **off unless `COACH_MCP_FILE_ACCESS=true`** (it reads/writes files on your Mac from a remote session).
+  For the athlete profile prefer `update_profile` — it deep-merges and validates instead of overwriting.
 - **`insights`** — run the insight engine over your history (CTL/ATL/TSB & ramp, EF, durability,
   run-load, autocorr-aware correlations, change-points, taper target, validated monitoring rules)
   and return the computed metrics + top surfaced findings. Each top finding is annotated with its
@@ -283,6 +299,7 @@ optional Garmin, `ANTHROPIC_API_KEY` for the LLM tools). **HTTP** mode adds a fe
 | `COACH_MCP_TOKEN` | _(generated)_ | the secret; `token` mode → bearer header, `oauth` mode → typed into the consent page. If unset, a random one is written to `<secretsDir>/mcp.token` (0600) |
 | `COACH_MCP_READONLY` | `false` | `true` drops the gated AI Endurance write tools from the HTTP surface |
 | `COACH_MCP_PROFILE_WRITE` | `false` | `true` exposes the local-file `update_profile` tool on the HTTP/Cowork surface (always on for local stdio) |
+| `COACH_MCP_FILE_ACCESS` | `false` | `true` exposes the repo file tools (`list_files`/`read_file`/`write_file`) on the HTTP/Cowork surface — read+update gitignored files (always on for local stdio). Scoped to the repo; secrets/`.git`/`node_modules` are always excluded |
 
 The same `npm run doctor` health check covers the rest.
 

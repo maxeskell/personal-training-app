@@ -56,6 +56,20 @@ test("data quality: realistic, varied data stays silent (no crying wolf)", () =>
   assert.deepEqual(detectDataQuality(days), []);
 });
 
+test("data quality: a long-dead out-of-range reading is ignored (no decade-old archive cruft as today's call)", () => {
+  // A junk 8.3 kg weight ten years before the live cluster must NOT surface — it feeds no current trend.
+  const old: GarminDaily = { date: "2016-03-31", weightKg: 8.3 };
+  const recent = Array.from({ length: 8 }, (_, i) => day(i, { weightKg: i % 2 ? 72.2 : 72.0 }));
+  assert.deepEqual(detectDataQuality([old, ...recent]), []);
+});
+
+test("data quality: a RECENT out-of-range weight is still flagged (window doesn't hide live glitches)", () => {
+  const days = Array.from({ length: 8 }, (_, i) => day(i, { weightKg: i === 6 ? 8.3 : 72 }));
+  const weight = detectDataQuality(days).filter((f) => /Weight/.test(f.title));
+  assert.equal(weight.length, 1);
+  assert.match(weight[0].detail, /outside the plausible human range/);
+});
+
 test("data quality: at most one finding per stream (worst issue only)", () => {
   // Weight has BOTH an out-of-range reading and a jump — should still be a single finding.
   const w = [75, 400, 75, 81, 75, 75, 75];

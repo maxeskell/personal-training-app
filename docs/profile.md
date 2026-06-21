@@ -112,7 +112,7 @@ to the prompt as a sanity hint.
 
 Top-level blocks (all optional except `schema_version` and `identity`):
 
-`identity` · `biomechanics` · `health` (incl. `medication`) · `availability` · `equipment` ·
+`identity` · `biomechanics` · `health` (incl. `medication`) · `bloods` · `availability` · `equipment` ·
 `bike_fit` · `fuelling` · `races` · `ai_endurance_todo` · `open_items`.
 
 Validation is strict on the **contract** — enum domains (`sex`, `units`, race `priority`/`distance`,
@@ -136,6 +136,44 @@ stray `ftp_w: 223` (or `threshold_w: 240`) anywhere does not.
 **Height vs weight.** `identity.height_cm` is allowed to be a number — height is *stable anthropometry*,
 not a live performance metric (it's what the Garmin enrichment fills). **Weight is denied**: it changes
 daily, is pulled live, and a numeric weight anywhere in the profile trips the guard.
+
+**Bike race weight is the kit exception.** A *bike's* mass is stable kit, not a live number, so each
+`equipment.bikes.<name>.race_weight_g` records the bike as-raced (incl. the bottle(s) you weighed it
+with) in **grams** — `weight_g` passes the guard where a `weight_kg`/`weight` would be rejected as rider
+bodyweight. `renderProfileContext` surfaces it in the live coaching block, and `systemWeightKg`
+(`src/profile/equipment.ts`) combines it with the **live** rider weight from `get_state` into total
+system weight (rider + bike) — the input a tyre-pressure chart needs. The rider half stays live by
+design; only the bike half is stored.
+
+### Bloods — dated snapshots (the numbers exception)
+
+`bloods.panels` is a list of dated blood-panel snapshots, and it's the one place the profile holds
+clinical numbers — deliberately. The no-live-numbers rule exists because FTP/weight/HRV/… are *owned by
+a live API*; storing them here would shadow the live truth. **No training API holds your bloods**, so a
+dated snapshot isn't a duplicate — it's stable context that lives nowhere else. Each panel is:
+
+```yaml
+bloods:
+  panels:
+    - date: 2020-11-06                    # YYYY-MM-DD the sample was drawn (required for the age nudge)
+      source: Medichecks Well Man UltraVit
+      markers:                            # free-form name_unit → number; record only what you care about
+        ferritin_ug_l: 70.2
+        vitamin_d_nmol_l: 67.8
+      flags: ["haematocrit high-normal"]  # optional free-text
+      notes: ["vitamin D low-normal; advised 400-800 IU/day"]
+```
+
+Two honesty guarantees:
+
+- **Always reported as a snapshot, never as current.** `renderProfileContext` surfaces only the *latest*
+  panel — its date, **age** (`~N months ago`), flags and notes — and a pointer to `get_profile` for the
+  full marker values. Raw marker numbers are **not** dumped into the compact coaching block. Once the
+  latest panel is **over a year old** it carries a *consider a re-test* nudge, so a stale value can't be
+  mistaken for a fresh one. Full detail (every marker, every panel) is in the `get_profile` output.
+- **The guard still runs.** A blood marker is just a number under a `name_unit` key, so it passes — but if
+  a *live*-metric key (e.g. `resting_hr`, `vo2max`) is planted among the markers it's still rejected,
+  exactly as anywhere else in the profile. Keep marker keys to genuine lab analytes.
 
 ## `get_profile` (MCP) and `dose_cycle`
 
@@ -183,8 +221,8 @@ That card is a small, deterministic (no-AI) action hub in three sections:
 
 - **Finish setup** — the AI-Endurance gaps above, your free-text `open_items` (tagged *discuss with
   coach*), any unfilled optional profile questions (tagged *edit profile*), a few **integration-health**
-  nudges (tagged *in your setup* — a missing `ANTHROPIC_API_KEY`, a long-stale sync, an unset
-  `COACH_WATER_TEMP_C`) and any **named race that has no date yet** (tagged *edit profile*). **Ranked by
+  nudges (tagged *in your setup* — a missing `ANTHROPIC_API_KEY`, a long-stale sync, no open-water
+  temperature set yet) and any **named race that has no date yet** (tagged *edit profile*). **Ranked by
   value** — AI-Endurance gaps and open items outrank profile questions, and a field the coach actually
   reads outranks a reference-only one.
 - **This week** — the deterministic *marginal-gains* tweaks (the same selection the `tune` flow phrases

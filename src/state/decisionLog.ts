@@ -20,7 +20,7 @@ export type DecisionStatus = "proposed" | "accepted" | "declined" | "deferred" |
  * back to the profile), dismiss = "ignore this advice, don't show it again". clear removes a previous
  * opinion (back to neutral). Maps to the statuses below.
  */
-export type InsightReaction = "agree" | "disagree" | "ignore" | "done" | "dismiss" | "clear";
+export type InsightReaction = "agree" | "disagree" | "ignore" | "done" | "dismiss" | "clear" | "applied";
 
 export interface DecisionRecord {
   id: string;
@@ -43,6 +43,12 @@ export interface DecisionRecord {
   family?: string;
   /** Optional retrospective note on how the call held up. */
   retro?: string;
+  /**
+   * For a plan-adjust drafted from a "Set up & improve → This week" card: that card's setup key. Lets the
+   * dashboard mark the card "✓ applied" once the gated write reaches `executed` — driven by the
+   * authoritative write log, not the click — so it survives a CLI confirm or a failed click-time marker.
+   */
+  sourceKey?: string;
 }
 
 const REACTION_STATUS: Record<InsightReaction, DecisionStatus> = {
@@ -52,6 +58,7 @@ const REACTION_STATUS: Record<InsightReaction, DecisionStatus> = {
   done: "completed",
   dismiss: "dismissed",
   clear: "cleared",
+  applied: "executed",
 };
 
 export class DecisionLog {
@@ -168,6 +175,7 @@ const STATUS_REACTION: Partial<Record<DecisionStatus, InsightReaction>> = {
   deferred: "ignore",
   completed: "done",
   dismissed: "dismiss",
+  executed: "applied",
 };
 export function reactionOf(status: DecisionStatus): InsightReaction {
   return STATUS_REACTION[status] ?? "ignore";
@@ -181,7 +189,7 @@ export function reactionOf(status: DecisionStatus): InsightReaction {
 const REACTION_LABELS: Record<string, InsightReaction> = {
   like: "agree", dislike: "disagree", snooze: "ignore", clear: "clear",
   agree: "agree", disagree: "disagree", ignore: "ignore",
-  done: "done", dismiss: "dismiss",
+  done: "done", dismiss: "dismiss", applied: "applied",
 };
 export function reactionFromLabel(label: string): InsightReaction | undefined {
   return REACTION_LABELS[label];
@@ -225,6 +233,20 @@ export function suppressedInsightKeys(
     const ageDays = (now.getTime() - new Date(timestamp).getTime()) / 86_400_000;
     if (ageDays <= withinDays) out.add(key);
   }
+  return out;
+}
+
+/**
+ * Setup-card keys whose drafted plan-adjust has reached `executed` — i.e. the gated write the card
+ * proposed actually landed in AI Endurance. The dashboard marks these cards "✓ applied". Latest status
+ * per proposal id wins (the log is append-only chronological), so a later decline/expiry un-marks it.
+ * Pure — testable.
+ */
+export function executedSourceKeys(records: DecisionRecord[]): Set<string> {
+  const latest = new Map<string, DecisionRecord>();
+  for (const r of records) if (r.kind === "plan-adjust" && r.sourceKey) latest.set(r.id, r);
+  const out = new Set<string>();
+  for (const r of latest.values()) if (r.status === "executed") out.add(r.sourceKey!);
   return out;
 }
 

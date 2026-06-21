@@ -41,7 +41,7 @@ const RICH: unknown = {
     medication: { name: "example-drug", dose_day: "sunday", gi_trough_days: ["tuesday", "wednesday", "thursday"], implications: ["fuel to train"] },
   },
   availability: { weekly_hours: "11-12", weekday_minutes_per_day: 90, rest_day: "monday", fixed_sessions: { sunday: "long ride" } },
-  equipment: { bikes: { road: { crank_length_mm: 172.5 }, tt: { crank_length_mm: 165, bar_width_cm: 38 } } },
+  equipment: { bikes: { road: { crank_length_mm: 172.5, race_weight_g: 8200 }, tt: { crank_length_mm: 165, bar_width_cm: 38 } } },
   bike_fit: { fits: [{ saddle_height_mm: 765, crank_mm: 172.5, body: { height_cm: 179, foot_length_mm: { left: 269, right: 267 } } }] },
   fuelling: { carb_target_g_per_hour: { long: 80, sprint: 0 }, caffeine: "race-day lever" },
   races: [{ name: "Test Olympic", priority: "A", date: "2026-07-11", distance: "olympic", target_time: "sub 2:00" }],
@@ -50,6 +50,47 @@ const RICH: unknown = {
 
 test("a richly-filled profile validates; the guard ignores equipment/fit numbers and string TODOs", () => {
   assert.doesNotThrow(() => validateProfile(RICH));
+});
+
+// A profile carrying dated blood panels (no PII): older + newer panel, numeric markers, flags + notes.
+const WITH_BLOODS: unknown = {
+  schema_version: 1,
+  identity: { name: "Blood Test", sex: "male", date_of_birth: "1981-10-28" },
+  bloods: {
+    panels: [
+      { date: "2018-01-01", source: "Old Panel", markers: { ferritin_ug_l: 40 }, notes: ["older panel"] },
+      {
+        date: "2020-11-06",
+        source: "Medichecks Well Man UltraVit",
+        markers: { ferritin_ug_l: 70.2, haemoglobin_g_l: 170, haematocrit_l_l: 0.511, vitamin_d_nmol_l: 67.8 },
+        flags: ["haematocrit high-normal"],
+        notes: ["vitamin D low-normal; advised 400-800 IU/day"],
+      },
+    ],
+  },
+};
+
+test("bloods: a dated-panel profile validates; numeric markers don't trip the no-live-numbers guard", () => {
+  assert.doesNotThrow(() => validateProfile(WITH_BLOODS));
+});
+
+test("bloods: the live-number guard still catches a live metric planted among markers", () => {
+  assert.throws(
+    () => assertNoLiveNumbers({ bloods: { panels: [{ date: "2020-11-06", markers: { resting_hr: 48 } }] } }),
+    /live performance number/i,
+  );
+});
+
+test("bloods: renderProfileContext surfaces the LATEST panel with age, notes and a get_profile pointer — no marker dump", () => {
+  const block = renderProfileContext(validateProfile(WITH_BLOODS), "2026-06-21");
+  assert.match(block, /Bloods \(latest panel 2020-11-06/); // newest of the two panels wins
+  assert.match(block, /SNAPSHOT, not live/);
+  assert.match(block, /consider a re-test/i); // > 12 months old → re-test nudge
+  assert.match(block, /vitamin D low-normal/); // curated note carried through
+  assert.match(block, /haematocrit high-normal/); // and the flag
+  assert.match(block, /full values via get_profile/i); // pointer, not a value dump
+  assert.doesNotMatch(block, /67\.8/); // raw marker values stay OUT of the compact block
+  assert.match(block, /2 panels on file/); // history hint when more than one panel
 });
 
 test("computeDoseCycle derives days_since_dose and in_gi_trough from the weekday", () => {
@@ -142,6 +183,8 @@ test("renderProfileContext surfaces the dose-cycle and never leaks a live number
   assert.match(block, /ATHLETE PROFILE/);
   assert.match(block, /GI trough/i);
   assert.match(block, /Race targets/);
+  // Bike race weight (grams in the profile) renders in kg, flagged for combining with the live weight.
+  assert.match(block, /Bike race weight.*road 8\.2kg/);
   assert.doesNotMatch(block, /\bftp\b/i); // no live numbers leak into the prompt block
   // A profile with nothing meaningful renders to an empty string (clean omission).
   assert.equal(renderProfileContext(validateProfile({ schema_version: 1, identity: {} }), "2026-06-17"), "");

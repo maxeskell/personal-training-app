@@ -131,6 +131,25 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   or **by talking to Claude** — the MCP `update_profile` tool patches your answers straight into the file
   (validated; live numbers rejected). It's on for local **Claude Desktop/Code**; on **Cowork** set
   `COACH_MCP_PROFILE_WRITE=true` to allow it (it writes a file on your Mac from a remote session).
+- **Read & edit your local files from Claude.** Beyond the profile, the MCP `list_files` / `read_file` /
+  `write_file` tools let Claude browse and update the project's **gitignored** files — `profile.local.yaml`,
+  `data/`, `reports/`, `knowledge/` — that a cloud session's fresh clone doesn't have on disk. On for local
+  **Claude Desktop/Code**; on **Cowork** set `COACH_MCP_FILE_ACCESS=true`. **Hard-scoped to the repo with a
+  secrets deny-list**: `.env*`, token/key files, `.git/` and `node_modules/` are never readable or writable,
+  whatever the flag. See [docs/mcp-server.md](docs/mcp-server.md).
+- **Bike race weight.** Log each bike as-raced (incl. a bottle) under `equipment.bikes.<name>.race_weight_g`
+  in **grams** — a `weight_kg`/`weight` is rejected as your live bodyweight, but a bike's own mass is stable
+  kit, so grams passes. The coach surfaces it in the live block and adds your **live** weight to it for total
+  system weight (rider + bike) — e.g. to size tyre pressure. The rider half stays live; only the bike half is
+  stored. `profile.example.yaml` carries a commented `felt:` block to copy.
+- **Blood panels — dated snapshots.** `bloods.panels` is the one place the profile keeps clinical numbers,
+  on purpose: the no-live-numbers rule guards values a live API *owns* (FTP, weight, HRV…), but **no API
+  holds your bloods**, so a dated panel is stable context that lives nowhere else. Each entry is a
+  snapshot (`date`, `source`, free-form `markers`, `flags`, `notes`). It's always treated as a *snapshot,
+  never as current* — the coach surfaces the **latest** panel with its **age** and a *re-test* nudge once
+  it's over a year old, shows full markers via `get_profile`, and the guard still rejects a live-metric
+  key (e.g. `resting_hr`) snuck in among the markers. `profile.example.yaml` carries a commented panel to
+  copy. (It's not medical advice — record what your report and GP tell you, then the coach factors it in.)
 - **`dose_cycle`.** If you set `health.medication.dose_day` + `gi_trough_days`, `get_profile` returns a
   computed `dose_cycle` (`days_since_dose`, `in_gi_trough`) so the coach can keep your hardest/longest
   sessions off the GI-trough days and watch under-fuelling — the personalisation a generic endurance
@@ -159,7 +178,12 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   - a **training plan edit** gets **➡️ Make this change**, which drafts the concrete edit and applies it to
     your plan in AI Endurance through the **gated propose→confirm write** (you confirm the exact change
     first; it's logged and reversible). If it can't be tied to a scheduled session, you get the **precise
-    steps** to make it yourself in AI Endurance or Garmin instead — never a dead end.
+    steps** to make it yourself in AI Endurance or Garmin instead — never a dead end. **Once the change has
+    been applied, the card marks itself ✓ applied and stops re-offering "Make this change."** That marker is
+    driven by the **gated-write log** — the card clears when its proposed write actually reaches *executed* —
+    so it's robust to a reload, a CLI `npm run confirm`, or a failed click-time marker. (What it can't see is
+    a change you make **directly in AI Endurance**, outside the coach — that card lingers until it ages out
+    or you Snooze/Ignore it; the coach never gets to guess a recommendation "done" and hide real advice.)
 
   An `open_items` entry that just restates a setup gap (e.g. a hand-written "swim CSS not set" alongside the
   `swim_css` gap) folds into the canonical item, so each gap is listed once. **A gap the live data already
@@ -493,8 +517,13 @@ Each outdoor session gets a 🟢/🟡/🔴 verdict against your rules — **ride
 under `COACH_RIDE_MAX_GUST_KMH`, with a best daylight ride window per day and a suggested
 alternative day when the planned one is a washout; **runs** are green in any weather (heat/ice
 noted); **open-water swims** are green except in forecast thunderstorms, with the water checked
-against your `COACH_SWIM_MIN_WATER_C` (default 13°C) floor via the manually-updated
-`COACH_WATER_TEMP_C` (no public feed exists). "Roads dry from ~HH:00" comes from an hour-by-hour
+against your `COACH_SWIM_MIN_WATER_C` (default 13°C) floor. There's no public feed for water temp, so
+you enter the venue's latest reading in the **water-temp box at the bottom of this card** — it saves
+live (no restart) and shows an "as of" date. Once a reading goes stale (>7 days) the coach **forecasts**
+the current temp — your last reading drifted by the change in air temperature since (a damped MODEL,
+labelled as such) — and asks you to **Confirm** the estimate or **Correct** it; confirming re-anchors the
+model, so it sharpens the more you confirm. (`COACH_WATER_TEMP_C` in `.env` is only an optional seed used
+before your first reading; any confirmed reading wins over it.) "Roads dry from ~HH:00" comes from an hour-by-hour
 drying MODEL (rain wets the surface; time, temperature, sun and wind dry it) — an estimate to plan
 around, not a guarantee. Indoor sessions (gym/strength) are listed as muted weather-n/a rows so the
 card always mirrors the full week. Sessions you've **already done** are greyed out and tagged `✓ done`

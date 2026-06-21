@@ -1,4 +1,5 @@
 import { computeDoseCycle, type DoseCycle, type Profile } from "./schema.js";
+import { bikeRaceWeights } from "./equipment.js";
 import type { LoadedProfile } from "./load.js";
 
 /**
@@ -59,6 +60,51 @@ function medicationLines(p: Profile, today: string): string[] {
   return out;
 }
 
+/** Whole months from `fromDate` to `today` (both YYYY-MM-DD), or null on a bad/future date. */
+function monthsBetween(fromDate: string, today: string): number | null {
+  const a = new Date(`${fromDate}T00:00:00Z`);
+  const b = new Date(`${today}T00:00:00Z`);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return null;
+  let months = (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
+  if (b.getUTCDate() < a.getUTCDate()) months--;
+  return months >= 0 ? months : null;
+}
+
+/** A panel older than this surfaces a re-test nudge — bloods are typically worth refreshing ~yearly. */
+const STALE_BLOOD_PANEL_MONTHS = 12;
+
+/**
+ * Surface the most recent blood panel as a SNAPSHOT (never as a current number): its date + age, the
+ * curated flags/notes, and a pointer to get_profile for the full marker values — raw markers are NOT
+ * dumped into the compact block. Honest-models rule: a value is always reported with how old it is, and
+ * a panel over a year old gets a re-test nudge.
+ */
+function bloodsLines(p: Profile, today: string): string[] {
+  const b = obj(p.bloods);
+  if (!b) return [];
+  const panels = (arr(b.panels) ?? [])
+    .map(obj)
+    .filter((x): x is Record<string, unknown> => Boolean(x && str(x.date)));
+  if (!panels.length) return [];
+  panels.sort((x, y) => String(y.date).localeCompare(String(x.date)));
+  const latest = panels[0];
+  const date = str(latest.date)!;
+  const months = monthsBetween(date, today);
+  const ageBit = months != null ? `, ~${months} month${months === 1 ? "" : "s"} ago` : "";
+  const stale = months != null && months >= STALE_BLOOD_PANEL_MONTHS;
+  const source = str(latest.source);
+  const takeaways = [...(arr(latest.flags) ?? []), ...(arr(latest.notes) ?? [])]
+    .map(str)
+    .filter((s): s is string => Boolean(s));
+  const markerCount = obj(latest.markers) ? Object.keys(obj(latest.markers)!).length : 0;
+  const head = `- Bloods (latest panel ${date}${ageBit}${source ? `, ${source}` : ""} — SNAPSHOT, not live${stale ? "; over a year old, consider a re-test" : ""}):`;
+  const body = takeaways.length ? ` ${takeaways.join(" | ")}.` : " no notes recorded.";
+  const tail = markerCount ? ` ${markerCount} marker${markerCount === 1 ? "" : "s"} recorded — full values via get_profile.` : "";
+  const out = [`${head}${body}${tail}`];
+  if (panels.length > 1) out.push(`  (${panels.length} panels on file; trend available via get_profile.)`);
+  return out;
+}
+
 function biomechanicsLine(p: Profile): string | null {
   const b = obj(p.biomechanics);
   if (!b) return null;
@@ -97,6 +143,15 @@ function availabilityLine(p: Profile): string | null {
   let line = parts.length ? `- Availability: ${parts.join("; ")}.` : null;
   if (notes) line = `${line ?? "- Availability:"} Note: ${notes}`;
   return line;
+}
+
+function bikeWeightLine(p: Profile): string | null {
+  const bikes = bikeRaceWeights(p);
+  if (!bikes.length) return null;
+  const parts = bikes.map((b) => `${b.name} ${b.raceWeightKg}kg`);
+  // The rider's live weight is already in this prompt (from get_state); flag the combination so the
+  // coach can size tyre pressure off total system weight rather than asking for the bike mass.
+  return `- Bike race weight (as-raced, incl. bottle) [add the live weight above for total system weight, e.g. tyre pressure]: ${parts.join(", ")}.`;
 }
 
 function fuellingLine(p: Profile): string | null {
@@ -140,8 +195,10 @@ export function renderProfileContext(profile: Profile, today: string): string {
   const lines = [
     identityLine(profile, today),
     ...medicationLines(profile, today),
+    ...bloodsLines(profile, today),
     biomechanicsLine(profile),
     availabilityLine(profile),
+    bikeWeightLine(profile),
     fuellingLine(profile),
     ...raceTargetLines(profile),
     todoLine(profile),

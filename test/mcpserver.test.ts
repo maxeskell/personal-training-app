@@ -34,10 +34,11 @@ test("formatDecisions: pending shows only still-proposed plan-adjusts with confi
 test("formatCost: empty log, and a windowed report with a per-operation line", async () => {
   const { formatCost } = await import("../src/mcpServer.js");
   assert.match(formatCost([]), /No LLM calls logged yet/);
-  // Relative to now (was a hardcoded date that fell out of the "last 7d" window as real time passed —
-  // a time-bomb that failed the suite from ~7 days after it was written).
+  // Timestamp must be RELATIVE to now: formatCost(recs, 7) filters to the last 7 days, so a hardcoded
+  // date silently expires once today passes date+7d and the per-operation line drops out of the window.
+  const recentTs = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // 1 day ago — always in-window
   const recs: CostRecord[] = [
-    { ts: new Date(Date.now() - 2 * 86_400_000).toISOString(), operation: "ask", model: "claude-opus-4-8", input: 100, output: 50, cacheWrite: 0, cacheRead: 0, costUsd: 0.001 },
+    { ts: recentTs, operation: "ask", model: "claude-opus-4-8", input: 100, output: 50, cacheWrite: 0, cacheRead: 0, costUsd: 0.001 },
   ];
   const out = formatCost(recs, 7);
   assert.match(out, /last 7d/);

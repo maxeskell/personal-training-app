@@ -43,6 +43,7 @@ import { readCostRecords, summarizeCost, type CostRecord } from "./llm/costLog.j
 import { loadProfile } from "./profile/load.js";
 import { formatProfileForTool } from "./profile/context.js";
 import { updateLocalProfile } from "./profile/update.js";
+import { repoRoot, listRepoDir, readRepoFile, writeRepoFile, formatReadResult } from "./mcp/fileAccess.js";
 import type { AthleteState } from "./state/types.js";
 
 /**
@@ -182,7 +183,7 @@ export function formatReadiness(
  * local stdio surface, opt-in on the remote HTTP/Cowork surface (COACH_MCP_PROFILE_WRITE=true) since it
  * writes a file on the host from a remote session.
  */
-export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite?: boolean } = {}): McpServer {
+export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite?: boolean; includeFileAccess?: boolean } = {}): McpServer {
   const server = new McpServer({ name: "endurance-coach", version: "0.1.0" });
 
   // ---- deterministic reads (no LLM, no token cost) ----
@@ -599,6 +600,9 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
   // AIE write path because it touches the host filesystem, not AI Endurance.
   if (opts.includeProfileWrite) registerProfileWriteTool(server);
 
+  // ---- gated, repo-scoped file read/write (gitignored files a web clone doesn't have) ----
+  if (opts.includeFileAccess) registerFileAccessTools(server);
+
   // ---- gated write path (propose → confirm) — the ONLY way to mutate AI Endurance ----
   // Omitted entirely when includeWrites is false (e.g. a read-only HTTP/Cowork surface).
   if (opts.includeWrites !== false) registerWriteTools(server);
@@ -620,6 +624,62 @@ function registerProfileWriteTool(server: McpServer): void {
       try {
         const { path, changed } = await updateLocalProfile(patch);
         return ok(`✓ Updated ${path}${changed.length ? ` (sections set: ${changed.join(", ")})` : ""}. Validated — no live numbers stored.`);
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
+  );
+}
+
+/**
+ * Register the gated, repo-scoped file tools — `list_files` / `read_file` / `write_file`. They let a
+ * session read and update the project's GITIGNORED files (profile.local.yaml, data/, reports/,
+ * knowledge/ …) that a fresh web-session clone never has on disk. Scoped to the repo root with a hard
+ * secrets deny-list (`.env*`, tokens, keys, `.git/`, `node_modules/`) enforced in `fileAccess.ts`, so it
+ * can read/write your data but never a secret. Off unless enabled (local stdio, or COACH_MCP_FILE_ACCESS
+ * on the HTTP/Cowork surface).
+ */
+function registerFileAccessTools(server: McpServer): void {
+  const fmtSize = (n?: number) => (n == null ? "" : n < 1024 ? `${n}B` : `${(n / 1024).toFixed(1)}K`);
+  server.tool(
+    "list_files",
+    "List a directory in the project repo (default the repo root). Use this to discover the GITIGNORED files a fresh clone doesn't have — profile.local.yaml, data/, reports/, knowledge/. Scoped to the repo; secrets (.env*, tokens, keys), .git/ and node_modules/ are hidden. Read-only, no LLM cost.",
+    { path: z.string().optional().describe("Directory relative to the repo root (e.g. 'reports'). Omit for the root.") },
+    async ({ path }) => {
+      try {
+        const { rel, entries } = await listRepoDir(repoRoot(), path ?? ".");
+        if (!entries.length) return ok(`${rel}/ is empty (or only holds excluded files).`);
+        const lines = entries.map((e) => `  ${e.type === "dir" ? "📁" : "📄"} ${e.name}${e.type === "dir" ? "/" : ""}${e.size != null ? `  (${fmtSize(e.size)})` : ""}`);
+        return ok(`${rel}/ — ${entries.length} entr${entries.length === 1 ? "y" : "ies"}:\n${lines.join("\n")}`);
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
+  );
+  server.tool(
+    "read_file",
+    "Read a UTF-8 text file from the project repo — including GITIGNORED files (profile.local.yaml, data/*.json, reports/*, knowledge/*) that a web-session clone doesn't have on disk. Returns the file's EXACT contents (no added header), so an edit can be written straight back with write_file. Scoped to the repo; secrets (.env*, tokens, keys) and .git/ are refused. Read-only, no LLM cost.",
+    { path: z.string().min(1).describe("File path relative to the repo root, e.g. 'profile.local.yaml'.") },
+    async ({ path }) => {
+      try {
+        const { content } = await readRepoFile(repoRoot(), path);
+        return ok(formatReadResult(content));
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : String(e));
+      }
+    },
+  );
+  server.tool(
+    "write_file",
+    "Write (create or overwrite) a UTF-8 text file in the project repo — for the GITIGNORED files you maintain (e.g. profile.local.yaml, a local data/ file). ⚠ Writes a real file on the host. Scoped to the repo with parent dirs created as needed; secrets (.env*, tokens, keys), .git/ and node_modules/ are refused. Read the file first if you're editing it — this replaces the whole file. (For the athlete profile, prefer `update_profile`, which deep-merges and validates.)",
+    {
+      path: z.string().min(1).describe("File path relative to the repo root, e.g. 'data/notes.json'."),
+      content: z.string().describe("The full new file contents (UTF-8). This REPLACES the file."),
+    },
+    async ({ path, content }) => {
+      try {
+        const { rel, bytes } = await writeRepoFile(repoRoot(), path, content);
+        return ok(`✓ Wrote ${rel} (${bytes} bytes).`);
       } catch (e) {
         return fail(e instanceof Error ? e.message : String(e));
       }
@@ -699,13 +759,13 @@ async function main(): Promise<void> {
   // process.stdout.write, which this override does NOT touch — frames are unaffected.)
   console.log = (...args: unknown[]) => console.error(...args);
 
-  // Local stdio is the user's own machine spawning the process, so the local-file profile write is on.
-  const server = buildServer({ includeProfileWrite: true });
+  // Local stdio is the user's own machine spawning the process, so the local-file writes are on.
+  const server = buildServer({ includeProfileWrite: true, includeFileAccess: true });
   await server.connect(new StdioServerTransport());
   console.error(
     "endurance-coach MCP server ready (stdio). Read tools: sync/get_state/splits/ingest_fit/ftp_check/get_profile/insights/react_to_insight/list_reports/" +
       "read_report/decisions/listening/knowledge/cost · LLM tools: ask/readiness/weekly/race_prep/deep_dive/tune/research/session_feedback · " +
-      "writes: update_profile (local file) · gated AIE writes: propose_adjustment/confirm/decline.",
+      "writes: update_profile (local file), list_files/read_file/write_file (repo files) · gated AIE writes: propose_adjustment/confirm/decline.",
   );
 }
 

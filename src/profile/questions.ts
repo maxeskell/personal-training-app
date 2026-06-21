@@ -92,6 +92,14 @@ export const PROFILE_QUESTIONS: ProfileQuestion[] = [
     why: "Recorded for reference; the coach's live sleep signal comes from Garmin (sleep score/hours), not this note.",
   },
 
+  // --- bloods (dated panel snapshots; no API holds these) ---
+  {
+    area: "bloods",
+    field: "bloods.panels",
+    question: "Any blood-test panels worth recording? (dated snapshots: date, source, markers, flags, notes)",
+    why: "The latest panel's date, flags and notes surface in the live coaching block — with an age + re-test nudge once it's over a year old — and the full markers show via get_profile. Snapshots only, never treated as current; no training API holds your bloods.",
+  },
+
   // --- biomechanics (leg-length / cleat inform run-load + injury notes) ---
   {
     area: "biomechanics",
@@ -154,8 +162,8 @@ export const PROFILE_QUESTIONS: ProfileQuestion[] = [
   {
     area: "equipment",
     field: "equipment.bikes",
-    question: "What bikes do you ride (groupset, crank length, etc.)?",
-    why: "Recorded for your reference and visible to Claude via get_profile; not pulled into the compact live coaching block.",
+    question: "What bikes do you ride (groupset, crank length, and each bike's as-raced weight incl. a bottle)?",
+    why: "Visible to Claude via get_profile. A bike's race_weight_g (grams, as-raced) also surfaces in the live coaching block, where the coach adds your live weight to it for total system weight — e.g. to size tyre pressure.",
   },
   {
     area: "equipment",

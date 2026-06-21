@@ -39,6 +39,8 @@ import { WriteGate } from "./guardrails/writeGate.js";
 import { alertFindings } from "./insights/metrics.js";
 import { getForecast, refreshForecast } from "./weather/store.js";
 import { assessWeek, latestActuals, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
+import { loadVenue, setWaterTemp, clearWaterTemp, parseWaterTemp, latestReading } from "./state/venue.js";
+import { effectiveWaterTemp } from "./weather/waterTemp.js";
 import { config } from "./config.js";
 import { todayIso } from "./util/today.js";
 import { coalesce } from "./util/coalesce.js";
@@ -106,12 +108,20 @@ async function renderLatest(share = false): Promise<string> {
   if (insights) await insightLog.recordSurfaced(insights.topFindings, "dashboard");
   // Week-ahead weather: cached (or short-timeout fetched) forecast joined to the upcoming plan.
   // Best-effort — undefined just means the card is absent, never an error page.
+  // Open-water temp: confirmed readings (data/venue.json) feed a forecaster (weather/waterTemp.ts) that
+  // drifts a stale reading on air temperature and prompts the athlete to confirm. Read fresh here so a new
+  // reading takes effect on the next render — no restart. Computed even when weather's off (no air drift).
+  const venue = await loadVenue();
+  let water = effectiveWaterTemp(latestReading(venue), undefined, new Date(), config.weather.waterTempC);
   let weather: WeekWeather | undefined;
   if (config.weather.enabled) {
     const fc = await getForecast();
     if (fc) {
+      const d0 = fc.days[0];
+      const airNowC = d0 ? (d0.tempMinC + d0.tempMaxC) / 2 : undefined;
+      water = effectiveWaterTemp(latestReading(venue), airNowC, new Date(), config.weather.waterTempC);
       const plan = upcomingPlanned(window, today);
-      weather = assessWeek(plan.sessions, fc, { ...config.weather, planAsOf: plan.asOf }, latestActuals(window));
+      weather = assessWeek(plan.sessions, fc, { ...config.weather, water, planAsOf: plan.asOf }, latestActuals(window));
     }
   }
   // Stale-while-revalidate (user ask: "sync when we load the page"): render instantly from the
@@ -141,7 +151,7 @@ async function renderLatest(share = false): Promise<string> {
     coachRecs, // reactable recommendations from your latest readiness + deep-dive write-ups
     setupHealth: {
       hasApiKey: CoachLLM.hasApiKey(),
-      waterTempSet: config.weather.waterTempC != null,
+      waterTempSet: water?.tempC != null,
       lastSyncAgeHours: (Date.now() - new Date(latest.assembledAt).getTime()) / 3_600_000,
     },
   });
@@ -234,14 +244,16 @@ const sessionFeedbackInFlight = new Map<string, Promise<SessionFeedbackResult>>(
  * (acts on one specific "This week" recommendation). The proposer is re-validated against the athlete's
  * real scheduled sessions, so anything un-targetable degrades to a `notes` explanation, never a bad write.
  */
-async function draftGatedProposals(li: LatestInsights, request: string) {
+async function draftGatedProposals(li: LatestInsights, request: string, sourceKey?: string) {
   const ctx = buildProposerContext(li.state, li.insights, li.engagement); // full picture: load/form + health + races + taper + decline-aware
   const { result } = await proposeAdjustments(new CoachLLM(await loadSystemPrompt(), "act"), request, li.state, ctx);
   const { valid, rejected } = validateProposals(result.proposals, li.state.plannedSessions.value ?? [], writeContextFor(li.state));
   const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
   const proposals = [];
   for (const p of valid) {
-    const pr = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human });
+    // sourceKey ties the gated write back to its "This week" card, so the card marks itself ✓ applied
+    // once the write executes — from the authoritative log, not the click.
+    const pr = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human, sourceKey });
     proposals.push({ id: pr.id, human: p.human, summary: p.summary, tradeoff: p.tradeoff, basis: p.basis });
   }
   const notes = [result.notes, rejected.length ? `Not applied: ${rejected.join("; ")}` : ""].filter(Boolean).join(" ");
@@ -481,6 +493,31 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       return json(200, { ok: true });
     }
 
+    // Open-water temp (the Week-ahead card's confirm/correct prompt + box). No public feed, so it's typed
+    // in / confirmed by hand and updated often — appended to data/venue.json and read live on the next
+    // render, no restart. We stamp the current air temp so the forecaster can drift the reading once it
+    // goes stale. `clear` forgets it. NOT an AI Endurance write, so it skips the gate — it only sets a
+    // local display input, like the metric-override pin.
+    if (url.pathname === "/set-water-temp" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)) || "{}") as { tempC?: unknown; clear?: boolean };
+      const json = (code: number, b: object) => res.writeHead(code, { "content-type": "application/json" }).end(JSON.stringify(b));
+      if (body.clear) {
+        await clearWaterTemp();
+        return json(200, { ok: true, cleared: true });
+      }
+      const tempC = parseWaterTemp(body.tempC);
+      if (tempC == null) return json(400, { ok: false, error: "need a water temperature between -2 and 40 °C" });
+      let airTempC: number | undefined;
+      try {
+        const d0 = (await getForecast())?.days?.[0];
+        if (d0) airTempC = (d0.tempMinC + d0.tempMaxC) / 2;
+      } catch {
+        /* best-effort anchor — a reading without it still saves, just can't be drifted later */
+      }
+      const v = await setWaterTemp(tempC, airTempC);
+      return json(200, { ok: true, waterTempC: v.tempC, takenAt: v.takenAt });
+    }
+
     // Action loop — generate GATED plan-adjustment proposals from the surfaced alerts (no write here).
     if (url.pathname === "/act" && req.method === "POST") {
       const json = (b: object) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(b));
@@ -500,9 +537,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (url.pathname === "/act-item" && req.method === "POST") {
       const json = (b: object) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(b));
       if (!CoachLLM.hasApiKey()) return json({ proposals: [], notes: "ANTHROPIC_API_KEY isn't set on the server." });
-      const body = JSON.parse((await readBody(req)) || "{}") as { recommendation?: string };
+      const body = JSON.parse((await readBody(req)) || "{}") as { recommendation?: string; cardKey?: string };
       const recommendation = String(body.recommendation ?? "").slice(0, 300).trim();
       if (!recommendation) return json({ proposals: [], notes: "No recommendation provided." });
+      // The card's key, so its drafted write carries it and the card self-marks ✓ applied once executed.
+      const sourceKey = typeof body.cardKey === "string" && body.cardKey.startsWith("setup:") ? body.cardKey : undefined;
       const li = await latestInsights();
       if (!li) return json({ proposals: [], notes: "No data assembled yet — hit Sync first." });
       const request =
@@ -510,17 +549,29 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         "(don't restructure the week). If it can't be tied to a specific scheduled session, propose nothing and use " +
         "`notes` to say — in plain English — exactly how to make it yourself in AI Endurance or Garmin:\n- " +
         recommendation;
-      return json(await draftGatedProposals(li, request));
+      return json(await draftGatedProposals(li, request, sourceKey));
     }
 
     // Confirm a proposal — the ONLY path that WRITES to AI Endurance (gated; two-step from /act).
     if (url.pathname === "/confirm-proposal" && req.method === "POST") {
-      const id = String((JSON.parse((await readBody(req)) || "{}") as { id?: string }).id ?? "");
+      const body = JSON.parse((await readBody(req)) || "{}") as { id?: string; cardKey?: string };
+      const id = String(body.id ?? "");
+      // The "This week" card this proposal was drafted from, so we can mark it applied (the card sends its key).
+      const cardKey = typeof body.cardKey === "string" && body.cardKey.startsWith("setup:") ? body.cardKey : "";
       if (!id) return void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "need id" }));
       const aie = new AieClient();
       await aie.connect();
       try {
         const result = await new WriteGate(aie, new DecisionLog()).confirm(id);
+        // Record the source card as "applied" so it shows the result instead of re-offering the change on
+        // the next render. Separate from the gated write's own plan-adjust/executed record; best-effort.
+        if (cardKey) {
+          try {
+            await new DecisionLog().recordInsightFeedback(cardKey, "applied", "Applied a plan change from this card");
+          } catch (e) {
+            console.warn("[confirm-proposal] could not mark card applied:", e);
+          }
+        }
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, result: typeof result === "string" ? result.slice(0, 200) : "applied" }));
       } catch (err) {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }));

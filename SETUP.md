@@ -145,9 +145,13 @@ Ask the user, then write the answers into `.env` (uncomment the relevant lines f
 4. **Training base for weather** → `COACH_WEATHER_LAT` / `COACH_WEATHER_LON` (where they ride/run/swim
    from). Default is the author's base in the UK — **change it.** Set `COACH_WEATHER_ENABLED=false` to
    skip the weather card entirely.
-5. **Open-water swimming?** If yes: `COACH_SWIM_MIN_WATER_C` (their cold-water comfort floor) and
-   `COACH_WATER_TEMP_C` (the latest posted venue temp — there is no public feed, so it's updated by
-   hand). If they don't open-water swim, leave these unset.
+5. **Open-water swimming?** If yes: set `COACH_SWIM_MIN_WATER_C` (their cold-water comfort floor). The
+   venue's **water temperature** has no public feed, so it's entered by hand — but the everyday way is the
+   **water-temp box at the bottom of the dashboard's "Week ahead" card** (saves live to `data/venue.json`,
+   no restart); once a reading is >7 days old the coach forecasts it (a damped air-temp-drift MODEL) and
+   asks them to Confirm/Correct. `COACH_WATER_TEMP_C` in `.env` is only an optional *seed* used before the
+   first reading — any confirmed reading wins over it, so you can leave it unset. If they don't open-water
+   swim, leave both unset.
 6. **Garmin?** (optional, degradable) — ask if they want device data (HRV, training status, raw `.FIT`
    biomechanics). If yes, do Step 5a; if no, leave `GARMIN_ENABLED=false` (default) and the coach runs
    on AI Endurance alone.
@@ -195,6 +199,21 @@ a session needs nothing), and `npm run fuelling` / the `fuelling` MCP tool do th
 you add it, the card shows a one-line nudge with the format, and the **"Finish setup"** card lists it as
 an open item — nothing breaks, it's just an empty inventory waiting on you. See the
 [Fuelling Spec](docs/specs/Fuelling_Spec.md) for the full picture.
+
+**Worth filling in: each bike's race weight.** Under `equipment.bikes.<name>.race_weight_g` record the
+bike *as you race it*, in **grams** — weigh it the way you ride (e.g. with one full bottle) and log the
+grams (10 kg → `10000`). Grams, not kg, on purpose: a `weight_kg` is treated as your live bodyweight and
+rejected, but a bike's own mass is stable kit. The coach reads it into the live coaching block and adds
+your **live** weight to get total system weight (rider + bike) — the number tyre-pressure charts want.
+`profile.example.yaml` carries a commented `felt:` block to copy.
+
+**Worth filling in: any blood-test results.** Under `bloods.panels` record dated panels — `date`,
+`source`, a free-form `markers` map (`name_unit: number`, e.g. `ferritin_ug_l: 70.2`), plus optional
+`flags`/`notes`. This is the one place the profile keeps clinical numbers, on purpose: no training API
+holds your bloods, so a dated snapshot is stable context. It's always treated as a *snapshot, never as
+current* — the coach surfaces the latest panel with its age and nudges a re-test once it's over a year
+old. `profile.example.yaml` carries a commented panel to copy. (Not medical advice — record what your
+report/GP say; live numbers like HR still belong to AI Endurance/Garmin and are rejected here.)
 
 For the optional fields worth filling in later — each with a plain-language question and a one-line
 *why it helps the coach* — run `npm run profile:questions` (or read
