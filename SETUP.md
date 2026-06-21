@@ -203,6 +203,14 @@ rejected, but a bike's own mass is stable kit. The coach reads it into the live 
 your **live** weight to get total system weight (rider + bike) — the number tyre-pressure charts want.
 `profile.example.yaml` carries a commented `felt:` block to copy.
 
+**Worth filling in: any blood-test results.** Under `bloods.panels` record dated panels — `date`,
+`source`, a free-form `markers` map (`name_unit: number`, e.g. `ferritin_ug_l: 70.2`), plus optional
+`flags`/`notes`. This is the one place the profile keeps clinical numbers, on purpose: no training API
+holds your bloods, so a dated snapshot is stable context. It's always treated as a *snapshot, never as
+current* — the coach surfaces the latest panel with its age and nudges a re-test once it's over a year
+old. `profile.example.yaml` carries a commented panel to copy. (Not medical advice — record what your
+report/GP say; live numbers like HR still belong to AI Endurance/Garmin and are rejected here.)
+
 For the optional fields worth filling in later — each with a plain-language question and a one-line
 *why it helps the coach* — run `npm run profile:questions` (or read
 [docs/profile-questions.md](docs/profile-questions.md)). All of them are optional.

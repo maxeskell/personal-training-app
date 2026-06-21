@@ -52,6 +52,28 @@ health:
     gi_trough_days: []      # weekdays of typical GI trough, e.g. [tuesday, wednesday, thursday]
     implications: []        # coaching implications, free-text list
 
+bloods:
+  # Dated blood-panel snapshots. Live numbers (FTP, weight, HRV…) are pulled from AI Endurance/Garmin and
+  # banned here — but NO API holds your bloods, so dated snapshots are stable context that belongs in the
+  # profile. Each panel is a POINT-IN-TIME snapshot, NEVER treated as current: the coach surfaces the
+  # latest panel's date, flags and notes (with an age + re-test nudge once it's over a year old) and shows
+  # the full markers via get_profile. Record only the markers you care about — you don't need every line.
+  # Marker keys are free-form name_unit (e.g. ferritin_ug_l) with numeric values; avoid live-metric names
+  # (hr/hrv/ftp/pace/…) — the no-live-numbers guard rejects those even inside a panel.
+  panels: []
+  #   - date: 2020-11-06                    # YYYY-MM-DD the sample was drawn (needed for the age/re-test nudge)
+  #     source: Medichecks Well Man UltraVit
+  #     markers:                            # name_unit keys, numeric values — keep whatever matters to you
+  #       ferritin_ug_l: 70.2
+  #       haemoglobin_g_l: 170
+  #       haematocrit_l_l: 0.511
+  #       vitamin_d_nmol_l: 67.8
+  #       vitamin_b12_active_pmol_l: 56.4
+  #     flags:                              # free-text, e.g. an out-of-range marker worth remembering
+  #       - "haematocrit high-normal — benign per GP, exercise/dehydration related"
+  #     notes:                              # free-text takeaways the coach should keep in mind
+  #       - "vitamin D low-normal (Nov 2020); advised 400-800 IU/day"
+
 availability:
   weekly_hours:             # e.g. "11-12"
   weekday_minutes_per_day:

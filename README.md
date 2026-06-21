@@ -136,6 +136,14 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   kit, so grams passes. The coach surfaces it in the live block and adds your **live** weight to it for total
   system weight (rider + bike) — e.g. to size tyre pressure. The rider half stays live; only the bike half is
   stored. `profile.example.yaml` carries a commented `felt:` block to copy.
+- **Blood panels — dated snapshots.** `bloods.panels` is the one place the profile keeps clinical numbers,
+  on purpose: the no-live-numbers rule guards values a live API *owns* (FTP, weight, HRV…), but **no API
+  holds your bloods**, so a dated panel is stable context that lives nowhere else. Each entry is a
+  snapshot (`date`, `source`, free-form `markers`, `flags`, `notes`). It's always treated as a *snapshot,
+  never as current* — the coach surfaces the **latest** panel with its **age** and a *re-test* nudge once
+  it's over a year old, shows full markers via `get_profile`, and the guard still rejects a live-metric
+  key (e.g. `resting_hr`) snuck in among the markers. `profile.example.yaml` carries a commented panel to
+  copy. (It's not medical advice — record what your report and GP tell you, then the coach factors it in.)
 - **`dose_cycle`.** If you set `health.medication.dose_day` + `gi_trough_days`, `get_profile` returns a
   computed `dose_cycle` (`days_since_dose`, `in_gi_trough`) so the coach can keep your hardest/longest
   sessions off the GI-trough days and watch under-fuelling — the personalisation a generic endurance

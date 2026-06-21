@@ -52,6 +52,47 @@ test("a richly-filled profile validates; the guard ignores equipment/fit numbers
   assert.doesNotThrow(() => validateProfile(RICH));
 });
 
+// A profile carrying dated blood panels (no PII): older + newer panel, numeric markers, flags + notes.
+const WITH_BLOODS: unknown = {
+  schema_version: 1,
+  identity: { name: "Blood Test", sex: "male", date_of_birth: "1981-10-28" },
+  bloods: {
+    panels: [
+      { date: "2018-01-01", source: "Old Panel", markers: { ferritin_ug_l: 40 }, notes: ["older panel"] },
+      {
+        date: "2020-11-06",
+        source: "Medichecks Well Man UltraVit",
+        markers: { ferritin_ug_l: 70.2, haemoglobin_g_l: 170, haematocrit_l_l: 0.511, vitamin_d_nmol_l: 67.8 },
+        flags: ["haematocrit high-normal"],
+        notes: ["vitamin D low-normal; advised 400-800 IU/day"],
+      },
+    ],
+  },
+};
+
+test("bloods: a dated-panel profile validates; numeric markers don't trip the no-live-numbers guard", () => {
+  assert.doesNotThrow(() => validateProfile(WITH_BLOODS));
+});
+
+test("bloods: the live-number guard still catches a live metric planted among markers", () => {
+  assert.throws(
+    () => assertNoLiveNumbers({ bloods: { panels: [{ date: "2020-11-06", markers: { resting_hr: 48 } }] } }),
+    /live performance number/i,
+  );
+});
+
+test("bloods: renderProfileContext surfaces the LATEST panel with age, notes and a get_profile pointer — no marker dump", () => {
+  const block = renderProfileContext(validateProfile(WITH_BLOODS), "2026-06-21");
+  assert.match(block, /Bloods \(latest panel 2020-11-06/); // newest of the two panels wins
+  assert.match(block, /SNAPSHOT, not live/);
+  assert.match(block, /consider a re-test/i); // > 12 months old → re-test nudge
+  assert.match(block, /vitamin D low-normal/); // curated note carried through
+  assert.match(block, /haematocrit high-normal/); // and the flag
+  assert.match(block, /full values via get_profile/i); // pointer, not a value dump
+  assert.doesNotMatch(block, /67\.8/); // raw marker values stay OUT of the compact block
+  assert.match(block, /2 panels on file/); // history hint when more than one panel
+});
+
 test("computeDoseCycle derives days_since_dose and in_gi_trough from the weekday", () => {
   const p = validateProfile(RICH);
   // dose_day = sunday (idx 0); gi_trough = tue/wed/thu.
