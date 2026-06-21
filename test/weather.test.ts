@@ -187,6 +187,15 @@ test("swim water-temp shows an 'as of' date when a reading time is set, and echo
   assert.doesNotMatch(noStamp.reason, /as of/);
 });
 
+test("swim verdict labels a drifted estimate as MODEL (with its anchor), and the week carries the card", () => {
+  const calm = mkForecast([mkDay("2026-06-08"), mkDay("2026-06-09")]);
+  const swimPlan: PlannedSession[] = [{ date: "2026-06-09", sport: "Swim", title: "OW swim" }];
+  const water = { tempC: 19, asOf: "2026-06-02T08:00:00.000Z", ageDays: 7, estimated: true, stale: true, anchorTempC: 21, confidence: "medium" as const };
+  const w = assessWeek(swimPlan, calm, { ...OPTS, water });
+  assert.match(w.sessions[0].reason, /water ~19°C \(estimated — MODEL, from your 21°C on 2 Jun\), at\/above your 13°C floor/);
+  assert.equal(w.water?.estimated, true, "the full water card is echoed for the confirm prompt");
+});
+
 test("day outlook reports road state and only shows days from today on", () => {
   const w = assessWeek([], stormyWeek(), OPTS);
   assert.equal(w.days.length, 5);

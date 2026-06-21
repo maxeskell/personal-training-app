@@ -76,7 +76,8 @@ restarts it after a pull. This is the everyday model; treat it as the default in
 
 - Rides want **dry roads + low wind** (gust/rain-prob thresholds in `config.weather`); runs go in
   any weather; open-water swims go in any weather except thunderstorms, ideally with the local
-  open-water venue above **13°C** — the temp has no public feed, so it's entered manually in the
-  dashboard's Week-ahead water-temp box (persisted to `data/venue.json`, read live; `COACH_WATER_TEMP_C`
-  is now only an optional seed that the dashboard reading overrides).
+  open-water venue above **13°C** — the temp has no public feed, so it's confirmed manually in the
+  dashboard's Week-ahead water-temp box (persisted to `data/venue.json`, read live). A stale reading is
+  forecast by drifting it on air temperature (a damped MODEL) for you to Confirm/Correct; `COACH_WATER_TEMP_C`
+  is now only an optional seed that any confirmed reading overrides.
 - Weekly totals display as h:mm; missing data renders "—", never a misleading zero.

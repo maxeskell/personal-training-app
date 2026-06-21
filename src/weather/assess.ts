@@ -1,6 +1,7 @@
 import type { ActualActivity, AthleteState, PlannedSession } from "../state/types.js";
 import { weatherLabel, type DayForecast, type Forecast, type HourForecast } from "./forecast.js";
 import { DEFAULT_ROAD_OPTS, roadWetness, type RoadHour } from "./roadDry.js";
+import type { WaterTempCard } from "./waterTemp.js";
 
 /**
  * Week-ahead weather rules (user ask): join the next 7 days of PLANNED sessions with the forecast.
@@ -14,6 +15,9 @@ export interface AssessOpts {
   waterTempC?: number;
   /** ISO timestamp the water-temp reading was entered — surfaced as an "as of" freshness label. */
   waterTempAsOf?: string;
+  /** The resolved open-water temp (confirmed reading / drifted MODEL estimate / seed). Wins over the
+   *  bare `waterTempC`/`waterTempAsOf` above, which remain for callers/tests that pass a plain reading. */
+  water?: WaterTempCard;
   rideMaxGustKmh: number;
   rideMaxRainProbPct: number;
   /** Local ISO "now" — today's hours already past are not offered as ride windows. Defaults to wall clock. */
@@ -58,6 +62,8 @@ export interface WeekWeather {
   waterTempC?: number;
   /** ISO timestamp that reading was entered — drives the "as of" freshness label on the card. */
   waterTempAsOf?: string;
+  /** Full resolved water-temp state (confirmed/estimate/seed) — drives the card's confirm prompt. */
+  water?: WaterTempCard;
   days: DayOutlook[];
   sessions: SessionVerdict[];
 }
@@ -65,11 +71,17 @@ export interface WeekWeather {
 const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** " (as of 21 Jun)" from an ISO timestamp — UTC-anchored so it's deterministic; "" if unparseable. */
-export function asOfLabel(iso?: string): string {
+/** "21 Jun" from an ISO timestamp — UTC-anchored so it's deterministic; "" if unparseable. */
+export function dateLabel(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : ` (as of ${d.getUTCDate()} ${MONTH[d.getUTCMonth()]})`;
+  return Number.isNaN(d.getTime()) ? "" : `${d.getUTCDate()} ${MONTH[d.getUTCMonth()]}`;
+}
+
+/** " (as of 21 Jun)" — the freshness suffix for a confirmed reading; "" if undated. */
+export function asOfLabel(iso?: string): string {
+  const d = dateLabel(iso);
+  return d ? ` (as of ${d})` : "";
 }
 
 /** "2026-06-11" → "Thu 11" (UTC-anchored so the label never slips a day). */
@@ -211,20 +223,25 @@ function runVerdict(p: PlannedSession, day: DayForecast): SessionVerdict {
 function swimVerdict(p: PlannedSession, day: DayForecast, opts: AssessOpts): SessionVerdict {
   const base = { date: day.date, sport: "Swim", title: p.title };
   if (thundery(day)) return { ...base, verdict: "poor", reason: "thunderstorms forecast — stay out of open water (pool instead)" };
-  if (opts.waterTempC == null)
+  // The full water-temp card wins; a bare waterTempC (callers/tests) is treated as a confirmed reading.
+  const tempC = opts.water?.tempC ?? opts.waterTempC;
+  if (tempC == null)
     return {
       ...base,
       verdict: "good",
       reason: `swimmable in any weather; water temp unknown — check the venue's latest reading (your floor: ${opts.swimMinWaterC}°C)`,
     };
-  const asOf = asOfLabel(opts.waterTempAsOf);
-  if (opts.waterTempC < opts.swimMinWaterC)
+  // Honest models: an estimate is flagged MODEL with its anchor; a measured reading just gets an "as of".
+  const tag = opts.water?.estimated
+    ? ` (estimated — MODEL${opts.water.anchorTempC != null ? `, from your ${opts.water.anchorTempC}°C on ${dateLabel(opts.water.asOf)}` : ""})`
+    : asOfLabel(opts.water?.asOf ?? opts.waterTempAsOf);
+  if (tempC < opts.swimMinWaterC)
     return {
       ...base,
       verdict: "marginal",
-      reason: `water ~${opts.waterTempC}°C${asOf} is below your ${opts.swimMinWaterC}°C floor — wetsuit and shorten, or take it to the pool`,
+      reason: `water ~${tempC}°C${tag} is below your ${opts.swimMinWaterC}°C floor — wetsuit and shorten, or take it to the pool`,
     };
-  return { ...base, verdict: "good", reason: `water ~${opts.waterTempC}°C${asOf}, at/above your ${opts.swimMinWaterC}°C floor` };
+  return { ...base, verdict: "good", reason: `water ~${tempC}°C${tag}, at/above your ${opts.swimMinWaterC}°C floor` };
 }
 
 export function assessWeek(planned: PlannedSession[], fc: Forecast, opts: AssessOpts, actuals: ActualActivity[] = []): WeekWeather {
@@ -271,7 +288,15 @@ export function assessWeek(planned: PlannedSession[], fc: Forecast, opts: Assess
     sessions.push(v);
   }
   sessions.sort((a, b) => a.date.localeCompare(b.date));
-  return { fetchedAt: fc.fetchedAt, planAsOf: opts.planAsOf, waterTempC: opts.waterTempC, waterTempAsOf: opts.waterTempAsOf, days, sessions };
+  return {
+    fetchedAt: fc.fetchedAt,
+    planAsOf: opts.planAsOf,
+    waterTempC: opts.water?.tempC ?? opts.waterTempC,
+    waterTempAsOf: opts.water?.asOf ?? opts.waterTempAsOf,
+    water: opts.water,
+    days,
+    sessions,
+  };
 }
 
 /**
