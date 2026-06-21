@@ -3,23 +3,33 @@ import { join } from "node:path";
 import { config } from "../config.js";
 
 /**
- * The open-water venue's latest readings — values with no public live feed that the athlete enters by
- * hand and updates often (so an env var, frozen at process start, is the wrong home: see
- * COACH_WATER_TEMP_C, which now only SEEDS a default). Lives in the gitignored data dir, read live on
- * every dashboard render, so a reading typed into the Week-ahead card takes effect on the next page load
- * — no .env edit, no service restart. The env var stays a fallback for when this file is absent.
+ * The open-water venue's readings — values with no public live feed that the athlete enters by hand and
+ * updates often (so an env var, frozen at process start, is the wrong home: see COACH_WATER_TEMP_C, which
+ * now only SEEDS a default). Lives in the gitignored data dir, read live on every dashboard render. We
+ * keep a short HISTORY of confirmed readings (not just the latest), each stamped with the air temp at the
+ * time it was taken, so the forecaster (weather/waterTemp.ts) can drift a stale reading on air temperature
+ * and ask the athlete to confirm the estimate.
  */
 
+export interface WaterReading {
+  /** Confirmed open-water temperature (°C). */
+  tempC: number;
+  /** ISO timestamp this reading was entered/confirmed — the freshness + drift anchor. */
+  takenAt: string;
+  /** Rolling air temp (°C) at confirm time — lets the MODEL drift the reading as the air changes. */
+  airTempC?: number;
+}
+
 export interface VenueState {
-  /** Latest manual open-water temperature reading (°C). */
-  waterTempC?: number;
-  /** ISO timestamp this reading was entered — drives the "as of" freshness label. */
-  takenAt?: string;
+  /** Confirmed readings, oldest first. */
+  readings: WaterReading[];
 }
 
 /** Plausible open-water range; anything outside (or unparseable) is rejected rather than stored. */
 const MIN_WATER_C = -2;
 const MAX_WATER_C = 40;
+/** Bound the history — only the recent readings matter for freshness/drift. */
+const MAX_READINGS = 24;
 
 /**
  * Parse a free-text water-temp entry into °C. Accepts a number or numeric string, clamps to a sane
@@ -36,25 +46,50 @@ function file(): string {
   return join(config.dataDir, "venue.json");
 }
 
+function isReading(r: unknown): r is WaterReading {
+  return !!r && typeof r === "object" && typeof (r as WaterReading).tempC === "number" && typeof (r as WaterReading).takenAt === "string";
+}
+
+/** Tolerate both the {readings:[…]} shape and the original single-reading {waterTempC,takenAt} file. */
+function normaliseVenue(parsed: unknown): VenueState | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  const o = parsed as Record<string, unknown>;
+  if (Array.isArray(o.readings)) {
+    const readings = o.readings.filter(isReading);
+    return readings.length ? { readings } : null;
+  }
+  if (typeof o.waterTempC === "number") {
+    return { readings: [{ tempC: o.waterTempC, takenAt: typeof o.takenAt === "string" ? o.takenAt : new Date(0).toISOString() }] };
+  }
+  return null;
+}
+
 /** Read the persisted venue state; absent/malformed → null (degrade, don't crash). */
 export async function loadVenue(): Promise<VenueState | null> {
   try {
-    const parsed = JSON.parse(await readFile(file(), "utf8")) as VenueState;
-    return parsed && typeof parsed === "object" ? parsed : null;
+    return normaliseVenue(JSON.parse(await readFile(file(), "utf8")));
   } catch {
     return null;
   }
 }
 
-/** Record a validated reading with the time it was entered; returns the stored state. */
-export async function setWaterTemp(tempC: number): Promise<VenueState> {
-  const state: VenueState = { waterTempC: tempC, takenAt: new Date().toISOString() };
-  await mkdir(config.dataDir, { recursive: true });
-  await writeFile(file(), JSON.stringify(state, null, 2));
-  return state;
+/** The freshest confirmed reading (by takenAt), or undefined when there's no history. */
+export function latestReading(state: VenueState | null | undefined): WaterReading | undefined {
+  if (!state?.readings?.length) return undefined;
+  return state.readings.reduce((a, b) => (a.takenAt >= b.takenAt ? a : b));
 }
 
-/** Forget the reading (back to "check the venue" / the COACH_WATER_TEMP_C seed if one is set). */
+/** Append a confirmed reading (with the air-temp anchor when known); returns the stored reading. */
+export async function setWaterTemp(tempC: number, airTempC?: number): Promise<WaterReading> {
+  const existing = (await loadVenue())?.readings ?? [];
+  const reading: WaterReading = { tempC, takenAt: new Date().toISOString(), ...(airTempC != null ? { airTempC } : {}) };
+  const state: VenueState = { readings: [...existing, reading].slice(-MAX_READINGS) };
+  await mkdir(config.dataDir, { recursive: true });
+  await writeFile(file(), JSON.stringify(state, null, 2));
+  return reading;
+}
+
+/** Forget all readings (back to "check the venue" / the COACH_WATER_TEMP_C seed if one is set). */
 export async function clearWaterTemp(): Promise<void> {
   await rm(file(), { force: true });
 }

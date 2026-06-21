@@ -497,8 +497,11 @@ alternative day when the planned one is a washout; **runs** are green in any wea
 noted); **open-water swims** are green except in forecast thunderstorms, with the water checked
 against your `COACH_SWIM_MIN_WATER_C` (default 13°C) floor. There's no public feed for water temp, so
 you enter the venue's latest reading in the **water-temp box at the bottom of this card** — it saves
-live (no restart) and shows an "as of" date so a stale reading is visible. (`COACH_WATER_TEMP_C` in
-`.env` is now only an optional seed/default; the dashboard reading wins over it.) "Roads dry from ~HH:00" comes from an hour-by-hour
+live (no restart) and shows an "as of" date. Once a reading goes stale (>7 days) the coach **forecasts**
+the current temp — your last reading drifted by the change in air temperature since (a damped MODEL,
+labelled as such) — and asks you to **Confirm** the estimate or **Correct** it; confirming re-anchors the
+model, so it sharpens the more you confirm. (`COACH_WATER_TEMP_C` in `.env` is only an optional seed used
+before your first reading; any confirmed reading wins over it.) "Roads dry from ~HH:00" comes from an hour-by-hour
 drying MODEL (rain wets the surface; time, temperature, sun and wind dry it) — an estimate to plan
 around, not a guarantee. Indoor sessions (gym/strength) are listed as muted weather-n/a rows so the
 card always mirrors the full week. Sessions you've **already done** are greyed out and tagged `✓ done`

@@ -15,6 +15,7 @@ import { config } from "../config.js";
 import type { Profile } from "../profile/schema.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
 import { weekday, upcomingPlanned, asOfLabel, type WeekWeather } from "../weather/assess.js";
+import type { WaterTempCard } from "../weather/waterTemp.js";
 import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
 import { renderFuelCard, fuelSessionInner, renderFuelExtras, fuelScript } from "./fuelCard.js";
 import { buildWeekFuelPlans, loadFuelPrefs, type FuelPlan } from "./fuelPlan.js";
@@ -497,6 +498,51 @@ interface WeatherFuelCtx {
 }
 
 /** "Week ahead — plan vs weather": per-session verdicts + day outlook incl. estimated road dryness. */
+/**
+ * The open-water temp control at the bottom of the weather card. Four states: nothing set (type a
+ * reading), a fresh confirmed reading (shown + updatable), a stale reading drifted into a MODEL estimate
+ * (Confirm / Correct), or a stale reading with no air anchor (re-confirm). Static summary in share view.
+ */
+function renderWaterTemp(water: WaterTempCard | undefined, share: boolean): string {
+  const inputRow = (val?: number) =>
+    `<input type="number" step="0.5" min="-2" max="40" class="wt-input" value="${val != null ? escapeHtml(String(val)) : ""}" placeholder="°C" style="width:72px">` +
+    `<button onclick="setWaterTemp(this)">Save</button>` +
+    (water ? `<button class="ignore" onclick="clearWaterTemp(this)">Clear</button>` : "");
+  const wrap = (inner: string) => `<div class="watertemp" style="margin-top:8px">${inner}</div>`;
+
+  if (share) {
+    const txt = !water ? "not set" : water.estimated ? `estimated ~${water.tempC}°C (MODEL)` : `~${water.tempC}°C${asOfLabel(water.asOf)}`;
+    return `<div class="k" style="margin-top:8px">Open-water temp: ${escapeHtml(txt)}</div>`;
+  }
+  if (!water) {
+    return wrap(
+      `<span class="k">Open-water temp (no public feed — type the venue's latest reading; saves live, no restart):</span><br>` +
+        inputRow() +
+        `<span class="reacted wt-status">not set — open-water swim verdicts say “check the venue”</span>`,
+    );
+  }
+  if (water.stale) {
+    const head = water.estimated
+      ? `Estimated ~${water.tempC}°C — ${water.basis ?? "MODEL"}${asOfLabel(water.asOf)}`
+      : `Last reading ~${water.tempC}°C${asOfLabel(water.asOf)} — ${Math.round(water.ageDays)}d old`;
+    const lead = water.estimated
+      ? `<button data-est="${escapeHtml(String(water.tempC))}" onclick="confirmWaterTemp(this)">✓ Confirm ${escapeHtml(String(water.tempC))}°C</button> or correct it: `
+      : `Update it: `;
+    return wrap(
+      `<span class="k">Open-water temp — please confirm (no public feed):</span><br>` +
+        `<span class="fdetail">${escapeHtml(head)}</span><br>` +
+        lead +
+        inputRow() +
+        `<span class="reacted wt-status"></span>`,
+    );
+  }
+  return wrap(
+    `<span class="k">Open-water temp (no public feed — update from the venue's latest reading; saves live):</span><br>` +
+      inputRow(water.tempC) +
+      `<span class="reacted wt-status">${escapeHtml(`current: ~${water.tempC}°C${asOfLabel(water.asOf)}`)}</span>`,
+  );
+}
+
 function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx, share = false): string {
   if (!w) return "";
   let anyFuel = false;
@@ -544,19 +590,10 @@ function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx, share 
   // handler script, emitted once, only when at least one session actually surfaced a plan.
   const fuelExtras = fuel && anyFuel ? renderFuelExtras(fuel.inventory, fuel.hasApiKey, false) : "";
   const fuelJs = fuel && anyFuel ? fuelScript(false) : "";
-  // Open-water temp control: no public feed, so it's typed in by hand and changes often. Saving writes
-  // data/venue.json (read live → effective on the next page load, no restart). Hidden in share view.
-  const wtCurrent =
-    w.waterTempC != null ? `current: ~${w.waterTempC}°C${asOfLabel(w.waterTempAsOf)}` : "not set — open-water swim verdicts say “check the venue”";
-  const waterTemp = share
-    ? `<div class="k" style="margin-top:8px">Open-water temp: ${escapeHtml(w.waterTempC != null ? `~${w.waterTempC}°C${asOfLabel(w.waterTempAsOf)}` : "not set")}</div>`
-    : `<div class="watertemp" style="margin-top:8px">
-      <span class="k">Open-water temp (no public feed — type the venue's latest reading; saves live, no restart):</span><br>
-      <input type="number" step="0.5" min="-2" max="40" class="wt-input" value="${w.waterTempC != null ? escapeHtml(String(w.waterTempC)) : ""}" placeholder="°C" style="width:72px;margin-top:4px">
-      <button onclick="setWaterTemp(this)">Save</button>
-      ${w.waterTempC != null ? '<button class="ignore" onclick="clearWaterTemp(this)">Clear</button>' : ""}
-      <span class="reacted wt-status">${escapeHtml(wtCurrent)}</span>
-    </div>`;
+  // Open-water temp: confirm/correct loop driven by the forecaster (a stale reading is drifted on air temp
+  // and shown as a MODEL estimate to confirm). Saving writes data/venue.json (read live → no restart).
+  const water = w.water ?? (w.waterTempC != null ? { tempC: w.waterTempC, asOf: w.waterTempAsOf, estimated: false, stale: false, ageDays: 0 } : undefined);
+  const waterTemp = renderWaterTemp(water, share);
   return `<div class="card"><h2>Week ahead — plan vs weather</h2>
     ${sessions}
     ${fuelExtras}
@@ -1316,6 +1353,11 @@ async function setWaterTemp(btn){var box=btn.closest('.watertemp');var inp=box.q
 async function clearWaterTemp(btn){var box=btn.closest('.watertemp');var s=box.querySelector('.wt-status');s.textContent='Clearing…';
   try{var r=await fetch('/set-water-temp',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({clear:true})});var j=await r.json();
     s.textContent=j.ok?'✓ cleared — reload to go back to “check the venue”':'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
+// Confirm the MODEL estimate as-is (data-est carries the estimated value); same write path as a correction.
+async function confirmWaterTemp(btn){var box=btn.closest('.watertemp');var s=box.querySelector('.wt-status');var v=parseFloat(btn.getAttribute('data-est'));
+  if(!isFinite(v)){s.textContent='nothing to confirm';return;}s.textContent='Confirming…';
+  try{var r=await fetch('/set-water-temp',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tempC:v})});var j=await r.json();
+    s.textContent=j.ok?('✓ confirmed ~'+j.waterTempC+'°C — reload to refresh the swim verdict'):'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
 </script>
 
 ${renderSetupImprove(profile, share, { suppressed, reactions, insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined })}
