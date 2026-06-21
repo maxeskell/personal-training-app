@@ -51,6 +51,30 @@ export const MedicationSchema = z
   })
   .passthrough();
 
+/**
+ * One dated blood-panel snapshot. Bloods are a deliberate exception to "no numbers here": NO training
+ * API holds them, so a dated snapshot is stable context, not a live duplicate. `markers` is a free-form
+ * `name_unit → number` map (e.g. `ferritin_ug_l: 70.2`); the no-live-numbers guard still runs over it,
+ * so a live-metric key (hr/hrv/ftp/pace/…) planted among markers is rejected. `date` is required for the
+ * age/re-test nudge to be honest about how old the panel is.
+ */
+export const BloodPanelSchema = z
+  .object({
+    date: optDate,
+    source: optStr,
+    markers: looseMap.optional(),
+    flags: z.array(z.string()).optional(),
+    notes: z.array(z.string()).optional(),
+  })
+  .passthrough();
+
+export const BloodsSchema = z
+  .object({
+    panels: z.array(BloodPanelSchema).optional(),
+  })
+  .passthrough();
+export type Bloods = z.infer<typeof BloodsSchema>;
+
 export const ProfileSchema = z
   .object({
     schema_version: z.number().int().positive(),
@@ -78,6 +102,7 @@ export const ProfileSchema = z
       })
       .passthrough()
       .optional(),
+    bloods: BloodsSchema.optional(),
     availability: looseMap.optional(),
     equipment: looseMap.optional(),
     bike_fit: looseMap.optional(),

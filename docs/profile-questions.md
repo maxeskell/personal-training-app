@@ -35,6 +35,12 @@ This page is generated from `src/profile/questions.ts` (the same data behind
 | `health.strength_sessions_per_week` | How many strength sessions do you do per week? | Recorded for your reference and visible via get_profile; not yet read by an automated flow. |
 | `health.sleep` | Anything notable about your sleep pattern? (free text) | Recorded for reference; the coach's live sleep signal comes from Garmin (sleep score/hours), not this note. |
 
+## bloods
+
+| Field | Question | Why it matters |
+|---|---|---|
+| `bloods.panels` | Any blood-test panels worth recording? (dated snapshots: date, source, markers, flags, notes) | The latest panel's date, flags and notes surface in the live coaching block — with an age + re-test nudge once it's over a year old — and the full markers show via get_profile. Snapshots only, never treated as current; no training API holds your bloods. |
+
 ## biomechanics
 
 | Field | Question | Why it matters |
