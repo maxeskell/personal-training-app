@@ -495,8 +495,10 @@ Each outdoor session gets a 🟢/🟡/🔴 verdict against your rules — **ride
 under `COACH_RIDE_MAX_GUST_KMH`, with a best daylight ride window per day and a suggested
 alternative day when the planned one is a washout; **runs** are green in any weather (heat/ice
 noted); **open-water swims** are green except in forecast thunderstorms, with the water checked
-against your `COACH_SWIM_MIN_WATER_C` (default 13°C) floor via the manually-updated
-`COACH_WATER_TEMP_C` (no public feed exists). "Roads dry from ~HH:00" comes from an hour-by-hour
+against your `COACH_SWIM_MIN_WATER_C` (default 13°C) floor. There's no public feed for water temp, so
+you enter the venue's latest reading in the **water-temp box at the bottom of this card** — it saves
+live (no restart) and shows an "as of" date so a stale reading is visible. (`COACH_WATER_TEMP_C` in
+`.env` is now only an optional seed/default; the dashboard reading wins over it.) "Roads dry from ~HH:00" comes from an hour-by-hour
 drying MODEL (rain wets the surface; time, temperature, sun and wind dry it) — an estimate to plan
 around, not a guarantee. Indoor sessions (gym/strength) are listed as muted weather-n/a rows so the
 card always mirrors the full week. Sessions you've **already done** are greyed out and tagged `✓ done`
