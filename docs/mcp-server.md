@@ -215,7 +215,11 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
   inside the repo root; `..`, absolute escapes and symlinks pointing outside are refused; (2) a
   **secrets deny-list** — `.env*` (templates excepted), `*.token(s)`/`*.json` token files, keys
   (`*.pem`/`*.key`/SSH), `.git/` and `node_modules/` are **never** listed, read or written, whatever
-  the flags. `read_file` caps at ~1 MB; `write_file` replaces the whole file (read it first to edit).
+  the flags. `read_file` caps at ~1 MB and returns the file's **exact contents** — no `# <path>` header
+  or label is added — so what you read can be edited and written straight back without corruption (a
+  prepended header would otherwise be copied back into the file and silently duplicate on every
+  round-trip, nastily so for YAML/shell where `#` is a real comment). `write_file` replaces the whole
+  file (read it first to edit).
   **Gating:** always on for **local** Claude Desktop/Code (stdio); on the **HTTP/Cowork** surface it's
   **off unless `COACH_MCP_FILE_ACCESS=true`** (it reads/writes files on your Mac from a remote session).
   For the athlete profile prefer `update_profile` — it deep-merges and validates instead of overwriting.

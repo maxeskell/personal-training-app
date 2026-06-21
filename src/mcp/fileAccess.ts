@@ -113,6 +113,23 @@ export async function listRepoDir(root: string, relDir = "."): Promise<{ rel: st
   return { rel, entries };
 }
 
+/**
+ * The exact text the `read_file` MCP tool returns for a file: the file's content VERBATIM, with nothing
+ * prepended or appended. This is deliberate — it keeps a read → edit → write round-trip LOSSLESS, so a
+ * caller can hand what it read straight back to `write_file` and reproduce the file byte-for-byte.
+ *
+ * An earlier version prefixed a `# <path>` header for readability. That silently corrupts round-trips:
+ * a caller reproducing the file copies the header back into `content`, `write_file` writes it literally,
+ * and the next read prepends a fresh header on top — so the line DUPLICATES on every cycle. It is
+ * especially nasty for YAML/TOML/shell/Python, where a leading `# …` is a real comment that parses
+ * cleanly, so the corruption is invisible until it accumulates. The file's identity is already carried
+ * by the tool call's own `path` argument, so the header bought readability at the cost of correctness.
+ * Keep this the identity of `content`; if you ever want a label, return it OUTSIDE this string.
+ */
+export function formatReadResult(content: string): string {
+  return content;
+}
+
 /** Read a repo file as UTF-8 text. Throws on containment/deny violations or when the file is too large. */
 export async function readRepoFile(root: string, requested: string): Promise<{ rel: string; content: string }> {
   const { abs, rel } = resolveSafePath(root, requested);

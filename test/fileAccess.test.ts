@@ -9,6 +9,7 @@ import {
   listRepoDir,
   readRepoFile,
   writeRepoFile,
+  formatReadResult,
   MAX_READ_BYTES,
 } from "../src/mcp/fileAccess.js";
 
@@ -95,6 +96,34 @@ test("a symlink pointing outside the root is refused at IO time (not just by pat
   } finally {
     await rm(root, { recursive: true, force: true });
     await rm(outside, { recursive: true, force: true });
+  }
+});
+
+test("read_file returns content VERBATIM so a read → edit → write round-trip is lossless", async () => {
+  const root = await mkdtemp(join(tmpdir(), "coach-files-"));
+  try {
+    // A YAML file whose very first line is real content — exactly the case a prepended `# <path>`
+    // header would corrupt, because `#` is a valid YAML comment and the damage parses cleanly.
+    const original = "schema_version: 1\nidentity:\n  name: Test\n";
+    await writeFile(join(root, "profile.local.yaml"), original);
+
+    // What the read_file tool hands back must be the file's exact bytes — no header, no label.
+    const { content } = await readRepoFile(root, "profile.local.yaml");
+    const toolText = formatReadResult(content);
+    assert.equal(toolText, original, "read_file output must equal the file content exactly");
+    assert.ok(!toolText.startsWith("# "), "no synthetic '# <path>' header may be prepended");
+
+    // The naive round-trip that previously duplicated a header: write back exactly what was read.
+    await writeRepoFile(root, "profile.local.yaml", toolText);
+    assert.equal((await readRepoFile(root, "profile.local.yaml")).content, original, "round-trip is lossless");
+
+    // And a genuine leading comment is preserved as-is (not stripped, not doubled).
+    const commented = "# hand-written header\nkey: value\n";
+    await writeRepoFile(root, "data/note.yaml", commented);
+    const back = formatReadResult((await readRepoFile(root, "data/note.yaml")).content);
+    assert.equal(back, commented);
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 
