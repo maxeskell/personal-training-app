@@ -37,6 +37,7 @@ import { WriteGate } from "./guardrails/writeGate.js";
 import { alertFindings } from "./insights/metrics.js";
 import { getForecast, refreshForecast } from "./weather/store.js";
 import { assessWeek, latestActuals, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
+import { loadVenue, setWaterTemp, clearWaterTemp, parseWaterTemp } from "./state/venue.js";
 import { config } from "./config.js";
 import { todayIso } from "./util/today.js";
 import { coalesce } from "./util/coalesce.js";
@@ -104,12 +105,21 @@ async function renderLatest(share = false): Promise<string> {
   if (insights) await insightLog.recordSurfaced(insights.topFindings, "dashboard");
   // Week-ahead weather: cached (or short-timeout fetched) forecast joined to the upcoming plan.
   // Best-effort — undefined just means the card is absent, never an error page.
+  // Open-water temp: the live, dashboard-entered reading (data/venue.json) wins over the COACH_WATER_TEMP_C
+  // seed, and is read fresh here so a new reading takes effect on the next render — no restart.
+  const venue = await loadVenue();
+  const waterTempC = venue?.waterTempC ?? config.weather.waterTempC;
   let weather: WeekWeather | undefined;
   if (config.weather.enabled) {
     const fc = await getForecast();
     if (fc) {
       const plan = upcomingPlanned(window, today);
-      weather = assessWeek(plan.sessions, fc, { ...config.weather, planAsOf: plan.asOf }, latestActuals(window));
+      weather = assessWeek(
+        plan.sessions,
+        fc,
+        { ...config.weather, waterTempC, waterTempAsOf: venue?.takenAt, planAsOf: plan.asOf },
+        latestActuals(window),
+      );
     }
   }
   // Stale-while-revalidate (user ask: "sync when we load the page"): render instantly from the
@@ -139,7 +149,7 @@ async function renderLatest(share = false): Promise<string> {
     coachRecs, // reactable recommendations from your latest readiness + deep-dive write-ups
     setupHealth: {
       hasApiKey: CoachLLM.hasApiKey(),
-      waterTempSet: config.weather.waterTempC != null,
+      waterTempSet: waterTempC != null,
       lastSyncAgeHours: (Date.now() - new Date(latest.assembledAt).getTime()) / 3_600_000,
     },
   });
@@ -477,6 +487,23 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       if (typeof body.when !== "number" || typeof body.use !== "number") return json(400, { ok: false, error: "need numeric when + use" });
       await setMetricOverride(body.metric, body.when, body.use);
       return json(200, { ok: true });
+    }
+
+    // Open-water temp (the Week-ahead card's water-temp box). No public feed, so it's typed in by hand and
+    // updated often — persisted to data/venue.json and read live on the next render, no restart. `clear`
+    // forgets it (back to "check the venue" / the COACH_WATER_TEMP_C seed). NOT an AI Endurance write, so
+    // it doesn't go through the gate — it only sets a local display input, like the metric-override pin.
+    if (url.pathname === "/set-water-temp" && req.method === "POST") {
+      const body = JSON.parse((await readBody(req)) || "{}") as { tempC?: unknown; clear?: boolean };
+      const json = (code: number, b: object) => res.writeHead(code, { "content-type": "application/json" }).end(JSON.stringify(b));
+      if (body.clear) {
+        await clearWaterTemp();
+        return json(200, { ok: true, cleared: true });
+      }
+      const tempC = parseWaterTemp(body.tempC);
+      if (tempC == null) return json(400, { ok: false, error: "need a water temperature between -2 and 40 °C" });
+      const v = await setWaterTemp(tempC);
+      return json(200, { ok: true, waterTempC: v.waterTempC, takenAt: v.takenAt });
     }
 
     // Action loop — generate GATED plan-adjustment proposals from the surfaced alerts (no write here).

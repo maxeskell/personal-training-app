@@ -14,7 +14,7 @@ import { assembleSession, listRecentSessions, type SessionRef, type SessionDetai
 import { config } from "../config.js";
 import type { Profile } from "../profile/schema.js";
 import { summarizeCost, type CostRecord } from "../llm/costLog.js";
-import { weekday, upcomingPlanned, type WeekWeather } from "../weather/assess.js";
+import { weekday, upcomingPlanned, asOfLabel, type WeekWeather } from "../weather/assess.js";
 import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
 import { renderFuelCard, fuelSessionInner, renderFuelExtras, fuelScript } from "./fuelCard.js";
 import { buildWeekFuelPlans, loadFuelPrefs, type FuelPlan } from "./fuelPlan.js";
@@ -497,7 +497,7 @@ interface WeatherFuelCtx {
 }
 
 /** "Week ahead — plan vs weather": per-session verdicts + day outlook incl. estimated road dryness. */
-function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx): string {
+function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx, share = false): string {
   if (!w) return "";
   let anyFuel = false;
   const sessions = w.sessions.length
@@ -544,11 +544,25 @@ function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx): strin
   // handler script, emitted once, only when at least one session actually surfaced a plan.
   const fuelExtras = fuel && anyFuel ? renderFuelExtras(fuel.inventory, fuel.hasApiKey, false) : "";
   const fuelJs = fuel && anyFuel ? fuelScript(false) : "";
+  // Open-water temp control: no public feed, so it's typed in by hand and changes often. Saving writes
+  // data/venue.json (read live → effective on the next page load, no restart). Hidden in share view.
+  const wtCurrent =
+    w.waterTempC != null ? `current: ~${w.waterTempC}°C${asOfLabel(w.waterTempAsOf)}` : "not set — open-water swim verdicts say “check the venue”";
+  const waterTemp = share
+    ? `<div class="k" style="margin-top:8px">Open-water temp: ${escapeHtml(w.waterTempC != null ? `~${w.waterTempC}°C${asOfLabel(w.waterTempAsOf)}` : "not set")}</div>`
+    : `<div class="watertemp" style="margin-top:8px">
+      <span class="k">Open-water temp (no public feed — type the venue's latest reading; saves live, no restart):</span><br>
+      <input type="number" step="0.5" min="-2" max="40" class="wt-input" value="${w.waterTempC != null ? escapeHtml(String(w.waterTempC)) : ""}" placeholder="°C" style="width:72px;margin-top:4px">
+      <button onclick="setWaterTemp(this)">Save</button>
+      ${w.waterTempC != null ? '<button class="ignore" onclick="clearWaterTemp(this)">Clear</button>' : ""}
+      <span class="reacted wt-status">${escapeHtml(wtCurrent)}</span>
+    </div>`;
   return `<div class="card"><h2>Week ahead — plan vs weather</h2>
     ${sessions}
     ${fuelExtras}
     <table style="margin-top:8px"><tr class="k"><td>Day</td><td>Sky</td><td>°C</td><td>Rain</td><td>Gusts km/h</td><td>Roads</td><td>Ride window</td></tr>${rows}</table>
-    <div class="k" style="margin-top:8px">${planNote}Open-Meteo forecast as of ${stamp(w.fetchedAt)} — Sync re-pulls both. "Roads" and ride windows are a MODEL drying estimate from rain, temperature, sun and wind — eyeball the tarmac before committing. Open-water temp has no public feed: set COACH_WATER_TEMP_C when the venue posts a reading.</div>
+    <div class="k" style="margin-top:8px">${planNote}Open-Meteo forecast as of ${stamp(w.fetchedAt)} — Sync re-pulls both. "Roads" and ride windows are a MODEL drying estimate from rain, temperature, sun and wind — eyeball the tarmac before committing.</div>
+    ${waterTemp}
   </div>${fuelJs}`;
 }
 
@@ -967,7 +981,7 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
   const showWeather = !share && !!weather;
   const weatherCarriesFuel = showWeather && fuelInventory.length > 0 && fuelPlans.some((p) => p.needed);
   const weatherHtml = showWeather
-    ? renderWeather(weather, weatherCarriesFuel ? { byKey: fuelByKey, logged: loggedFuel, inventory: fuelInventory, hasApiKey: setupHealth?.hasApiKey } : undefined)
+    ? renderWeather(weather, weatherCarriesFuel ? { byKey: fuelByKey, logged: loggedFuel, inventory: fuelInventory, hasApiKey: setupHealth?.hasApiKey } : undefined, share)
     : "";
   const fuelCard = weatherCarriesFuel ? "" : renderFuelCard({ plans: fuelPlans, inventory: fuelInventory, fuelLog, share, hasApiKey: setupHealth?.hasApiKey });
 
@@ -1293,6 +1307,15 @@ async function confirmProposal(btn){var box=btn.closest('.proposal');var id=box.
 async function declineProposal(btn){var box=btn.closest('.proposal');var id=box.getAttribute('data-id');var s=box.querySelector('.reacted');
   try{await fetch('/decline-proposal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:id})});
     box.querySelectorAll('button').forEach(function(b){b.disabled=true;});s.textContent='dismissed';box.style.opacity=0.5;}catch(e){s.textContent='error';}}
+// Open-water temp: save the venue's latest reading live (no .env edit, no restart). The swim verdict
+// uses it on the next page load, so we tell the user to reload rather than faking the new verdict here.
+async function setWaterTemp(btn){var box=btn.closest('.watertemp');var inp=box.querySelector('.wt-input');var s=box.querySelector('.wt-status');
+  var v=parseFloat(inp.value);if(!isFinite(v)){s.textContent='enter a number (°C)';return;}s.textContent='Saving…';
+  try{var r=await fetch('/set-water-temp',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tempC:v})});var j=await r.json();
+    s.textContent=j.ok?('✓ saved ~'+j.waterTempC+'°C — reload to refresh the swim verdict'):'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
+async function clearWaterTemp(btn){var box=btn.closest('.watertemp');var s=box.querySelector('.wt-status');s.textContent='Clearing…';
+  try{var r=await fetch('/set-water-temp',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({clear:true})});var j=await r.json();
+    s.textContent=j.ok?'✓ cleared — reload to go back to “check the venue”':'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
 </script>
 
 ${renderSetupImprove(profile, share, { suppressed, reactions, insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined })}
