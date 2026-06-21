@@ -131,6 +131,12 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   or **by talking to Claude** — the MCP `update_profile` tool patches your answers straight into the file
   (validated; live numbers rejected). It's on for local **Claude Desktop/Code**; on **Cowork** set
   `COACH_MCP_PROFILE_WRITE=true` to allow it (it writes a file on your Mac from a remote session).
+- **Read & edit your local files from Claude.** Beyond the profile, the MCP `list_files` / `read_file` /
+  `write_file` tools let Claude browse and update the project's **gitignored** files — `profile.local.yaml`,
+  `data/`, `reports/`, `knowledge/` — that a cloud session's fresh clone doesn't have on disk. On for local
+  **Claude Desktop/Code**; on **Cowork** set `COACH_MCP_FILE_ACCESS=true`. **Hard-scoped to the repo with a
+  secrets deny-list**: `.env*`, token/key files, `.git/` and `node_modules/` are never readable or writable,
+  whatever the flag. See [docs/mcp-server.md](docs/mcp-server.md).
 - **Bike race weight.** Log each bike as-raced (incl. a bottle) under `equipment.bikes.<name>.race_weight_g`
   in **grams** — a `weight_kg`/`weight` is rejected as your live bodyweight, but a bike's own mass is stable
   kit, so grams passes. The coach surfaces it in the live block and adds your **live** weight to it for total

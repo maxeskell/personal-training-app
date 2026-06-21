@@ -214,6 +214,12 @@ export const config = {
      *  it lets a REMOTE session write profile.local.yaml on the host, so it's opt-in. Always on for
      *  local stdio (Claude Desktop/Code) regardless of this flag. Validated; never stores live numbers. */
     profileWrite: process.env.COACH_MCP_PROFILE_WRITE === "true",
+    /** Expose the gated, repo-scoped file tools (`read_file`/`write_file`/`list_files`) on the HTTP/Cowork
+     *  surface, so a remote session can read+update the project's gitignored files (profile.local.yaml,
+     *  data/, reports/, knowledge/ …). OFF by default — it lets a REMOTE caller read/write files on the
+     *  host. Always on for local stdio. Containment + a secrets deny-list (.env*, tokens, keys, .git) are
+     *  enforced regardless, so it can never touch secrets. */
+    fileAccess: process.env.COACH_MCP_FILE_ACCESS === "true",
     /**
      * HTTP auth mode. "token" (default): a static bearer token — good for scripts and a self-hosted
      * Desktop-over-HTTP. "oauth": full OAuth 2.1 (DCR + PKCE + a coach-token-gated consent) — required

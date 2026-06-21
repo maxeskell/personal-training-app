@@ -90,6 +90,7 @@ export function httpStartupBanner(o: {
   port: number;
   includeWrites: boolean;
   profileWrite: boolean;
+  fileAccess: boolean;
   tokenFile: string;
 }): string[] {
   const RULE = "─".repeat(74);
@@ -98,10 +99,11 @@ export function httpStartupBanner(o: {
     "your MEDICAL profile via get_profile — conditions and medication",
     o.includeWrites ? "the gated plan-WRITE tools (propose / confirm)" : null,
     o.profileWrite ? "the profile-WRITE tool — a remote caller can write a file on this machine" : null,
+    o.fileAccess ? "the repo file tools (read_file/write_file) — a remote caller can read/write project files here (secrets excluded)" : null,
   ].filter((s): s is string => s != null);
   const lines = [
     RULE,
-    `endurance-coach MCP over HTTP — http://${o.host}:${o.port}/  (auth=${o.auth}, ${o.includeWrites ? "read + gated writes" : "READ-ONLY"}${o.profileWrite ? " + profile-write" : ""})`,
+    `endurance-coach MCP over HTTP — http://${o.host}:${o.port}/  (auth=${o.auth}, ${o.includeWrites ? "read + gated writes" : "READ-ONLY"}${o.profileWrite ? " + profile-write" : ""}${o.fileAccess ? " + file-access" : ""})`,
     "This server EXPOSES, to anyone who can reach it:",
     ...surface.map((s) => `    • ${s}`),
   ];
@@ -117,6 +119,7 @@ export function httpStartupBanner(o: {
     );
   }
   if (o.profileWrite) lines.push("⚠ profile-write is ON: a REMOTE caller can write profile.local.yaml here.");
+  if (o.fileAccess) lines.push("⚠ file-access is ON: a REMOTE caller can read/write repo files here (secrets/.git excluded).");
   lines.push("Safe setup: docs/mcp-server.md", RULE);
   return lines;
 }
@@ -175,7 +178,7 @@ async function runHttpRaw(): Promise<void> {
         const body = await readJsonBody(req);
         // Stateless: a fresh server + transport per request, so there's no cross-request session state
         // to leak between calls and no request-id collisions (the SDK's documented stateless pattern).
-        const server = buildServer({ includeWrites, includeProfileWrite: config.mcp.profileWrite });
+        const server = buildServer({ includeWrites, includeProfileWrite: config.mcp.profileWrite, includeFileAccess: config.mcp.fileAccess });
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
         res.on("close", () => {
           void transport.close();
@@ -201,6 +204,7 @@ async function runHttpRaw(): Promise<void> {
       port: config.mcp.httpPort,
       includeWrites,
       profileWrite: config.mcp.profileWrite,
+      fileAccess: config.mcp.fileAccess,
       tokenFile: `${config.secretsDir}/mcp.token`,
     }))
       console.error(l);
@@ -256,7 +260,7 @@ async function runHttpOAuth(): Promise<void> {
     requireBearerAuth({ verifier: provider, requiredScopes: ["coach"], resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(resourceServerUrl) }),
     express.json({ limit: MAX_BODY }),
     async (req, res) => {
-      const server = buildServer({ includeWrites });
+      const server = buildServer({ includeWrites, includeProfileWrite: config.mcp.profileWrite, includeFileAccess: config.mcp.fileAccess });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
       res.on("close", () => {
         void transport.close();
@@ -274,6 +278,7 @@ async function runHttpOAuth(): Promise<void> {
       port: config.mcp.httpPort,
       includeWrites,
       profileWrite: config.mcp.profileWrite,
+      fileAccess: config.mcp.fileAccess,
       tokenFile: `${config.secretsDir}/mcp.token`,
     }))
       console.error(l);
