@@ -10,6 +10,8 @@ import { DecisionLog, suppressedInsightKeys, reactionFromLabel } from "./state/d
 import { InsightLog } from "./state/insightLog.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard, renderResearchDigestPage, aieGapKeyFromSetupKey } from "./coach/dashboard.js";
+import { renderCareerPage } from "./coach/careerPage.js";
+import { loadCareerHistory } from "./coach/careerHistory.js";
 import { latestAdviceFindings } from "./coach/adviceRecs.js";
 import { updateLocalProfile } from "./profile/update.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
@@ -612,6 +614,13 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (url.pathname === "/" || url.pathname === "/index.html") {
       // ?share=1 → redacted view for screenshots (toggle link on the page). Real-time, no state change.
       const html = await renderLatest(url.searchParams.get("share") === "1");
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
+      return;
+    }
+    // Read-only career page: race history + lifetime bests vs current + power curve. Best-effort load of
+    // the gitignored data file (built by scripts/build-career-history.mjs); absent/garbled → empty state.
+    if (url.pathname === "/career") {
+      const html = renderCareerPage(loadCareerHistory(), url.searchParams.get("share") === "1");
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
       return;
     }

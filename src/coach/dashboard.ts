@@ -1157,8 +1157,12 @@ code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 ${
   share
     ? `<div class="card sharebanner" style="background:#eef4ff;border:1px solid #cfe0ff;color:#244">🔒 <b>Share view</b> — real race names, exact dates and your location/weather are hidden, the analysis is intact. <a href="?">Exit share view</a></div>`
-    : `<div class="sharelink" style="text-align:right;margin:-8px 0 8px"><a href="?share=1" style="font-size:12px;color:#888">🔒 Share view (hide race names + location for screenshots)</a></div>`
+    : ""
 }
+<div class="topnav" style="display:flex;justify-content:space-between;align-items:center;margin:-8px 0 8px;font-size:12px">
+  <a href="/career${share ? "?share=1" : ""}" style="color:#c8642d;text-decoration:none;font-weight:600">📊 Career &amp; PBs →</a>
+  ${share ? "" : `<a href="?share=1" style="color:#888;text-decoration:none">🔒 Share view (hide race names + location for screenshots)</a>`}
+</div>
 ${
   // The Sync control is an interactive button with a live server behind it — useless (and an empty
   // card once the button is print-hidden) in the share/screenshot view, so drop the card AND its

@@ -1,0 +1,72 @@
+{
+  "_README": "Template for data/career-history.json (gitignored) — the source for the read-only /career page (race history + lifetime bests vs current form + power curve). Generate the real file from your TrainingPeaks/intervals.icu archive with `node scripts/build-career-history.mjs` (see SETUP.md → 'Career history'), or hand-edit a copy. Values in `bests`/`powerCurve` are PRE-FORMATTED (the renderer just prints them). All fields are optional except a race's date+type and a best row's label. Examples below use placeholder data — replace with your own.",
+  "generatedAt": "2026-01-01",
+  "seasonYear": 2026,
+  "races": [
+    {
+      "date": "2020-04-19",
+      "sport": "run",
+      "type": "Half-marathon",
+      "event": "Example City Half",
+      "location": "Example City, Country",
+      "confidence": "confirmed",
+      "source": "geo+web",
+      "result": { "distanceKm": 21.1, "time": "1:45:00", "pace": "4:59/km" }
+    },
+    {
+      "date": "2021-06-13",
+      "sport": "triathlon",
+      "type": "70.3 triathlon",
+      "location": "Example Lake (nearest-town approx)",
+      "confidence": "strong",
+      "source": "geo",
+      "result": { "time": "5:30:00", "avgW": 190 }
+    }
+  ],
+  "bests": [
+    {
+      "sport": "Run",
+      "rows": [
+        { "label": "5k", "allTime": { "value": "19:30", "date": "2016-04-21" }, "last90": { "value": "22:10" }, "season": { "value": "21:40" } },
+        { "label": "10k", "allTime": { "value": "43:12", "date": "2016-04-21" }, "last90": { "value": "47:50" }, "season": { "value": "46:30" } },
+        { "label": "Longest", "allTime": { "value": "42.2 km" }, "last90": { "value": "13.3 km" }, "season": { "value": "13.3 km" } }
+      ]
+    },
+    {
+      "sport": "Bike",
+      "rows": [
+        { "label": "FTP (est)", "allTime": { "value": "240 W" }, "last90": { "value": "220 W" }, "season": { "value": "220 W" } },
+        { "label": "Longest", "allTime": { "value": "169.4 km" }, "last90": { "value": "75.5 km" }, "season": { "value": "75.5 km" } }
+      ]
+    },
+    {
+      "sport": "Swim",
+      "rows": [
+        { "label": "Longest", "allTime": { "value": "2.3 km" }, "last90": { "value": "1.9 km" }, "season": { "value": "1.9 km" } }
+      ]
+    }
+  ],
+  "powerCurve": {
+    "allTime": [
+      { "durationSec": 5, "watts": 966 },
+      { "durationSec": 60, "watts": 454 },
+      { "durationSec": 300, "watts": 330 },
+      { "durationSec": 1200, "watts": 270 },
+      { "durationSec": 3600, "watts": 240 }
+    ],
+    "last90": [
+      { "durationSec": 5, "watts": 720 },
+      { "durationSec": 60, "watts": 360 },
+      { "durationSec": 300, "watts": 280 },
+      { "durationSec": 1200, "watts": 235 },
+      { "durationSec": 3600, "watts": 220 }
+    ],
+    "season": [
+      { "durationSec": 5, "watts": 740 },
+      { "durationSec": 60, "watts": 365 },
+      { "durationSec": 300, "watts": 285 },
+      { "durationSec": 1200, "watts": 238 },
+      { "durationSec": 3600, "watts": 222 }
+    ]
+  }
+}

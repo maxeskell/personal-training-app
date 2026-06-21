@@ -189,6 +189,16 @@ export const config = {
   autoSyncMinutes: Number(process.env.COACH_AUTOSYNC_MIN ?? 30),
 
   /**
+   * Read-only `/career` page (race history + lifetime bests vs current + power curve). The data is a
+   * HISTORICAL multi-year archive (TrainingPeaks/intervals.icu), not live coaching state, so it lives in
+   * a gitignored file built by `scripts/build-career-history.mjs`. Path is relative to the repo root
+   * unless absolute. A missing file just renders the page's empty state (degrade-don't-crash).
+   */
+  career: {
+    path: process.env.COACH_CAREER_PATH ?? "data/career-history.json",
+  },
+
+  /**
    * Auto deep session-feedback at sync (see README "Deep session feedback"). Each session generated is
    * ONE LLM call, so this is the throttle: `on` = every recent session that has its raw .FIT (default),
    * `latest` = only the single most recent, `off` = none (use `npm run session` on demand instead).
