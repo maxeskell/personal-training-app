@@ -221,8 +221,8 @@ That card is a small, deterministic (no-AI) action hub in three sections:
 
 - **Finish setup** — the AI-Endurance gaps above, your free-text `open_items` (tagged *discuss with
   coach*), any unfilled optional profile questions (tagged *edit profile*), a few **integration-health**
-  nudges (tagged *in your setup* — a missing `ANTHROPIC_API_KEY`, a long-stale sync, an unset
-  `COACH_WATER_TEMP_C`) and any **named race that has no date yet** (tagged *edit profile*). **Ranked by
+  nudges (tagged *in your setup* — a missing `ANTHROPIC_API_KEY`, a long-stale sync, no open-water
+  temperature set yet) and any **named race that has no date yet** (tagged *edit profile*). **Ranked by
   value** — AI-Endurance gaps and open items outrank profile questions, and a field the coach actually
   reads outranks a reference-only one.
 - **This week** — the deterministic *marginal-gains* tweaks (the same selection the `tune` flow phrases
