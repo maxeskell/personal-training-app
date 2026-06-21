@@ -20,7 +20,7 @@ export type DecisionStatus = "proposed" | "accepted" | "declined" | "deferred" |
  * back to the profile), dismiss = "ignore this advice, don't show it again". clear removes a previous
  * opinion (back to neutral). Maps to the statuses below.
  */
-export type InsightReaction = "agree" | "disagree" | "ignore" | "done" | "dismiss" | "clear";
+export type InsightReaction = "agree" | "disagree" | "ignore" | "done" | "dismiss" | "clear" | "applied";
 
 export interface DecisionRecord {
   id: string;
@@ -52,6 +52,7 @@ const REACTION_STATUS: Record<InsightReaction, DecisionStatus> = {
   done: "completed",
   dismiss: "dismissed",
   clear: "cleared",
+  applied: "executed",
 };
 
 export class DecisionLog {
@@ -168,6 +169,7 @@ const STATUS_REACTION: Partial<Record<DecisionStatus, InsightReaction>> = {
   deferred: "ignore",
   completed: "done",
   dismissed: "dismiss",
+  executed: "applied",
 };
 export function reactionOf(status: DecisionStatus): InsightReaction {
   return STATUS_REACTION[status] ?? "ignore";
@@ -181,7 +183,7 @@ export function reactionOf(status: DecisionStatus): InsightReaction {
 const REACTION_LABELS: Record<string, InsightReaction> = {
   like: "agree", dislike: "disagree", snooze: "ignore", clear: "clear",
   agree: "agree", disagree: "disagree", ignore: "ignore",
-  done: "done", dismiss: "dismiss",
+  done: "done", dismiss: "dismiss", applied: "applied",
 };
 export function reactionFromLabel(label: string): InsightReaction | undefined {
   return REACTION_LABELS[label];

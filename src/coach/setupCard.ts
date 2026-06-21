@@ -640,19 +640,25 @@ function reactableCardHtml(it: SetupItem, reactions?: Map<string, InsightReactio
  * propose→confirm write to AI Endurance (you confirm the exact edit), rendered inline. When it can't be
  * tied to a scheduled session, the drafter returns the precise manual steps instead. Plus 💤 Snooze.
  */
-function applyableCardHtml(it: SetupItem): string {
+function applyableCardHtml(it: SetupItem, reactions?: Map<string, InsightReaction>): string {
   const why = it.why ? `<div class="age">${escapeHtml(it.why)}</div>` : "";
   const hint = it.action ? `<div class="ev">${escapeHtml(it.action)}</div>` : "";
-  return `<div class="insight" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-rec="${escapeHtml(it.rec ?? it.label)}">
-    <div>${categoryChip(it.category)}<b>${escapeHtml(it.label)}</b></div>
-    ${hint}${why}
-    <div class="item-proposals"></div>
-    <div class="acts">
+  // Once a change drafted from this card has been confirmed (a gated write to AI Endurance), the card is
+  // marked "applied" so it shows the result instead of re-offering "Make this change" on the next render.
+  const applied = reactions?.get(it.key) === "applied";
+  const acts = applied
+    ? `<div class="acts"><span class="reacted">✓ applied to AI Endurance</span></div>`
+    : `<div class="acts">
       <button class="agree" onclick="actItem(this)">➡️ Make this change</button>
       <button class="ignore" data-reaction="snooze" onclick="feedback(this)">💤 Snooze</button>
       <button class="ignore" title="Ignore this advice — don't show it again" onclick="ignoreCard(this)">🚫 Ignore</button>
       <span class="reacted"></span>
-    </div>
+    </div>`;
+  return `<div class="insight" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-rec="${escapeHtml(it.rec ?? it.label)}" data-reaction-state="${applied ? "applied" : ""}">
+    <div>${categoryChip(it.category)}<b>${escapeHtml(it.label)}</b></div>
+    ${hint}${why}
+    <div class="item-proposals"></div>
+    ${acts}
   </div>`;
 }
 
@@ -694,7 +700,7 @@ function setupLinkHtml(l: SetupLink): string {
 /** Dispatch a setup item to the right surface: an applyable training card, a "your call" reaction card, or
  *  the plain `<details>` task. */
 function setupItemHtml(it: SetupItem, reactions?: Map<string, InsightReaction>): string {
-  if (it.applyable) return applyableCardHtml(it);
+  if (it.applyable) return applyableCardHtml(it, reactions);
   if (it.reactable) return reactableCardHtml(it, reactions);
   return setupTaskHtml(it);
 }
@@ -725,6 +731,6 @@ export function renderSetupImprove(profile: Profile | undefined, share = false, 
       ? setupListHtml(items, reactions)
       : present.map((g) => `<h3 class="setup-group">${GROUP_HEADING[g]}</h3>${setupListHtml(items.filter((it) => it.group === g), reactions)}`).join("");
   return `<div class="card"><h2>Set up &amp; improve</h2>
-  <div class="k" style="margin-bottom:6px">What to do next — all actioned right here. <b>This week</b> cards are your call: 👍 Agree / 👎 Disagree / 💤 Snooze on fuelling, gear and recovery; a training change has <b>Make this change</b> (applies it in AI Endurance after you confirm the exact edit, or hands you the precise steps). <b>Finish setup</b> tasks open for exactly how to do them, and each carries <b>✓ Done</b> (mark it complete — an AI-Endurance gap is also written back to your profile so it stays gone), <b>💤 Snooze</b> (hide ~2 weeks) and <b>🚫 Ignore</b> (don't show again). A gap you've already filled in AI Endurance clears itself on the next sync.</div>
+  <div class="k" style="margin-bottom:6px">What to do next — all actioned right here. <b>This week</b> cards are your call: 👍 Agree / 👎 Disagree / 💤 Snooze on fuelling, gear and recovery; a training change has <b>Make this change</b> (applies it in AI Endurance after you confirm the exact edit, or hands you the precise steps) — once applied it shows <b>✓ applied</b> and stops asking. <b>Finish setup</b> tasks open for exactly how to do them, and each carries <b>✓ Done</b> (mark it complete — an AI-Endurance gap is also written back to your profile so it stays gone), <b>💤 Snooze</b> (hide ~2 weeks) and <b>🚫 Ignore</b> (don't show again). A gap you've already filled in AI Endurance clears itself on the next sync.</div>
   ${body}</div>`;
 }

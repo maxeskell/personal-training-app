@@ -540,7 +540,7 @@ export function formatListening(m: ListeningModel, date: string): string {
     lines.push("");
     lines.push("_Your own retrospective notes, joined to each insight and how you reacted to it at the time._");
     lines.push("");
-    const REACTED = { agree: "👍 agreed", disagree: "👎 disagreed", ignore: "💤 snoozed", done: "✓ done", dismiss: "🚫 ignored", clear: "—" } as const;
+    const REACTED = { agree: "👍 agreed", disagree: "👎 disagreed", ignore: "💤 snoozed", done: "✓ done", dismiss: "🚫 ignored", clear: "—", applied: "✓ applied" } as const;
     for (const r of m.retrospectives) {
       const how = r.reaction ? ` (you ${REACTED[r.reaction]})` : "";
       lines.push(`- **${r.family} / ${r.title}**${how} — ${r.note} _(${r.at.slice(0, 10)})_`);
