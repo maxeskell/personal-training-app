@@ -58,7 +58,7 @@ This page is generated from `src/profile/questions.ts` (the same data behind
 
 | Field | Question | Why it matters |
 |---|---|---|
-| `equipment.bikes` | What bikes do you ride (groupset, crank length, etc.)? | Recorded for your reference and visible to Claude via get_profile; not pulled into the compact live coaching block. |
+| `equipment.bikes` | What bikes do you ride (groupset, crank length, and each bike's as-raced weight incl. a bottle)? | Visible to Claude via get_profile. A bike's race_weight_g (grams, as-raced) also surfaces in the live coaching block, where the coach adds your live weight to it for total system weight — e.g. to size tyre pressure. |
 | `equipment.power_meters` | Do you train with a power meter? (which) | Recorded for your reference and visible via get_profile; FTP/power numbers themselves stay live from AI Endurance/Garmin. |
 | `equipment.wetsuit` | Do you have a wetsuit (and is it allowed for your races)? | Recorded for your reference and visible via get_profile; not yet read by an automated flow. |
 | `equipment.run_shoes` | What run shoes are you in (rotation / race-day pair)? | Recorded for your reference and visible via get_profile; not yet read by an automated flow. |

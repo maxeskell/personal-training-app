@@ -137,6 +137,14 @@ stray `ftp_w: 223` (or `threshold_w: 240`) anywhere does not.
 not a live performance metric (it's what the Garmin enrichment fills). **Weight is denied**: it changes
 daily, is pulled live, and a numeric weight anywhere in the profile trips the guard.
 
+**Bike race weight is the kit exception.** A *bike's* mass is stable kit, not a live number, so each
+`equipment.bikes.<name>.race_weight_g` records the bike as-raced (incl. the bottle(s) you weighed it
+with) in **grams** — `weight_g` passes the guard where a `weight_kg`/`weight` would be rejected as rider
+bodyweight. `renderProfileContext` surfaces it in the live coaching block, and `systemWeightKg`
+(`src/profile/equipment.ts`) combines it with the **live** rider weight from `get_state` into total
+system weight (rider + bike) — the input a tyre-pressure chart needs. The rider half stays live by
+design; only the bike half is stored.
+
 ## `get_profile` (MCP) and `dose_cycle`
 
 `get_profile` returns the validated profile plus a computed `dose_cycle`. It's deterministic

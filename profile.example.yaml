@@ -66,7 +66,16 @@ equipment:
   devices: []               # watches, head units, scales, straps
   power_meters: []
   power_meter_note:
-  bikes: {}                 # named bikes with groupset, crank_length_mm, etc
+  # Named bikes with stable kit detail (groupset, crank_length_mm, etc). race_weight_g is the bike
+  # AS RACED in GRAMS — weigh it the way you ride it (e.g. with one full bottle) and record the grams.
+  # It's kept in grams on purpose: weight in kg is treated as your LIVE bodyweight and rejected here,
+  # but a bike's own mass is stable kit data. The coach adds your live weight to it to get total system
+  # weight (rider + bike), e.g. to size tyre pressure. Copy this block into profile.local.yaml:
+  bikes: {}
+  #   felt:
+  #     groupset:
+  #     crank_length_mm:
+  #     race_weight_g: 10000   # bike as raced incl. one bottle = 10 kg (10000 g)
   wetsuit:
   run_shoes:
 
