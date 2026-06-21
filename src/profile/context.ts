@@ -1,4 +1,5 @@
 import { computeDoseCycle, type DoseCycle, type Profile } from "./schema.js";
+import { bikeRaceWeights } from "./equipment.js";
 import type { LoadedProfile } from "./load.js";
 
 /**
@@ -99,6 +100,15 @@ function availabilityLine(p: Profile): string | null {
   return line;
 }
 
+function bikeWeightLine(p: Profile): string | null {
+  const bikes = bikeRaceWeights(p);
+  if (!bikes.length) return null;
+  const parts = bikes.map((b) => `${b.name} ${b.raceWeightKg}kg`);
+  // The rider's live weight is already in this prompt (from get_state); flag the combination so the
+  // coach can size tyre pressure off total system weight rather than asking for the bike mass.
+  return `- Bike race weight (as-raced, incl. bottle) [add the live weight above for total system weight, e.g. tyre pressure]: ${parts.join(", ")}.`;
+}
+
 function fuellingLine(p: Profile): string | null {
   const f = obj(p.fuelling);
   if (!f) return null;
@@ -142,6 +152,7 @@ export function renderProfileContext(profile: Profile, today: string): string {
     ...medicationLines(profile, today),
     biomechanicsLine(profile),
     availabilityLine(profile),
+    bikeWeightLine(profile),
     fuellingLine(profile),
     ...raceTargetLines(profile),
     todoLine(profile),

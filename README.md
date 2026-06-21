@@ -131,6 +131,11 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   or **by talking to Claude** — the MCP `update_profile` tool patches your answers straight into the file
   (validated; live numbers rejected). It's on for local **Claude Desktop/Code**; on **Cowork** set
   `COACH_MCP_PROFILE_WRITE=true` to allow it (it writes a file on your Mac from a remote session).
+- **Bike race weight.** Log each bike as-raced (incl. a bottle) under `equipment.bikes.<name>.race_weight_g`
+  in **grams** — a `weight_kg`/`weight` is rejected as your live bodyweight, but a bike's own mass is stable
+  kit, so grams passes. The coach surfaces it in the live block and adds your **live** weight to it for total
+  system weight (rider + bike) — e.g. to size tyre pressure. The rider half stays live; only the bike half is
+  stored. `profile.example.yaml` carries a commented `felt:` block to copy.
 - **`dose_cycle`.** If you set `health.medication.dose_day` + `gi_trough_days`, `get_profile` returns a
   computed `dose_cycle` (`days_since_dose`, `in_gi_trough`) so the coach can keep your hardest/longest
   sessions off the GI-trough days and watch under-fuelling — the personalisation a generic endurance

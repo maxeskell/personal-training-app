@@ -196,6 +196,13 @@ you add it, the card shows a one-line nudge with the format, and the **"Finish s
 an open item — nothing breaks, it's just an empty inventory waiting on you. See the
 [Fuelling Spec](docs/specs/Fuelling_Spec.md) for the full picture.
 
+**Worth filling in: each bike's race weight.** Under `equipment.bikes.<name>.race_weight_g` record the
+bike *as you race it*, in **grams** — weigh it the way you ride (e.g. with one full bottle) and log the
+grams (10 kg → `10000`). Grams, not kg, on purpose: a `weight_kg` is treated as your live bodyweight and
+rejected, but a bike's own mass is stable kit. The coach reads it into the live coaching block and adds
+your **live** weight to get total system weight (rider + bike) — the number tyre-pressure charts want.
+`profile.example.yaml` carries a commented `felt:` block to copy.
+
 For the optional fields worth filling in later — each with a plain-language question and a one-line
 *why it helps the coach* — run `npm run profile:questions` (or read
 [docs/profile-questions.md](docs/profile-questions.md)). All of them are optional.

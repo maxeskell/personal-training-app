@@ -41,7 +41,7 @@ const RICH: unknown = {
     medication: { name: "example-drug", dose_day: "sunday", gi_trough_days: ["tuesday", "wednesday", "thursday"], implications: ["fuel to train"] },
   },
   availability: { weekly_hours: "11-12", weekday_minutes_per_day: 90, rest_day: "monday", fixed_sessions: { sunday: "long ride" } },
-  equipment: { bikes: { road: { crank_length_mm: 172.5 }, tt: { crank_length_mm: 165, bar_width_cm: 38 } } },
+  equipment: { bikes: { road: { crank_length_mm: 172.5, race_weight_g: 8200 }, tt: { crank_length_mm: 165, bar_width_cm: 38 } } },
   bike_fit: { fits: [{ saddle_height_mm: 765, crank_mm: 172.5, body: { height_cm: 179, foot_length_mm: { left: 269, right: 267 } } }] },
   fuelling: { carb_target_g_per_hour: { long: 80, sprint: 0 }, caffeine: "race-day lever" },
   races: [{ name: "Test Olympic", priority: "A", date: "2026-07-11", distance: "olympic", target_time: "sub 2:00" }],
@@ -142,6 +142,8 @@ test("renderProfileContext surfaces the dose-cycle and never leaks a live number
   assert.match(block, /ATHLETE PROFILE/);
   assert.match(block, /GI trough/i);
   assert.match(block, /Race targets/);
+  // Bike race weight (grams in the profile) renders in kg, flagged for combining with the live weight.
+  assert.match(block, /Bike race weight.*road 8\.2kg/);
   assert.doesNotMatch(block, /\bftp\b/i); // no live numbers leak into the prompt block
   // A profile with nothing meaningful renders to an empty string (clean omission).
   assert.equal(renderProfileContext(validateProfile({ schema_version: 1, identity: {} }), "2026-06-17"), "");

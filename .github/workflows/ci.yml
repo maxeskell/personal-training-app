@@ -14,6 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Check out the PR head commit directly rather than the default refs/pull/<n>/merge. Branch
+          # pushes from Claude Code on the web go through a proxy that doesn't fire the webhook GitHub
+          # uses to recompute the merge ref, so that ref can lag and CI would test a stale tree. Pinning
+          # to the head sha makes CI always run exactly what's on the branch; for push events (e.g. main)
+          # there is no pull_request head, so it falls back to github.sha.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
