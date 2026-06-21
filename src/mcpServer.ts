@@ -43,7 +43,7 @@ import { readCostRecords, summarizeCost, type CostRecord } from "./llm/costLog.j
 import { loadProfile } from "./profile/load.js";
 import { formatProfileForTool } from "./profile/context.js";
 import { updateLocalProfile } from "./profile/update.js";
-import { repoRoot, listRepoDir, readRepoFile, writeRepoFile } from "./mcp/fileAccess.js";
+import { repoRoot, listRepoDir, readRepoFile, writeRepoFile, formatReadResult } from "./mcp/fileAccess.js";
 import type { AthleteState } from "./state/types.js";
 
 /**
@@ -658,12 +658,12 @@ function registerFileAccessTools(server: McpServer): void {
   );
   server.tool(
     "read_file",
-    "Read a UTF-8 text file from the project repo — including GITIGNORED files (profile.local.yaml, data/*.json, reports/*, knowledge/*) that a web-session clone doesn't have on disk. Scoped to the repo; secrets (.env*, tokens, keys) and .git/ are refused. Read-only, no LLM cost.",
+    "Read a UTF-8 text file from the project repo — including GITIGNORED files (profile.local.yaml, data/*.json, reports/*, knowledge/*) that a web-session clone doesn't have on disk. Returns the file's EXACT contents (no added header), so an edit can be written straight back with write_file. Scoped to the repo; secrets (.env*, tokens, keys) and .git/ are refused. Read-only, no LLM cost.",
     { path: z.string().min(1).describe("File path relative to the repo root, e.g. 'profile.local.yaml'.") },
     async ({ path }) => {
       try {
-        const { rel, content } = await readRepoFile(repoRoot(), path);
-        return ok(`# ${rel}\n${content}`);
+        const { content } = await readRepoFile(repoRoot(), path);
+        return ok(formatReadResult(content));
       } catch (e) {
         return fail(e instanceof Error ? e.message : String(e));
       }
