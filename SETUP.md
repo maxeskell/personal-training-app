@@ -338,6 +338,9 @@ notes: "raise the year's floor, not the week's ceiling; defend consistency"
 - Everything's optional: with no `season_plan` the page still shows your CTL, trajectory and lever checklist,
   and explains how to add the plan. See `profile.example.yaml` → `season_plan` and
   `docs/specs/Season_Arc_Spec.md`.
+- For a written strategic write-up (not just the page), run
+  `cd /Users/maxeskell/personal-training-app && npm run season` — one high-effort, cost-logged LLM call
+  (needs `ANTHROPIC_API_KEY`), saved to `reports/`; without a key it prints the deterministic digest.
 
 ## Step 7 — Done & troubleshooting
 

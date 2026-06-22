@@ -59,6 +59,7 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 | Command | What it does |
 |---|---|
 | `npm run deep-dive` | insight-engine analysis (load/EF/durability/ramp/goal) → report |
+| `npm run season` | multi-season strategic review: CTL arc / phases / structural levers → report (also the `/season` page; deterministic digest with no API key) |
 | `npm run listening` | engagement model: what you act on vs dismiss, plan adherence + plan changes |
 
 ## Fuelling

@@ -59,6 +59,31 @@ export interface SeasonArcReport {
   flags: string[];
 }
 
+/**
+ * Deterministic text digest of the report — every number the strategic narrative should cite, and the
+ * no-LLM fallback for `npm run season`. Pure. Mirrors deepDive's `insightMetricsSummary` pattern.
+ */
+export function seasonReportText(r: SeasonArcReport): string {
+  const lines: string[] = ["SEASON ARC (computed locally; cite these):"];
+  if (r.horizonGoal) lines.push(`- Horizon: ${r.horizonGoal}${r.targetDate ? ` (${r.targetDate}, ${r.daysToTarget ?? "?"}d out)` : ""}`);
+  else lines.push("- Horizon: no multi-season goal set (profile.season_plan)");
+  if (r.activePhase) {
+    const p = r.activePhase;
+    lines.push(`- Active phase: ${p.name ?? "—"} — focus "${p.focus ?? "—"}"${p.ctlTargetText ? `, CTL target ${p.ctlTargetText}` : ""}${p.until ? `, until ${p.until} (${p.daysLeft ?? "?"}d)` : ""}`);
+  }
+  lines.push(`- Chronic load (MODEL): CTL now ${r.ctlNow != null ? Math.round(r.ctlNow) : "—"}, trend ${r.ctlTrend ?? "—"}, target ${r.ctlTarget ?? "—"}, gap ${r.ctlGap != null ? (r.ctlGap >= 0 ? `+${r.ctlGap}` : r.ctlGap) : "—"}`);
+  if (r.trajectory?.length) {
+    const arc = r.trajectory.map((y) => `${y.year}:${y.hours ?? 0}h`).join(" ");
+    lines.push(`- Long arc (annual hours): ${arc}`);
+    if (r.peakYear) lines.push(`- Peak year: ${r.peakYear.year} (${r.peakYear.hours}h). ${r.consistencyNote ?? ""}`.trim());
+  }
+  lines.push("- Structural levers:");
+  for (const l of r.levers) lines.push(`    · ${l.name} [${l.status}]: ${l.note}`);
+  lines.push(`- Risk flags: ${r.flags.length ? r.flags.join(" | ") : "none"}`);
+  if (r.focus) lines.push(`- Deterministic focus: ${r.focus}`);
+  return lines.join("\n");
+}
+
 function daysBetween(from: string, to: string): number | undefined {
   const a = Date.parse(`${from.slice(0, 10)}T00:00:00Z`);
   const b = Date.parse(`${to.slice(0, 10)}T00:00:00Z`);

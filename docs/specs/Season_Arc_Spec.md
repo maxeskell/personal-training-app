@@ -76,8 +76,11 @@ Pure function → `SeasonArcReport`, every section degrading independently to "�
 Code + docs together; `npm run typecheck` + `npm test` green (engine + page unit-tested, the new profile
 field exists in the example, the questions doc regenerated); committed, pushed, draft PR, merged.
 
-## Future increments (explicitly out of MVP)
+## Increments
 
-1. `npm run season` / `season_arc` MCP tool with an LLM strategic narrative grounded in the report.
-2. A quarterly **nudge** (the review cadence) via the existing notify/ping path.
-3. Auto-suggested phase CTL targets from the trajectory (propose→confirm), instead of hand-set.
+1. ✅ **Shipped** — `npm run season`: an LLM strategic narrative grounded in the deterministic report
+   (`seasonNarrative.ts` + `seasonReportText`), one high-effort cost-logged call, saved to `reports/`;
+   degrades to the deterministic digest with no API key.
+2. _Next_ — a `season_arc` MCP tool exposing the same narrative to Claude.
+3. _Next_ — a quarterly **nudge** (the review cadence) via the existing notify/ping path.
+4. _Next_ — auto-suggested phase CTL targets from the trajectory (propose→confirm), instead of hand-set.
