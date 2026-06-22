@@ -26,6 +26,7 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { loadActivityFits, fitStreamsDir, type ActivityFit } from "../src/insights/fit.js";
+import { activityArchiveDir } from "../src/archive/activityArchive.js";
 import { meanMaximalCurve, type CurvePoint } from "../src/insights/powerCurve.js";
 import { enrichRaceResults, sportFamily, type ActivitySummary, type DatedFit, type SportFamily } from "../src/coach/raceResults.js";
 
@@ -282,16 +283,21 @@ function main() {
   }
 
   // Race performance + splits from YOUR files (no scraping): match each race to a raw activity file
-  // (preferred) or the activity export (summary fallback); hand-authored result fields always win.
+  // (preferred) or the activity export (summary fallback); hand-authored result fields always win. Sources:
   //  - recentFits: the streams dir (recent .FIT, full per-second samples) → drives the power curve;
-  //  - archiveFits: --fit-dir, your historical archive (.fit/.tcx, optionally .gz, in nested year folders),
-  //    scanned recursively with samples dropped (it can be thousands of files — laps are all races need).
+  //  - corpusFits: the DURABLE activity archive (data/activity-archive/, .fit/.tcx/.pwx, gz, nested) — the
+  //    permanent corpus `archive:import` + sync build up; scanned recursively with samples dropped;
+  //  - archiveFits: an extra one-off --fit-dir (e.g. an export not yet imported), same treatment.
   const fitDir = typeof args["fit-dir"] === "string" ? (args["fit-dir"] as string) : undefined;
   const streamsDir = fitStreamsDir();
+  const corpusDir = activityArchiveDir();
   const recentFits = loadActivityFits(streamsDir);
+  const corpusFits = existsSync(corpusDir) ? loadActivityFits(corpusDir, { recursive: true, dropSamples: true }) : [];
   const archiveFits =
-    fitDir && resolve(fitDir) !== resolve(streamsDir) ? loadActivityFits(fitDir, { recursive: true, dropSamples: true }) : [];
-  const datedFits: DatedFit[] = dedupFits([...recentFits, ...archiveFits]).map((f) => ({ date: f.date, sport: f.sport, fit: f.fit }));
+    fitDir && resolve(fitDir) !== resolve(streamsDir) && resolve(fitDir) !== resolve(corpusDir)
+      ? loadActivityFits(fitDir, { recursive: true, dropSamples: true })
+      : [];
+  const datedFits: DatedFit[] = dedupFits([...recentFits, ...corpusFits, ...archiveFits]).map((f) => ({ date: f.date, sport: f.sport, fit: f.fit }));
   const activities: ActivitySummary[] = all.map((a) => ({ date: a.date, sport: a.sport, distKm: a.distKm, durSec: a.durSec, np: a.np }));
   const enriched = enrichRaceResults(races, datedFits, activities);
   races = enriched.races;
@@ -333,7 +339,7 @@ function main() {
     : "none";
   console.log(
     `wrote ${out}\n  races: ${races.length} | bests: ${bests.map((b) => `${b.sport}(${b.rows.length})`).join(", ") || "none"} | power: ${pcStr} | trajectory: ${trajectory.length ? trajectory.length + "yrs" : "none"}\n` +
-      `  race performance: ${e.fromFit} from file, ${e.fromActivity} from activity export, ${e.withSplits} with splits (of ${e.total}; ${recentFits.length} recent + ${archiveFits.length} archive activity files${fitDir ? ` from ${fitDir}` : ""})`,
+      `  race performance: ${e.fromFit} from file, ${e.fromActivity} from activity export, ${e.withSplits} with splits (of ${e.total}; ${recentFits.length} recent + ${corpusFits.length} archived${archiveFits.length ? ` + ${archiveFits.length} from ${fitDir}` : ""} activity files)`,
   );
 }
 

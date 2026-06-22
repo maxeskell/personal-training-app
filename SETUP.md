@@ -320,6 +320,33 @@ cd /Users/maxeskell/personal-training-app && npm run career:build -- \
   if a window has no `.FIT`s, it falls back to that export's windows. With no ride `.FIT`s and only an
   all-time `--power` export, the recent lines simply won't appear.
 - Set `COACH_CAREER_PATH` if you keep the file somewhere other than `data/career-history.json`.
+- **Tip:** once you've imported your archive (next section), the build reads it automatically — you can drop
+  `--fit-dir` entirely.
+
+## Step 6a-bis — (optional) Activity archive — own your raw files forever
+
+A **durable, portable archive of your raw activity files** so you never have to re-pull them and can take your
+data wherever you like, independent of Garmin / TrainingPeaks / AI Endurance. It lives at
+**`data/activity-archive/`** (gitignored), kept **separate** from the hot `data/fit-streams/` so it never
+slows the live dashboard. Originals are preserved **byte-for-byte** (any format — `.fit` / `.tcx` / `.pwx` /
+`.gpx`, gzipped or not), foldered by year, with a self-describing **`manifest.jsonl`** index. Dedup is by
+content hash (a `.gz` and its plain twin collapse; *distinct formats of the same activity are both kept*).
+The whole folder is self-contained — copy it to a drive or another machine and it's complete.
+
+```bash
+▶ RUN   # one-time: import an existing export (e.g. a TrainingPeaks "WorkoutFileExport"), deduped + idempotent
+cd /Users/maxeskell/personal-training-app && npm run archive:import -- --from /abs/path/to/export --source trainingpeaks
+# any time: just show what's archived
+cd /Users/maxeskell/personal-training-app && npm run archive:import
+```
+
+- **Going forward is automatic** — every raw `.FIT` the dashboard Sync / `npm run fit-sync` pulls from Garmin
+  is deposited into the archive too. The corpus grows on its own; nothing to remember.
+- **The career build reads it by default** (alongside `data/fit-streams/`), so after importing you no longer
+  need `--fit-dir`.
+- A **full Garmin history backfill** (pull every original `.FIT` Garmin holds, to fill anything an export
+  lacks) is the heavier companion step — see `npm run` once it lands.
+- Set `COACH_ARCHIVE_DIR` to keep the archive somewhere other than `data/activity-archive/`.
 
 ## Step 6b — (optional) Season arc (the `/season` strategic review)
 

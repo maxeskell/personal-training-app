@@ -86,7 +86,8 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 ## Device data & history (Garmin)
 | Command | What it does |
 |---|---|
-| `npm run fit-sync` | download recent Garmin activity summaries + raw `.FIT` (also runs on dashboard Sync) |
+| `npm run fit-sync` | download recent Garmin activity summaries + raw `.FIT` (also runs on dashboard Sync; auto-archives each `.FIT`) |
+| `npm run archive:import -- --from <dir>` | import an activity-file export (`.fit`/`.tcx`/`.pwx`/`.gpx`, gz ok) into the durable `data/activity-archive/`, deduped; no `--from` → status |
 | `npm run backfill` | archive full history (AI Endurance + Garmin) → `data/archive/` (resumable) |
 | `npm run backfill:status` | archived counts + date ranges |
 | `npm run backfill:compact` | de-duplicate the archive files in place (safe to re-run) |

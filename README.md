@@ -523,6 +523,14 @@ the bests. The same **🔒 Share view** applies — event names and locations ar
 year, and the data-provenance tag is dropped (splits are just performance numbers, so they stay). Absent
 data file → a friendly empty state.
 
+**Activity archive — own your raw files forever:** a durable, portable corpus of your raw activity files at
+`data/activity-archive/` (gitignored), so you never re-pull and can take your data anywhere. Originals are kept
+byte-for-byte (`.fit`/`.tcx`/`.pwx`/`.gpx`, gzipped or not), foldered by year with a self-describing
+`manifest.jsonl`, deduped by content (distinct *formats* of an activity are all kept). Seed it once from an
+export — `npm run archive:import -- --from <dir>` — and every new `.FIT` the Sync pulls is auto-archived after.
+It's kept **separate** from the hot `data/fit-streams/` so it never slows the dashboard, and the career build
+reads it automatically. See [SETUP.md → "Activity archive"](./SETUP.md).
+
 **Season arc tab (`/season`):** the *strategic* layer the daily loop can't give — a **deterministic
 multi-season review** for rebuilding toward **70.3 → Ironman over years**. Reading your **own** plan
 (`profile.season_plan`: a horizon goal + dated phases with text CTL targets), your **live chronic load**
