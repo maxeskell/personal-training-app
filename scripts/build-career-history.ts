@@ -10,17 +10,18 @@
  *     --tp        /abs/path/activities_tp.csv \  # TrainingPeaks archive (all-time bests, 2011+)
  *     --power     /abs/path/power_curve.json \   # intervals power-curve export (mean-maximal watts)
  *     --races     /abs/path/career-races.json \  # YOUR curated race list (names/locations/optional result) — optional
- *     --fit-dir   /abs/path/archive \            # your activity-file archive (.fit/.tcx, optionally .gz, nested) for splits
+ *     --fit-dir   /abs/path/archive \            # your activity-file archive (.fit/.tcx/.pwx, optionally .gz, nested)
  *     --season    2026 \                         # season year for the "Season" column (default: this year)
  *     --out       data/career-history.json       # default
  *
  * RACE PERFORMANCE + SPLITS come from YOUR OWN files, never the web (no official results are scraped): each
  * race is matched by date+sport to an activity file (finish time, distance, pace, avg power/HR, and a per-lap
- * or — for a triathlon — per-discipline split table), falling back to the matching `--intervals`/`--tp`
- * activity for summary numbers only when none exists. It reads `.FIT` and `.TCX`, optionally gzipped, from
- * data/fit-streams (recent, full samples → power curve) AND `--fit-dir` (walked recursively, samples dropped
- * — for a multi-thousand-file TrainingPeaks WorkoutFileExport). Hand-authored `--races` fields always win.
- * Re-running preserves the existing file's races when no --races is given. No network.
+ * or — for a triathlon — per-discipline split table; a multisport `.FIT` is split into its swim/bike/run
+ * legs), falling back to the matching `--intervals`/`--tp` activity for summary numbers only when none
+ * exists. It reads `.FIT`, `.TCX` and `.PWX` (the three formats a TrainingPeaks WorkoutFileExport ships),
+ * optionally gzipped, from data/fit-streams (recent, full samples → power curve) AND `--fit-dir` (walked
+ * recursively, samples dropped). Hand-authored `--races` fields always win. Re-running preserves the
+ * existing file's races when no --races is given. No network.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";

@@ -301,13 +301,13 @@ cd /Users/maxeskell/personal-training-app && npm run career:build -- \
 - **Race performance + splits come from your OWN files — never the web** (no official results are
   scraped). For each race the build matches an **activity file** (by date + sport) and fills finish time,
   distance, pace, avg power/HR and a **splits** table — per-lap for a single-sport race, or one row per
-  discipline (swim/bike/run) for a triathlon. It reads **`.FIT` and `.TCX`**, each optionally **gzipped**
-  (`.fit.gz` / `.tcx.gz` — exactly how a TrainingPeaks *"WorkoutFileExport"* ships, nested in per-year
-  subfolders). Two sources are scanned: `data/fit-streams/` (recent files the `splits`/`sync` tools use)
-  **plus** whatever you point `--fit-dir` at, which is walked **recursively** (so point it at the export's
-  top folder). With **no** matching file, the build falls back to the matching `--intervals`/`--tp` activity
-  for the **summary numbers only** (no splits). **Anything you hand-author in `--races` always wins** — the
-  build only fills blanks.
+  discipline (swim/bike/run) for a triathlon (a multisport `.FIT` is split into its legs automatically). It
+  reads **`.FIT`, `.TCX` and `.PWX`** — the three formats a TrainingPeaks *"WorkoutFileExport"* ships — each
+  optionally **gzipped** (`.fit.gz` / `.tcx.gz` / `.pwx.gz`), nested in per-year subfolders. Two sources are
+  scanned: `data/fit-streams/` (recent files the `splits`/`sync` tools use) **plus** whatever you point
+  `--fit-dir` at, which is walked **recursively** (so point it at the export's top folder). With **no**
+  matching file, the build falls back to the matching `--intervals`/`--tp` activity for the **summary numbers
+  only** (no splits). **Anything you hand-author in `--races` always wins** — the build only fills blanks.
 - **Author your race list** (date, type, event, location, optional recorded result) in the `--races` file
   (a JSON array; the `races` block of `career-history.example.json` is the template). Re-running without
   `--races` keeps the races already in the output file (and re-derives their performance from your files).

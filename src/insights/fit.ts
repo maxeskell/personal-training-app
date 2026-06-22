@@ -20,6 +20,7 @@ import { mean, sd, type Maybe } from "./stats.js";
 import type { Finding } from "./metrics.js";
 import { parseFit, decodeLrBalanceLeftPct, type FitActivity } from "./fitParser.js";
 import { parseTcx } from "./tcxParser.js";
+import { parsePwx } from "./pwxParser.js";
 import { config } from "../config.js";
 
 /** Where synced/raw .FIT streams live: $FIT_STREAMS_DIR, else <dataDir>/fit-streams. */
@@ -215,8 +216,9 @@ function walkFiles(dir: string): string[] {
 
 /**
  * Parse activity files into ActivityFit (id + date + sport + parsed activity), so the splits / CSS tools and
- * the career build can pick one by date. Reads raw `.FIT` (via fitParser) and `.TCX` (via tcxParser),
- * each optionally gzip-compressed (`.fit.gz` / `.tcx.gz`, as a TrainingPeaks "WorkoutFileExport" ships them).
+ * the career build can pick one by date. Reads raw `.FIT` (fitParser), `.TCX` (tcxParser) and `.PWX`
+ * (pwxParser), each optionally gzip-compressed (`.fit.gz` / `.tcx.gz` / `.pwx.gz`, the three formats a
+ * TrainingPeaks "WorkoutFileExport" ships).
  * JSON pre-extracts are ignored — laps/lengths only live in the binary/XML. Empty when none. Best-effort: an
  * unreadable/corrupt file is skipped, never throws.
  *
@@ -235,16 +237,17 @@ export function loadActivityFits(dir = fitStreamsDir(), opts: { recursive?: bool
     const base = lower.endsWith(".gz") ? lower.slice(0, -3) : lower;
     const isFit = base.endsWith(".fit");
     const isTcx = base.endsWith(".tcx");
-    if (!isFit && !isTcx) continue;
+    const isPwx = base.endsWith(".pwx");
+    if (!isFit && !isTcx && !isPwx) continue;
     try {
       let buf = readFileSync(path);
       if (lower.endsWith(".gz")) buf = gunzipSync(buf);
-      let fit = isFit ? parseFit(buf) : parseTcx(buf);
+      let fit = isFit ? parseFit(buf) : isTcx ? parseTcx(buf) : parsePwx(buf);
       if (!fit) continue;
       const firstT = fit.samples.find((s) => s.t != null)?.t ?? fit.laps.find((l) => l.startTimeS != null)?.startTimeS;
       const date = firstT != null ? new Date(firstT * 1000).toISOString().slice(0, 10) : "";
       if (opts.dropSamples && fit.samples.length) fit = { ...fit, samples: [] };
-      out.push({ activityId: basename(path).replace(/\.(fit|tcx)(\.gz)?$/i, ""), date, sport: fit.sportName, fit });
+      out.push({ activityId: basename(path).replace(/\.(fit|tcx|pwx)(\.gz)?$/i, ""), date, sport: fit.sportName, fit });
     } catch {
       // skip unreadable/malformed/corrupt-gzip activity file
     }

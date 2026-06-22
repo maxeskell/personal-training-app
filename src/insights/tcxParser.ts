@@ -96,6 +96,7 @@ export function parseTcx(buf: Buffer): FitActivity | null {
     samples: [],
     laps,
     lengths: [],
+    sessions: [],
     session: {
       durationSec: sumDefined(laps.map((l) => l.timerS)),
       distanceKm: distM != null ? +(distM / 1000).toFixed(3) : undefined,
