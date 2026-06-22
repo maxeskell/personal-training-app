@@ -294,17 +294,20 @@ cd /Users/maxeskell/personal-training-app && npm run career:build -- \
   --tp        /abs/path/activities_tp.csv \    # a TrainingPeaks summary CSV (all-time bests, 2011+)
   --power     /abs/path/power_curve.json \     # intervals power-curve export (mean-maximal watts)
   --races     /abs/path/career-races.json \    # YOUR curated race list (names/locations) — see below
-  --fit-dir   /abs/path/fit-streams \          # raw .FIT exports for per-race performance + splits (default: data/fit-streams)
+  --fit-dir   /abs/path/archive \              # your activity-file archive for per-race performance + splits (in addition to data/fit-streams)
   --season    2026                             # season year for the "Season" column (default: this year)
 ```
 
 - **Race performance + splits come from your OWN files — never the web** (no official results are
-  scraped). For each race the build matches a raw **`.FIT`** (by date + sport) and fills finish time,
+  scraped). For each race the build matches an **activity file** (by date + sport) and fills finish time,
   distance, pace, avg power/HR and a **splits** table — per-lap for a single-sport race, or one row per
-  discipline (swim/bike/run) for a triathlon. `.FIT`s are read from `data/fit-streams/` (the same dir the
-  `splits`/`sync` tools use) or `--fit-dir`; drop "Export Original" files there. With **no** `.FIT` for a
-  race, the build falls back to the matching `--intervals`/`--tp` activity for the **summary numbers only**
-  (no splits). **Anything you hand-author in `--races` always wins** — the build only fills blanks.
+  discipline (swim/bike/run) for a triathlon. It reads **`.FIT` and `.TCX`**, each optionally **gzipped**
+  (`.fit.gz` / `.tcx.gz` — exactly how a TrainingPeaks *"WorkoutFileExport"* ships, nested in per-year
+  subfolders). Two sources are scanned: `data/fit-streams/` (recent files the `splits`/`sync` tools use)
+  **plus** whatever you point `--fit-dir` at, which is walked **recursively** (so point it at the export's
+  top folder). With **no** matching file, the build falls back to the matching `--intervals`/`--tp` activity
+  for the **summary numbers only** (no splits). **Anything you hand-author in `--races` always wins** — the
+  build only fills blanks.
 - **Author your race list** (date, type, event, location, optional recorded result) in the `--races` file
   (a JSON array; the `races` block of `career-history.example.json` is the template). Re-running without
   `--races` keeps the races already in the output file (and re-derives their performance from your files).
