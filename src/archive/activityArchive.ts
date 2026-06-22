@@ -68,6 +68,13 @@ export function classify(name: string): { format: ActivityFormat; gzipped: boole
 
 const num2 = (n: number) => String(n).padStart(2, "0");
 
+/** Reject implausible parsed dates (a device with a bad clock can emit e.g. 2106) → "" so the name/year fallback applies. */
+function plausibleDate(d: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return "";
+  const y = +d.slice(0, 4);
+  return y >= 1990 && y <= new Date().getFullYear() + 1 ? d : "";
+}
+
 /** Pull a date out of a filename when parsing can't: ISO `2015-12-26`, or TrainingPeaks `DD_MM_YYYY`. */
 function dateFromName(name: string): string {
   const iso = name.match(/(20\d{2})[-_]?(\d{2})[-_]?(\d{2})/);
@@ -90,7 +97,7 @@ function metadata(decompressed: Buffer, format: ActivityFormat): { date: string;
     if (fit) {
       const firstT = fit.samples.find((s) => s.t != null)?.t ?? fit.laps.find((l) => l.startTimeS != null)?.startTimeS;
       const date = firstT != null ? new Date(firstT * 1000).toISOString().slice(0, 10) : "";
-      return { date, sport: fit.sportName || "unknown" };
+      return { date: plausibleDate(date), sport: fit.sportName || "unknown" };
     }
   } catch {
     /* fall through to name-based */
@@ -189,6 +196,34 @@ export function loadManifest(dir = activityArchiveDir()): ArchiveEntry[] {
 /** The set of content hashes already archived — the dedup index for an import/backfill/sync. */
 export function manifestHashes(dir = activityArchiveDir()): Set<string> {
   return new Set(loadManifest(dir).map((e) => e.contentHash));
+}
+
+/**
+ * Resumability ledger for the Garmin backfill/heal: every source id we've already FETCHED + resolved —
+ * crucially including ones that turned out to be content-DUPLICATES (already covered by an import in a
+ * different format). Without it, a duplicate's id never lands in the manifest, so the heal would
+ * re-download it every run forever. Skipping by (manifest ids ∪ this ledger) makes resume converge.
+ */
+function fetchedLedgerPath(dir = activityArchiveDir()): string {
+  return join(dir, ".garmin-fetched");
+}
+export function loadFetchedIds(dir = activityArchiveDir()): Set<string> {
+  try {
+    return new Set(
+      readFileSync(fetchedLedgerPath(dir), "utf8")
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+  } catch {
+    return new Set();
+  }
+}
+export function recordFetchedIds(ids: string[], dir = activityArchiveDir()): void {
+  const clean = ids.map(String).filter(Boolean);
+  if (!clean.length) return;
+  mkdirSync(dir, { recursive: true });
+  appendFileSync(fetchedLedgerPath(dir), clean.join("\n") + "\n");
 }
 
 function walk(dir: string): string[] {

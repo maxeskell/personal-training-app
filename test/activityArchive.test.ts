@@ -4,7 +4,7 @@ import { gzipSync } from "node:zlib";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { classify, archiveBuffer, importDir, loadManifest, archiveSummary, manifestHashes } from "../src/archive/activityArchive.js";
+import { classify, archiveBuffer, importDir, loadManifest, archiveSummary, manifestHashes, loadFetchedIds, recordFetchedIds } from "../src/archive/activityArchive.js";
 
 const TCX = `<?xml version="1.0"?><TrainingCenterDatabase><Activities><Activity Sport="Running">
 <Lap StartTime="2015-12-26T10:00:00Z"><TotalTimeSeconds>1500</TotalTimeSeconds><DistanceMeters>5000</DistanceMeters><AverageHeartRateBpm><Value>150</Value></AverageHeartRateBpm><Track></Track></Lap>
@@ -43,6 +43,27 @@ test("archiveBuffer: dedups identical content (gz vs plain collapse), keeps dist
   assert.equal(tcx?.sport, "Run");
   assert.ok(existsSync(join(dir, tcx!.path)));
   assert.equal(man.find((e) => e.format === "pwx")?.date, "2013-07-07");
+});
+
+test("archiveBuffer: an implausible parsed date (bad device clock) is rejected, not stored", () => {
+  const dir = mkdtempSync(join(tmpdir(), "arc-"));
+  // a TCX whose lap StartTime is the year 2106 (a real-world bad-clock case), in a file with no date in its name
+  const bad = `<?xml version="1.0"?><TrainingCenterDatabase><Activities><Activity Sport="Running">
+<Lap StartTime="2106-02-26T10:00:00Z"><TotalTimeSeconds>1500</TotalTimeSeconds><DistanceMeters>5000</DistanceMeters><Track></Track></Lap>
+</Activity></Activities></TrainingCenterDatabase>`;
+  const r = archiveBuffer(Buffer.from(bad), { originalName: "ride.tcx", source: "import" }, new Set(), dir);
+  assert.equal(r.archived, true);
+  assert.equal(r.entry?.date, ""); // clamped to undated, NOT "2106-02-26"
+  assert.equal(loadManifest(dir)[0].date, "");
+});
+
+test("fetched-ids ledger: round-trips, dedups blanks, survives re-load (the resume converger)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "arc-"));
+  assert.equal(loadFetchedIds(dir).size, 0);
+  recordFetchedIds(["100", "200", ""], dir);
+  recordFetchedIds(["300"], dir);
+  const got = loadFetchedIds(dir);
+  assert.deepEqual([...got].sort(), ["100", "200", "300"]);
 });
 
 test("importDir: recursive, deduped, idempotent; status reflects it", () => {

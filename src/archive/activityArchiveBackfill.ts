@@ -17,7 +17,7 @@ import { join } from "node:path";
 import type { GarminClient } from "../mcp/garminClient.js";
 import type { GarminActivity } from "./store.js";
 import { downloadFitStream } from "./fitSync.js";
-import { archiveBuffer, manifestHashes, loadManifest, activityArchiveDir } from "./activityArchive.js";
+import { archiveBuffer, manifestHashes, loadManifest, loadFetchedIds, recordFetchedIds, activityArchiveDir } from "./activityArchive.js";
 
 export interface BackfillFitsResult {
   total: number; // activities known
@@ -54,7 +54,9 @@ export async function backfillGarminFits(
   const dir = opts.dir ?? activityArchiveDir();
   const throttleMs = opts.throttleMs ?? 300;
   const chunk = opts.chunk ?? Infinity;
-  const archivedIds = new Set(loadManifest(dir).map((e) => e.id));
+  // Skip by (manifest ids ∪ fetched-ledger ids). The ledger is what makes resume converge: a download that
+  // turns out to be a content-duplicate is recorded here, so the next run doesn't re-fetch it.
+  const archivedIds = new Set<string>([...loadManifest(dir).map((e) => e.id), ...loadFetchedIds(dir)]);
   const hashes = manifestHashes(dir);
   const pending = pendingActivityIds(activities, archivedIds);
   const res: BackfillFitsResult = { total: activities.length, pending: pending.length, downloaded: 0, archived: 0, duplicates: 0, failed: 0, failures: [] };
@@ -81,6 +83,9 @@ export async function backfillGarminFits(
           } else if (r.reason === "duplicate") {
             res.duplicates++;
           }
+          // Record the id as fetched+resolved (archived OR duplicate) so a resume never re-downloads it.
+          // Per-id append keeps progress crash-safe; a failed download is NOT recorded → retried next run.
+          recordFetchedIds([id], dir);
           rmSync(path, { force: true });
         } catch {
           res.failed++;
