@@ -250,6 +250,40 @@ export async function cmdActivityArchiveBackfill(): Promise<void> {
   printActivityArchiveStatus(dir);
 }
 
+/**
+ * `archive-heal [--chunk N]` — the RECURRING gap-filler (vs `archive-backfill`, the one-time full pull).
+ * Refreshes the Garmin activity list INCREMENTALLY (stops once it reaches already-known activities, so it's
+ * cheap to run often) and pulls the raw `.FIT` for any recent activity not yet archived. Bounded by --chunk
+ * (default 200). Designed to run on a schedule (see `npm run archive:heal:install`) so gaps self-heal.
+ */
+export async function cmdActivityArchiveHeal(): Promise<void> {
+  if (!config.garmin.enabled) {
+    console.error("\nGarmin is disabled. Set GARMIN_ENABLED=true (and run garmin-mcp-auth) to auto-heal the archive.\n");
+    process.exit(1);
+  }
+  const args = process.argv.slice(3);
+  const chunkIdx = args.indexOf("--chunk");
+  const chunk = chunkIdx >= 0 ? Number(args[chunkIdx + 1]) : Number(process.env.COACH_ARCHIVE_HEAL_CHUNK ?? 200);
+  const dir = activityArchiveDir();
+  const store = new ArchiveStore();
+  const g = new GarminClient();
+  if (!(await g.connect())) {
+    console.error("\nGarmin unavailable — run garmin-mcp-auth and retry.\n");
+    process.exit(1);
+  }
+  try {
+    const newlyListed = await backfillGarminActivities(g, store, () => {}, 100, true); // incremental: cheap in steady state
+    const acts = await store.loadGarminActivities();
+    const r = await backfillGarminFits(g, acts, { chunk }, (m) => console.log(m));
+    console.log(
+      `archive:heal — ${newlyListed} newly-listed; ${r.pending} pending of ${r.total} → ⬇ ${r.downloaded}, +${r.archived} archived, ${r.failed} failed (≤${chunk}/run).`,
+    );
+    for (const f of r.failures.slice(0, 10)) console.log(`  ! ${f}`);
+  } finally {
+    await g.close();
+  }
+}
+
 function printActivityArchiveStatus(dir: string): void {
   const s = archiveSummary(dir);
   const fmt = (o: Record<string, number>) =>

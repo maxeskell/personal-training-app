@@ -352,7 +352,15 @@ cd /Users/maxeskell/personal-training-app && npm run archive:import
   It skips anything already archived (so it won't re-download what the import covered), pauses between calls
   to respect Garmin's rate limits, and `--chunk N` caps a run so a decade grinds over a few sittings.
   (Needs `GARMIN_ENABLED=true` + `garmin-mcp-auth`.)
-- Set `COACH_ARCHIVE_DIR` to keep the archive somewhere other than `data/activity-archive/`.
+- **Keep it healed automatically (recommended).** New activities auto-archive on every Sync; the scheduled
+  **auto-heal** is the safety net that refills any gap (a missed sync, an offline stretch) on its own:
+  ```bash
+  ▶ RUN   # permanent: refills archive gaps every 6h, resumable + cheap in steady state. LEAVE IT RUNNING.
+  cd /Users/maxeskell/personal-training-app && npm run archive:heal:install        # stop: archive:heal:uninstall
+  ```
+  (Unlike the finite daily-metrics `backfill:install` grind, this one is ongoing — gaps can always happen.)
+- Set `COACH_ARCHIVE_DIR` to keep the archive somewhere other than `data/activity-archive/`, and
+  `COACH_ARCHIVE_HEAL_CHUNK` to cap how many files each auto-heal run pulls (default 200).
 
 ## Step 6b — (optional) Season arc (the `/season` strategic review)
 
