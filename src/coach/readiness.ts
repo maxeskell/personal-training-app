@@ -199,8 +199,10 @@ export async function assessReadiness(
   const prompt =
     "Assess today's training readiness from this snapshot. Apply the operating rules. " +
     "Remember: trend beats single point, one metric out of line is not red, Garmin scores are tiebreak only. " +
-    "Also distil 2–4 concrete, actionable `recommendations` (each a single imperative line tagged with its " +
-    "insight family) — what to actually DO today given the call; omit if nothing is genuinely actionable.\n\n" +
+    "Also distil the FEWEST genuinely distinct, actionable `recommendations` (each a single imperative line " +
+    "tagged with its insight family) — what to actually DO today given the call. Merge anything that is the same " +
+    "underlying action into one line and prefer one strong recommendation over restating it several ways; " +
+    "omit if nothing is genuinely actionable.\n\n" +
     summary;
   const { value, cacheRead, costUsd } = await llm.structured<ReadinessVerdict>(prompt, READINESS_SCHEMA);
   // Deterministic backstop so the trend-over-point rule can't be drifted from by the model.

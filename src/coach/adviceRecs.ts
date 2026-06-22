@@ -46,8 +46,12 @@ const ADVICE_FAMILY_SET = new Set<string>(ADVICE_FAMILIES);
 /** JSON-schema fragment for the structured `recommendations` array (shared by the readiness + deep-dive calls). */
 export const ADVICE_RECS_SCHEMA = {
   type: "array",
+  maxItems: 4,
   description:
-    "2–4 concrete, actionable recommendations distilled from the write-up — each a single self-contained imperative line, tagged with the insight family it belongs to. Omit if nothing is genuinely actionable.",
+    "The FEWEST genuinely distinct, actionable recommendations the write-up supports (0–4) — each a single " +
+    "self-contained imperative line, tagged with the insight family it belongs to. Merge anything that is the " +
+    "same underlying action into one line, lead with the most important, and prefer ONE strong recommendation " +
+    "over restating the same point several ways. Omit entirely if nothing is genuinely actionable.",
   items: {
     type: "object",
     properties: {
@@ -64,6 +68,23 @@ function slug(s: string): string {
 }
 
 const SOURCE_LABEL: Record<AdviceSource, string> = { readiness: "readiness", "deep-dive": "deep dive", ask: "ask" };
+
+/** The provenance sub-heading each advice source gets on the card, so a coherent stance reads as one
+ *  group rather than several independent nags. */
+const ADVICE_SOURCE_HEADING: Record<AdviceSource, string> = {
+  readiness: "From today's readiness check",
+  "deep-dive": "From your latest deep dive",
+  ask: "From your recent question",
+};
+
+/** Fixed display order — most timely source first (today's readiness), then the durable lenses. */
+const ADVICE_SOURCE_ORDER: AdviceSource[] = ["readiness", "deep-dive", "ask"];
+
+/** Parse the advice source back out of a key (`advice:<source>:<slug>`). Null for a non-advice/garbled key. */
+export function adviceSourceOfKey(key: string): AdviceSource | null {
+  const m = /^advice:(readiness|deep-dive|ask):/.exec(key);
+  return m ? (m[1] as AdviceSource) : null;
+}
 
 /**
  * Map an LLM-tagged recommendation list to keyed, family-tagged Findings (`advice:<source>:<slug>`),
@@ -135,11 +156,47 @@ function adviceCardHtml(f: SurfacedFinding, reactions?: Map<string, InsightReact
   </div>`;
 }
 
-/** The "Coach's recommendations" dashboard card — reactable action points pulled from the latest readiness +
- *  deep-dive write-ups. Hidden in share mode and whenever there's nothing to show. */
+/** Group the (already deduped + ordered) advice findings by their source, in a fixed most-timely-first
+ *  order. Pure — testable. A finding whose key doesn't name a known source falls into a trailing,
+ *  header-less group rather than being dropped. */
+export function groupAdviceBySource(
+  recs: SurfacedFinding[],
+): Array<{ source: AdviceSource | null; heading: string | null; items: SurfacedFinding[] }> {
+  const bySource = new Map<AdviceSource, SurfacedFinding[]>();
+  const other: SurfacedFinding[] = [];
+  for (const f of recs) {
+    const src = adviceSourceOfKey(f.key);
+    if (src) {
+      const bucket = bySource.get(src) ?? [];
+      bucket.push(f);
+      bySource.set(src, bucket);
+    } else {
+      other.push(f);
+    }
+  }
+  const groups: Array<{ source: AdviceSource | null; heading: string | null; items: SurfacedFinding[] }> = [];
+  for (const src of ADVICE_SOURCE_ORDER) {
+    const items = bySource.get(src);
+    if (items?.length) groups.push({ source: src, heading: ADVICE_SOURCE_HEADING[src], items });
+  }
+  if (other.length) groups.push({ source: null, heading: null, items: other });
+  return groups;
+}
+
+/** The "Coach's recommendations" dashboard card — reactable action points pulled from the latest readiness,
+ *  deep-dive and ask write-ups, GROUPED by where each came from (so one coherent stance reads as one group,
+ *  not several near-identical nags). Deterministic, no LLM. Hidden in share mode and when there's nothing. */
 export function renderCoachRecs(recs: SurfacedFinding[], reactions?: Map<string, InsightReaction>, share = false): string {
   if (share || !recs.length) return "";
+  const groupsHtml = groupAdviceBySource(recs)
+    .map(
+      (g) =>
+        `${g.heading ? `<div class="setup-group">${escapeHtml(g.heading)}</div>` : ""}${g.items
+          .map((f) => adviceCardHtml(f, reactions))
+          .join("")}`,
+    )
+    .join("");
   return `<div class="card"><h2>Coach's recommendations</h2>
-  <div class="k" style="margin-bottom:6px">Action points distilled from your latest <b>readiness</b>, <b>deep-dive</b> and <b>ask</b> write-ups — react to shape what the coach surfaces next: 👍 lifts that family · 👎 down-ranks it · 💤 snooze ~2 weeks · 🚫 ignore for good. Each is recorded by key, so you can also <code>retrospect</code> on how it held up.</div>
-  <div class="setup">${recs.map((f) => adviceCardHtml(f, reactions)).join("")}</div></div>`;
+  <div class="k" style="margin-bottom:6px">Action points distilled from your latest <b>readiness</b>, <b>deep-dive</b> and <b>ask</b> write-ups, grouped by where they came from — react to shape what the coach surfaces next: 👍 lifts that family · 👎 down-ranks it · 💤 snooze ~2 weeks · 🚫 ignore for good. Each is recorded by key, so you can also <code>retrospect</code> on how it held up.</div>
+  <div class="setup">${groupsHtml}</div></div>`;
 }

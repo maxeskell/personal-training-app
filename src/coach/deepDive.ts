@@ -94,7 +94,8 @@ export async function runDeepDive(
     "metrics over time. LEAD with the single most important finding. Group by theme (load & form,",
     "efficiency & durability, injury risk, goal tracking). Be specific, cite the numbers, distinguish",
     "trend from noise (call out where n is small). Where relevant, note ACWR is intentionally not used.",
-    "Honour the athlete's LIVE race calendar and the season shape derived from it below. End with 2–4 concrete actions.",
+    "Honour the athlete's LIVE race calendar and the season shape derived from it below. End with the few concrete",
+    "actions that genuinely matter — merge overlapping ones, lead with the most important, don't pad to a count.",
     "",
     liveCoachingContext(state),
     "",
@@ -111,9 +112,10 @@ export async function runDeepDive(
   let recCacheRead = 0;
   try {
     const extract = await llm.structured<{ recommendations: AdviceRec[] }>(
-      "From the deep-dive write-up below, extract 2–4 concrete, actionable `recommendations` — each a single " +
-        "imperative line tagged with its insight family. Only what the write-up actually supports; omit if nothing " +
-        `is genuinely actionable.\n\n${text}`,
+      "From the deep-dive write-up below, extract the FEWEST genuinely distinct, actionable `recommendations` — " +
+        "each a single imperative line tagged with its insight family. Merge anything that is the same underlying " +
+        "action into one line and prefer one strong recommendation over restating it several ways. Only what the " +
+        `write-up actually supports; omit if nothing is genuinely actionable.\n\n${text}`,
       DEEP_DIVE_RECS_SCHEMA,
     );
     recs = extract.value.recommendations ?? [];

@@ -251,7 +251,11 @@ joins back into an **"Outcomes you recorded"** view (insight → your reaction �
 the loop too: **readiness, deep-dive and `ask` each tag a short list of family-labelled recommendations**,
 surfaced as individually reactable cards on the dashboard's **Coach's recommendations** card (and reactable by
 key via MCP) — so a 👍/👎/🚫 on a coaching suggestion shapes the same family weights and is retrospect-able like
-any finding. (`ask` emits the prose answer and its recommendations in one structured call, so there's no extra cost.)
+any finding. Each flow distils only the **fewest genuinely distinct** actions — merging restatements rather than
+padding to a count, so one strong recommendation stays one — and the card **groups them by where they came from**
+(today's readiness / your last deep dive / your last question), so a single coherent stance reads as one group
+instead of several near-identical nags. (`ask` emits the prose answer and its recommendations in one structured
+call, so there's no extra cost.)
 
 **→ Full detail — the Q1–Q7 methods, the like/dislike/snooze mechanics and the engagement loop:
 [docs/insight-engine.md](docs/insight-engine.md).**

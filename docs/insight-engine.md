@@ -157,7 +157,13 @@ dashboard, `insights` and `deep-dive`:
   reactable by key via `react_to_insight` / `retrospect`). Because each carries a family, a 👍/👎/🚫 on a
   coaching suggestion feeds the same family weights as any finding — the prose flows now both *give* advice
   and *learn* from your response. (`ask` returns the answer + its recommendations in one structured call, so
-  a purely informational question adds no cost and surfaces no recs.)
+  a purely informational question adds no cost and surfaces no recs.) The extraction asks for the **fewest
+  genuinely distinct** actions — the schema has no minimum, so a single-message day yields one line rather
+  than the same point restated to fill a 2–4 quota, with overlapping actions merged and the most important
+  first. On the card the survivors are **grouped by source** ("From today's readiness check" / "…latest deep
+  dive" / "…recent question", most-timely first), so a coherent stance reads as one group, not several
+  near-identical nags. (Cross-*source* semantic de-duplication — collapsing the same idea phrased differently
+  by two flows — is the next step, handled out of the render path so the card stays deterministic and LLM-free.)
 - **New "Follow-through" findings.** Two insights are now **generated from your own behaviour**: a
   *recurring signal you've set aside* (something you snoozed that the engine keeps re-raising — surfaced
   only after it recurs ≥2×) and *plan adherence is slipping* (you're doing <70% of planned hours, or it
