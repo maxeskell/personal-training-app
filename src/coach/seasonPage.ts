@@ -1,0 +1,118 @@
+import { escapeHtml } from "../util/html.js";
+import type { SeasonArcReport, Lever } from "./seasonArc.js";
+import type { YearStat } from "./careerHistory.js";
+
+/**
+ * Read-only `/season` page: the deterministic multi-season strategic review (see seasonArc.ts +
+ * docs/specs/Season_Arc_Spec.md). Linked from the dashboard ("Season arc →"). PURE; everything
+ * interpolated is escaped (dashboard escaping convention). Degrades to a friendly empty state when no
+ * `season_plan` is set. `share` is accepted for route symmetry with /career — this page shows no
+ * identifying data (only your own plan + MODEL load numbers), so it's effectively a no-op here.
+ */
+
+const DOT: Record<Lever["status"], string> = { ok: "#1a8a3a", watch: "#c98a00", gap: "#c0392b", info: "#9a8f78" };
+
+const STYLE = `body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:820px;margin:0 auto;padding:26px 20px 64px;color:#2b2b2b;line-height:1.55;background:#f4f1ea}
+h1{font-size:22px;margin:.1em 0}.sub{color:#777;font-size:13px;margin-bottom:16px}
+a.back{display:inline-block;margin-bottom:14px;font-size:13px;color:#c8642d;text-decoration:none}
+.card{background:#fff;border-radius:10px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#999;margin:0 0 12px}
+.big{font-size:26px;font-weight:700}.unit{font-size:13px;color:#888;font-weight:400}
+.grid{display:flex;gap:18px;flex-wrap:wrap}.grid>div{flex:1;min-width:130px}
+.k{color:#999;font-size:12px}.v{font-size:18px;font-weight:600}
+.trend-rising{color:#1a8a3a}.trend-falling{color:#c0392b}.trend-flat{color:#9a8f78}
+.lever{display:flex;align-items:flex-start;gap:9px;padding:7px 0;border-bottom:1px solid #f0ede5;font-size:14px}.lever:last-child{border:0}
+.dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex:0 0 auto}
+.lever .nm{font-weight:600;min-width:96px}
+.bar{display:flex;align-items:center;gap:8px;font-size:12px;margin:3px 0}
+.bar .yr{width:34px;color:#777;font-variant-numeric:tabular-nums}
+.bar .track{flex:1;background:#f0ede5;border-radius:3px;overflow:hidden;height:12px}
+.bar .fill{height:12px;border-radius:3px;background:#bcae90}.bar .fill.peak{background:#2e7d57}.bar .fill.cur{background:#c8642d}
+.bar .val{width:46px;text-align:right;color:#666;font-variant-numeric:tabular-nums}
+.flag{background:#fdf3f2;border-left:3px solid #c0392b;border-radius:5px;padding:7px 11px;margin:6px 0;font-size:14px}
+.focus{background:#eef4ff;border-left:3px solid #1558d6;border-radius:5px;padding:10px 13px;font-size:15px;font-weight:500}
+.note{background:#faf8f3;border-left:3px solid #e7d9c6;border-radius:5px;padding:12px 14px;font-size:14px;margin:0 0 16px}
+code{background:#f4f1ea;border-radius:4px;padding:1px 5px;font-size:.92em}`;
+
+function shell(inner: string): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Season arc</title><style>${STYLE}</style></head><body><a class="back" href="/">← Back to the dashboard</a>${inner}</body></html>`;
+}
+
+function countdown(days: number | undefined): string {
+  if (days == null) return "";
+  if (days < 0) return `${-days}d ago`;
+  if (days < 90) return `${days}d`;
+  return `~${Math.round(days / 30)} months`;
+}
+
+function trajectoryBars(traj: YearStat[], peakYear: number | undefined, curYear: number): string {
+  const max = Math.max(1, ...traj.map((y) => y.hours ?? 0));
+  return traj
+    .map((y) => {
+      const pct = Math.round(((y.hours ?? 0) / max) * 100);
+      const cls = y.year === peakYear ? "fill peak" : y.year === curYear ? "fill cur" : "fill";
+      return `<div class="bar"><span class="yr">${String(y.year).slice(2)}</span><span class="track"><span class="${cls}" style="width:${pct}%"></span></span><span class="val">${y.hours ?? 0}h</span></div>`;
+    })
+    .join("");
+}
+
+export function renderSeasonPage(report: SeasonArcReport, share = false): string {
+  void share;
+  const r = report;
+
+  const planless = !r.hasPlan
+    ? `<div class="note">No multi-season plan yet. Add a <code>season_plan</code> block to <code>profile.local.yaml</code> (horizon goal + dated phases with a text <code>ctl_target</code>) — see <code>profile.example.yaml</code> and <code>SETUP.md → "Season arc"</code>. The chronic-load, trajectory and lever sections below still work without it.</div>`
+    : "";
+
+  const horizon = r.hasPlan && r.horizonGoal
+    ? `<div class="card"><h2>Horizon</h2><div class="big">${escapeHtml(r.horizonGoal)}</div>${
+        r.targetDate ? `<div class="sub" style="margin:4px 0 0">${escapeHtml(r.targetDate)} · ${escapeHtml(countdown(r.daysToTarget))} out</div>` : ""
+      }</div>`
+    : "";
+
+  const phase = r.activePhase
+    ? `<div class="card"><h2>This phase</h2>
+        <div class="big" style="font-size:20px">${escapeHtml(r.activePhase.name ?? "—")}</div>
+        ${r.activePhase.focus ? `<div style="margin:4px 0 8px">${escapeHtml(r.activePhase.focus)}</div>` : ""}
+        <div class="grid">
+          ${r.activePhase.ctlTargetText ? `<div><div class="k">CTL target</div><div class="v">${escapeHtml(r.activePhase.ctlTargetText)}</div></div>` : ""}
+          ${r.activePhase.until ? `<div><div class="k">Until</div><div class="v">${escapeHtml(r.activePhase.until)} <span class="unit">(${escapeHtml(countdown(r.activePhase.daysLeft))})</span></div></div>` : ""}
+        </div></div>`
+    : "";
+
+  const trendCls = r.ctlTrend ? `trend-${r.ctlTrend}` : "";
+  const trendArrow = r.ctlTrend === "rising" ? "↗ rising" : r.ctlTrend === "falling" ? "↘ falling" : r.ctlTrend === "flat" ? "→ flat" : "—";
+  const ctl = r.ctlNow != null || r.ctlTarget != null
+    ? `<div class="card"><h2>Chronic load (CTL) — the year-over-year lever</h2>
+        <div class="grid">
+          <div><div class="k">Now</div><div class="big">${r.ctlNow != null ? Math.round(r.ctlNow) : "—"}</div></div>
+          <div><div class="k">Trend</div><div class="v ${trendCls}">${trendArrow}</div></div>
+          <div><div class="k">Phase target</div><div class="v">${r.ctlTarget != null ? r.ctlTarget : "—"}</div></div>
+          <div><div class="k">Gap</div><div class="v">${r.ctlGap != null ? (r.ctlGap >= 0 ? `+${r.ctlGap}` : r.ctlGap) : "—"}</div></div>
+        </div>
+        <div class="sub" style="margin:8px 0 0">CTL is the platform's training-load MODEL. The multi-season game is raising it patiently and defending it — not spiking any single block.</div></div>`
+    : "";
+
+  const curYear = Number((r.currentYear?.year ?? new Date().getFullYear()));
+  const traj = r.trajectory && r.trajectory.length
+    ? `<div class="card"><h2>The long arc (annual hours)</h2>
+        ${r.consistencyNote ? `<div class="sub" style="margin:-4px 0 10px">${escapeHtml(r.consistencyNote)}</div>` : ""}
+        ${trajectoryBars(r.trajectory, r.peakYear?.year, curYear)}
+        <div class="sub" style="margin:8px 0 0">Green = your peak year · orange = this year. Raising the floor of an average year beats any single big block.</div></div>`
+    : "";
+
+  const levers = r.levers.length
+    ? `<div class="card"><h2>Structural levers</h2>${r.levers
+        .map((l) => `<div class="lever"><span class="dot" style="background:${DOT[l.status]}"></span><span><span class="nm">${escapeHtml(l.name)}</span> ${escapeHtml(l.note)}</span></div>`)
+        .join("")}</div>`
+    : "";
+
+  const focus = r.focus ? `<div class="card"><h2>Focus now</h2><div class="focus">${escapeHtml(r.focus)}</div></div>` : "";
+  const flags = r.flags.length
+    ? `<div class="card"><h2>Watch (multi-season risks)</h2>${r.flags.map((f) => `<div class="flag">${escapeHtml(f)}</div>`).join("")}</div>`
+    : "";
+
+  return shell(
+    `<h1>Season arc</h1><div class="sub">Multi-season strategic review — deterministic, your own plan + numbers. Built to grow you back to 70.3 → Ironman.</div>${planless}${horizon}${phase}${ctl}${focus}${traj}${levers}${flags}`,
+  );
+}

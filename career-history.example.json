@@ -46,6 +46,11 @@
       ]
     }
   ],
+  "trajectory": [
+    { "year": 2013, "hours": 390, "km": 6860 },
+    { "year": 2019, "hours": 42, "km": 407 },
+    { "year": 2025, "hours": 210, "km": 3927 }
+  ],
   "powerCurve": {
     "allTime": [
       { "durationSec": 5, "watts": 966 },
