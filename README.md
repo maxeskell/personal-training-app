@@ -505,6 +505,18 @@ scraped), GPS-derived locations not marked "confirmed" are nearest-town approxim
 drops obvious GPS/calibration outliers from the bests. The same **🔒 Share view** applies — event names and
 locations are hidden and dates collapse to the year. Absent data file → a friendly empty state.
 
+**Season arc tab (`/season`):** the *strategic* layer the daily loop can't give — a **deterministic
+multi-season review** for rebuilding toward **70.3 → Ironman over years**. Reading your **own** plan
+(`profile.season_plan`: a horizon goal + dated phases with text CTL targets), your **live chronic load**
+(CTL now + trend), your **career trajectory** (year-by-year hours — your 2013 peak, your 2019 trough) and
+your profile, it shows: the **active phase + focus**, **CTL now vs target vs trend** (the year-over-year
+lever), the **long-arc bar chart**, a **structural-lever checklist** (strength / swim CSS / bloods age /
+threshold band — the things that compound over seasons, sharpened by your GLP-1 context), and the
+**multi-season risk flags** (consistency cliff, stale bloods, falling CTL into a deadline). It's
+display-only and makes **no LLM call** (deterministic = free); every section degrades to "—" with a
+how-to-fill hint when its input is missing. See [SETUP.md → "Season arc"](./SETUP.md) and
+[docs/specs/Season_Arc_Spec.md](docs/specs/Season_Arc_Spec.md).
+
 ```bash
 # Foreground / DEV only — dies when you close the terminal. For the always-on server, see below.
 npm run serve                 # localhost only; prints a /pair?token=… link at startup

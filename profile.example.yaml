@@ -165,6 +165,20 @@ races:
     target_time:            # e.g. "sub 2:00"
     note:
 
+# Multi-season strategic plan — the arc the /season page grades you against (rebuild → 70.3 → Ironman).
+# INTENT only, never live numbers: ctl_target is a target as TEXT ("55" or "55-60"), like a race
+# target_time — a numeric CTL would be rejected as a live metric. The active phase is the first whose
+# `until` date is still in the future. Leave the whole block out if you don't want the /season page.
+season_plan:
+  horizon_goal:             # e.g. "Ironman by 2028"
+  target_date:              # YYYY-MM-DD of the far goal
+  phases:
+    - name:                 # e.g. "Rebuild base"
+      focus:                # the one thing this phase is about
+      until:                # YYYY-MM-DD this phase runs to
+      ctl_target:           # target chronic load as text, e.g. "55" or "55-60"
+  notes:
+
 # Values that must be set directly in AI Endurance (read-only from here). Any non-empty value here
 # surfaces on the dashboard's "Set up & improve" card. NOTE: don't add a race-targets reminder — AI
 # Endurance has no field for per-race target times; they live in races[].target_time above and the
