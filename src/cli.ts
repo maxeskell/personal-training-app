@@ -36,7 +36,7 @@ import { ArchiveStore } from "./archive/store.js";
 import { answerQuestion } from "./coach/ask.js";
 import { runSessionFeedback } from "./coach/session.js";
 import { loadSessionDecays } from "./insights/fit.js";
-import { readCostRecords, summarizeCost } from "./llm/costLog.js";
+import { readCostRecords, summarizeCost, isLocalModel } from "./llm/costLog.js";
 import { getForecast } from "./weather/store.js";
 import { assessWeek, latestActuals, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
 
@@ -937,12 +937,17 @@ async function cmdCost(): Promise<void> {
           { label: "all-time", days: undefined as number | undefined },
         ];
 
-  console.log(`\nToken cost — model ${records[records.length - 1].model}, ${records.length} call(s) logged:`);
+  // Operations whose calls ran on a local (Ollama) model: $0 API cost, marked so a $0.0000 row reads clearly.
+  const localOps = new Set(records.filter((r) => isLocalModel(r.model)).map((r) => r.operation));
+  // Headline the primary (Anthropic) model, not whatever ran last — a sync ends on a local embed call.
+  const primaryModel = [...records].reverse().find((r) => !isLocalModel(r.model))?.model ?? records[records.length - 1].model;
+  console.log(`\nToken cost — model ${primaryModel}, ${records.length} call(s) logged:`);
   for (const w of windows) {
     const s = summarizeCost(records, w.days);
     console.log(`\n  ${w.label}: $${s.total.costUsd.toFixed(4)} over ${s.total.calls} call(s)`);
     for (const op of s.byOperation) {
-      console.log(`    ${op.operation.padEnd(12)} $${op.costUsd.toFixed(4).padStart(8)}  ${op.calls}× · in ${op.input}/out ${op.output}/cacheR ${op.cacheRead}`);
+      const local = localOps.has(op.operation) ? " · local (no API cost)" : "";
+      console.log(`    ${op.operation.padEnd(12)} $${op.costUsd.toFixed(4).padStart(8)}  ${op.calls}× · in ${op.input}/out ${op.output}/cacheR ${op.cacheRead}${local}`);
     }
   }
   const w7 = summarizeCost(records, 7).total;

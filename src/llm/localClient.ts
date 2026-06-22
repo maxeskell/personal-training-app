@@ -1,4 +1,5 @@
 import { config } from "../config.js";
+import { appendLocalCostRecord } from "./costLog.js";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -63,7 +64,18 @@ export class LocalLLM implements ChatCompleter {
         signal: ctrl.signal,
       });
       if (!res.ok) throw new Error(`local LLM HTTP ${res.status}`);
-      const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+      const json = (await res.json()) as {
+        choices?: { message?: { content?: string } }[];
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      // Log the local call at $0 (token volume only), like HaikuRouter logs its Anthropic intent call —
+      // so every routing call shows in `npm run cost`. Best-effort; a logging failure never breaks routing.
+      await appendLocalCostRecord({
+        operation: "intent (local)",
+        model: opts.model ?? this.defaultModel,
+        promptTokens: json.usage?.prompt_tokens,
+        completionTokens: json.usage?.completion_tokens,
+      });
       return json.choices?.[0]?.message?.content ?? "";
     } finally {
       clearTimeout(timer);

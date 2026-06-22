@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import type { Finding } from "../insights/metrics.js";
+import { appendLocalCostRecord } from "../llm/costLog.js";
 import { LocalEmbeddings } from "../llm/embeddings.js";
 import { loadAdviceEmbeddings, saveAdviceEmbeddings } from "../state/adviceEmbeddings.js";
 
@@ -29,13 +30,15 @@ export async function refreshAdviceEmbeddings(findings: Finding[]): Promise<void
       return !e || e.text !== f.title || e.model !== model;
     });
     if (!missing.length) return;
-    const vectors = await new LocalEmbeddings().embed(missing.map((f) => f.title));
+    const { vectors, promptTokens } = await new LocalEmbeddings().embed(missing.map((f) => f.title));
     const ts = new Date().toISOString();
     missing.forEach((f, i) => {
       const vector = vectors[i];
       if (vector?.length) cache.set(f.key, { text: f.title, model, vector, ts });
     });
     await saveAdviceEmbeddings(cache);
+    // Log the local call at $0 (token volume only) so `npm run cost` shows the embedding activity.
+    await appendLocalCostRecord({ operation: "advice-embeddings", model, promptTokens });
   } catch {
     /* degrade: leave the cache as-is; the card falls back to per-source grouping */
   }
