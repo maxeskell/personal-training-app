@@ -1,5 +1,6 @@
 import { escapeHtml } from "../util/html.js";
 import type { CareerHistory, PowerPoint, Race, BestValue, RaceSplit } from "./careerHistory.js";
+import { isMultisport } from "./raceResults.js";
 
 /**
  * Standalone read-only `/career` page: your race history + lifetime bests vs current form + an all-time
@@ -58,6 +59,44 @@ function splitsBlock(splits: RaceSplit[]): string {
   return `<details class="splits"><summary>Splits (${splits.length})</summary><table class="splitt"><thead><tr>${thead}</tr></thead><tbody>${body}</tbody></table></details>`;
 }
 
+/** Parse a pre-formatted clock string ("M:SS" or "H:MM:SS") back to whole seconds; null if it isn't one. */
+function clockToSec(t: string): number | null {
+  const parts = t.trim().split(":");
+  if (parts.length < 2 || parts.length > 3) return null;
+  let sec = 0;
+  for (const p of parts) {
+    if (!/^\d+$/.test(p)) return null;
+    sec = sec * 60 + Number(p);
+  }
+  return sec;
+}
+
+/** Format whole seconds back to "M:SS" / "H:MM:SS" — mirrors the generator's clock() so the sum reads the same. */
+function secToClock(sec: number): string {
+  const s = Math.round(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}` : `${m}:${String(ss).padStart(2, "0")}`;
+}
+
+/**
+ * Total time summed from the split times — but only when EVERY split carries a parseable clock time (a
+ * partial set would mislead, so we return null and show nothing). Used for a multisport race whose overall
+ * finish time wasn't hand-authored: summing the swim/bike/run legs gives a usable total — a touch under the
+ * official finish, since transitions (T1/T2) aren't in the legs — so the Performance column shows a number
+ * instead of just a "Splits" expander.
+ */
+function summedSplitTime(splits: RaceSplit[]): string | null {
+  let sum = 0;
+  for (const s of splits) {
+    const sec = s.time ? clockToSec(s.time) : null;
+    if (sec == null) return null;
+    sum += sec;
+  }
+  return sum > 0 ? secToClock(sum) : null;
+}
+
 function raceRow(r: Race, idx: number, share: boolean): string {
   const when = share ? escapeHtml(r.date.slice(0, 4)) : escapeHtml(r.date);
   const event = share ? `Race ${idx + 1}` : escapeHtml(r.event ?? r.type);
@@ -65,8 +104,18 @@ function raceRow(r: Race, idx: number, share: boolean): string {
   const sub = !share && r.event ? `<div class="when">${escapeHtml(r.type)}</div>` : "";
   const conf = !share && r.confidence && r.confidence !== "confirmed" ? ` <span class="tag">${escapeHtml(r.confidence)}</span>` : "";
   const res = r.result ?? {};
+  // No recorded finish time, but the splits are per-discipline legs (multisport)? Sum them so Performance
+  // shows a total instead of "—". Honest-model labelled: it excludes transitions, so it reads a touch under
+  // the official finish. Scoped to multisport on purpose — summing a *sample* of single-sport laps would
+  // silently undercount, so we don't.
+  const summed = !res.time && res.splits?.length && isMultisport(r.sport, r.type) ? summedSplitTime(res.splits) : null;
+  const timeBit = res.time
+    ? escapeHtml(res.time)
+    : summed
+      ? `≈${escapeHtml(summed)}${share ? "" : ` <span class="tag" title="Summed from the leg splits — excludes transitions (T1/T2), so a touch under the finish time">∑ splits</span>`}`
+      : "";
   const perfBits = [
-    res.time ? escapeHtml(res.time) : "",
+    timeBit,
     res.pace ? escapeHtml(res.pace) : "",
     res.distanceKm != null ? `${res.distanceKm.toFixed(res.distanceKm < 10 ? 2 : 1)} km` : "",
     res.avgW != null ? `${Math.round(res.avgW)} W` : "",

@@ -517,7 +517,10 @@ exported activity files (`.FIT`/`.TCX`/`.PWX`, gzipped fine) — the dashboard's
 past, so this history lives apart (see [SETUP.md → "Career history"](./SETUP.md)). It's display-only and
 **honest by construction**: performances are *your own recorded numbers* — pulled from your raw activity
 files (finish time, splits, power, HR) or, when a race has no matching file, your activity export for summary
-numbers only; **no official results are scraped**, and anything you hand-author wins. GPS-derived locations not marked
+numbers only; **no official results are scraped**, and anything you hand-author wins. For a **multisport race**
+with no recorded finish time, the per-leg splits (swim/bike/run) are summed into a total shown as `≈h:mm:ss`
+with a `∑ splits` tag — labelled as *excluding transitions* (T1/T2), so it reads a touch under the official
+finish; single-sport laps are never summed (a partial set would undercount). GPS-derived locations not marked
 "confirmed" are nearest-town approximations, and the generator drops obvious GPS/calibration outliers from
 the bests. The same **🔒 Share view** applies — event names and locations are hidden, dates collapse to the
 year, and the data-provenance tag is dropped (splits are just performance numbers, so they stay). Absent
