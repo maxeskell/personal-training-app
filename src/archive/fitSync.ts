@@ -1,9 +1,10 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { GarminClient } from "../mcp/garminClient.js";
 import { garminInner } from "../state/assemble.js";
 import { fitStreamsDir } from "../insights/fit.js";
 import { ArchiveStore, type FitSummary } from "./store.js";
+import { archiveBuffer, manifestHashes } from "./activityArchive.js";
 
 /**
  * Pull recent Garmin activity .FIT data into the archive — BOTH layers:
@@ -94,6 +95,9 @@ export async function syncFitSummaries(g: GarminClient, store: ArchiveStore, lim
   let streamsFailed = 0;
   const streamFailures: string[] = [];
   const buffer: FitSummary[] = [];
+  // Forever-forward: every raw stream we pull is also deposited in the DURABLE activity archive, so the
+  // corpus you own grows automatically. Best-effort — archiving must never break a sync. Hashes loaded once.
+  const archiveHashes = manifestHashes();
   for (const a of list) {
     const id = String(a.activityId ?? a.id ?? a.activity_id ?? "");
     const type = String(a.type ?? (a.activityType as { typeKey?: string } | undefined)?.typeKey ?? "").toLowerCase();
@@ -105,6 +109,11 @@ export async function syncFitSummaries(g: GarminClient, store: ArchiveStore, lim
       if (dl.ok) {
         streamsDownloaded++;
         log?.(`  ⬇ ${id}.fit → ${streamsDir}`);
+        try {
+          archiveBuffer(readFileSync(join(streamsDir, `${id}.fit`)), { originalName: `${id}.fit`, source: "garmin" }, archiveHashes);
+        } catch {
+          /* archiving is best-effort — a failure here never breaks the sync */
+        }
       } else {
         streamsFailed++;
         streamFailures.push(`${id}: ${dl.reason}`);

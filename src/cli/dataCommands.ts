@@ -5,6 +5,7 @@ import { withAie, todayIso } from "../coach/orchestrator.js";
 import { extractJson, garminInner } from "../state/assemble.js";
 import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate } from "../archive/backfill.js";
 import { syncFitSummaries } from "../archive/fitSync.js";
+import { activityArchiveDir, importDir, archiveSummary } from "../archive/activityArchive.js";
 
 /**
  * Data/archive CLI commands (backfill / probe / fit-sync / archive-status / archive-compact), extracted
@@ -183,6 +184,46 @@ export async function cmdFitSync(): Promise<void> {
   } finally {
     await g.close();
   }
+}
+
+/**
+ * `archive-import [--from <dir>] [--source <name>]` — import an activity-file export (e.g. a TrainingPeaks
+ * "WorkoutFileExport") into the DURABLE archive at data/activity-archive/, deduped by content. With no
+ * `--from`, just prints the archive status. Idempotent — re-running only adds genuinely-new files.
+ */
+export async function cmdActivityArchiveImport(): Promise<void> {
+  const args = process.argv.slice(3);
+  const fromIdx = args.indexOf("--from");
+  const from = fromIdx >= 0 ? args[fromIdx + 1] : undefined;
+  const srcIdx = args.indexOf("--source");
+  const source = srcIdx >= 0 ? args[srcIdx + 1] : "import";
+  const dir = activityArchiveDir();
+  if (from) {
+    console.log(`\nImporting activity files from ${from} → ${dir} (deduped, keeps all formats) …`);
+    const t0 = Date.now();
+    const s = importDir(from, source, dir, (p) => process.stdout.write(`\r  …${p.scanned} scanned, ${p.archived} archived, ${p.duplicates} dup  `));
+    process.stdout.write("\n");
+    console.log(
+      `Imported: +${s.archived} new, ${s.duplicates} duplicate(s), ${s.errors} error(s), ${s.skipped} non-activity skipped ` +
+        `(${s.scanned} activity files in ${((Date.now() - t0) / 1000).toFixed(0)}s).`,
+    );
+  }
+  printActivityArchiveStatus(dir);
+}
+
+function printActivityArchiveStatus(dir: string): void {
+  const s = archiveSummary(dir);
+  const fmt = (o: Record<string, number>) =>
+    Object.entries(o)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k} ${v}`)
+      .join(", ") || "—";
+  console.log(`\nActivity archive (${s.dir}):`);
+  console.log(`  files:   ${s.total}  (${(s.totalBytes / 1e6).toFixed(1)} MB on disk)`);
+  console.log(`  dates:   ${s.dateRange}`);
+  console.log(`  formats: ${fmt(s.byFormat)}`);
+  console.log(`  sports:  ${fmt(s.bySport)}`);
+  console.log(`  sources: ${fmt(s.bySource)}`);
 }
 
 /** A Garmin MCP result is an "error" if flagged isError or its text is a tool/validation error. */
