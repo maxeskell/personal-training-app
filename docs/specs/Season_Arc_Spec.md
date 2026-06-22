@@ -81,6 +81,9 @@ field exists in the example, the questions doc regenerated); committed, pushed, 
 1. ✅ **Shipped** — `npm run season`: an LLM strategic narrative grounded in the deterministic report
    (`seasonNarrative.ts` + `seasonReportText`), one high-effort cost-logged call, saved to `reports/`;
    degrades to the deterministic digest with no API key.
-2. _Next_ — a `season_arc` MCP tool exposing the same narrative to Claude.
-3. _Next_ — a quarterly **nudge** (the review cadence) via the existing notify/ping path.
+2. ✅ **Shipped** — `season_arc` MCP tool (mcpServer.ts) exposing the report + narrative to Claude;
+   degrades to the deterministic digest with no API key.
+3. ✅ **Shipped** — a quarterly **nudge** (`seasonNudge.ts` + `cmdPing`): the daily ping fires one
+   desktop notification when the review is ≥~90d stale (idempotent via a `reports/last-season-nudge.json`
+   marker), so the cadence runs itself.
 4. _Next_ — auto-suggested phase CTL targets from the trajectory (propose→confirm), instead of hand-set.

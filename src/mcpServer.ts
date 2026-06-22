@@ -24,6 +24,9 @@ import { answerQuestion } from "./coach/ask.js";
 import { runWeeklyReview } from "./coach/weekly.js";
 import { runRacePrep } from "./coach/racePrep.js";
 import { runDeepDive, insightMetricsSummary, insightFindings } from "./coach/deepDive.js";
+import { buildSeasonArc, seasonReportText } from "./coach/seasonArc.js";
+import { runSeasonNarrative } from "./coach/seasonNarrative.js";
+import { loadCareerHistory } from "./coach/careerHistory.js";
 import { runTuneUp } from "./coach/tuneUp.js";
 import { runResearchDigest } from "./coach/research.js";
 import { readKnowledge, writePendingDigest, pendingName, knowledgeFreshness, listPending } from "./knowledge/store.js";
@@ -516,6 +519,33 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
       const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
       const { markdown } = await runDeepDive(new CoachLLM(await loadSystemPrompt(), "deep-dive"), state, ins);
       await writeReport("deep-dive", todayIso(), markdown);
+      return ok(markdown);
+    },
+  );
+
+  server.tool(
+    "season_arc",
+    "Multi-season strategic review (rebuild → 70.3 → Ironman): CTL arc vs phase targets, the long-arc volume benchmark, structural levers (strength / swim CSS / bloods age / threshold) and risk flags, then an LLM strategic narrative. Reads your season_plan + live CTL + career trajectory. Writes a dated report. Without an API key it returns the deterministic digest.",
+    {},
+    async () => {
+      const { state, window } = await buildTodayState();
+      const career = loadCareerHistory();
+      const ctlSeries = window
+        .map((s) => ({ date: s.date, v: s.load.value?.ctl }))
+        .filter((x): x is { date: string; v: number } => typeof x.v === "number");
+      const report = buildSeasonArc({
+        today: todayIso(),
+        plan: state.profile?.season_plan,
+        ctlNow: ctlSeries.length ? ctlSeries[ctlSeries.length - 1].v : undefined,
+        ctlSeries,
+        career,
+        profile: state.profile,
+      });
+      // The Season-arc report is meaningful WITHOUT the LLM, so degrade to the deterministic digest
+      // (more useful than failing) rather than gating the whole tool on the API key.
+      if (missingKey()) return ok(`${seasonReportText(report)}\n\n(deterministic digest — set ANTHROPIC_API_KEY for the strategic narrative.)`);
+      const { markdown } = await runSeasonNarrative(new CoachLLM(await loadSystemPrompt(), "season"), report, career, state);
+      await writeReport("season-arc", todayIso(), markdown);
       return ok(markdown);
     },
   );
