@@ -1,6 +1,33 @@
 import { escapeHtml } from "../util/html.js";
+import { mdLite, ageDaysFrom } from "./dashboardHelpers.js";
 import type { SeasonArcReport, Lever } from "./seasonArc.js";
 import type { YearStat } from "./careerHistory.js";
+
+/** A persisted coach-prose report surfaced read-only on this page (markdown + its YYYY-MM-DD date). */
+export interface ProseReport {
+  markdown: string;
+  date: string;
+}
+
+/** The two latest coach-prose reports surfaced near the top of `/season` (each optional → degrade cleanly). */
+export interface SeasonProse {
+  narrative?: ProseReport;
+  weekly?: ProseReport;
+}
+
+/** A report older than this many days gets a subtle "stale — refresh" hint (it's a snapshot, be honest). */
+const STALE_DAYS = 10;
+
+/** Drop a single leading "# ..." H1 line (the cards carry their own title) before mdLite-rendering. Pure. */
+export function stripLeadingH1(md: string): string {
+  return md.replace(/^\s*#[^\n#][^\n]*\n+/, "");
+}
+
+/** Strip the weekly review's "## Next week" section to its end — those action bullets already surface on the
+ *  dashboard, so we don't duplicate them here. Cuts from the heading to the next "## "/EOF. Pure. */
+export function stripNextWeek(md: string): string {
+  return md.replace(/\n#{1,3}\s*next week\b[^\n]*\n[\s\S]*?(?=\n#{1,3}\s|$)/i, "\n");
+}
 
 /**
  * Read-only `/season` page: the deterministic multi-season strategic review (see seasonArc.ts +
@@ -33,6 +60,8 @@ a.back{display:inline-block;margin-bottom:14px;font-size:13px;color:#c8642d;text
 .flag{background:#fdf3f2;border-left:3px solid #c0392b;border-radius:5px;padding:7px 11px;margin:6px 0;font-size:14px}
 .focus{background:#eef4ff;border-left:3px solid #1558d6;border-radius:5px;padding:10px 13px;font-size:15px;font-weight:500}
 .note{background:#faf8f3;border-left:3px solid #e7d9c6;border-radius:5px;padding:12px 14px;font-size:14px;margin:0 0 16px}
+.prose{font-size:14px;color:#333;line-height:1.6}.prose b{color:#222}
+.stamp{color:#999;font-size:12px;margin:2px 0 10px}.stamp .stale{color:#c98a00}
 code{background:#f4f1ea;border-radius:4px;padding:1px 5px;font-size:.92em}`;
 
 function shell(inner: string): string {
@@ -57,9 +86,41 @@ function trajectoryBars(traj: YearStat[], peakYear: number | undefined, curYear:
     .join("");
 }
 
-export function renderSeasonPage(report: SeasonArcReport, share = false): string {
+/**
+ * One read-only coach-prose card (season narrative or weekly review). The markdown is pre-processed by
+ * `prep` (strip H1 / the dashboard-duplicated "## Next week" section), then mdLite-rendered (escape-first,
+ * so injected markup can't break out). Shows an honest "Updated {date}" stamp, with a subtle stale hint +
+ * the refresh command once the report is older than {@link STALE_DAYS}. Returns "" for an absent report so
+ * a missing piece renders nothing (degrade-don't-crash) rather than an empty card.
+ */
+function proseCard(title: string, prose: ProseReport | undefined, refreshCmd: string, prep: (md: string) => string): string {
+  if (!prose) return "";
+  const body = mdLite(prep(prose.markdown).trim());
+  if (!body.trim()) return "";
+  const age = ageDaysFrom(prose.date, Date.now());
+  const stale = age != null && age > STALE_DAYS
+    ? ` <span class="stale">(stale — run <code>${escapeHtml(refreshCmd)}</code> to refresh)</span>`
+    : "";
+  return `<div class="card"><h2>${escapeHtml(title)}</h2>
+    <div class="stamp">Updated ${escapeHtml(prose.date)}${stale}</div>
+    <div class="prose">${body}</div></div>`;
+}
+
+export function renderSeasonPage(report: SeasonArcReport, share = false, prose?: SeasonProse): string {
+  // `share` is accepted for route symmetry but is a no-op here, as on the rest of this auth-gated page
+  // (see the file header): the prose cards follow the same no-redaction convention as the existing cards.
   void share;
   const r = report;
+
+  // Two latest coach-prose reports, surfaced near the top (most prominent): the multi-season narrative,
+  // then the weekly review beneath it. Each degrades to nothing when its report is absent or unreadable.
+  const narrativeCard = proseCard("Coach's season read", prose?.narrative, "npm run season", stripLeadingH1);
+  const weeklyCard = proseCard(
+    "Latest weekly review",
+    prose?.weekly,
+    "npm run weekly",
+    (md) => stripNextWeek(stripLeadingH1(md)),
+  );
 
   const planless = !r.hasPlan
     ? `<div class="note">No multi-season plan yet. Add a <code>season_plan</code> block to <code>profile.local.yaml</code> (horizon goal + dated phases with a text <code>ctl_target</code>) — see <code>profile.example.yaml</code> and <code>SETUP.md → "Season arc"</code>. The chronic-load, trajectory and lever sections below still work without it.</div>`
@@ -114,6 +175,6 @@ export function renderSeasonPage(report: SeasonArcReport, share = false): string
     : "";
 
   return shell(
-    `<h1>Season arc</h1><div class="sub">Multi-season strategic review — deterministic, your own plan + numbers. Built to grow you back to 70.3 → Ironman.</div>${planless}${horizon}${phase}${ctl}${focus}${traj}${levers}${flags}`,
+    `<h1>Season arc</h1><div class="sub">Multi-season strategic review — deterministic, your own plan + numbers. Built to grow you back to 70.3 → Ironman.</div>${narrativeCard}${weeklyCard}${planless}${horizon}${phase}${ctl}${focus}${traj}${levers}${flags}`,
   );
 }
