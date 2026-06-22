@@ -114,8 +114,9 @@ export class WriteGate {
       throw new Error(`Refusing to write: proposal ${id} is being executed by another action.`);
     }
 
-    // callRaw is the only place a write tool is invoked, and only from here.
-    const result = await this.aie.callRaw(tool, args ?? {});
+    // callRaw is the only place a write tool is invoked, and only from here — `allowWrite` is the explicit
+    // assertion the direct-write guard requires (no other caller passes it).
+    const result = await this.aie.callRaw(tool, args ?? {}, { allowWrite: true });
     await this.log.updateStatus(id, "executed");
     return result;
   }

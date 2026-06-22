@@ -197,6 +197,40 @@ test("formatProfileForTool reports the dose_cycle and the source path", () => {
   assert.match(out, /source: local/);
 });
 
+test("renderProfileContext withholds medical context when exposeMedical=false (the remote-surface gate)", () => {
+  const open = renderProfileContext(validateProfile(RICH), "2026-06-17", true);
+  assert.match(open, /Medication/);
+  assert.match(open, /GI trough/i);
+
+  const gated = renderProfileContext(validateProfile(RICH), "2026-06-17", false);
+  assert.doesNotMatch(gated, /Medication/, "no medication line when medical is withheld");
+  assert.doesNotMatch(gated, /GI trough/i, "no dose-cycle when medical is withheld");
+  // Non-medical coaching context still flows through.
+  assert.match(gated, /Race targets/);
+  assert.match(gated, /Biomechanics/);
+
+  // Bloods are medical too — dropped when withheld, present when allowed.
+  assert.match(renderProfileContext(validateProfile(WITH_BLOODS), "2026-06-21", true), /Bloods/);
+  assert.doesNotMatch(renderProfileContext(validateProfile(WITH_BLOODS), "2026-06-21", false), /Bloods/);
+});
+
+test("formatProfileForTool withholds medication / bloods / DOB and the dose_cycle when exposeMedical=false", () => {
+  const gated = formatProfileForTool({ profile: validateProfile(RICH), path: "/tmp/profile.local.yaml", source: "local" }, "2026-06-17", false);
+  assert.match(gated, /WITHHELD/);
+  assert.match(gated, /COACH_MCP_EXPOSE_MEDICAL/);
+  assert.doesNotMatch(gated, /dose_cycle/, "the dose-cycle line is gone");
+  // Assert against the actual dumped VALUES (the word "medication" legitimately appears in the header note).
+  assert.doesNotMatch(gated, /example-drug/, "the medication name isn't dumped");
+  assert.doesNotMatch(gated, /dose_day/, "medication fields aren't dumped");
+  assert.doesNotMatch(gated, /date_of_birth/, "DOB isn't dumped");
+  // Non-medical fields still render so the tool stays useful.
+  assert.match(gated, /Test Athlete/);
+  assert.match(gated, /races/);
+
+  const blood = formatProfileForTool({ profile: validateProfile(WITH_BLOODS), path: "/tmp/p.yaml", source: "local" }, "2026-06-17", false);
+  assert.doesNotMatch(blood, /panels/, "blood panels aren't dumped when withheld");
+});
+
 test("the loader degrades (safe→null) and fails loud (clear message, no stack trace) on bad profiles", async () => {
   const dir = await mkdtemp(join(tmpdir(), "coach-profile-"));
   const saved = config.profilePath;

@@ -492,6 +492,12 @@ route (incl. the AI Endurance write path) requires a per-install **pairing token
 writes + LLM spend, so it is not left open. To reach it from your **phone on the same Wi-Fi**, set
 `COACH_LAN=1`. Credentials never leave the Mac.
 
+> **Residual risk (`COACH_LAN=1`): plaintext HTTP.** On the LAN the dashboard is served over plain
+> HTTP, so the pairing **token and session cookie travel unencrypted** and are sniffable by another
+> device on the same Wi-Fi. This is an accepted trade-off for a **trusted home network**; treat it as
+> such (don't enable it on public/shared Wi-Fi). For a hardened setup, leave it `localhost`-only and
+> reach it through an authenticated HTTPS tunnel (e.g. Tailscale), or put it behind a TLS reverse proxy.
+
 **Save it as a PDF to share:** the dashboard is one self-contained HTML page, so just open it
 (`npm run demo`, `npm run dashboard`, or the served page) and use your browser's **Print → Save as PDF**
 (⌘P). A print stylesheet kicks in for the PDF — it hides the interactive buttons, keeps cards from
@@ -653,6 +659,19 @@ cd /path/to/personal-training-app && npm run mcp:http   # HTTP  — Claude Cowor
   mode without auth + a tunnel you control. For a hands-off setup — auto-start at login + a stable URL so
   you never touch a terminal — use `npm run mcp:install -- <https-url>` with a Tailscale Funnel
   (`tailscale funnel --bg 8787`); see [docs/mcp-server.md](docs/mcp-server.md) → *Always-on*.
+
+**What the remote surface withholds (defence-in-depth).** On the HTTP/Cowork surface your **medical
+context** — medication + dose cycle, blood panels, date of birth — is **withheld by default** from
+`get_profile` and the LLM coaching prompt; set `COACH_MCP_EXPOSE_MEDICAL=true` to include it. (Local
+Claude Desktop/Code and the LAN dashboard always include it — it's your own data on your own machine.)
+The HTTP startup banner spells out exactly what each surface exposes.
+
+**Bounded, never-hangs external calls.** Every external spine has a hard timeout and the read paths
+retry a transient rate-limit/5xx with jittered backoff: AI Endurance per-tool calls are capped (not just
+connect) and read-retried; intervals.icu and the weather fetch retry 429/5xx (honouring `Retry-After`);
+each coach LLM call is bounded by `COACH_LLM_TIMEOUT_MS` (default 120s; the Anthropic SDK adds its own
+429/5xx retries). A write to the plan is **never** retried (it fires exactly once through the gate), and
+error detail on these paths is redacted before it can reach a log or an MCP response.
 
 Full step-by-step for both (incl. the macOS `npm`-on-PATH gotcha and tunnel commands) is in
 **[docs/mcp-server.md](docs/mcp-server.md)**.

@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { config } from "../config.js";
 import { appendCostRecord, costUsd, type LlmUsage } from "./costLog.js";
 
 /**
@@ -47,23 +48,46 @@ export class CoachLLM {
   }
 
   /**
+   * Cap a single SDK call at COACH_LLM_TIMEOUT_MS so a hung request can't stall a flow indefinitely.
+   * Passes an AbortSignal the SDK uses to abort the underlying HTTP request / stream; the SDK's own
+   * 429/5xx retries run within this deadline. A non-positive timeout disables the cap.
+   */
+  private async withDeadline<T>(make: (signal: AbortSignal | undefined) => Promise<T>): Promise<T> {
+    const ms = config.coachLlm.timeoutMs;
+    if (!Number.isFinite(ms) || ms <= 0) return make(undefined);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try {
+      return await make(ctrl.signal);
+    } catch (err) {
+      if (ctrl.signal.aborted) throw new Error(`CoachLLM ${this.operation} call exceeded COACH_LLM_TIMEOUT_MS (${ms}ms).`);
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
    * One-shot structured completion. `schema` is a JSON Schema; the response is parsed and
    * returned as T. The system prompt is cached across calls within the 5-minute TTL.
    */
   async structured<T>(userContent: string, schema: Record<string, unknown>): Promise<{ value: T; cacheRead: number; costUsd: number }> {
-    const res = await this.client.messages.create({
-      model: this.model,
-      max_tokens: 4000,
-      thinking: { type: "adaptive" },
-      output_config: {
-        effort: this.effort,
-        format: { type: "json_schema", schema },
-      } as never, // SDK types for output_config.effort+format are still settling; shape is correct per API.
-      system: [
-        { type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } },
-      ],
-      messages: [{ role: "user", content: userContent }],
-    });
+    const res = await this.withDeadline((signal) => this.client.messages.create(
+      {
+        model: this.model,
+        max_tokens: 4000,
+        thinking: { type: "adaptive" },
+        output_config: {
+          effort: this.effort,
+          format: { type: "json_schema", schema },
+        } as never, // SDK types for output_config.effort+format are still settling; shape is correct per API.
+        system: [
+          { type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } },
+        ],
+        messages: [{ role: "user", content: userContent }],
+      },
+      { signal },
+    ));
 
     // A truncated response can yield structurally-valid-but-incomplete JSON (e.g. a cut-off proposals
     // array) that downstream code — including the write gate — would treat as authoritative. Refuse it.
@@ -94,18 +118,21 @@ export class CoachLLM {
   async research(userContent: string, maxSearches = 6): Promise<{ text: string; cacheRead: number; costUsd: number }> {
     // Streamed: a high-effort web-grounded run can take minutes (adaptive thinking + several searches),
     // and a non-streaming call risks the SDK's HTTP timeout. finalMessage() collects the full result.
-    const res = await this.client.messages
-      .stream({
-        model: this.model,
-        max_tokens: 8000,
-        thinking: { type: "adaptive" },
-        output_config: { effort: this.effort } as never,
-        system: [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }],
-        // Server-side web search (current 2026-02 tool — adds dynamic result filtering on Opus 4.8). Capped to bound cost.
-        tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxSearches } as never],
-        messages: [{ role: "user", content: userContent }],
-      })
-      .finalMessage();
+    const res = await this.withDeadline((signal) => this.client.messages
+      .stream(
+        {
+          model: this.model,
+          max_tokens: 8000,
+          thinking: { type: "adaptive" },
+          output_config: { effort: this.effort } as never,
+          system: [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }],
+          // Server-side web search (current 2026-02 tool — adds dynamic result filtering on Opus 4.8). Capped to bound cost.
+          tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxSearches } as never],
+          messages: [{ role: "user", content: userContent }],
+        },
+        { signal },
+      )
+      .finalMessage());
     const text = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
@@ -122,18 +149,21 @@ export class CoachLLM {
     // Headroom matters: adaptive thinking consumes part of max_tokens, so a low cap can leave no
     // room for the prose. 12k comfortably covers thinking + a long report. Streamed so a long
     // high-effort generation can't trip the SDK's non-streaming HTTP timeout; finalMessage() collects it.
-    const res = await this.client.messages
-      .stream({
-        model: this.model,
-        max_tokens: 12000,
-        thinking: { type: "adaptive" },
-        output_config: { effort: this.effort } as never,
-        system: [
-          { type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } },
-        ],
-        messages: [{ role: "user", content: userContent }],
-      })
-      .finalMessage();
+    const res = await this.withDeadline((signal) => this.client.messages
+      .stream(
+        {
+          model: this.model,
+          max_tokens: 12000,
+          thinking: { type: "adaptive" },
+          output_config: { effort: this.effort } as never,
+          system: [
+            { type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } },
+          ],
+          messages: [{ role: "user", content: userContent }],
+        },
+        { signal },
+      )
+      .finalMessage());
     const text = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)

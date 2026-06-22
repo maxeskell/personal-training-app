@@ -1,8 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import { parse as parseYaml } from "yaml";
-import { deepMerge, applyProfilePatch } from "../src/profile/update.js";
+import { deepMerge, applyProfilePatch, assertSafeProfileTarget } from "../src/profile/update.js";
 import { validateProfile, type Profile } from "../src/profile/schema.js";
 
 /**
@@ -61,4 +63,20 @@ test("applyProfilePatch allows a numeric HEIGHT (stable anthropometry, not a liv
 test("applyProfilePatch throws on a non-object patch", () => {
   assert.throws(() => applyProfilePatch(base(), "not an object"), /must be an object/);
   assert.throws(() => applyProfilePatch(base(), [1, 2, 3]), /must be an object/);
+});
+
+// --- assertSafeProfileTarget (write-target containment) ---------------------
+
+test("assertSafeProfileTarget accepts a .yaml/.yml inside the project or home dir", () => {
+  assert.doesNotThrow(() => assertSafeProfileTarget(join(process.cwd(), "profile.local.yaml")));
+  assert.doesNotThrow(() => assertSafeProfileTarget(join(homedir(), ".endurance-coach", "profile.yml")));
+});
+
+test("assertSafeProfileTarget rejects a non-yaml target", () => {
+  assert.throws(() => assertSafeProfileTarget(join(process.cwd(), "evil.txt")), /\.yaml/);
+  assert.throws(() => assertSafeProfileTarget("/etc/passwd"), /\.yaml/);
+});
+
+test("assertSafeProfileTarget rejects a yaml target outside the project and home dir", () => {
+  assert.throws(() => assertSafeProfileTarget("/etc/cron.d/evil.yaml"), /outside the project or your home/);
 });

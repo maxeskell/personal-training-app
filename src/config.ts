@@ -84,6 +84,14 @@ export const config = {
     },
   },
 
+  /** The coach's reasoning core (Anthropic / claude-opus-4-8 — see src/llm/client.ts). */
+  coachLlm: {
+    /** Wall-clock cap (ms) on a single CoachLLM call so a hung request can't stall a flow indefinitely
+     *  (the Anthropic SDK already retries 429/5xx). Generous by default — deep/research flows stream and
+     *  can legitimately take minutes; raise it if a long research digest is being cut off. */
+    timeoutMs: Number(process.env.COACH_LLM_TIMEOUT_MS ?? 120000),
+  },
+
   /** Garmin — OPTIONAL, degradable gap-filler. Disabled unless explicitly enabled. */
   garmin: {
     enabled: process.env.GARMIN_ENABLED === "true",
@@ -256,6 +264,11 @@ export const config = {
      *  host. Always on for local stdio. Containment + a secrets deny-list (.env*, tokens, keys, .git) are
      *  enforced regardless, so it can never touch secrets. */
     fileAccess: process.env.COACH_MCP_FILE_ACCESS === "true",
+    /** Expose the athlete's MEDICAL context (medication + dose cycle, blood panels, date of birth) on the
+     *  HTTP/Cowork surface — via `get_profile` and the LLM coaching prompt. OFF by default: a bearer-token
+     *  holder on the remote surface can't read medical detail unless the operator opts in. Always ON for
+     *  local stdio / CLI / the LAN dashboard (those run as the user, on the user's own data). */
+    exposeMedical: process.env.COACH_MCP_EXPOSE_MEDICAL === "true",
     /**
      * HTTP auth mode. "token" (default): a static bearer token — good for scripts and a self-hosted
      * Desktop-over-HTTP. "oauth": full OAuth 2.1 (DCR + PKCE + a coach-token-gated consent) — required

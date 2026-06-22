@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { basename } from "node:path";
 import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -46,7 +47,8 @@ import { readCostRecords, summarizeCost, type CostRecord } from "./llm/costLog.j
 import { loadProfile } from "./profile/load.js";
 import { formatProfileForTool } from "./profile/context.js";
 import { updateLocalProfile } from "./profile/update.js";
-import { repoRoot, listRepoDir, readRepoFile, writeRepoFile, formatReadResult } from "./mcp/fileAccess.js";
+import { repoRoot, listRepoDir, readRepoFile, writeRepoFile, formatReadResult, deniedReason } from "./mcp/fileAccess.js";
+import { setMedicalExposure } from "./mcp/medicalExposure.js";
 import type { AthleteState } from "./state/types.js";
 
 /**
@@ -188,6 +190,9 @@ export function formatReadiness(
  */
 export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite?: boolean; includeFileAccess?: boolean } = {}): McpServer {
   const server = new McpServer({ name: "endurance-coach", version: "0.1.0" });
+  // Whether this surface may take a caller-supplied filesystem path. Off by default (the HTTP/Cowork
+  // surface); on for local stdio. Used to contain the `ingest_fit` path-oracle (see its handler).
+  const includeFileAccess = opts.includeFileAccess ?? false;
 
   // ---- deterministic reads (no LLM, no token cost) ----
   server.tool(
@@ -262,7 +267,20 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
     "The manual-export fallback for raw .FIT streams (when the Garmin auto-download can't run). With no args: report what's in the watched streams dir (each file's validity + summary) and confirm the absolute path + the drop convention. With `path`: validate an exported .FIT at that path and copy it in so `splits` / `session_feedback` can read it. Deterministic, no LLM cost, read-only to AI Endurance.",
     { path: z.string().optional().describe("Absolute path to an exported .FIT (Garmin Connect → Export Original) to validate + ingest. Omit to just report the streams dir.") },
     async ({ path }) => {
-      if (path) return ok(formatIngest(ingestFitFile(path)).join("\n"));
+      if (path) {
+        // Containment: a caller-supplied path is a file-existence + parse-verdict ORACLE for anything the
+        // process can read. Allow it only on the file-access surface (local stdio); the remote surface
+        // gets the no-path streams-dir report instead. Even when allowed, refuse secret/credential files.
+        if (!includeFileAccess) {
+          return fail(
+            "ingest_fit with a file `path` is disabled on this surface (it would let a caller probe the host filesystem). " +
+              "Drop the exported .FIT into the streams dir and call ingest_fit with no path, or enable COACH_MCP_FILE_ACCESS.",
+          );
+        }
+        const denied = deniedReason(basename(path));
+        if (denied) return fail(`refused: "${basename(path)}" is ${denied}. ingest_fit excludes secrets and credentials.`);
+        return ok(formatIngest(ingestFitFile(path)).join("\n"));
+      }
       return ok(formatStreamsReport(reportStreamsDir()).join("\n"));
     },
   );
@@ -789,7 +807,9 @@ async function main(): Promise<void> {
   // process.stdout.write, which this override does NOT touch — frames are unaffected.)
   console.log = (...args: unknown[]) => console.error(...args);
 
-  // Local stdio is the user's own machine spawning the process, so the local-file writes are on.
+  // Local stdio is the user's own machine spawning the process, so the local-file writes are on, and the
+  // medical context is exposed (the coach needs it; the user is reading their own data).
+  setMedicalExposure(true);
   const server = buildServer({ includeProfileWrite: true, includeFileAccess: true });
   await server.connect(new StdioServerTransport());
   console.error(

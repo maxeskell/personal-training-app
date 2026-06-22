@@ -7,9 +7,11 @@ import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from "@modelconte
 import { requireBearerAuth } from "@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js";
 import { config } from "./config.js";
 import { buildServer } from "./mcpServer.js";
+import { setMedicalExposure } from "./mcp/medicalExposure.js";
 import { loadMcpToken, bearerAuthorized } from "./serverAuth.js";
 import { CoachOAuthProvider } from "./auth/coachOAuthProvider.js";
 import { baseHealth, aieHealthProbe } from "./health.js";
+import { redactSecrets } from "./util/redact.js";
 
 /**
  * HTTP (Streamable HTTP) transport for the coach MCP server. For clients that can only reach a remote
@@ -91,12 +93,13 @@ export function httpStartupBanner(o: {
   includeWrites: boolean;
   profileWrite: boolean;
   fileAccess: boolean;
+  exposeMedical: boolean;
   tokenFile: string;
 }): string[] {
   const RULE = "─".repeat(74);
   const surface = [
     "training data + health metrics (HRV, resting HR, sleep, VO2max)",
-    "your MEDICAL profile via get_profile — conditions and medication",
+    o.exposeMedical ? "your MEDICAL profile via get_profile — conditions and medication" : null,
     o.includeWrites ? "the gated plan-WRITE tools (propose / confirm)" : null,
     o.profileWrite ? "the profile-WRITE tool — a remote caller can write a file on this machine" : null,
     o.fileAccess ? "the repo file tools (read_file/write_file) — a remote caller can read/write project files here (secrets excluded)" : null,
@@ -120,12 +123,16 @@ export function httpStartupBanner(o: {
   }
   if (o.profileWrite) lines.push("⚠ profile-write is ON: a REMOTE caller can write profile.local.yaml here.");
   if (o.fileAccess) lines.push("⚠ file-access is ON: a REMOTE caller can read/write repo files here (secrets/.git excluded).");
+  if (!o.exposeMedical) lines.push("Medical profile (medication, bloods, DOB) is WITHHELD here — set COACH_MCP_EXPOSE_MEDICAL=true to include it.");
   lines.push("Safe setup: docs/mcp-server.md", RULE);
   return lines;
 }
 
 /** Dispatch to the configured auth mode. */
 export async function runHttp(): Promise<void> {
+  // The HTTP/Cowork surface is internet-reachable (behind a tunnel): withhold the athlete's medical
+  // context unless the operator explicitly opts in. Set once at startup (process-global).
+  setMedicalExposure(config.mcp.exposeMedical);
   // Refuse to bind an authenticated server with a weak secret (a user-set short COACH_MCP_TOKEN).
   if (config.mcp.auth !== "none") {
     const t = loadMcpToken();
@@ -187,7 +194,9 @@ async function runHttpRaw(): Promise<void> {
         await server.connect(transport);
         await transport.handleRequest(req, res, body);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        // Redact before the error reaches the response body / server log — an upstream error could
+        // otherwise echo a token or auth header back to the caller or into logs.
+        const msg = redactSecrets(err instanceof Error ? err.message : String(err));
         console.error("MCP HTTP error:", msg);
         if (!res.headersSent) {
           res.writeHead(msg === "body too large" ? 413 : 400, { "content-type": "application/json" }).end(rpcError(-32700, msg));
@@ -205,6 +214,7 @@ async function runHttpRaw(): Promise<void> {
       includeWrites,
       profileWrite: config.mcp.profileWrite,
       fileAccess: config.mcp.fileAccess,
+      exposeMedical: config.mcp.exposeMedical,
       tokenFile: `${config.secretsDir}/mcp.token`,
     }))
       console.error(l);
@@ -279,6 +289,7 @@ async function runHttpOAuth(): Promise<void> {
       includeWrites,
       profileWrite: config.mcp.profileWrite,
       fileAccess: config.mcp.fileAccess,
+      exposeMedical: config.mcp.exposeMedical,
       tokenFile: `${config.secretsDir}/mcp.token`,
     }))
       console.error(l);

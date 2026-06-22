@@ -5,6 +5,8 @@
  * on fixtures, never the network.
  */
 
+import { retry, RetryableHttpError, isRetryableStatus, parseRetryAfterMs } from "../util/retry.js";
+
 export interface HourForecast {
   /** Local ISO hour, e.g. "2026-06-11T14:00" (timezone=auto → venue-local). */
   time: string;
@@ -97,9 +99,17 @@ export async function fetchForecast(lat: number, lon: number, timeoutMs = 6000):
     past_days: "1",
     forecast_days: "7",
   });
-  const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { signal: AbortSignal.timeout(timeoutMs) });
-  if (!res.ok) throw new Error(`open-meteo HTTP ${res.status}`);
-  return mapOpenMeteo(await res.json(), new Date().toISOString());
+  // Best-effort GET → retry a transient 429/5xx (honouring Retry-After); the store layer still degrades
+  // to a stale/undefined forecast if every attempt fails, so the card never crashes a flow.
+  return retry(async () => {
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) {
+      const msg = `open-meteo HTTP ${res.status}`;
+      if (isRetryableStatus(res.status)) throw new RetryableHttpError(msg, res.status, parseRetryAfterMs(res.headers.get("retry-after")));
+      throw new Error(msg);
+    }
+    return mapOpenMeteo(await res.json(), new Date().toISOString());
+  });
 }
 
 /** WMO weather code → glanceable label. */
