@@ -295,7 +295,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
 
   server.tool(
     "insights",
-    "Run the local n=1 insight engine over your history (CTL/ATL/TSB & ramp, EF, durability, run-load, autocorr-aware correlations, change-points, taper target, validated monitoring rules) and return the computed metrics + top surfaced findings. Deterministic — no LLM cost.",
+    "Run the local n=1 insight engine over your history (CTL/ATL/TSB & ramp, EF, durability, run-load, autocorr-aware correlations, taper target, validated monitoring rules) and return the computed metrics + top surfaced findings. Deterministic — no LLM cost.",
     {},
     async () => {
       const { state, window } = await buildTodayState();

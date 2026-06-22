@@ -20,7 +20,6 @@ import {
 import { estimateRunSplits, estimateTriSplits, projectRaceDayImprovement, projectRaceDayRange, reliableImprovementPerDay, type RaceSplitPlan, type DurabilityState, type TriRaceType, type TriPerformance } from "./splits.js";
 import { analyseRecoverySeries, sleepVsNextDayLoad, type Correlation, type Anomaly } from "./correlations.js";
 import { buildMonitoringRuleSet, monitoringFinding, type MonitoringRuleSet, type MonitoringInput } from "./monitoring.js";
-import { changePointsOf, changePointFindings, type SeriesChangePoints } from "./changepoint.js";
 import { analyseBricks, brickFinding, type BrickAnalysis } from "./brick.js";
 import { analyseTaper, taperFinding, type TaperAnalysis } from "./taper.js";
 import { analyseEfficiency, efficiencyFinding, type EfficiencyAnalysis } from "./efficiency.js";
@@ -83,7 +82,6 @@ export interface InsightReport {
   anomalies: Anomaly[];
   predictions: PredictionVsGoal[];
   monitoring: MonitoringRuleSet;
-  changePoints: SeriesChangePoints[];
   brick: BrickAnalysis;
   taper: TaperAnalysis;
   efficiency: EfficiencyAnalysis;
@@ -473,16 +471,6 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   // New rigorous/n=1 layers (data-scientist brief Q1–Q7 + stream-level §1).
   const monitoring = buildMonitoringRuleSet(monitoringInputFrom(recData, archive));
 
-  const recDates = (recData?.date ?? []).map((d) => String(d).slice(0, 10));
-  const changePoints: SeriesChangePoints[] = [];
-  if (load && load.series.length >= 21) {
-    changePoints.push({ metric: "Fitness (CTL)", points: changePointsOf(load.series.map((p) => p.ctl), load.series.map((p) => p.date)) });
-  }
-  if (recDates.length >= 21) {
-    changePoints.push({ metric: "Overnight HRV", points: changePointsOf(finiteNums(recData?.rMSSD), recDates) });
-    changePoints.push({ metric: "Resting HR", points: changePointsOf(finiteNums(recData?.resting_heart_rate), recDates) });
-  }
-
   const brick = analyseBricks(acts);
   const taper = analyseTaper(load, raw.getRaceGoalEvent, state.date);
   const efficiency = analyseEfficiency(acts, load);
@@ -578,7 +566,6 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   // 5. New detectors (Q1–Q7 + stream-level). Each self-gates and stays silent without enough data.
   const mf = monitoringFinding(monitoring);
   if (mf) findings.push(mf);
-  findings.push(...changePointFindings(changePoints));
   const bf = brickFinding(brick);
   if (bf) findings.push(bf);
   const tf = taperFinding(taper);
@@ -641,7 +628,6 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
     anomalies,
     predictions,
     monitoring,
-    changePoints,
     brick,
     taper,
     efficiency,

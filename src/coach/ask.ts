@@ -92,8 +92,7 @@ export function buildAskContext(state: AthleteState, insights: InsightReport): s
     `- Run durability ${ins.durability.run.recent ?? "—"} (closer to 0 = more durable), monotony ${ins.monotony.monotony ?? "—"}, intensity easy/tempo/hard ${ins.tid.easyPct ?? "—"}/${ins.tid.tempoPct ?? "—"}/${ins.tid.hardPct ?? "—"}%`,
     `- n=1 patterns (lagged, autocorr-aware): ${ins.correlations.map((c) => `${c.label} r=${c.r} [${c.ciLow},${c.ciHigh}] lag${c.lagDays}d${c.significant ? "" : " (CI spans 0)"}`).join("; ") || "none strong"}`,
     `- Monitoring rule (${ins.monitoring.validated ? "validated out-of-sample" : "exploratory, not yet held-out"}; outcome=${ins.monitoring.outcomeName}${ins.monitoring.outcomeIndependent ? "" : ", dependent on HRV/RHR"}): ${ins.monitoring.best ? `${ins.monitoring.best.name}, lead ${ins.monitoring.best.lead}d, hit ${Math.round(ins.monitoring.best.hitRate * 100)}%/false-alarm ${Math.round(ins.monitoring.best.falseAlarmRate * 100)}%` : "none validated yet"}`,
-    `- Regime shifts: ${ins.changePoints.flatMap((s) => s.points.slice(-1).map((p) => (p.date ? `${s.metric} ${p.before}→${p.after}@${p.date}` : null))).filter(Boolean).join("; ") || "none"}`,
-    `- Brick decoupling: ${ins.brick.decouplingPct != null ? `${ins.brick.decouplingPct}% off-bike (${ins.brick.brickDays}d)` : "n/a"}; taper target TSB ${ins.taper.recommendedTsbLow ?? "?"}..${ins.taper.recommendedTsbHigh ?? "?"}`,
+    `- Same-day run/ride decoupling (proxy, not a true off-bike transition): ${ins.brick.decouplingPct != null ? `${ins.brick.decouplingPct}% on same-day run+ride days (${ins.brick.brickDays}d)` : "n/a"}; taper target TSB ${ins.taper.recommendedTsbLow ?? "?"}..${ins.taper.recommendedTsbHigh ?? "?"}`,
     `- Races: ${ins.predictions.map((p) => `${p.race} T-${p.daysTo}d`).join("; ") || "none"}`,
     (() => {
       const shape = deriveSeasonShape(liveGoals(state), state.date);
