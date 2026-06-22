@@ -49,6 +49,9 @@ import { runSetup } from "./setup.js";
 import { initProfile } from "./profile/setup.js";
 import { loadProfileSafe } from "./profile/load.js";
 import { renderQuestionsText, renderQuestionsMarkdown } from "./profile/questions.js";
+import { buildSeasonArc, seasonReportText } from "./coach/seasonArc.js";
+import { runSeasonNarrative } from "./coach/seasonNarrative.js";
+import { loadCareerHistory } from "./coach/careerHistory.js";
 import { helpText } from "./help.js";
 import type { AthleteState } from "./state/types.js";
 
@@ -393,6 +396,32 @@ async function cmdDeepDive(): Promise<void> {
   const { markdown, cacheRead, costUsd } = await runDeepDive(new CoachLLM(await loadSystemPrompt(), "deep-dive"), state, ins);
   console.log("\n" + markdown + "\n");
   const path = await writeReport("deep-dive", todayIso(), markdown);
+  console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
+}
+
+/** `season` — multi-season strategic review: the deterministic Season-arc report + an LLM strategic
+ *  narrative (the multi-year layer above weekly/deep-dive). No API key → the deterministic digest only. */
+async function cmdSeason(): Promise<void> {
+  const { state, window } = await buildTodayState();
+  const career = loadCareerHistory();
+  const ctlSeries = window
+    .map((s) => ({ date: s.date, v: s.load.value?.ctl }))
+    .filter((x): x is { date: string; v: number } => typeof x.v === "number");
+  const report = buildSeasonArc({
+    today: todayIso(),
+    plan: state.profile?.season_plan,
+    ctlNow: ctlSeries.length ? ctlSeries[ctlSeries.length - 1].v : undefined,
+    ctlSeries,
+    career,
+    profile: state.profile,
+  });
+  if (!CoachLLM.hasApiKey()) {
+    console.log("\n" + seasonReportText(report) + "\n\n(no ANTHROPIC_API_KEY — deterministic digest only; set it for the strategic narrative. The /season page shows this same report.)\n");
+    return;
+  }
+  const { markdown, cacheRead, costUsd } = await runSeasonNarrative(new CoachLLM(await loadSystemPrompt(), "season"), report, career, state);
+  console.log("\n" + markdown + "\n");
+  const path = await writeReport("season-arc", todayIso(), markdown);
   console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
 }
 
@@ -989,6 +1018,7 @@ const commands: Record<string, () => Promise<void>> = {
   dashboard: cmdDashboard,
   demo: cmdDemo,
   "deep-dive": cmdDeepDive,
+  season: cmdSeason,
   tune: cmdTune,
   fuelling: cmdFuelling,
   "fuel-review": cmdFuelReview,
@@ -1029,6 +1059,7 @@ if (!run) {
   console.log("  dashboard  generate + open the glanceable Today/Week/Trends/Race view");
   console.log("  demo       render the dashboard from built-in SAMPLE data (no account/Garmin/key needed)");
   console.log("  deep-dive  insight-engine analysis (load/EF/durability/ramp/goal) → report");
+  console.log("  season     multi-season strategic review (CTL arc / phases / structural levers) → report; also the /season page");
   console.log("  tune       weekly marginal-gains: the smaller, easy-to-action tweaks (not 'train more') → report");
   console.log("  fuelling   per-session pre/during/after from your logged nutrition (deterministic, only what a session needs)");
   console.log("  fuel-review  learning review over your fuel log: carb/hr tolerance, what sits well, suggested tweaks (≥3 logs)");

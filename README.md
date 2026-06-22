@@ -517,6 +517,12 @@ display-only and makes **no LLM call** (deterministic = free); every section deg
 how-to-fill hint when its input is missing. See [SETUP.md → "Season arc"](./SETUP.md) and
 [docs/specs/Season_Arc_Spec.md](docs/specs/Season_Arc_Spec.md).
 
+For a written **strategic narrative** on top of that report, run **`npm run season`** — a deep flow (one
+high-effort, cost-logged LLM call) that grounds a multi-season coach write-up in the *same* deterministic
+numbers (leads on your single biggest lever, ranks the structural ones, lays out a season-by-season arc to
+70.3 → Ironman) and saves it to `reports/`. No `ANTHROPIC_API_KEY` → it prints the deterministic digest
+only; the `/season` page always stays free.
+
 ```bash
 # Foreground / DEV only — dies when you close the terminal. For the always-on server, see below.
 npm run serve                 # localhost only; prints a /pair?token=… link at startup

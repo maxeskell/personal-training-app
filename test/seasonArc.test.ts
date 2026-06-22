@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSeasonArc, pickActivePhase, parseTarget, ctlTrend, type SeasonArcInput } from "../src/coach/seasonArc.js";
+import { buildSeasonArc, pickActivePhase, parseTarget, ctlTrend, seasonReportText, type SeasonArcInput } from "../src/coach/seasonArc.js";
 import { renderSeasonPage } from "../src/coach/seasonPage.js";
 import type { Profile, SeasonPlan } from "../src/profile/schema.js";
 import type { CareerHistory } from "../src/coach/careerHistory.js";
@@ -127,6 +127,17 @@ test("renderSeasonPage: empty state names season_plan; full page renders section
   assert.match(full, /Chronic load/);
   assert.match(full, /The long arc/);
   assert.match(full, /Structural levers/);
+});
+
+test("seasonReportText: a deterministic digest citing the key numbers (grounding + no-LLM fallback)", () => {
+  const txt = seasonReportText(buildSeasonArc(baseInput()));
+  assert.match(txt, /SEASON ARC/);
+  assert.match(txt, /Ironman by 2028/);
+  assert.match(txt, /Active phase: Rebuild base/);
+  assert.match(txt, /CTL now 42.*target 55.*gap -13/s);
+  assert.match(txt, /Peak year: 2013 \(390h\)/);
+  assert.match(txt, /Strength \[gap\]/);
+  assert.match(txt, /Risk flags:/);
 });
 
 test("renderSeasonPage escapes injected plan text (no raw markup)", () => {
