@@ -25,6 +25,7 @@ import { answerQuestion } from "./coach/ask.js";
 import { runWeeklyReview } from "./coach/weekly.js";
 import { runRacePrep } from "./coach/racePrep.js";
 import { runDeepDive, insightMetricsSummary, insightFindings } from "./coach/deepDive.js";
+import { coachHeadline } from "./insights/headline.js";
 import { buildSeasonArc, seasonReportText } from "./coach/seasonArc.js";
 import { runSeasonNarrative } from "./coach/seasonNarrative.js";
 import { loadCareerHistory } from "./coach/careerHistory.js";
@@ -80,9 +81,19 @@ type Provenance = { value: unknown; source: string; note?: string };
 const prov = (p: Provenance) => `${p.value == null ? "—" : "set"} [${p.source}${p.note ? `: ${p.note}` : ""}]`;
 
 /** A glanceable, provenance-tagged digest of an AthleteState (mirrors `npm run state`). */
-export function summarizeState(state: AthleteState): string {
+export function summarizeState(state: AthleteState, today: string = todayIso()): string {
   const L = (label: string, p: Provenance) => `  ${label.padEnd(22)} ${prov(p)}`;
+  // Staleness cue: a snapshot read (get_state with no fresh) can silently be from a previous day. If the
+  // snapshot was assembled before today, say so loudly and point at `sync` — never let a stale read pass
+  // as current. Pure given `today` (passed in), so it's deterministically testable.
+  const assembledDate = (state.assembledAt ?? "").slice(0, 10);
+  const daysOld = assembledDate && assembledDate < today ? Math.round((Date.parse(today) - Date.parse(assembledDate)) / 86_400_000) : 0;
+  const staleCue =
+    daysOld > 0
+      ? [`⚠ STALE SNAPSHOT: assembled ${state.assembledAt} — ${daysOld} day${daysOld === 1 ? "" : "s"} before today (${today}). Run \`sync\` (or get_state fresh=true) to refresh.`, ""]
+      : [];
   return [
+    ...staleCue,
     `AthleteState for ${state.date} (assembled ${state.assembledAt}):`,
     L("planned sessions", state.plannedSessions),
     L("actual activities", state.actualActivities),
@@ -204,7 +215,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
 
   server.tool(
     "get_state",
-    "Return today's AthleteState (plan, recovery, HRV/RHR, weight, thresholds, zones, …) plus a granular-data completeness readout. Reads the last persisted snapshot by default; pass fresh=true to re-sync from AI Endurance first (use `sync` to also auto-fetch raw .FIT streams).",
+    "Return today's AthleteState (plan, recovery, HRV/RHR, weight, thresholds, zones, …) plus a granular-data completeness readout — the raw data dump, no interpretation. Reads the last persisted snapshot by default (flagged with a ⚠ STALE line if it's from a previous day); pass fresh=true to re-sync from AI Endurance first (use `sync` to also auto-fetch raw .FIT streams). Use-when: you want the underlying numbers. For 'how am I today / should I train', use `readiness` (an interpreted verdict), not this.",
     { fresh: z.boolean().optional().describe("Re-assemble from AI Endurance before returning (default: use the last snapshot).") },
     async ({ fresh }) => {
       const state = fresh ? (await buildTodayState()).state : (await new StateStore().recent(todayIso(), 1))[0];
@@ -313,7 +324,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
 
   server.tool(
     "insights",
-    "Run the local n=1 insight engine over your history (CTL/ATL/TSB & ramp, EF, durability, run-load, autocorr-aware correlations, taper target, validated monitoring rules) and return the computed metrics + top surfaced findings. Deterministic — no LLM cost.",
+    "Run the local n=1 insight engine over your history (CTL/ATL/TSB & ramp, EF, durability, run-load, autocorr-aware correlations, taper target, validated monitoring rules) and return a one-line coach headline, the computed metrics, and the top surfaced findings. Use-when: the fast, no-LLM read of the numbers themselves. Deterministic — NO LLM cost. For a written explanation of these same metrics use `deep_dive`; for one specific question use `ask`.",
     {},
     async () => {
       const { state, window } = await buildTodayState();
@@ -327,7 +338,12 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
       const predictionTrajectory = await loadPredictionTrajectory(state);
       const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement, predictionTrajectory });
       await insightLog.recordSurfaced(ins.topFindings, "mcp-insights");
+      // Lead with the synthesised one-call headline so the output answers "what matters" before the
+      // metric wall — same headline the dashboard and `ask` use.
+      const hl = coachHeadline(ins, state);
       return ok([
+        `COACH HEADLINE [${hl.severity.toUpperCase()}]: ${hl.line}${hl.action ? ` → ${hl.action}` : ""}`,
+        "",
         insightMetricsSummary(ins),
         "",
         insightFindings(ins, { firstSeen, reactions }),
@@ -473,7 +489,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
 
   server.tool(
     "ask",
-    "Free-form question over your assembled data + insights (the same engine as the dashboard 'Ask your data' box). e.g. 'how were my long rides this month?'",
+    "Free-form question over your assembled data + insights (the same engine as the dashboard 'Ask your data' box). e.g. 'how were my long rides this month?'. Use-when: one specific question. Medium LLM cost. For a full structured review use `weekly` (last week) or `deep_dive` (all-time trends); for the raw numbers with no LLM use `insights`.",
     { question: z.string().min(1) },
     async ({ question }) => {
       const miss = missingKey();
@@ -498,7 +514,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
 
   server.tool(
     "weekly",
-    "Weekly review (takeaway-led): load by sport, adherence, trends, next-week focus. Also writes a dated report.",
+    "Weekly review (takeaway-led): load by sport, adherence, trends, next-week focus. Also writes a dated report. Use-when: you want LAST WEEK reviewed. High LLM cost. For all-time trends use `deep_dive`, for the multi-season picture use `season_arc`.",
     {},
     async () => {
       const miss = missingKey();
@@ -526,7 +542,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
 
   server.tool(
     "deep_dive",
-    "Insight-engine deep dive: a coach-style analysis (load & form, efficiency & durability, injury risk, goal tracking) over your computed metrics. Also writes a dated report.",
+    "Insight-engine deep dive: a coach-style analysis (load & form, efficiency & durability, injury risk, goal tracking) over your computed metrics. Also writes a dated report. Use-when: you want the insight metrics EXPLAINED as trends. High LLM cost. `insights` is the same data with NO LLM; `weekly` is scoped to last week; `season_arc` is the multi-season view.",
     {},
     async () => {
       const miss = missingKey();
@@ -543,7 +559,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
 
   server.tool(
     "season_arc",
-    "Multi-season strategic review (rebuild → 70.3 → Ironman): CTL arc vs phase targets, the long-arc volume benchmark, structural levers (strength / swim CSS / bloods age / threshold) and risk flags, then an LLM strategic narrative. Reads your season_plan + live CTL + career trajectory. Writes a dated report. Without an API key it returns the deterministic digest.",
+    "Multi-season strategic review (rebuild → 70.3 → Ironman): CTL arc vs phase targets, the long-arc volume benchmark, structural levers (strength / swim CSS / bloods age / threshold) and risk flags, then an LLM strategic narrative. Reads your season_plan + live CTL + career trajectory. Writes a dated report. Without an API key it returns the deterministic digest. Use-when: the multi-YEAR strategic picture. High LLM cost. For a single week use `weekly`; for current-state trends use `deep_dive`.",
     {},
     async () => {
       const { state, window } = await buildTodayState();
