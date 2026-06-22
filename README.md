@@ -495,15 +495,19 @@ aren't on the dashboard at all; HRV/RHR/sleep/VO2max are health numbers but don'
 For the one-off HTML or a PDF, use `npm run dashboard -- --share`.
 
 **Career & PBs tab (`/career`):** a read-only page (linked top-left of the dashboard) for the *long view* —
-your **race history** (date · event/location · your recorded performance), your **lifetime bests vs current
-form** side by side (all-time / last 90 days / season, per sport: fastest at each distance, longest, best
-power), and an overlaid **power curve** (best ever vs recent). It reads a **gitignored** data file you build
-once from your multi-year TrainingPeaks / intervals.icu archive — the dashboard's live state only knows the
-recent past, so this history lives apart (see [SETUP.md → "Career history"](./SETUP.md)). It's display-only
-and **honest by construction**: performances are *your own recorded numbers* (no official results are
-scraped), GPS-derived locations not marked "confirmed" are nearest-town approximations, and the generator
-drops obvious GPS/calibration outliers from the bests. The same **🔒 Share view** applies — event names and
-locations are hidden and dates collapse to the year. Absent data file → a friendly empty state.
+your **race history** (date · event/location · your recorded performance, with an expandable per-race
+**splits** table), your **lifetime bests vs current form** side by side (all-time / last 90 days / season,
+per sport: fastest at each distance, longest, best power), and an overlaid **power curve** (best ever vs
+recent). It reads a **gitignored** data file you build once from your multi-year TrainingPeaks / intervals.icu
+archive plus your exported `.FIT` files — the dashboard's live state only knows the recent past, so this
+history lives apart (see [SETUP.md → "Career history"](./SETUP.md)). It's display-only and **honest by
+construction**: performances are *your own recorded numbers* — pulled from your raw `.FIT` files (finish
+time, splits, power, HR) or, when a race has no `.FIT`, your activity export for summary numbers only; **no
+official results are scraped**, and anything you hand-author wins. GPS-derived locations not marked
+"confirmed" are nearest-town approximations, and the generator drops obvious GPS/calibration outliers from
+the bests. The same **🔒 Share view** applies — event names and locations are hidden, dates collapse to the
+year, and the data-provenance tag is dropped (splits are just performance numbers, so they stay). Absent
+data file → a friendly empty state.
 
 ```bash
 # Foreground / DEV only — dies when you close the terminal. For the always-on server, see below.

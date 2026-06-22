@@ -190,8 +190,8 @@ export const config = {
 
   /**
    * Read-only `/career` page (race history + lifetime bests vs current + power curve). The data is a
-   * HISTORICAL multi-year archive (TrainingPeaks/intervals.icu), not live coaching state, so it lives in
-   * a gitignored file built by `scripts/build-career-history.mjs`. Path is relative to the repo root
+   * HISTORICAL multi-year archive (TrainingPeaks/intervals.icu + raw .FIT files), not live coaching state,
+   * so it lives in a gitignored file built by `scripts/build-career-history.ts`. Path is relative to the repo root
    * unless absolute. A missing file just renders the page's empty state (degrade-don't-crash).
    */
   career: {

@@ -24,7 +24,16 @@ const SAMPLE: CareerHistory = {
       event: "Vienna City Half Marathon",
       location: "Vienna, Austria",
       confidence: "confirmed",
-      result: { distanceKm: 21.1, pace: "4:19/km" },
+      result: {
+        distanceKm: 21.1,
+        pace: "4:19/km",
+        avgHr: 168,
+        via: "fit",
+        splits: [
+          { label: "#1", dist: "5.00 km", time: "21:30", pace: "4:18/km", hr: 165 },
+          { label: "#2", dist: "5.00 km", time: "21:45", pace: "4:21/km", hr: 170 },
+        ],
+      },
     },
   ],
   bests: [
@@ -66,10 +75,42 @@ test("parseCareerHistory: drops malformed rows but keeps the good ones", () => {
   assert.equal(parsed.powerCurve?.allTime.length, 1);
 });
 
+test("parseCareerHistory: round-trips a race's avgHr, via + splits", () => {
+  const parsed = parseCareerHistory(JSON.stringify(SAMPLE));
+  assert.ok(parsed);
+  const run = parsed.races.find((r) => r.sport === "run");
+  assert.ok(run?.result);
+  assert.equal(run.result.avgHr, 168);
+  assert.equal(run.result.via, "fit");
+  assert.equal(run.result.splits?.length, 2);
+  assert.equal(run.result.splits?.[0].pace, "4:18/km");
+  // a bad `via` and a label-less split row are dropped
+  const cleaned = parseCareerHistory(
+    JSON.stringify({ races: [{ date: "2020-01-01", type: "Marathon", result: { via: "web", splits: [{ time: "1:00" }] } }] }),
+  );
+  assert.equal(cleaned?.races[0].result?.via, undefined);
+  assert.equal(cleaned?.races[0].result?.splits, undefined);
+});
+
+test("renderCareerPage: renders a per-race splits table + provenance tag", () => {
+  const html = renderCareerPage(SAMPLE);
+  assert.match(html, /<details class="splits"><summary>Splits \(2\)<\/summary>/);
+  assert.match(html, /4:18\/km/); // a split pace cell
+  assert.match(html, /168 bpm/); // avg HR in the summary
+  assert.match(html, /\.FIT<\/span>/); // provenance tag
+});
+
+test("renderCareerPage share view: still shows non-identifying splits, hides provenance tag", () => {
+  const html = renderCareerPage(SAMPLE, true);
+  assert.match(html, /<details class="splits">/); // splits are performance numbers — kept
+  assert.doesNotMatch(html, /\.FIT<\/span>/); // provenance tag hidden with names/locations
+});
+
 test("renderCareerPage(null): friendly empty state names the generator", () => {
   const html = renderCareerPage(null);
   assert.match(html, /No career history yet/);
-  assert.match(html, /build-career-history\.mjs/);
+  assert.match(html, /build-career-history\.ts/);
+  assert.match(html, /career:build/);
 });
 
 test("renderCareerPage: renders races, bests columns and a parseable power-curve SVG", () => {

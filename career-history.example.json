@@ -1,5 +1,5 @@
 {
-  "_README": "Template for data/career-history.json (gitignored) — the source for the read-only /career page (race history + lifetime bests vs current form + power curve). Generate the real file from your TrainingPeaks/intervals.icu archive with `node scripts/build-career-history.mjs` (see SETUP.md → 'Career history'), or hand-edit a copy. Values in `bests`/`powerCurve` are PRE-FORMATTED (the renderer just prints them). All fields are optional except a race's date+type and a best row's label. Examples below use placeholder data — replace with your own.",
+  "_README": "Template for data/career-history.json (gitignored) — the source for the read-only /career page (race history + lifetime bests vs current form + power curve). Generate the real file from your TrainingPeaks/intervals.icu archive AND your exported .FIT files with `npm run career:build` (see SETUP.md → 'Career history'), or hand-edit a copy. `npm run career:build` fills each race's `result` (time/distance/pace/avgW/avgHr) and `splits` from a matched .FIT (by date+sport), falling back to your activity export for summary numbers only — anything you hand-author here always wins; nothing is scraped. Values in `result`/`bests`/`powerCurve` are PRE-FORMATTED (the renderer just prints them). All fields are optional except a race's date+type and a best row's label. Examples below use placeholder data — replace with your own.",
   "generatedAt": "2026-01-01",
   "seasonYear": 2026,
   "races": [
@@ -11,7 +11,19 @@
       "location": "Example City, Country",
       "confidence": "confirmed",
       "source": "geo+web",
-      "result": { "distanceKm": 21.1, "time": "1:45:00", "pace": "4:59/km" }
+      "result": {
+        "distanceKm": 21.1,
+        "time": "1:45:00",
+        "pace": "4:59/km",
+        "avgHr": 168,
+        "via": "fit",
+        "splits": [
+          { "label": "#1", "dist": "5.00 km", "time": "24:30", "pace": "4:54/km", "hr": 162 },
+          { "label": "#2", "dist": "5.00 km", "time": "24:45", "pace": "4:57/km", "hr": 167 },
+          { "label": "#3", "dist": "5.00 km", "time": "25:05", "pace": "5:01/km", "hr": 171 },
+          { "label": "#4", "dist": "6.10 km", "time": "30:40", "pace": "5:01/km", "hr": 173 }
+        ]
+      }
     },
     {
       "date": "2021-06-13",
@@ -20,7 +32,16 @@
       "location": "Example Lake (nearest-town approx)",
       "confidence": "strong",
       "source": "geo",
-      "result": { "time": "5:30:00", "avgW": 190 }
+      "result": {
+        "time": "5:30:00",
+        "avgW": 190,
+        "via": "fit",
+        "splits": [
+          { "label": "Swim", "dist": "1.90 km", "time": "32:10", "pace": "1:41/100m", "hr": 150 },
+          { "label": "Bike", "dist": "90.00 km", "time": "2:35:00", "watts": 200, "hr": 148 },
+          { "label": "Run", "dist": "21.10 km", "time": "1:48:00", "pace": "5:07/km", "hr": 160 }
+        ]
+      }
     }
   ],
   "bests": [

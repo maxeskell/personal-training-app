@@ -8,7 +8,8 @@ import { config } from "../config.js";
  * The data is HISTORICAL and lives OUTSIDE the live coaching state (it comes from a multi-year
  * TrainingPeaks/intervals.icu archive, not AI Endurance), so — per the repo's gitignored-user-data
  * convention — it sits in a gitignored file (`data/career-history.json`, see {@link config}.career.path)
- * produced by `scripts/build-career-history.mjs`. A committed `career-history.example.json` documents the
+ * produced by `scripts/build-career-history.ts` (`npm run career:build`). A committed
+ * `career-history.example.json` documents the
  * shape, and SETUP.md explains how to fill it. Everything here is PURE except {@link loadCareerHistory},
  * which wraps the one file read; a missing/garbled file degrades to `null` (the page shows an empty state)
  * — never an error (degrade-don't-crash).
@@ -18,6 +19,20 @@ import { config } from "../config.js";
  * recorded bests — so no MODEL labelling is needed; the page does note when "current" windows are empty.
  */
 
+/**
+ * One per-interval split row (pre-formatted by the generator). For a single-sport race these are the
+ * `.FIT` laps/lengths (run/bike reps, swim sets); for a multisport race they're one summary row per
+ * discipline leg ("Swim"/"Bike"/"Run"). Present only when a matching `.FIT` was found.
+ */
+export interface RaceSplit {
+  label: string; // "#3" (lap/length) or a discipline name ("Swim", "Bike", "Run")
+  dist?: string; // pre-formatted, e.g. "1.00 km" or "50 m"
+  time?: string; // pre-formatted split time, e.g. "21:30"
+  pace?: string; // pre-formatted, e.g. "4:18/km" or "1:45/100m"
+  hr?: number; // avg HR over the segment (bpm)
+  watts?: number; // avg power over the segment (W)
+}
+
 export interface RaceResult {
   distanceKm?: number;
   /** Pre-formatted finish/effort time, e.g. "43:12" or "10:51:30". */
@@ -25,6 +40,12 @@ export interface RaceResult {
   /** Pre-formatted run pace, e.g. "4:19/km". */
   pace?: string;
   avgW?: number;
+  /** Average heart rate for the effort (bpm) — from a matched `.FIT`. */
+  avgHr?: number;
+  /** Per-interval breakdown — laps/lengths (single-sport) or per-discipline legs (multisport). FIT-only. */
+  splits?: RaceSplit[];
+  /** Provenance of any DERIVED summary numbers: a raw `.FIT`, or your activity export. Absent when hand-authored. */
+  via?: "fit" | "activity";
 }
 
 export interface Race {
@@ -86,6 +107,19 @@ function asNumber(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
+function parseRaceSplits(v: unknown): RaceSplit[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: RaceSplit[] = [];
+  for (const s of v) {
+    if (!s || typeof s !== "object") continue;
+    const o = s as Record<string, unknown>;
+    const label = asString(o.label);
+    if (!label) continue;
+    out.push({ label, dist: asString(o.dist), time: asString(o.time), pace: asString(o.pace), hr: asNumber(o.hr), watts: asNumber(o.watts) });
+  }
+  return out.length ? out : undefined;
+}
+
 function parseBestValue(v: unknown): BestValue | undefined {
   if (!v || typeof v !== "object") return undefined;
   const o = v as Record<string, unknown>;
@@ -137,6 +171,9 @@ export function parseCareerHistory(raw: string): CareerHistory | null {
               time: asString(resultRaw.time),
               pace: asString(resultRaw.pace),
               avgW: asNumber(resultRaw.avgW),
+              avgHr: asNumber(resultRaw.avgHr),
+              splits: parseRaceSplits(resultRaw.splits),
+              via: resultRaw.via === "fit" || resultRaw.via === "activity" ? resultRaw.via : undefined,
             }
           : undefined;
         const conf = asString(x.confidence);

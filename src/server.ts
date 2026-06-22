@@ -617,8 +617,9 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
       return;
     }
-    // Read-only career page: race history + lifetime bests vs current + power curve. Best-effort load of
-    // the gitignored data file (built by scripts/build-career-history.mjs); absent/garbled → empty state.
+    // Read-only career page: race history (+ per-race splits) + lifetime bests vs current + power curve.
+    // Best-effort load of the gitignored data file (built by scripts/build-career-history.ts); absent/garbled
+    // → empty state.
     if (url.pathname === "/career") {
       const html = renderCareerPage(loadCareerHistory(), url.searchParams.get("share") === "1");
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);

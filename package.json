@@ -57,6 +57,7 @@
     "session": "tsx src/cli.ts session",
     "splits": "tsx src/cli.ts splits",
     "ingest-fit": "tsx src/cli.ts ingest-fit",
+    "career:build": "tsx scripts/build-career-history.ts",
     "ftp-check": "tsx src/cli.ts ftp-check",
     "cost": "tsx src/cli.ts cost",
     "listening": "tsx src/cli.ts listening",
