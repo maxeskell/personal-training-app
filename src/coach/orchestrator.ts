@@ -7,6 +7,7 @@ import { CoachLLM } from "../llm/client.js";
 import { loadSystemPrompt } from "./persona.js";
 import { assessReadiness } from "./readiness.js";
 import { recsToFindings } from "./adviceRecs.js";
+import { refreshAdviceEmbeddings } from "./refreshAdviceEmbeddings.js";
 import { InsightLog } from "../state/insightLog.js";
 import { assessHealthRisk } from "../guardrails/wellbeing.js";
 import { DecisionLog, decisionId, nowIso } from "../state/decisionLog.js";
@@ -187,6 +188,8 @@ export async function gatherReadiness(): Promise<{
   }
   // Surface the verdict's recommendations as individually reactable advice (item 4-iii): logged to the
   // insight log so they're keyed, dashboard-reactable, and fed into the engagement weights. Best-effort.
-  await new InsightLog().recordSurfaced(recsToFindings(verdict.recommendations, "readiness"), "readiness");
+  const recFindings = recsToFindings(verdict.recommendations, "readiness");
+  await new InsightLog().recordSurfaced(recFindings, "readiness");
+  await refreshAdviceEmbeddings(recFindings); // sync-time, off render path; no-op unless clustering is on
   return { state, verdict, risk, cacheRead, costUsd };
 }

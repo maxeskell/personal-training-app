@@ -136,16 +136,113 @@ export function latestAdviceFindings(snapshots: InsightSnapshot[], suppressed: S
   return out;
 }
 
+/** A read-only key→embedding-vector index, computed at sync time and read (no network) at render to
+ *  collapse cross-source duplicates. An empty index means "no clustering" (degrades to grouping). */
+export type AdviceEmbeddingIndex = ReadonlyMap<string, readonly number[]>;
+
+/** Cosine similarity of two vectors. Returns 0 on a length mismatch or a zero-magnitude vector. Pure. */
+export function cosineSimilarity(a: readonly number[], b: readonly number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+/** A cluster of recommendations that say the same thing: one representative plus the items it absorbed. */
+export interface AdviceCluster {
+  rep: SurfacedFinding;
+  merged: SurfacedFinding[];
+}
+
+/**
+ * Collapse recommendations that are the SAME idea phrased differently across write-ups, using cosine
+ * similarity over precomputed embeddings. Pure + deterministic — NO network (vectors come from the
+ * sync-time cache), so it's safe on the render path. Degrades smoothly: a finding with no vector in
+ * `index` is never merged (it stays its own singleton), so a partial/empty index ⇒ no clustering.
+ *
+ * Greedy single pass over a source-ordered list, so the MOST-TIMELY source wins as the representative
+ * (readiness → deep-dive → ask). We only merge ACROSS sources — same-source near-duplicates already
+ * collapse to one key upstream, and keeping within-source items distinct preserves their independent
+ * reactions. Returns clusters in representative order.
+ */
+export function clusterAdvice(
+  recs: SurfacedFinding[],
+  index: AdviceEmbeddingIndex,
+  threshold: number,
+): AdviceCluster[] {
+  const rank = (f: SurfacedFinding): number => {
+    const s = adviceSourceOfKey(f.key);
+    return s ? ADVICE_SOURCE_ORDER.indexOf(s) : ADVICE_SOURCE_ORDER.length;
+  };
+  // Stable sort by source rank: representatives are drawn from the most-timely source first.
+  const ordered = recs.map((f, i) => ({ f, i })).sort((a, b) => rank(a.f) - rank(b.f) || a.i - b.i);
+  const clusters: AdviceCluster[] = [];
+  for (const { f } of ordered) {
+    const vec = index.get(f.key);
+    let placed = false;
+    if (vec) {
+      for (const c of clusters) {
+        if (adviceSourceOfKey(c.rep.key) === adviceSourceOfKey(f.key)) continue; // cross-source only
+        const rvec = index.get(c.rep.key);
+        if (rvec && cosineSimilarity(vec, rvec) >= threshold) {
+          c.merged.push(f);
+          placed = true;
+          break;
+        }
+      }
+    }
+    if (!placed) clusters.push({ rep: f, merged: [] });
+  }
+  return clusters;
+}
+
+/** Map a cluster list to the inputs renderCoachRecs wants: the representatives, and a repKey→absorbed map
+ *  (only for reps that actually absorbed something). Pure. */
+export function clustersToDisplay(clusters: AdviceCluster[]): {
+  display: SurfacedFinding[];
+  merged: Map<string, SurfacedFinding[]>;
+} {
+  const display = clusters.map((c) => c.rep);
+  const merged = new Map<string, SurfacedFinding[]>();
+  for (const c of clusters) if (c.merged.length) merged.set(c.rep.key, c.merged);
+  return { display, merged };
+}
+
+/** The provenance phrase for a merged item ("today's readiness check" / "your latest deep dive" / …),
+ *  used in the consolidation note. Falls back to a neutral phrase for an unknown source. */
+function mergedFromPhrase(f: SurfacedFinding): string {
+  const src = adviceSourceOfKey(f.key);
+  return src ? ADVICE_SOURCE_HEADING[src].replace(/^From /, "").toLowerCase() : "another write-up";
+}
+
 /** One reactable advice card — same `.insight` shape + handlers as the "This week" cards (so it reuses the
- *  feedback()/ignoreCard() JS, carries data-family for weighting, and is retrospect-able by key). */
-function adviceCardHtml(f: SurfacedFinding, reactions?: Map<string, InsightReaction>): string {
+ *  feedback()/ignoreCard() JS, carries data-family for weighting, and is retrospect-able by key). When this
+ *  card stands in for near-identical points from other sources, a small note names where they also came up. */
+function adviceCardHtml(
+  f: SurfacedFinding,
+  reactions?: Map<string, InsightReaction>,
+  merged?: ReadonlyMap<string, SurfacedFinding[]>,
+): string {
   const saved = reactions?.get(f.key);
   const state = saved === "agree" ? "like" : saved === "disagree" ? "dislike" : "";
   const on = (which: string) => (state === which ? " on" : "");
   const reacted = state === "like" ? "👍 agreed" : state === "dislike" ? "👎 disagreed (still shown)" : "";
   const familyAttr = f.family ? ` data-family="${escapeHtml(f.family)}"` : "";
+  const absorbed = merged?.get(f.key) ?? [];
+  const mergedNote = absorbed.length
+    ? `<div class="k" style="margin-top:2px" title="${escapeHtml(absorbed.map((m) => m.title).join(" · "))}">Same point also raised in ${escapeHtml(
+        [...new Set(absorbed.map(mergedFromPhrase))].join(" and "),
+      )} — shown once.</div>`
+    : "";
   return `<div class="insight" data-key="${escapeHtml(f.key)}" data-summary="${escapeHtml(f.title)}" data-reaction-state="${state}"${familyAttr}>
-    <div><b>${escapeHtml(f.title)}</b></div>
+    <div><b>${escapeHtml(f.title)}</b></div>${mergedNote}
     <div class="acts">
       <button class="agree${on("like")}" data-reaction="like" onclick="feedback(this)">👍 Agree</button>
       <button class="disagree${on("dislike")}" data-reaction="dislike" onclick="feedback(this)">👎 Disagree</button>
@@ -186,13 +283,18 @@ export function groupAdviceBySource(
 /** The "Coach's recommendations" dashboard card — reactable action points pulled from the latest readiness,
  *  deep-dive and ask write-ups, GROUPED by where each came from (so one coherent stance reads as one group,
  *  not several near-identical nags). Deterministic, no LLM. Hidden in share mode and when there's nothing. */
-export function renderCoachRecs(recs: SurfacedFinding[], reactions?: Map<string, InsightReaction>, share = false): string {
+export function renderCoachRecs(
+  recs: SurfacedFinding[],
+  reactions?: Map<string, InsightReaction>,
+  share = false,
+  merged?: ReadonlyMap<string, SurfacedFinding[]>,
+): string {
   if (share || !recs.length) return "";
   const groupsHtml = groupAdviceBySource(recs)
     .map(
       (g) =>
         `${g.heading ? `<div class="setup-group">${escapeHtml(g.heading)}</div>` : ""}${g.items
-          .map((f) => adviceCardHtml(f, reactions))
+          .map((f) => adviceCardHtml(f, reactions, merged))
           .join("")}`,
     )
     .join("");

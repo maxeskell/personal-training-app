@@ -13,6 +13,7 @@ import { ArchiveStore } from "../archive/store.js";
 import { classifyIntent, isLastSessionQuestion } from "./intent.js";
 import { renderProfileContext } from "../profile/context.js";
 import { ADVICE_RECS_SCHEMA, recsToFindings, type AdviceRec } from "./adviceRecs.js";
+import { refreshAdviceEmbeddings } from "./refreshAdviceEmbeddings.js";
 import { InsightLog } from "../state/insightLog.js";
 
 /** Ask answers as structured output so the prose AND its actionable, family-tagged recommendations come
@@ -163,6 +164,8 @@ export async function answerQuestion(llm: CoachLLM, question: string, state: Ath
   const { value } = await llm.structured<{ answer: string; recommendations?: AdviceRec[] }>(prompt, ASK_SCHEMA);
   // Surface any actionable recommendations as reactable advice (item 4-iii): logged to the insight log so
   // they're keyed, dashboard-reactable, and fed into the engagement weights. Best-effort, never blocks the answer.
-  await new InsightLog().recordSurfaced(recsToFindings(value.recommendations, "ask"), "ask");
+  const recFindings = recsToFindings(value.recommendations, "ask");
+  await new InsightLog().recordSurfaced(recFindings, "ask");
+  await refreshAdviceEmbeddings(recFindings); // sync-time, off render path; no-op unless clustering is on
   return { answer: value.answer };
 }

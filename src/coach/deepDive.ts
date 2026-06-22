@@ -2,6 +2,7 @@ import { CoachLLM } from "../llm/client.js";
 import { liveCoachingContext } from "./seasonContext.js";
 import { findingKey } from "../insights/metrics.js";
 import { ADVICE_RECS_SCHEMA, recsToFindings, type AdviceRec } from "./adviceRecs.js";
+import { refreshAdviceEmbeddings } from "./refreshAdviceEmbeddings.js";
 import { InsightLog } from "../state/insightLog.js";
 import type { AthleteState } from "../state/types.js";
 import type { InsightReport } from "../insights/engine.js";
@@ -126,6 +127,7 @@ export async function runDeepDive(
   }
   const findings = recsToFindings(recs, "deep-dive");
   await new InsightLog().recordSurfaced(findings, "deep-dive");
+  await refreshAdviceEmbeddings(findings); // sync-time, off render path; no-op unless clustering is on
   const recsSection = findings.length
     ? `\n\n## Coach's recommendations\n\nReact to these on the dashboard's **Coach's recommendations** card, or by key via the MCP \`react_to_insight\` / \`retrospect\` tools:\n\n${findings.map((f) => `- ${f.title} _(${f.family} · \`${f.key}\`)_`).join("\n")}\n`
     : "";
