@@ -69,6 +69,12 @@ test("tri splits: olympic plan covers swim/T1/bike/T2/run from CSS + FTP + 10K p
   // Targets carry leg-appropriate units.
   assert.match(plan.segments[0].target!, /\/100m$/);
   assert.match(plan.segments[2].target!, /W · .*km\/h$/);
+  // The bike split carries a sensitivity note (it's a point estimate off a fixed-CdA aero model), so it
+  // reads as a MODEL range rather than an exact time.
+  assert.match(plan.strategy, /most input-sensitive leg/);
+  assert.match(plan.strategy, /CdA 0\.29.*0\.36/);
+  assert.match(plan.strategy, /min swing/);
+  assert.match(plan.strategy, /MODEL range/);
 });
 
 test("tri splits: degrade per leg — missing FTP drops the bike leg and is named; all-missing → null", () => {
@@ -76,6 +82,8 @@ test("tri splits: degrade per leg — missing FTP drops the bike leg and is name
   assert.ok(plan);
   assert.ok(!plan.segments.some((s) => s.label.startsWith("Bike")));
   assert.match(plan.strategy, /no FTP/);
+  // No bike leg → no bike sensitivity note (it's only meaningful when the bike is estimated).
+  assert.doesNotMatch(plan.strategy, /CdA/);
   assert.equal(estimateTriSplits("Local Tri", "olympic", {}, "unknown"), null);
 });
 

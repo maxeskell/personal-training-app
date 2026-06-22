@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { extractJson, garminInner, mapGarminThresholds, mapGarminIdentity, normalizeDob, normalizeHeightCm } from "../src/state/assemble.js";
+import { extractJson, garminInner, mapGarminThresholds, mapGarminIdentity, mapRecovery, normalizeDob, normalizeHeightCm } from "../src/state/assemble.js";
 import { emptyState } from "../src/state/types.js";
 
 /**
@@ -65,6 +65,24 @@ test("mapGarminThresholds records Garmin's per-source reading and max HR from th
   );
   assert.equal(s.thresholds.value!.maxHr, 190, "max HR flows into the active thresholds");
   assert.deepEqual(s.thresholdsBySource?.garmin, { bikeFtpW: 250, runThresholdHr: 165, maxHr: 190 }, "the un-merged Garmin reading (no derived w/kg, no UI note)");
+});
+
+test("mapRecovery populates the load slot (CTL/ATL/TSB) so the season-arc trend has data to read", () => {
+  const s = emptyState("2026-06-14", "2026-06-14T06:00:00Z");
+  // 14+ days of ESS is the loadModel() floor; date.length must equal external_stress_score.length.
+  const date = Array.from({ length: 16 }, (_, i) => `2026-05-${String(i + 20).padStart(2, "0")}`);
+  const external_stress_score = date.map((_, i) => 40 + (i % 5) * 8); // varied daily load
+  mapRecovery(s, { data: { date, external_stress_score, rMSSD: [42], resting_heart_rate: [50], recovery: [70] } });
+  assert.equal(s.load.source, "ai-endurance");
+  assert.equal(typeof s.load.value?.ctl, "number", "CTL is populated (was always null before the wire-up)");
+  assert.equal(typeof s.load.value?.atl, "number");
+  assert.equal(typeof s.load.value?.tsb, "number");
+  assert.equal(s.load.value!.tsb, +(s.load.value!.ctl! - s.load.value!.atl!).toFixed(1), "TSB = CTL − ATL");
+
+  // Too-short ESS series → loadModel returns null → the slot is left absent (no fabricated load).
+  const s2 = emptyState("2026-06-14", "2026-06-14T06:00:00Z");
+  mapRecovery(s2, { data: { date: ["2026-06-01", "2026-06-02"], external_stress_score: [50, 55] } });
+  assert.equal(s2.load.value, null, "below the 14-day floor, load stays absent");
 });
 
 // --- Garmin stable identity (get_user_profile → DOB + height) ----------------

@@ -15,6 +15,7 @@ import {
   type Source,
 } from "./types.js";
 import { deriveZones } from "../insights/zones.js";
+import { loadModel } from "../insights/metrics.js";
 import { parseClock } from "../insights/sessionSplits.js";
 import { applyMetricOverrides, loadMetricOverrides } from "./metricOverrides.js";
 import { config } from "../config.js";
@@ -216,7 +217,7 @@ export async function assembleState(
  * Shapes verified against live data 2026-06-08. `recovery_alpha1` may be all-null
  * (DFA α1 not populated) — that degrades to undefined, which is correct.
  */
-function mapRecovery(state: AthleteState, payload: unknown): void {
+export function mapRecovery(state: AthleteState, payload: unknown): void {
   const data = get(payload, "data");
   if (!data || typeof data !== "object") return;
 
@@ -239,6 +240,13 @@ function mapRecovery(state: AthleteState, payload: unknown): void {
     limiterToday: typeof limiter === "string" ? limiter : undefined,
   };
   state.recovery = { value: rec, source: "ai-endurance" };
+
+  // Persist this day's point-in-time load model (CTL/ATL/TSB) from the recovery model's ESS series.
+  // The live dashboard sparkline uses the engine's ins.load.series, but the season-arc CTL trend reads
+  // s.load.value?.ctl across persisted daily snapshots (cli.ts/mcpServer.ts/server.ts) — a slot that was
+  // declared but never populated here, so that trend always rendered "—". Same loadModel() the engine uses.
+  const lm = loadModel(data as { date?: unknown[]; external_stress_score?: unknown[] });
+  if (lm) state.load = { value: { ctl: lm.ctl, atl: lm.atl, tsb: lm.tsb }, source: "ai-endurance" };
 
   // Interpretable readiness signals from the AIE model (used when Garmin absent).
   if (rmssdMs != null && state.hrvOvernight.value == null) {

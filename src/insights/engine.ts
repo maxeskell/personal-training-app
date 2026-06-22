@@ -20,7 +20,6 @@ import {
 import { estimateRunSplits, estimateTriSplits, projectRaceDayImprovement, projectRaceDayRange, reliableImprovementPerDay, type RaceSplitPlan, type DurabilityState, type TriRaceType, type TriPerformance } from "./splits.js";
 import { analyseRecoverySeries, sleepVsNextDayLoad, type Correlation, type Anomaly } from "./correlations.js";
 import { buildMonitoringRuleSet, monitoringFinding, type MonitoringRuleSet, type MonitoringInput } from "./monitoring.js";
-import { changePointsOf, changePointFindings, type SeriesChangePoints } from "./changepoint.js";
 import { analyseBricks, brickFinding, type BrickAnalysis } from "./brick.js";
 import { analyseTaper, taperFinding, type TaperAnalysis } from "./taper.js";
 import { analyseEfficiency, efficiencyFinding, type EfficiencyAnalysis } from "./efficiency.js";
@@ -83,7 +82,6 @@ export interface InsightReport {
   anomalies: Anomaly[];
   predictions: PredictionVsGoal[];
   monitoring: MonitoringRuleSet;
-  changePoints: SeriesChangePoints[];
   brick: BrickAnalysis;
   taper: TaperAnalysis;
   efficiency: EfficiencyAnalysis;
@@ -399,10 +397,12 @@ function anomalyCorrelationFindings(
   for (const a of anomalies) {
     out.push({
       family: "Anomaly",
-      title: `${a.metric} outlier today`,
+      title: `${a.metric} outlier today (single reading)`,
       severity: "watch",
-      detail: a.detail + " One day isn't a trend, but worth noting alongside how you feel.",
-      evidence: `z=${a.z} vs 60-day baseline [ai-endurance]`,
+      detail:
+        a.detail +
+        " This is a SINGLE reading vs your 60-day baseline, not a trend — read it alongside how you feel, and watch whether it persists over the next few days before acting.",
+      evidence: `z=${a.z} vs 60-day baseline, single most-recent reading [ai-endurance]`,
     });
   }
   // 3c. A strong n=1 pattern worth knowing (info, not an alarm). Confidence keys off FDR survival.
@@ -430,8 +430,13 @@ function predictionFindings(predictions: ReturnType<typeof predictionsVsGoals>):
       family: "Goal tracking",
       title: `${next.race}: ${behind ? "behind" : "on/ahead of"} target`,
       severity: behind ? "watch" : "info",
-      detail: `Predicted ${hhmm(next.predictedSec)} vs target ${hhmm(next.targetSec)} (${behind ? "+" : ""}${Math.round(next.gapSec / 60)} min) with ${next.daysTo} days to go.`,
-      evidence: `getPrediction vs getRaceGoalEvent [ai-endurance]`,
+      detail:
+        `Predicted ${hhmm(next.predictedSec)} vs target ${hhmm(next.targetSec)} (${behind ? "+" : ""}${Math.round(next.gapSec / 60)} min) with ${next.daysTo} days to go. ` +
+        `This is a SINGLE platform model estimate, not a trend — check the race-predictor trajectory for whether it's actually moving before acting on this one reading.`,
+      evidence: `getPrediction vs getRaceGoalEvent, single reading [ai-endurance]`,
+      // A single noisy platform estimate shouldn't read as confidently as a trend-validated finding
+      // (Goal-tracking default is 0.7); pin it below trend level so it can't launder into a "behind goal" verdict.
+      confidence: 0.55,
     });
   }
   return out;
@@ -465,16 +470,6 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
 
   // New rigorous/n=1 layers (data-scientist brief Q1–Q7 + stream-level §1).
   const monitoring = buildMonitoringRuleSet(monitoringInputFrom(recData, archive));
-
-  const recDates = (recData?.date ?? []).map((d) => String(d).slice(0, 10));
-  const changePoints: SeriesChangePoints[] = [];
-  if (load && load.series.length >= 21) {
-    changePoints.push({ metric: "Fitness (CTL)", points: changePointsOf(load.series.map((p) => p.ctl), load.series.map((p) => p.date)) });
-  }
-  if (recDates.length >= 21) {
-    changePoints.push({ metric: "Overnight HRV", points: changePointsOf(finiteNums(recData?.rMSSD), recDates) });
-    changePoints.push({ metric: "Resting HR", points: changePointsOf(finiteNums(recData?.resting_heart_rate), recDates) });
-  }
 
   const brick = analyseBricks(acts);
   const taper = analyseTaper(load, raw.getRaceGoalEvent, state.date);
@@ -571,7 +566,6 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   // 5. New detectors (Q1–Q7 + stream-level). Each self-gates and stays silent without enough data.
   const mf = monitoringFinding(monitoring);
   if (mf) findings.push(mf);
-  findings.push(...changePointFindings(changePoints));
   const bf = brickFinding(brick);
   if (bf) findings.push(bf);
   const tf = taperFinding(taper);
@@ -634,7 +628,6 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
     anomalies,
     predictions,
     monitoring,
-    changePoints,
     brick,
     taper,
     efficiency,

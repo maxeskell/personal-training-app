@@ -70,13 +70,13 @@ export function brickFinding(b: BrickAnalysis): Finding | null {
   const big = b.decouplingPct >= 5;
   return {
     family: "Triathlon execution",
-    title: big ? "Run decouples off the bike" : "Run holds up off the bike",
+    title: big ? "Run efficiency drops on same-day run/ride days" : "Run efficiency holds on same-day run/ride days",
     severity: big ? "watch" : "info",
     detail:
-      `Run efficiency off the bike is ${b.decouplingPct >= 0 ? "down" : "up"} ${Math.abs(b.decouplingPct)}% vs fresh runs ` +
-      `(brick EF ${b.brickEf} vs fresh ${b.freshEf}, ride load ~${b.rideEssOnBrickDays} ESS those days). ` +
-      `${big ? "That gap MAY reflect bike pacing or run-off-bike adaptation — but this is a same-day Ride+Run proxy (no within-leg timing, no statistical test, heat not controlled), so read it as a prompt to rehearse race-effort bricks, not a verdict." : "Encouraging durability into T2 — keep the brick rehearsals going."}`,
-    evidence: `${b.brickDays} brick days vs ${b.freshRuns} fresh runs (same-day Ride+Run proxy, uncontrolled) [derived]`,
+      `On days with both a run and a ride, run efficiency is ${b.decouplingPct >= 0 ? "down" : "up"} ${Math.abs(b.decouplingPct)}% vs run-only days ` +
+      `(same-day-ride EF ${b.brickEf} vs run-only ${b.freshEf}, ride load ~${b.rideEssOnBrickDays} ESS those days). ` +
+      `${big ? "This is same-day run/ride decoupling — a PROXY, not a true off-bike (T2) transition: it counts any run and ride on the same date with no order or gap check, no within-leg timing, no statistical test, and heat uncontrolled. Read it as a prompt to rehearse race-effort bricks, not a verdict." : "Encouraging — but this is same-day run/ride decoupling, not a true off-bike transition. Keep the brick rehearsals going."}`,
+    evidence: `${b.brickDays} same-day run+ride days vs ${b.freshRuns} run-only days (same-day proxy, not a true off-bike transition; uncontrolled) [derived]`,
     recommendation: big ? "Rehearse race-effort bricks and the first 2 km off the bike; treat the bike-ceiling read as a hypothesis to test." : undefined,
     // Capped low: a small-n, uncontrolled proxy shouldn't read as a confident finding.
     confidence: Math.min(0.6, 0.4 + b.brickDays * 0.03),

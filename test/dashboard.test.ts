@@ -1,5 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join as joinPath } from "node:path";
+
+// Hermetic isolation: buildInsights() → loadSessionDecays() defaults to the real data/fit-streams dir,
+// so on a machine with real archived activities it injects a live session start time into the "Last
+// session" header and breaks fixtures that assume none. fitStreamsDir() reads FIT_STREAMS_DIR lazily at
+// call time, so pointing it at an empty temp dir here — before any test body runs — keeps these tests
+// from reading the runner's local data. (A fresh CI checkout has no data/, which is why CI stays green.)
+process.env.FIT_STREAMS_DIR = mkdtempSync(joinPath(tmpdir(), "coach-dashtest-"));
+
 import { emptyState } from "../src/state/types.js";
 import { todayIso } from "../src/util/today.js";
 import { buildInsights } from "../src/insights/engine.js";
