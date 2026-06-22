@@ -1,5 +1,5 @@
 import { escapeHtml } from "../util/html.js";
-import type { CareerHistory, PowerPoint, Race, BestValue } from "./careerHistory.js";
+import type { CareerHistory, PowerPoint, Race, BestValue, RaceSplit } from "./careerHistory.js";
 
 /**
  * Standalone read-only `/career` page: your race history + lifetime bests vs current form + an all-time
@@ -30,6 +30,34 @@ function bestCell(v: BestValue | undefined, share: boolean): string {
   return `<td class="num">${escapeHtml(v.value)}${when}</td>`;
 }
 
+/** A collapsible per-interval split table (laps/lengths, or per-discipline legs) — pure HTML, no JS. */
+function splitsBlock(splits: RaceSplit[]): string {
+  const hasDist = splits.some((s) => s.dist);
+  const hasPace = splits.some((s) => s.pace);
+  const hasHr = splits.some((s) => s.hr != null);
+  const hasW = splits.some((s) => s.watts != null);
+  // [label, isNumericColumn] — only render columns that carry data, so a run doesn't show an empty W column.
+  const cols: Array<[string, boolean]> = [["Split", false]];
+  if (hasDist) cols.push(["Dist", true]);
+  cols.push(["Time", true]);
+  if (hasPace) cols.push(["Pace", true]);
+  if (hasHr) cols.push(["HR", true]);
+  if (hasW) cols.push(["W", true]);
+  const thead = cols.map(([h, n]) => `<th${n ? ' class="num"' : ""}>${escapeHtml(h)}</th>`).join("");
+  const body = splits
+    .map((s) => {
+      const cells = [`<td>${escapeHtml(s.label)}</td>`];
+      if (hasDist) cells.push(`<td class="num">${s.dist ? escapeHtml(s.dist) : "—"}</td>`);
+      cells.push(`<td class="num">${s.time ? escapeHtml(s.time) : "—"}</td>`);
+      if (hasPace) cells.push(`<td class="num">${s.pace ? escapeHtml(s.pace) : "—"}</td>`);
+      if (hasHr) cells.push(`<td class="num">${s.hr != null ? Math.round(s.hr) : "—"}</td>`);
+      if (hasW) cells.push(`<td class="num">${s.watts != null ? Math.round(s.watts) : "—"}</td>`);
+      return `<tr>${cells.join("")}</tr>`;
+    })
+    .join("");
+  return `<details class="splits"><summary>Splits (${splits.length})</summary><table class="splitt"><thead><tr>${thead}</tr></thead><tbody>${body}</tbody></table></details>`;
+}
+
 function raceRow(r: Race, idx: number, share: boolean): string {
   const when = share ? escapeHtml(r.date.slice(0, 4)) : escapeHtml(r.date);
   const event = share ? `Race ${idx + 1}` : escapeHtml(r.event ?? r.type);
@@ -42,9 +70,13 @@ function raceRow(r: Race, idx: number, share: boolean): string {
     res.pace ? escapeHtml(res.pace) : "",
     res.distanceKm != null ? `${res.distanceKm.toFixed(res.distanceKm < 10 ? 2 : 1)} km` : "",
     res.avgW != null ? `${Math.round(res.avgW)} W` : "",
+    res.avgHr != null ? `${Math.round(res.avgHr)} bpm` : "",
   ].filter(Boolean);
-  const perf = perfBits.length ? perfBits.join(" · ") : '<span class="muted">—</span>';
-  return `<tr><td>${when}</td><td>${event}${sub}${conf}</td><td>${loc}</td><td class="num">${perf}</td></tr>`;
+  // Provenance of derived numbers (hidden in share view) — ".FIT" or your activity "export".
+  const via = !share && res.via ? ` <span class="tag" title="${res.via === "fit" ? "Pulled from your raw .FIT file" : "From your activity export"}">${res.via === "fit" ? ".FIT" : "export"}</span>` : "";
+  const perf = perfBits.length ? perfBits.join(" · ") + via : '<span class="muted">—</span>';
+  const splits = res.splits && res.splits.length ? splitsBlock(res.splits) : "";
+  return `<tr><td>${when}</td><td>${event}${sub}${conf}</td><td>${loc}</td><td class="num">${perf}${splits}</td></tr>`;
 }
 
 /** Overlaid power-curve line chart (all-time / last-90d / season) over the standard durations. */
@@ -96,6 +128,8 @@ th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#999;font-
 .pcwrap{overflow-x:auto}.pcurve{width:100%;height:auto;min-width:520px}
 .pcurve .grid{stroke:#eee7d8}.pcurve .ax{fill:#9a8f78;font-size:11px}
 .legend{margin-top:8px;font-size:12px;color:#666}.leg{margin-right:16px;white-space:nowrap}.sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+details.splits{margin-top:6px;text-align:left}details.splits>summary{cursor:pointer;font-size:12px;color:#c8642d}
+table.splitt{margin-top:6px;font-size:12px}table.splitt td,table.splitt th{padding:3px 7px;border-bottom:1px solid #f4f1ea}
 .note{background:#faf8f3;border-left:3px solid #e7d9c6;border-radius:5px;padding:12px 14px;font-size:14px;margin:0 0 18px}
 code{background:#f4f1ea;border-radius:4px;padding:1px 5px;font-size:.92em}
 .cols{display:flex;gap:16px;flex-wrap:wrap}.cols>div{flex:1;min-width:300px}`;
@@ -107,7 +141,7 @@ function shell(inner: string): string {
 export function renderCareerPage(data: CareerHistory | null, share = false): string {
   if (!data) {
     return shell(`<h1>Career &amp; PBs</h1>
-      <div class="note">No career history yet. This page reads <code>data/career-history.json</code> — generate it from your TrainingPeaks / intervals.icu archive with <code>node scripts/build-career-history.mjs</code> (see <code>SETUP.md</code> → "Career history"). The file is gitignored; <code>career-history.example.json</code> shows the shape.</div>`);
+      <div class="note">No career history yet. This page reads <code>data/career-history.json</code> — generate it from your TrainingPeaks / intervals.icu archive (plus your exported <code>.FIT</code> files for per-race performance &amp; splits) with <code>npm run career:build</code> (<code>scripts/build-career-history.ts</code>; see <code>SETUP.md</code> → "Career history"). The file is gitignored; <code>career-history.example.json</code> shows the shape.</div>`);
   }
 
   const seasonHdr = data.seasonYear ? `Season ${data.seasonYear}` : "Season";

@@ -281,28 +281,41 @@ cd /path/to/personal-training-app && npm run service:install      # start at log
 ## Step 6a — (optional) Career history (the `/career` tab)
 
 The dashboard's live state only knows the recent past. The **Career & PBs** page (`/career`, linked
-top-left of the dashboard) shows the *long view* — your full **race log**, **lifetime bests vs current
-form**, and an all-time-vs-recent **power curve**. Because that history is a multi-year archive, it lives
-in a **gitignored** file, `data/career-history.json`, that you build once from your own exports. The
-committed `career-history.example.json` shows the exact shape if you'd rather hand-write it.
+top-left of the dashboard) shows the *long view* — your full **race log** (with your recorded performance
+and per-race **splits**), **lifetime bests vs current form**, and an all-time-vs-recent **power curve**.
+Because that history is a multi-year archive, it lives in a **gitignored** file, `data/career-history.json`,
+that you build once from your own exports. The committed `career-history.example.json` shows the exact
+shape if you'd rather hand-write it.
 
 ```bash
 ▶ RUN   # use absolute paths to YOUR exported files; every flag is optional (missing input = empty section)
-cd /path/to/personal-training-app && node scripts/build-career-history.mjs \
-  --intervals /abs/path/activities.json \     # intervals.icu activities export (last-90d + season bests)
+cd /Users/maxeskell/personal-training-app && npm run career:build -- \
+  --intervals /abs/path/activities.json \     # intervals.icu activities export (last-90d + season bests + no-FIT race fallback)
   --tp        /abs/path/activities_tp.csv \    # a TrainingPeaks summary CSV (all-time bests, 2011+)
   --power     /abs/path/power_curve.json \     # intervals power-curve export (mean-maximal watts)
   --races     /abs/path/career-races.json \    # YOUR curated race list (names/locations) — see below
+  --fit-dir   /abs/path/fit-streams \          # raw .FIT exports for per-race performance + splits (default: data/fit-streams)
   --season    2026                             # season year for the "Season" column (default: this year)
 ```
 
-- **Races are pass-through and author-owned** — the script does **not** scrape official results. Put your
-  race list (date, type, event, location, optional recorded result) in the `--races` file (a JSON array;
-  the `races` block of `career-history.example.json` is the template). Re-running without `--races` keeps
-  the races already in the output file.
+- **Race performance + splits come from your OWN files — never the web** (no official results are
+  scraped). For each race the build matches a raw **`.FIT`** (by date + sport) and fills finish time,
+  distance, pace, avg power/HR and a **splits** table — per-lap for a single-sport race, or one row per
+  discipline (swim/bike/run) for a triathlon. `.FIT`s are read from `data/fit-streams/` (the same dir the
+  `splits`/`sync` tools use) or `--fit-dir`; drop "Export Original" files there. With **no** `.FIT` for a
+  race, the build falls back to the matching `--intervals`/`--tp` activity for the **summary numbers only**
+  (no splits). **Anything you hand-author in `--races` always wins** — the build only fills blanks.
+- **Author your race list** (date, type, event, location, optional recorded result) in the `--races` file
+  (a JSON array; the `races` block of `career-history.example.json` is the template). Re-running without
+  `--races` keeps the races already in the output file (and re-derives their performance from your files).
 - **Bests + power curve are auto-computed** from `--intervals` / `--tp` / `--power`, with GPS/calibration
   outliers dropped (honest models). Locations you don't mark `"confidence":"confirmed"` are treated as
   approximations in the UI.
+- **The power curve's "recent" (Last-90-days + Season) lines are computed from your `.FIT` RIDE streams**
+  (mean-maximal power in those windows) — so keep recent `.FIT`s in `data/fit-streams/` (the dashboard
+  Sync / `npm run fit-sync` puts them there automatically). The **all-time** line comes from `--power`;
+  if a window has no `.FIT`s, it falls back to that export's windows. With no ride `.FIT`s and only an
+  all-time `--power` export, the recent lines simply won't appear.
 - Set `COACH_CAREER_PATH` if you keep the file somewhere other than `data/career-history.json`.
 
 ## Step 6b — (optional) Season arc (the `/season` strategic review)
