@@ -277,8 +277,31 @@ function main() {
   const bests = all.length ? buildBests(all, intervals.length ? intervals : all, season) : [];
   const powerCurve = buildPowerCurve(typeof args.power === "string" ? readJson(args.power) : null, datedFits, season);
 
+  // Year-by-year volume — prefer the longer-history source per year (TP for 2011-2014, intervals later),
+  // so the Season page can benchmark "where am I now" against the all-time peak and the detraining troughs.
+  const byYear: Record<string, { hours: number; km: number }> = {};
+  for (const src of [tp, intervals]) {
+    const seen: Record<string, { hours: number; km: number }> = {};
+    for (const a of src) {
+      const y = (a.date || "").slice(0, 4);
+      if (!/^\d{4}$/.test(y)) continue;
+      const d = (seen[y] ??= { hours: 0, km: 0 });
+      if (a.durSec && a.durSec < 1200 * 60) d.hours += a.durSec / 3600;
+      if (a.distKm && a.distKm < 2000) d.km += a.distKm;
+    }
+    for (const [y, d] of Object.entries(seen)) {
+      // a source "wins" a year if it logged more hours there (deeper history for that year)
+      if (!byYear[y] || d.hours > byYear[y].hours) byYear[y] = d;
+    }
+  }
+  const trajectory = Object.entries(byYear)
+    .map(([y, d]) => ({ year: Number(y), hours: Math.round(d.hours), km: Math.round(d.km) }))
+    .filter((t) => t.year >= 2000 && t.year <= season + 1)
+    .sort((a, b) => a.year - b.year);
+
   const result: Record<string, unknown> = { generatedAt: new Date().toISOString().slice(0, 10), seasonYear: season, races, bests };
   if (powerCurve) result.powerCurve = powerCurve;
+  if (trajectory.length) result.trajectory = trajectory;
 
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(result, null, 2) + "\n");
@@ -287,7 +310,7 @@ function main() {
     ? `allTime ${powerCurve.allTime.length}, last90 ${powerCurve.last90?.length ?? 0}, season ${powerCurve.season?.length ?? 0} pts`
     : "none";
   console.log(
-    `wrote ${out}\n  races: ${races.length} | bests: ${bests.map((b) => `${b.sport}(${b.rows.length})`).join(", ") || "none"} | power: ${pcStr}\n` +
+    `wrote ${out}\n  races: ${races.length} | bests: ${bests.map((b) => `${b.sport}(${b.rows.length})`).join(", ") || "none"} | power: ${pcStr} | trajectory: ${trajectory.length ? trajectory.length + "yrs" : "none"}\n` +
       `  race performance: ${e.fromFit} from .FIT, ${e.fromActivity} from activity export, ${e.withSplits} with splits (of ${e.total}; ${datedFits.length} .FIT files scanned${fitDir ? ` in ${fitDir}` : ""})`,
   );
 }

@@ -318,6 +318,43 @@ cd /Users/maxeskell/personal-training-app && npm run career:build -- \
   all-time `--power` export, the recent lines simply won't appear.
 - Set `COACH_CAREER_PATH` if you keep the file somewhere other than `data/career-history.json`.
 
+## Step 6b — (optional) Season arc (the `/season` strategic review)
+
+The **Season arc** page (`/season`, linked top-left of the dashboard) is the multi-season strategic layer —
+*where am I in the multi-year build, am I building or stalling, what's this phase's focus, what's the risk* —
+for rebuilding toward 70.3 → Ironman. It's deterministic (no LLM, no cost) and reads three things you
+already have: your **career trajectory** (from Step 6a's `career-history.json`), your **live CTL** (from your
+synced state), and a **multi-year plan you write** in `profile.local.yaml`:
+
+```yaml
+season_plan:
+  horizon_goal: "Ironman by 2028"
+  target_date: "2028-07-01"
+  phases:
+    - name: "Rebuild base"
+      focus: "raise the aerobic floor; set swim CSS; strength 2–3×/wk"
+      until: "2026-12-31"
+      ctl_target: "55"          # TEXT target (intent), not a live number
+    - name: "Threshold shift"
+      focus: "20–60 min power; consolidate 70.3"
+      until: "2027-12-31"
+      ctl_target: "70"
+    - name: "IM build"
+      focus: "durability + volume"
+      until: "2028-06-30"
+      ctl_target: "85"
+notes: "raise the year's floor, not the week's ceiling; defend consistency"
+```
+
+- The **active phase** is the first whose `until` is still ahead. `ctl_target` is **text** (e.g. `"55"` or
+  `"55-60"`) — a numeric CTL would be rejected by the no-live-numbers guard, exactly like a race `target_time`.
+- Everything's optional: with no `season_plan` the page still shows your CTL, trajectory and lever checklist,
+  and explains how to add the plan. See `profile.example.yaml` → `season_plan` and
+  `docs/specs/Season_Arc_Spec.md`.
+- For a written strategic write-up (not just the page), run
+  `cd /Users/maxeskell/personal-training-app && npm run season` — one high-effort, cost-logged LLM call
+  (needs `ANTHROPIC_API_KEY`), saved to `reports/`; without a key it prints the deterministic digest.
+
 ## Step 7 — Done & troubleshooting
 
 ```bash

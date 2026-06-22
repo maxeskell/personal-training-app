@@ -1160,7 +1160,8 @@ ${
     : ""
 }
 <div class="topnav" style="display:flex;justify-content:space-between;align-items:center;margin:-8px 0 8px;font-size:12px">
-  <a href="/career${share ? "?share=1" : ""}" style="color:#c8642d;text-decoration:none;font-weight:600">📊 Career &amp; PBs →</a>
+  <span><a href="/career${share ? "?share=1" : ""}" style="color:#c8642d;text-decoration:none;font-weight:600">📊 Career &amp; PBs →</a>
+  <a href="/season${share ? "?share=1" : ""}" style="color:#c8642d;text-decoration:none;font-weight:600;margin-left:14px">🗓 Season arc →</a></span>
   ${share ? "" : `<a href="?share=1" style="color:#888;text-decoration:none">🔒 Share view (hide race names + location for screenshots)</a>`}
 </div>
 ${

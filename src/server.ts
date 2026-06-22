@@ -12,6 +12,8 @@ import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard, renderResearchDigestPage, aieGapKeyFromSetupKey } from "./coach/dashboard.js";
 import { renderCareerPage } from "./coach/careerPage.js";
 import { loadCareerHistory } from "./coach/careerHistory.js";
+import { buildSeasonArc } from "./coach/seasonArc.js";
+import { renderSeasonPage } from "./coach/seasonPage.js";
 import { latestAdviceFindings } from "./coach/adviceRecs.js";
 import { updateLocalProfile } from "./profile/update.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
@@ -622,6 +624,30 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     // → empty state.
     if (url.pathname === "/career") {
       const html = renderCareerPage(loadCareerHistory(), url.searchParams.get("share") === "1");
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
+      return;
+    }
+    // Read-only Season-arc page: deterministic multi-season strategic review. Best-effort gather of the
+    // plan (profile.season_plan), CTL now + trend (state store), and the career trajectory; any missing
+    // input just leaves that section blank (degrade-don't-crash). No LLM call.
+    if (url.pathname === "/season") {
+      const today = todayIso();
+      let ctlSeries: Array<{ date: string; v: number }> = [];
+      try {
+        ctlSeries = await new StateStore().series(today, 60, (s) => s.load.value?.ctl);
+      } catch {
+        /* no state yet → empty series */
+      }
+      const profile = (await loadProfileSafe())?.profile;
+      const report = buildSeasonArc({
+        today,
+        plan: profile?.season_plan,
+        ctlNow: ctlSeries.length ? ctlSeries[ctlSeries.length - 1].v : undefined,
+        ctlSeries,
+        career: loadCareerHistory(),
+        profile,
+      });
+      const html = renderSeasonPage(report, url.searchParams.get("share") === "1");
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
       return;
     }

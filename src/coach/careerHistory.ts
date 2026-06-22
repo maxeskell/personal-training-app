@@ -90,6 +90,13 @@ export interface PowerCurves {
   season?: PowerPoint[];
 }
 
+/** One calendar year of training volume — the multi-year arc the Season page benchmarks against. */
+export interface YearStat {
+  year: number;
+  hours?: number;
+  km?: number;
+}
+
 export interface CareerHistory {
   /** ISO date the file was generated — shown as a freshness line. */
   generatedAt?: string;
@@ -98,6 +105,8 @@ export interface CareerHistory {
   races: Race[];
   bests: SportBests[];
   powerCurve?: PowerCurves;
+  /** Year-by-year training volume (the long arc) — powers the Season-arc benchmark; optional. */
+  trajectory?: YearStat[];
 }
 
 function asString(v: unknown): string | undefined {
@@ -222,14 +231,26 @@ export function parseCareerHistory(raw: string): CareerHistory | null {
     }
   }
 
-  if (!races.length && !bests.length && !powerCurve) return null;
+  const trajectory: YearStat[] = Array.isArray(o.trajectory)
+    ? o.trajectory.flatMap((t): YearStat[] => {
+        if (!t || typeof t !== "object") return [];
+        const x = t as Record<string, unknown>;
+        const year = asNumber(x.year);
+        if (year == null) return [];
+        return [{ year, hours: asNumber(x.hours), km: asNumber(x.km) }];
+      })
+    : [];
+
+  if (!races.length && !bests.length && !powerCurve && !trajectory.length) return null;
   races.sort((a, b) => a.date.localeCompare(b.date));
+  trajectory.sort((a, b) => a.year - b.year);
   return {
     generatedAt: asString(o.generatedAt),
     seasonYear: asNumber(o.seasonYear),
     races,
     bests,
     powerCurve,
+    trajectory: trajectory.length ? trajectory : undefined,
   };
 }
 

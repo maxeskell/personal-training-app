@@ -261,6 +261,10 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
 - **`weekly`** / **`race_prep`** `{ race? }` / **`deep_dive`** — the review flows; each also writes
   its dated report under `reports/`. **`deep_dive`** likewise distils its write-up into reactable,
   family-tagged recommendations (same Coach's-recommendations surface).
+- **`season_arc`** — the multi-season strategic review (rebuild → 70.3 → Ironman): CTL arc vs your
+  `season_plan` phase targets, the long-arc volume benchmark, structural levers and risk flags, then an
+  LLM strategic narrative; writes a dated report. Without an API key it returns the deterministic digest
+  (the same data as the `/season` page).
 - **`tune`** — weekly marginal gains: the smaller, easy-to-action tweaks (efficiency, durability,
   fuelling, pacing, biomechanics), not "train more". Also writes a dated report.
 - **`research`** — monthly web-grounded digest: searches recent training/triathlon/gear thinking against

@@ -19,7 +19,8 @@ import { buildTodayState, gatherCompleteness, gatherReadiness, loadArchive, load
 import { formatCompleteness } from "./state/dataCompleteness.js";
 import { proposeAdjustments, validateProposals, buildProposerContext, writeContextFor } from "./coach/planAdjust.js";
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
-import { writeReport } from "./coach/reports.js";
+import { writeReport, listReports } from "./coach/reports.js";
+import { seasonNudgeDue } from "./coach/seasonNudge.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
 import { loadSessionFeedbacks, saveSessionFeedback } from "./coach/sessionFeedbackStore.js";
@@ -49,6 +50,9 @@ import { runSetup } from "./setup.js";
 import { initProfile } from "./profile/setup.js";
 import { loadProfileSafe } from "./profile/load.js";
 import { renderQuestionsText, renderQuestionsMarkdown } from "./profile/questions.js";
+import { buildSeasonArc, seasonReportText } from "./coach/seasonArc.js";
+import { runSeasonNarrative } from "./coach/seasonNarrative.js";
+import { loadCareerHistory } from "./coach/careerHistory.js";
 import { helpText } from "./help.js";
 import type { AthleteState } from "./state/types.js";
 
@@ -119,6 +123,44 @@ async function recordPingSuccess(date: string): Promise<void> {
   const { join } = await import("node:path");
   await mkdir(join(process.cwd(), "reports"), { recursive: true });
   await writeFile(await pingMarkerPath(), JSON.stringify({ date, ts: new Date().toISOString() }));
+}
+
+/** reports/ marker for the LAST quarterly season-review nudge — keeps the cadence from re-firing daily. */
+async function seasonNudgeMarkerPath(): Promise<string> {
+  const { join } = await import("node:path");
+  return join(process.cwd(), "reports", "last-season-nudge.json");
+}
+async function lastSeasonNudge(): Promise<{ date: string } | null> {
+  try {
+    const { readFile } = await import("node:fs/promises");
+    const j = JSON.parse(await readFile(await seasonNudgeMarkerPath(), "utf8"));
+    return j && typeof j.date === "string" ? j : null;
+  } catch {
+    return null;
+  }
+}
+async function recordSeasonNudge(date: string): Promise<void> {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  await mkdir(join(process.cwd(), "reports"), { recursive: true });
+  await writeFile(await seasonNudgeMarkerPath(), JSON.stringify({ date, ts: new Date().toISOString() }));
+}
+
+/**
+ * Quarterly nudge: if a season_plan exists and it's been ≥~90d since the last season review (report) or
+ * nudge, fire one desktop notification to revisit the multi-season arc, then record it. Best-effort — a
+ * failure here must never break the morning ping.
+ */
+async function maybeSeasonNudge(state: AthleteState): Promise<void> {
+  const plan = state.profile?.season_plan;
+  const hasPlan = !!(plan && (plan.horizon_goal || (Array.isArray(plan.phases) && plan.phases.length)));
+  if (!hasPlan) return;
+  const reports = await listReports();
+  const lastReviewDate = reports.find((r) => r.name.includes("season-arc"))?.date || undefined;
+  const lastNudgeDate = (await lastSeasonNudge())?.date;
+  if (!seasonNudgeDue({ today: todayIso(), hasPlan, lastReviewDate, lastNudgeDate })) return;
+  await notify("Quarterly season review due", "Revisit your multi-season arc — run `npm run season` (or open /season).");
+  await recordSeasonNudge(todayIso());
 }
 /** `auth` — run the OAuth flow (interactive first time) and confirm the connection. The ONLY flow that
  *  opts into the browser dance; every other context fails fast with a re-auth error instead of hanging. */
@@ -373,6 +415,7 @@ async function cmdPing(): Promise<void> {
     const note = verdict.why.length > 180 ? verdict.why.slice(0, 177) + "…" : verdict.why;
     await notify(`Readiness: ${verdict.verdict.toUpperCase()}`, note);
     await recordPingSuccess(state.date); // heartbeat for the doctor check
+    await maybeSeasonNudge(state).catch(() => {}); // quarterly season-review nudge (best-effort)
     console.log(`\n(report written; desktop notification sent if on macOS)`);
   } catch (err) {
     // PROD-2: an unattended failure is otherwise invisible — the athlete just gets no readiness and no
@@ -393,6 +436,32 @@ async function cmdDeepDive(): Promise<void> {
   const { markdown, cacheRead, costUsd } = await runDeepDive(new CoachLLM(await loadSystemPrompt(), "deep-dive"), state, ins);
   console.log("\n" + markdown + "\n");
   const path = await writeReport("deep-dive", todayIso(), markdown);
+  console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
+}
+
+/** `season` — multi-season strategic review: the deterministic Season-arc report + an LLM strategic
+ *  narrative (the multi-year layer above weekly/deep-dive). No API key → the deterministic digest only. */
+async function cmdSeason(): Promise<void> {
+  const { state, window } = await buildTodayState();
+  const career = loadCareerHistory();
+  const ctlSeries = window
+    .map((s) => ({ date: s.date, v: s.load.value?.ctl }))
+    .filter((x): x is { date: string; v: number } => typeof x.v === "number");
+  const report = buildSeasonArc({
+    today: todayIso(),
+    plan: state.profile?.season_plan,
+    ctlNow: ctlSeries.length ? ctlSeries[ctlSeries.length - 1].v : undefined,
+    ctlSeries,
+    career,
+    profile: state.profile,
+  });
+  if (!CoachLLM.hasApiKey()) {
+    console.log("\n" + seasonReportText(report) + "\n\n(no ANTHROPIC_API_KEY — deterministic digest only; set it for the strategic narrative. The /season page shows this same report.)\n");
+    return;
+  }
+  const { markdown, cacheRead, costUsd } = await runSeasonNarrative(new CoachLLM(await loadSystemPrompt(), "season"), report, career, state);
+  console.log("\n" + markdown + "\n");
+  const path = await writeReport("season-arc", todayIso(), markdown);
   console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
 }
 
@@ -989,6 +1058,7 @@ const commands: Record<string, () => Promise<void>> = {
   dashboard: cmdDashboard,
   demo: cmdDemo,
   "deep-dive": cmdDeepDive,
+  season: cmdSeason,
   tune: cmdTune,
   fuelling: cmdFuelling,
   "fuel-review": cmdFuelReview,
@@ -1029,6 +1099,7 @@ if (!run) {
   console.log("  dashboard  generate + open the glanceable Today/Week/Trends/Race view");
   console.log("  demo       render the dashboard from built-in SAMPLE data (no account/Garmin/key needed)");
   console.log("  deep-dive  insight-engine analysis (load/EF/durability/ramp/goal) → report");
+  console.log("  season     multi-season strategic review (CTL arc / phases / structural levers) → report; also the /season page");
   console.log("  tune       weekly marginal-gains: the smaller, easy-to-action tweaks (not 'train more') → report");
   console.log("  fuelling   per-session pre/during/after from your logged nutrition (deterministic, only what a session needs)");
   console.log("  fuel-review  learning review over your fuel log: carb/hr tolerance, what sits well, suggested tweaks (≥3 logs)");

@@ -89,3 +89,10 @@ This page is generated from `src/profile/questions.ts` (the same data behind
 | Field | Question | Why it matters |
 |---|---|---|
 | `races` | Any other races/targets to add beyond your first one? | Your race calendar is surfaced as 'Race targets' in every coaching flow so prep and periodisation track your real season (mirror target times into AI Endurance — read-only from here). |
+
+## season_plan
+
+| Field | Question | Why it matters |
+|---|---|---|
+| `season_plan.horizon_goal` | What's your multi-season horizon goal? (e.g. 'Ironman by 2028') | Anchors the /season page — the far target everything else builds toward; shown with a countdown and used to frame whether you're on track over years. |
+| `season_plan.phases` | What are your season phases? (each: name, focus, until-date, CTL target as text e.g. '55') | Drives the /season page: it picks the phase whose until-date is still ahead, then grades your current chronic load (CTL) and consistency against that phase's target and focus. ctl_target is intent-as-text, never a live number. |

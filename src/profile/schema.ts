@@ -75,6 +75,32 @@ export const BloodsSchema = z
   .passthrough();
 export type Bloods = z.infer<typeof BloodsSchema>;
 
+/**
+ * Multi-season plan — the strategic arc the `/season` page grades against (rebuild → 70.3 → Ironman).
+ * Holds INTENT only, never live numbers: `ctl_target` is a target expression ("55", "55-60"), like a
+ * race `target_time` ("sub 2:00"), so the no-live-numbers guard is satisfied (a numeric CTL would be
+ * rejected as a live metric). Each phase runs until its `until` date; the active phase is the first whose
+ * `until` is still in the future.
+ */
+export const SeasonPhaseSchema = z
+  .object({
+    name: optStr, // e.g. "Rebuild base", "Threshold shift", "IM build"
+    focus: optStr, // the one thing this phase is about
+    until: optDate, // phase runs until this date (YYYY-MM-DD)
+    ctl_target: optStr, // TARGET chronic load as text ("55" / "55-60") — intent, not a live number
+  })
+  .passthrough();
+
+export const SeasonPlanSchema = z
+  .object({
+    horizon_goal: optStr, // e.g. "Ironman by 2028"
+    target_date: optDate, // the far goal's date
+    phases: z.array(SeasonPhaseSchema).optional(),
+    notes: optStr,
+  })
+  .passthrough();
+export type SeasonPlan = z.infer<typeof SeasonPlanSchema>;
+
 export const ProfileSchema = z
   .object({
     schema_version: z.number().int().positive(),
@@ -108,6 +134,7 @@ export const ProfileSchema = z
     bike_fit: looseMap.optional(),
     fuelling: looseMap.optional(),
     races: z.array(RaceSchema).optional(),
+    season_plan: SeasonPlanSchema.optional(),
     ai_endurance_todo: looseMap.optional(),
     open_items: looseList.optional(),
   })

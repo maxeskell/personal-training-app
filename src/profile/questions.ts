@@ -225,6 +225,20 @@ export const PROFILE_QUESTIONS: ProfileQuestion[] = [
     question: "Any other races/targets to add beyond your first one?",
     why: "Your race calendar is surfaced as 'Race targets' in every coaching flow so prep and periodisation track your real season (mirror target times into AI Endurance — read-only from here).",
   },
+
+  // --- season_plan (the multi-year arc the /season strategic-review page grades against) ---
+  {
+    area: "season_plan",
+    field: "season_plan.horizon_goal",
+    question: "What's your multi-season horizon goal? (e.g. 'Ironman by 2028')",
+    why: "Anchors the /season page — the far target everything else builds toward; shown with a countdown and used to frame whether you're on track over years.",
+  },
+  {
+    area: "season_plan",
+    field: "season_plan.phases",
+    question: "What are your season phases? (each: name, focus, until-date, CTL target as text e.g. '55')",
+    why: "Drives the /season page: it picks the phase whose until-date is still ahead, then grades your current chronic load (CTL) and consistency against that phase's target and focus. ctl_target is intent-as-text, never a live number.",
+  },
 ];
 
 /**
