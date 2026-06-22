@@ -5,6 +5,7 @@
  * on fixtures, never the network.
  */
 
+import { config } from "../config.js";
 import { retry, RetryableHttpError, isRetryableStatus, parseRetryAfterMs } from "../util/retry.js";
 
 export interface HourForecast {
@@ -109,7 +110,7 @@ export async function fetchForecast(lat: number, lon: number, timeoutMs = 6000):
       throw new Error(msg);
     }
     return mapOpenMeteo(await res.json(), new Date().toISOString());
-  });
+  }, { attempts: config.retry.attempts });
 }
 
 /** WMO weather code → glanceable label. */

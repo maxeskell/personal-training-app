@@ -48,19 +48,20 @@ export class CoachLLM {
   }
 
   /**
-   * Cap a single SDK call at COACH_LLM_TIMEOUT_MS so a hung request can't stall a flow indefinitely.
-   * Passes an AbortSignal the SDK uses to abort the underlying HTTP request / stream; the SDK's own
-   * 429/5xx retries run within this deadline. A non-positive timeout disables the cap.
+   * Cap a single SDK call at `ms` so a hung request can't stall a flow indefinitely. The budget is
+   * per-shape: the interactive `structured` flows use COACH_LLM_TIMEOUT_MS; the long STREAMED flows
+   * (reports + research, which can legitimately run for minutes) use the larger `longTimeoutMs`.
+   * Passes an AbortSignal the SDK uses to abort the underlying request/stream; the SDK's own 429/5xx
+   * retries run within the deadline. A non-positive `ms` disables the cap.
    */
-  private async withDeadline<T>(make: (signal: AbortSignal | undefined) => Promise<T>): Promise<T> {
-    const ms = config.coachLlm.timeoutMs;
+  private async withDeadline<T>(make: (signal: AbortSignal | undefined) => Promise<T>, ms: number): Promise<T> {
     if (!Number.isFinite(ms) || ms <= 0) return make(undefined);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), ms);
     try {
       return await make(ctrl.signal);
     } catch (err) {
-      if (ctrl.signal.aborted) throw new Error(`CoachLLM ${this.operation} call exceeded COACH_LLM_TIMEOUT_MS (${ms}ms).`);
+      if (ctrl.signal.aborted) throw new Error(`CoachLLM ${this.operation} call exceeded its ${ms}ms wall-clock budget (COACH_LLM_TIMEOUT_MS).`);
       throw err;
     } finally {
       clearTimeout(timer);
@@ -87,7 +88,7 @@ export class CoachLLM {
         messages: [{ role: "user", content: userContent }],
       },
       { signal },
-    ));
+    ), config.coachLlm.timeoutMs);
 
     // A truncated response can yield structurally-valid-but-incomplete JSON (e.g. a cut-off proposals
     // array) that downstream code — including the write gate — would treat as authoritative. Refuse it.
@@ -132,7 +133,7 @@ export class CoachLLM {
         },
         { signal },
       )
-      .finalMessage());
+      .finalMessage(), config.coachLlm.longTimeoutMs);
     const text = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
@@ -163,7 +164,7 @@ export class CoachLLM {
         },
         { signal },
       )
-      .finalMessage());
+      .finalMessage(), config.coachLlm.longTimeoutMs);
     const text = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)

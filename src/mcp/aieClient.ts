@@ -146,9 +146,9 @@ export class AieClient {
       throw new Error(`${tool} is a write tool; AI Endurance writes must go through the write gate (callRaw direct-write guard).`);
     }
     // A write is fired exactly once — never retried (a re-issued create/change could double-fire). Reads
-    // are idempotent, so a transient 429/5xx is retried with bounded jitter.
+    // are idempotent, so a transient 429/5xx is retried with bounded jitter (COACH_RETRY_ATTEMPTS).
     if (isWrite) return this.callOnce(tool, args);
-    return retry(() => this.callOnce(tool, args));
+    return retry(() => this.callOnce(tool, args), { attempts: config.retry.attempts });
   }
 
   /** A single bounded, redacted tool call. Wraps the SDK callTool in the per-tool timeout and classifies

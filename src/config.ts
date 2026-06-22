@@ -86,10 +86,24 @@ export const config = {
 
   /** The coach's reasoning core (Anthropic / claude-opus-4-8 — see src/llm/client.ts). */
   coachLlm: {
-    /** Wall-clock cap (ms) on a single CoachLLM call so a hung request can't stall a flow indefinitely
-     *  (the Anthropic SDK already retries 429/5xx). Generous by default — deep/research flows stream and
-     *  can legitimately take minutes; raise it if a long research digest is being cut off. */
+    /** Wall-clock cap (ms) on an INTERACTIVE coach LLM call (readiness/ask/tune/…) so a hung request can't
+     *  stall a flow (the Anthropic SDK already retries 429/5xx within this). Generous default. */
     timeoutMs: Number(process.env.COACH_LLM_TIMEOUT_MS ?? 120000),
+    /** Larger budget for the long STREAMED flows — the weekly/race/deep-dive reports and the web-grounded
+     *  research digest — which can legitimately run for minutes (research does several web searches +
+     *  adaptive thinking). 3× the interactive cap so a real long run isn't aborted; scales with the env var. */
+    get longTimeoutMs(): number {
+      return this.timeoutMs * 3;
+    },
+  },
+
+  /** Bounded retry on transient 429/5xx for the read-only external spines (AI Endurance reads,
+   *  intervals.icu, the weather fetch). Writes are never retried. A non-numeric override falls back to 3. */
+  retry: {
+    attempts: (() => {
+      const n = Number(process.env.COACH_RETRY_ATTEMPTS ?? 3);
+      return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 3;
+    })(),
   },
 
   /** Garmin — OPTIONAL, degradable gap-filler. Disabled unless explicitly enabled. */

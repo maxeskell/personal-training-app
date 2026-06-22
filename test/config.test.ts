@@ -60,3 +60,12 @@ test("a blank/absent profile timezone falls back to Europe/London", async () => 
   });
   await rm(dir, { recursive: true, force: true });
 });
+
+test("coachLlm.longTimeoutMs is 3× the interactive cap, and retry.attempts is a sane positive integer", async () => {
+  const { config } = await import("../src/config.js");
+  // The long streamed flows (reports + research) get 3× the interactive timeout so a multi-minute run
+  // isn't prematurely aborted — and it scales with COACH_LLM_TIMEOUT_MS via the getter.
+  assert.equal(config.coachLlm.longTimeoutMs, config.coachLlm.timeoutMs * 3);
+  // COACH_RETRY_ATTEMPTS parses to a positive integer (a non-numeric override falls back to 3).
+  assert.ok(Number.isInteger(config.retry.attempts) && config.retry.attempts >= 1);
+});

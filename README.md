@@ -667,11 +667,14 @@ Claude Desktop/Code and the LAN dashboard always include it — it's your own da
 The HTTP startup banner spells out exactly what each surface exposes.
 
 **Bounded, never-hangs external calls.** Every external spine has a hard timeout and the read paths
-retry a transient rate-limit/5xx with jittered backoff: AI Endurance per-tool calls are capped (not just
-connect) and read-retried; intervals.icu and the weather fetch retry 429/5xx (honouring `Retry-After`);
-each coach LLM call is bounded by `COACH_LLM_TIMEOUT_MS` (default 120s; the Anthropic SDK adds its own
-429/5xx retries). A write to the plan is **never** retried (it fires exactly once through the gate), and
-error detail on these paths is redacted before it can reach a log or an MCP response.
+retry a transient rate-limit/5xx with jittered backoff (`COACH_RETRY_ATTEMPTS`, default 3, honouring
+`Retry-After`): AI Endurance per-tool calls are capped (not just connect) and read-retried, as are
+intervals.icu and the weather fetch. Each coach LLM call is bounded by `COACH_LLM_TIMEOUT_MS` (default
+120s) for the interactive flows, with **3× that for the long streamed flows** (weekly/race/deep-dive
+reports and the research digest, which can legitimately run for minutes) so a real long run isn't cut
+off; the Anthropic SDK adds its own 429/5xx retries within the deadline. A write to the plan is **never**
+retried (it fires exactly once through the gate), and error detail on these paths is redacted before it
+can reach a log or an MCP response.
 
 Full step-by-step for both (incl. the macOS `npm`-on-PATH gotcha and tunnel commands) is in
 **[docs/mcp-server.md](docs/mcp-server.md)**.

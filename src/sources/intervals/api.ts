@@ -37,7 +37,7 @@ async function getJson<T>(path: string): Promise<T> {
       throw new Error(msg);
     }
     return (await res.json()) as T;
-  });
+  }, { attempts: config.retry.attempts });
 }
 
 /** Pull the analysis window: activities + wellness (trailing) and events (trailing + upcoming races). */
