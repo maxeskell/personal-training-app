@@ -1,6 +1,6 @@
 # Spec 6 — Grounded plan proposals (use the full picture + goals + research)
 
-**Status:** proposed · **Priority:** P1 (feature; do after Spec 2) · **Size:** M–L · **Owner:** TBD
+**Status:** ✅ landed on `main` (reconciled 2026-06-22) · **Priority:** P1 (feature; do after Spec 2) · **Size:** M–L · **Owner:** TBD
 
 ## Problem
 "Turn this into a plan change" reads as *"design my plan from all my data, my goals, and the research."* Today it's a

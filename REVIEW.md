@@ -404,5 +404,25 @@ Verified: typecheck clean, 584/584 tests pass, build clean.
 - Stopped printing a fabricated default "60%" confidence; the % is omitted when confidence is undefined (`deepDive.ts:78`).
 - Corrected the inaccurate `/season` "shows no identifying data" comment (`seasonPage.ts:9-11`).
 
-Remaining: Batches 2-5 — see `REVIEW-HANDOVER.md` (self-sufficient for a fresh session).
+### Batch 2 — soundness — DONE, green (merged via PR #185)
+Brick relabelled to "same-day run/ride decoupling" (proxy, not a true off-bike transition); anomaly-z titled "(single reading)" + not-a-trend caveat; prediction-vs-goal at confidence 0.55 with a "single platform model estimate" caveat; tri bike split carries a CdA-sensitivity MODEL range (`speedMsFromPower` takes `cda`); the `load` slot is wired up (`assemble.ts mapRecovery` → CTL/ATL/TSB); change-point detection CUT (module + all wiring/readers removed). + tests.
+
+### Batch 3 — hardening — DONE, green (merged via PR #186)
+Prompt-injection guard parity on deep_dive/tune/season/fuel_review; AIE per-tool timeout; bounded retry-with-jitter on 429/5xx for the read spines (`COACH_RETRY_ATTEMPTS`); per-shape CoachLLM timeout (`COACH_LLM_TIMEOUT_MS`, 3× for the long streamed flows); redaction on the AIE/intervals/MCP-HTTP error paths; a real direct-write guard at `aieClient.callRaw` (writes require `allowWrite`, only the gate passes it); LOW containment — `ingest_fit` path gated behind file-access + deny-list, `get_profile` medical opt-in (`COACH_MCP_EXPOSE_MEDICAL`), `update_profile` target containment, LAN plaintext-HTTP residual documented.
+
+### Batch 4 — UX — DONE, green (merged via PR #187)
+`insights` leads with the synthesised coach headline; `get_state` flags a stale snapshot (`⚠ STALE`) and its description steers "how am I today" → `readiness`; `ask`/`weekly`/`deep_dive`/`season_arc`/`insights` descriptions carry use-when / LLM-cost disambiguation.
+
+### Batch 5 — doc reconciliation — DONE (scope cuts deferred, pending user decisions)
+The SAFE half only (no capability removed). Resolved the Stage-1 doc-vs-code drifts:
+- **C1** README presented `npm start` as the everyday "run the coach" — relabelled DEV/foreground, points to the always-on launchd service (matches CLAUDE.md).
+- **C2** spec 01 "current behaviour" `0.0.0.0` — spec marked landed; reconciliation note says the body describes the pre-fix state (code defaults `127.0.0.1`).
+- **C3** all six `docs/specs/improvements/*` were "Status: proposed" though landed — flipped to "✅ landed on `main` (reconciled 2026-06-22)".
+- **C5** effort taxonomy — HANDOVER now notes `tune`/`fuel_review` deliberately stay at `medium`.
+- **C6** `COACH_INTENT_ROUTER=local` vs `COACH_LOCAL_INTENT` — `.env.example` now states `COACH_LOCAL_INTENT=true` is the real on-switch (selects AND enables); `local` alone degrades to regex.
+- **C7** spec 04 "FDR double-dip" — marked resolved (Bonferroni-on-lag before BH; `fdrPass` = BH ∧ CI-excludes-0).
+- **C8** "99 tests" in HANDOVER → "600+ tests".
+- esbuild advisory note in HANDOVER updated — `npm audit` clean (0 vulns; `esbuild@0.28.1` past the fix).
+
+**Still OPEN (need user decisions, NOT done):** the Batch 5 SCOPE CUTS / kill-list (brick, the two intent routers + advice-clustering embeddings → regex-only, research/knowledge layer, careerHistory, collapsing weekly/deep_dive/season_arc) and the provisional "trim a third" call (Stage 5 #5), which hinges on the engine's behaviour at the user's real data volume. See `REVIEW-HANDOVER.md` §5.
 

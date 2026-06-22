@@ -1,6 +1,6 @@
 # Spec 5 — Data integrity & reliability
 
-**Status:** proposed · **Priority:** P0/P1 · **Size:** M · **Owner:** TBD
+**Status:** ✅ landed on `main` (reconciled 2026-06-22) · **Priority:** P0/P1 · **Size:** M · **Owner:** TBD
 
 ## Problem
 The persistence and ingestion layers have several quiet-data-loss / quiet-wrong-data bugs that the "trust the

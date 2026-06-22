@@ -49,7 +49,7 @@ First time: `npm run setup` (guided wizard → writes `.env`), then `npm run aut
 days only need:
 
 ```bash
-npm start                    # run the coach (dashboard server) — open the printed localhost link
+npm start                    # DEV: dashboard in the foreground (everyday use is the always-on server — see "Online dashboard")
 npm run demo                 # see the dashboard on sample data (no account/key)
 npm run readiness            # today's green / amber / red verdict, with cited reasons
 npm run weekly               # weekly review → a saved report
