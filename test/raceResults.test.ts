@@ -2,16 +2,17 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { enrichRaceResults, sportFamily, isMultisport, type DatedFit, type ActivitySummary } from "../src/coach/raceResults.js";
 import type { Race } from "../src/coach/careerHistory.js";
-import type { FitActivity, FitLap } from "../src/insights/fitParser.js";
+import type { FitActivity, FitLap, FitSessionSummary } from "../src/insights/fitParser.js";
 
 /** Minimal FitActivity builder for the tests (only the fields the deriver reads). */
-function mkFit(opts: { sportName: string; sport?: number; startT?: number; session: FitActivity["session"]; laps?: FitLap[] }): FitActivity {
+function mkFit(opts: { sportName: string; sport?: number; startT?: number; session: FitActivity["session"]; laps?: FitLap[]; sessions?: FitSessionSummary[] }): FitActivity {
   return {
     sport: opts.sport ?? 0,
     sportName: opts.sportName,
     samples: opts.startT != null ? [{ t: opts.startT }] : [],
     laps: opts.laps ?? [],
     lengths: [],
+    sessions: opts.sessions ?? [],
     session: opts.session,
   };
 }
@@ -93,6 +94,28 @@ test("enrich: a triathlon gets one summary row per discipline leg, in chronologi
   assert.equal(r?.splits?.find((s) => s.label === "Swim")?.pace, "1:35/100m"); // 1800s / 1.9km
   assert.equal(stats.withSplits, 1);
   assert.equal(stats.fromFit, 0);
+});
+
+test("enrich: a triathlon recorded as ONE multisport .FIT expands into its discipline legs", () => {
+  // a single file whose `sessions` carry the per-leg summaries (+ a transition session that's dropped)
+  const multisport = mkFit({
+    sportName: "Run", // the file's overall sport is the last leg
+    startT: 100,
+    session: { durationSec: 9999, distanceKm: 0 },
+    sessions: [
+      { sport: 5, sportName: "Swim", startTimeS: 100, durationSec: 1800, distanceKm: 1.9, avgHr: 150 },
+      { sport: 18, sportName: "sport-18", startTimeS: 1900, durationSec: 120 }, // T1 — dropped (not a discipline)
+      { sport: 2, sportName: "Ride", startTimeS: 2020, durationSec: 9000, distanceKm: 90, avgHr: 148, avgPower: 200 },
+      { sport: 1, sportName: "Run", startTimeS: 11020, durationSec: 2400, distanceKm: 10, avgHr: 160 },
+    ],
+  });
+  const races: Race[] = [{ date: "2024-06-13", sport: "triathlon", type: "70.3 triathlon", result: { time: "5:30:00" } }];
+  const { races: out, stats } = enrichRaceResults(races, [{ date: "2024-06-13", sport: "Run", fit: multisport }], []);
+  const r = out[0].result;
+  assert.deepEqual(r?.splits?.map((s) => s.label), ["Swim", "Ride", "Run"]); // transition dropped, chronological
+  assert.equal(r?.splits?.find((s) => s.label === "Ride")?.watts, 200);
+  assert.equal(r?.splits?.find((s) => s.label === "Ride")?.time, "2:30:00");
+  assert.equal(stats.withSplits, 1);
 });
 
 test("enrich: a race with nothing matching is returned untouched", () => {

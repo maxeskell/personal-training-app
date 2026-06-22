@@ -146,22 +146,56 @@ function startTimeOf(fit: FitActivity): number {
   return fit.samples.find((s) => s.t != null)?.t ?? fit.laps.find((l) => l.startTimeS != null)?.startTimeS ?? 0;
 }
 
-/** One summary row per discipline leg for a multisport race, in chronological order. */
-function legSplits(fits: DatedFit[]): RaceSplit[] {
-  return [...fits]
-    .sort((a, b) => startTimeOf(a.fit) - startTimeOf(b.fit))
-    .map((df): RaceSplit => {
-      const fam = sportFamily(df.sport);
-      const sum = summaryFromFit(df.fit);
+interface Leg {
+  start: number;
+  sportName: string;
+  distanceKm?: number;
+  time?: string;
+  pace?: string;
+  avgW?: number;
+  avgHr?: number;
+}
+
+/**
+ * Discipline legs from a day's files: a MULTISPORT `.FIT` carries one `session` per leg (swim/bike/run),
+ * so we expand its sessions; a single-discipline file (or a .TCX/.PWX, which have no sessions) contributes
+ * one leg from its overall summary. Either way the race day's swim/bike/run are recovered.
+ */
+function legsOf(df: DatedFit): Leg[] {
+  const sessions = df.fit.sessions ?? [];
+  if (sessions.length > 1) {
+    return sessions.map((s): Leg => {
+      const fam = sportFamily(s.sportName);
       return {
-        label: df.fit.sportName,
-        dist: sum.distanceKm != null ? fmtKm(sum.distanceKm) : undefined,
-        time: sum.time,
-        pace: sum.pace,
-        hr: sum.avgHr,
-        watts: fam === "ride" ? sum.avgW : undefined,
+        start: s.startTimeS ?? 0,
+        sportName: s.sportName,
+        distanceKm: s.distanceKm,
+        time: s.durationSec != null ? clock(s.durationSec) : undefined,
+        pace: s.distanceKm != null && s.durationSec != null ? paceFor(fam, s.durationSec, s.distanceKm) : undefined,
+        avgW: fam === "ride" && s.avgPower != null ? Math.round(s.avgPower) : undefined,
+        avgHr: s.avgHr,
       };
     });
+  }
+  const fam = sportFamily(df.sport);
+  const sum = summaryFromFit(df.fit);
+  return [{ start: startTimeOf(df.fit), sportName: df.fit.sportName, distanceKm: sum.distanceKm, time: sum.time, pace: sum.pace, avgW: fam === "ride" ? sum.avgW : undefined, avgHr: sum.avgHr }];
+}
+
+/** One summary row per discipline leg for a multisport race, in chronological order (transitions dropped). */
+function legSplits(fits: DatedFit[]): RaceSplit[] {
+  return fits
+    .flatMap(legsOf)
+    .filter((l) => sportFamily(l.sportName) !== "other") // drop T1/T2 and unknown-sport segments
+    .sort((a, b) => a.start - b.start)
+    .map((l): RaceSplit => ({
+      label: l.sportName,
+      dist: l.distanceKm != null ? fmtKm(l.distanceKm) : undefined,
+      time: l.time,
+      pace: l.pace,
+      hr: l.avgHr,
+      watts: l.avgW,
+    }));
 }
 
 function pickLongestFit(fits: DatedFit[]): DatedFit | undefined {
@@ -218,10 +252,11 @@ export function enrichRaceResults(
     let splits: RaceSplit[] | undefined;
 
     if (multisport) {
-      // Legs = each discipline FIT on race day; the overall summary stays author-owned (transitions make
+      // Legs come from race-day files: a multisport .FIT expands into its swim/bike/run sessions, separate
+      // per-discipline files each become a leg. The overall summary stays author-owned (transitions make
       // summing legs unreliable, and the activity export can't represent a whole multisport race).
-      const legs = onDate.filter((f) => sportFamily(f.sport) !== "other");
-      if (legs.length) splits = legSplits(legs);
+      const legs = legSplits(onDate);
+      if (legs.length) splits = legs;
     } else if (fam !== "other") {
       const best = pickLongestFit(onDate.filter((f) => sportFamily(f.sport) === fam));
       if (best) {

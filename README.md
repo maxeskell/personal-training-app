@@ -504,7 +504,7 @@ your **race history** (date · event/location · your recorded performance, with
 per sport: fastest at each distance, longest, best power), and an overlaid **power curve** — all-time (from
 your power export) vs the **Last-90-days / Season** curves computed from your recent `.FIT` rides. It reads a
 **gitignored** data file you build once from your multi-year TrainingPeaks / intervals.icu archive plus your
-exported activity files (`.FIT`/`.TCX`, gzipped fine) — the dashboard's live state only knows the recent
+exported activity files (`.FIT`/`.TCX`/`.PWX`, gzipped fine) — the dashboard's live state only knows the recent
 past, so this history lives apart (see [SETUP.md → "Career history"](./SETUP.md)). It's display-only and
 **honest by construction**: performances are *your own recorded numbers* — pulled from your raw activity
 files (finish time, splits, power, HR) or, when a race has no matching file, your activity export for summary

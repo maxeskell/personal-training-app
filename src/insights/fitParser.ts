@@ -107,12 +107,25 @@ export interface FitLength {
   lengthType?: number; // 1 = active, 0 = idle/rest
 }
 
+/** One `session` message (global 18) summary — a multisport `.FIT` carries one per discipline leg. */
+export interface FitSessionSummary {
+  sport: number;
+  sportName: string;
+  startTimeS?: number;
+  durationSec?: number;
+  distanceKm?: number;
+  avgHr?: number;
+  avgPower?: number;
+}
+
 export interface FitActivity {
   sport: number; // FIT sport enum: 1=run, 2=bike, 5=swim
   sportName: string;
   samples: FitSample[];
   laps: FitLap[];
   lengths: FitLength[];
+  /** Every `session` message — length > 1 ⇒ a multisport file (swim/bike/run legs). */
+  sessions: FitSessionSummary[];
   session: {
     durationSec?: number;
     distanceKm?: number;
@@ -201,6 +214,21 @@ function mean(xs: number[]): number | undefined {
   return xs.length ? +(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(2) : undefined;
 }
 
+/** Map a `session` (global 18) field map → a per-leg summary (sport=5, start=2, elapsed=7, dist=9, hr=16, pwr=20). */
+function toSessionSummary(f: Record<number, number | null>): FitSessionSummary {
+  const sport = f[5] != null ? (f[5] as number) : 0;
+  const dur = f[7] ?? f[8]; // total_elapsed_time / total_timer_time (×1000)
+  return {
+    sport,
+    sportName: SPORT_NAMES[sport] ?? `sport-${sport}`,
+    startTimeS: f[2] != null ? (f[2] as number) + FIT_EPOCH_OFFSET : undefined,
+    durationSec: dur != null ? Math.round((dur as number) / 1000) : undefined,
+    distanceKm: f[9] != null ? +((f[9] as number) / 100 / 1000).toFixed(2) : undefined,
+    avgHr: f[16] != null && (f[16] as number) < 255 ? (f[16] as number) : undefined,
+    avgPower: f[20] != null && (f[20] as number) < 65535 ? (f[20] as number) : undefined,
+  };
+}
+
 /**
  * Extract raw .FIT bytes from a Garmin MCP `get_activity_fit_data` result. The payload is base64 in the
  * MCP text content (or nested under result/data/fileData) — we try the common shapes and accept the one
@@ -260,7 +288,7 @@ export function parseFit(buf: Buffer): FitActivity | null {
   const laps: FitLap[] = [];
   const lengths: FitLength[] = [];
   let sportEnum = 0;
-  let session: Record<number, number | null> = {};
+  const sessionMsgs: Record<number, number | null>[] = [];
 
   try {
     while (pos < end) {
@@ -307,7 +335,7 @@ export function parseFit(buf: Buffer): FitActivity | null {
         const rec = readData(buf, pos, def);
         pos = rec.pos;
         if (def.global === 20) samples.push(toSample(rec.fields));
-        else if (def.global === 18) session = rec.fields;
+        else if (def.global === 18) sessionMsgs.push(rec.fields);
         else if (def.global === 19) laps.push(toLap(rec.fields));
         else if (def.global === 101) lengths.push(toLength(rec.fields));
         else if (def.global === 12 && rec.fields[0] != null) sportEnum = rec.fields[0] as number;
@@ -317,6 +345,7 @@ export function parseFit(buf: Buffer): FitActivity | null {
     // Truncated/odd file — return whatever we decoded so far rather than throwing.
   }
 
+  const session = sessionMsgs[sessionMsgs.length - 1] ?? {};
   if (session[5] != null) sportEnum = session[5] as number;
   const temps = samples.map((s) => s.temperature).filter((x): x is number => x != null);
   const ts = samples.map((s) => s.t).filter((x): x is number => x != null);
@@ -327,6 +356,7 @@ export function parseFit(buf: Buffer): FitActivity | null {
     samples,
     laps,
     lengths,
+    sessions: sessionMsgs.map(toSessionSummary),
     session: {
       durationSec: ts.length > 1 ? ts[ts.length - 1] - ts[0] : undefined,
       distanceKm: session[9] != null ? +(((session[9] as number) / 100) / 1000).toFixed(2) : undefined,
