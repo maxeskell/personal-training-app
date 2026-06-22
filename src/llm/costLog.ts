@@ -42,8 +42,40 @@ export function costUsd(u: LlmUsage, model = "claude-opus-4-8"): number {
   return +usd.toFixed(6);
 }
 
+/**
+ * A model is "local" (Ollama via local-llm-server) when it isn't an Anthropic model. We label these rows
+ * in the cost report and they carry $0 — the call runs on your own machine, so there's no API spend, only
+ * token volume worth seeing. Anthropic model ids all contain a family name ("claude" / opus / sonnet / haiku).
+ */
+export function isLocalModel(model: string): boolean {
+  return !/claude|opus|sonnet|haiku/i.test(model);
+}
+
 function logPath(): string {
   return join(config.dataDir, "cost-log.jsonl");
+}
+
+/**
+ * Record a LOCAL (Ollama) call. No API dollars — `costUsd` is a hard 0 (NOT priced through the table, which
+ * would wrongly bill an unknown model at Opus rates) — but we log the model + token volume so `npm run cost`
+ * shows the activity. Best-effort, inheriting appendCostRecord's swallow-and-continue.
+ */
+export async function appendLocalCostRecord(opts: {
+  operation: string;
+  model: string;
+  promptTokens?: number;
+  completionTokens?: number;
+}): Promise<void> {
+  await appendCostRecord({
+    ts: new Date().toISOString(),
+    operation: opts.operation,
+    model: opts.model,
+    input: opts.promptTokens ?? 0,
+    output: opts.completionTokens ?? 0,
+    cacheWrite: 0,
+    cacheRead: 0,
+    costUsd: 0,
+  });
 }
 
 /** Append one usage record. Best-effort: a logging failure must never break the LLM flow. */

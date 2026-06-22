@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseEmbeddingResponse } from "../src/llm/embeddings.js";
+import { parseEmbeddingResponse, embeddingPromptTokens } from "../src/llm/embeddings.js";
 
 test("parseEmbeddingResponse: returns vectors ordered by index, regardless of array order", () => {
   const json = {
@@ -31,4 +31,11 @@ test("parseEmbeddingResponse: throws when the count doesn't match the inputs", (
 test("parseEmbeddingResponse: throws on a non-numeric embedding", () => {
   const json = { data: [{ index: 0, embedding: ["x", "y"] }] };
   assert.throws(() => parseEmbeddingResponse(json, 1), /no numeric embedding/);
+});
+
+test("embeddingPromptTokens: reads usage.prompt_tokens for the local cost log; 0 when absent/garbled", () => {
+  assert.equal(embeddingPromptTokens({ usage: { prompt_tokens: 42 } }), 42);
+  assert.equal(embeddingPromptTokens({ data: [] }), 0);
+  assert.equal(embeddingPromptTokens({ usage: { prompt_tokens: "x" } }), 0);
+  assert.equal(embeddingPromptTokens(null), 0);
 });

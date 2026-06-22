@@ -427,7 +427,10 @@ to your own n=1 data**, no clinical claims, fuel-to-train. All three are also MC
 ## Token cost (know — and control — what you spend)
 
 Every LLM call's token usage + dollar cost is logged locally (`data/cost-log.jsonl` — counts and cost only,
-no prompt text). `npm run cost` reports spend by flow over today / 7d / 30d / all-time with a monthly
+no prompt text). **Local-model calls** (Ollama via `local-llm-server` — intent routing and the optional
+recommendation-clustering embeddings) are logged too, at **$0** with their token volume and a `local (no API
+cost)` marker, so `npm run cost` shows the activity without inflating your dollar spend — the dollar total is
+API-only and stays accurate. `npm run cost` reports spend by flow over today / 7d / 30d / all-time with a monthly
 projection (the dashboard stays decluttered — cost lives in `npm run cost` / the MCP `cost` tool, not a card). To keep it down, the cheap, frequent flows
 (`ask`, `readiness`, `session`) run at `effort: "medium"` while the deep flows (`weekly`, `race`,
 `deep-dive`, plan proposals) stay `"high"`. Rates are configurable in `src/config.ts` (`COACH_PRICE_*`).

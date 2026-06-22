@@ -23,9 +23,12 @@ export class LocalEmbeddings {
     return config.adviceClustering.enabled;
   }
 
-  /** Embed a batch of texts, returning one vector per input IN INPUT ORDER. Throws on any failure. */
-  async embed(texts: string[]): Promise<number[][]> {
-    if (!texts.length) return [];
+  /**
+   * Embed a batch of texts, returning one vector per input IN INPUT ORDER plus the prompt-token count from
+   * the response's `usage` (for the local cost log; 0 when absent). Throws on any failure.
+   */
+  async embed(texts: string[]): Promise<{ vectors: number[][]; promptTokens: number }> {
+    if (!texts.length) return { vectors: [], promptTokens: 0 };
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), this.timeoutMs);
     try {
@@ -39,11 +42,18 @@ export class LocalEmbeddings {
         signal: ctrl.signal,
       });
       if (!res.ok) throw new Error(`local embeddings HTTP ${res.status}`);
-      return parseEmbeddingResponse(await res.json(), texts.length);
+      const json = await res.json();
+      return { vectors: parseEmbeddingResponse(json, texts.length), promptTokens: embeddingPromptTokens(json) };
     } finally {
       clearTimeout(timer);
     }
   }
+}
+
+/** Read `usage.prompt_tokens` from an OpenAI-shaped embeddings response (0 when absent). Pure. */
+export function embeddingPromptTokens(json: unknown): number {
+  const tokens = (json as { usage?: { prompt_tokens?: unknown } } | null)?.usage?.prompt_tokens;
+  return typeof tokens === "number" && Number.isFinite(tokens) ? tokens : 0;
 }
 
 /**
