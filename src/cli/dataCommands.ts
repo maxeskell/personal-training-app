@@ -6,6 +6,7 @@ import { extractJson, garminInner } from "../state/assemble.js";
 import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate } from "../archive/backfill.js";
 import { syncFitSummaries } from "../archive/fitSync.js";
 import { activityArchiveDir, importDir, archiveSummary } from "../archive/activityArchive.js";
+import { backfillGarminFits } from "../archive/activityArchiveBackfill.js";
 
 /**
  * Data/archive CLI commands (backfill / probe / fit-sync / archive-status / archive-compact), extracted
@@ -207,6 +208,44 @@ export async function cmdActivityArchiveImport(): Promise<void> {
       `Imported: +${s.archived} new, ${s.duplicates} duplicate(s), ${s.errors} error(s), ${s.skipped} non-activity skipped ` +
         `(${s.scanned} activity files in ${((Date.now() - t0) / 1000).toFixed(0)}s).`,
     );
+  }
+  printActivityArchiveStatus(dir);
+}
+
+/**
+ * `archive-backfill [--chunk N]` — pull raw `.FIT` for your Garmin activity HISTORY into the durable
+ * archive. Resumable (skips already-archived ids), throttled, and chunked (--chunk caps a run). Run it a
+ * few times (or with a chunk) to grind a decade without hammering Garmin.
+ */
+export async function cmdActivityArchiveBackfill(): Promise<void> {
+  if (!config.garmin.enabled) {
+    console.error("\nGarmin is disabled. Set GARMIN_ENABLED=true (and run garmin-mcp-auth) to backfill.\n");
+    process.exit(1);
+  }
+  const args = process.argv.slice(3);
+  const chunkIdx = args.indexOf("--chunk");
+  const chunk = chunkIdx >= 0 ? Number(args[chunkIdx + 1]) : Infinity;
+  const dir = activityArchiveDir();
+  const store = new ArchiveStore();
+  const g = new GarminClient();
+  if (!(await g.connect())) {
+    console.error("\nGarmin unavailable — run garmin-mcp-auth and retry.\n");
+    process.exit(1);
+  }
+  try {
+    console.log(`\narchive:backfill — pulling raw .FIT for your Garmin history → ${dir}\n`);
+    const added = await backfillGarminActivities(g, store, (m) => console.log(m)); // ensure the id list is current
+    if (added) console.log(`  (+${added} newly-listed activities)`);
+    const acts = await store.loadGarminActivities();
+    const r = await backfillGarminFits(g, acts, { chunk: Number.isFinite(chunk) ? chunk : undefined }, (m) => console.log(m));
+    console.log(
+      `\narchive:backfill: ${r.pending} pending of ${r.total} activities → ⬇ ${r.downloaded} downloaded, ` +
+        `+${r.archived} archived, ${r.duplicates} already-had, ${r.failed} failed.`,
+    );
+    for (const f of r.failures.slice(0, 20)) console.log(`  ! ${f}`);
+    if (r.pending > r.archived + r.duplicates + r.failed) console.log("  …resumable — re-run to continue (use --chunk N to cap each run).");
+  } finally {
+    await g.close();
   }
   printActivityArchiveStatus(dir);
 }

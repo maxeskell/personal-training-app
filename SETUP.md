@@ -344,8 +344,14 @@ cd /Users/maxeskell/personal-training-app && npm run archive:import
   is deposited into the archive too. The corpus grows on its own; nothing to remember.
 - **The career build reads it by default** (alongside `data/fit-streams/`), so after importing you no longer
   need `--fit-dir`.
-- A **full Garmin history backfill** (pull every original `.FIT` Garmin holds, to fill anything an export
-  lacks) is the heavier companion step — see `npm run` once it lands.
+- **Fill anything an export lacks straight from Garmin** (incl. older races a TP export missed):
+  ```bash
+  ▶ RUN   # pull raw .FIT for your whole Garmin history — resumable + throttled; re-run to continue
+  cd /Users/maxeskell/personal-training-app && npm run archive:backfill            # or: -- --chunk 500
+  ```
+  It skips anything already archived (so it won't re-download what the import covered), pauses between calls
+  to respect Garmin's rate limits, and `--chunk N` caps a run so a decade grinds over a few sittings.
+  (Needs `GARMIN_ENABLED=true` + `garmin-mcp-auth`.)
 - Set `COACH_ARCHIVE_DIR` to keep the archive somewhere other than `data/activity-archive/`.
 
 ## Step 6b — (optional) Season arc (the `/season` strategic review)
