@@ -106,6 +106,45 @@ test("renderCareerPage share view: still shows non-identifying splits, hides pro
   assert.doesNotMatch(html, /\.FIT<\/span>/); // provenance tag hidden with names/locations
 });
 
+test("renderCareerPage: multisport race with no finish time sums its leg splits into a total", () => {
+  // A 70.3 whose overall time wasn't hand-authored (enrichRaceResults leaves it author-owned) but whose
+  // swim/bike/run legs each carry a time → Performance shows ≈ the summed total, labelled as excl. transitions.
+  const data: CareerHistory = {
+    races: [
+      {
+        date: "2023-07-01",
+        sport: "triathlon",
+        type: "70.3 triathlon",
+        event: "Example 70.3",
+        location: "Somewhere",
+        result: {
+          splits: [
+            { label: "Swim", dist: "1.90 km", time: "32:10", hr: 150 },
+            { label: "Bike", dist: "90.00 km", time: "2:35:00", watts: 200, hr: 148 },
+            { label: "Run", dist: "21.10 km", time: "1:48:00", pace: "5:07/km", hr: 160 },
+          ],
+        },
+      },
+    ],
+    bests: [],
+  };
+  const html = renderCareerPage(data);
+  assert.match(html, /≈4:55:10/); // 32:10 + 2:35:00 + 1:48:00
+  assert.match(html, /∑ splits/); // honest-model tag
+  // Share view keeps the (non-identifying) total but drops the explanatory tag, like the .FIT provenance tag.
+  const shared = renderCareerPage(data, true);
+  assert.match(shared, /≈4:55:10/);
+  assert.doesNotMatch(shared, /∑ splits/);
+});
+
+test("renderCareerPage: a partial set of single-sport laps is NOT summed (would undercount)", () => {
+  // SAMPLE's Vienna half has two 5 km lap splits and no finish time — summing them (43:15) would be a
+  // misleading 'total' for a 21.1 km race, so a single-sport race never gets a derived total.
+  const html = renderCareerPage(SAMPLE);
+  assert.doesNotMatch(html, /≈43:15/);
+  assert.doesNotMatch(html, /∑ splits/);
+});
+
 test("renderCareerPage(null): friendly empty state names the generator", () => {
   const html = renderCareerPage(null);
   assert.match(html, /No career history yet/);
