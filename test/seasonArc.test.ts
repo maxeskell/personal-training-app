@@ -132,6 +132,17 @@ test("renderSeasonPage: empty state names season_plan; full page renders section
   assert.match(full, /Structural levers/);
 });
 
+test("renderSeasonPage: long-arc bars render a filled width (regression — inline fill span had no width)", () => {
+  const full = renderSeasonPage(buildSeasonArc(baseInput()));
+  // The fill MUST be a block: width:%/height are ignored on an inline <span>, so every bar reads empty
+  // ("No data on graph") even though the hours are present.
+  assert.match(full, /\.bar \.fill\{display:block;/);
+  // Peak year (2013, 390h = max) fills the whole track; current year and a mid year stay proportional.
+  assert.match(full, /class="fill peak" style="width:100%"/); // 2013, the 390h peak
+  assert.match(full, /class="fill" style="width:54%"/); // 2025, 210h of 390h
+  assert.match(full, /class="fill cur" style="width:31%"/); // 2026, 120h of 390h (this year)
+});
+
 test("seasonReportText: a deterministic digest citing the key numbers (grounding + no-LLM fallback)", () => {
   const txt = seasonReportText(buildSeasonArc(baseInput()));
   assert.match(txt, /SEASON ARC/);
