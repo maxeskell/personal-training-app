@@ -69,13 +69,16 @@ test("update_profile is gated by includeProfileWrite (off by default — opt-in 
   assert.ok((await toolNames({ includeWrites: false, includeProfileWrite: true })).includes("update_profile"), "opt-in works even on a read-only AIE surface");
 });
 
-test("httpStartupBanner spells out the exposed surface (incl. the medical profile) and escalates for risky configs", async () => {
+test("httpStartupBanner spells out the exposed surface (medical opt-in) and escalates for risky configs", async () => {
   const { httpStartupBanner } = await import("../src/mcpHttp.js");
   const base = { host: "127.0.0.1", port: 8787, tokenFile: "/x/.endurance-coach/mcp.token" };
 
-  // A read-only, token-authed server: names the data, says read-only, points at the token — no write/none scare lines.
-  const tokenRO = httpStartupBanner({ ...base, auth: "token", includeWrites: false, profileWrite: false, fileAccess: false }).join("\n");
-  assert.match(tokenRO, /MEDICAL profile via get_profile/);
+  // A read-only, token-authed server with medical WITHHELD (the HTTP default): names the data, says
+  // read-only, points at the token, and notes the medical profile is withheld — no write/none scare lines.
+  const tokenRO = httpStartupBanner({ ...base, auth: "token", includeWrites: false, profileWrite: false, fileAccess: false, exposeMedical: false }).join("\n");
+  assert.doesNotMatch(tokenRO, /MEDICAL profile via get_profile/, "medical not advertised as exposed when withheld");
+  assert.match(tokenRO, /Medical profile .* is WITHHELD/);
+  assert.match(tokenRO, /COACH_MCP_EXPOSE_MEDICAL/);
   assert.match(tokenRO, /health metrics/);
   assert.match(tokenRO, /READ-ONLY/);
   assert.match(tokenRO, /every request needs your bearer token/);
@@ -83,12 +86,47 @@ test("httpStartupBanner spells out the exposed surface (incl. the medical profil
   assert.doesNotMatch(tokenRO, /file-access/, "file access off → not advertised");
   assert.doesNotMatch(tokenRO, /auth=NONE/);
 
-  // The dangerous combo (no auth + writes + profile-write + file-access) gets the loud lines.
-  const none = httpStartupBanner({ ...base, auth: "none", includeWrites: true, profileWrite: true, fileAccess: true }).join("\n");
+  // Opting medical in spells out the medical exposure and drops the withheld note.
+  const tokenMed = httpStartupBanner({ ...base, auth: "token", includeWrites: false, profileWrite: false, fileAccess: false, exposeMedical: true }).join("\n");
+  assert.match(tokenMed, /MEDICAL profile via get_profile/);
+  assert.doesNotMatch(tokenMed, /is WITHHELD/);
+
+  // The dangerous combo (no auth + writes + profile-write + file-access + medical) gets the loud lines.
+  const none = httpStartupBanner({ ...base, auth: "none", includeWrites: true, profileWrite: true, fileAccess: true, exposeMedical: true }).join("\n");
   assert.match(none, /auth=NONE: none of the above is password-protected/);
+  assert.match(none, /MEDICAL profile via get_profile/);
   assert.match(none, /plan-WRITE tools/);
   assert.match(none, /profile-write is ON/);
   assert.match(none, /file-access is ON/);
   assert.match(none, /read\/write project files/);
   assert.match(none, /PRIVATE tunnel/);
+});
+
+test("ingest_fit contains the file-path oracle: gated by includeFileAccess, deny-list even when allowed", async () => {
+  const { buildServer } = await import("../src/mcpServer.js");
+  const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+  const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+
+  async function ingest(opts: { includeFileAccess?: boolean }, path?: string): Promise<string> {
+    const [clientT, serverT] = InMemoryTransport.createLinkedPair();
+    const server = buildServer(opts);
+    await server.connect(serverT);
+    const client = new Client({ name: "t", version: "0" }, { capabilities: {} });
+    await client.connect(clientT);
+    const res = (await client.callTool({ name: "ingest_fit", arguments: path === undefined ? {} : { path } })) as {
+      content: Array<{ text?: string }>;
+    };
+    await client.close();
+    return res.content.map((c) => c.text ?? "").join("\n");
+  }
+
+  // Remote surface (no file access): a caller-supplied path is refused — no filesystem oracle.
+  assert.match(await ingest({ includeFileAccess: false }, "/etc/hosts"), /disabled on this surface/);
+  // Even on the file-access surface, the secrets deny-list blocks credential/secret probes.
+  assert.match(await ingest({ includeFileAccess: true }, "/some/dir/.env"), /refused.*environment file/i);
+  assert.match(await ingest({ includeFileAccess: true }, "/home/user/id_rsa"), /refused.*SSH key/i);
+  // A legitimate (here non-existent) .FIT path is allowed through to the validator on that surface.
+  assert.match(await ingest({ includeFileAccess: true }, "/no/such/activity.fit"), /not found/i);
+  // No path on the remote surface still works: it reports the streams dir (no oracle).
+  assert.doesNotMatch(await ingest({ includeFileAccess: false }), /disabled on this surface/);
 });

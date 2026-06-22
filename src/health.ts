@@ -155,11 +155,7 @@ export async function checkRemoteHealth(
   }
 }
 
-/** Redact anything token-shaped from a string before it reaches a log/notification. */
-export function redactSecrets(s: string): string {
-  return s
-    .replace(/\b(sk-ant-[A-Za-z0-9_-]{6,})\b/g, "sk-ant-***")
-    .replace(/\b(gh[opsu]_[A-Za-z0-9]{6,})\b/g, "gh*_***")
-    .replace(/\bBearer\s+[A-Za-z0-9._-]{8,}/gi, "Bearer ***")
-    .replace(/("?(?:access_token|refresh_token|api_key)"?\s*[:=]\s*)"?[A-Za-z0-9._-]{8,}"?/gi, "$1***");
-}
+// redactSecrets moved to ./util/redact.js (a dependency-free leaf) so the AI Endurance / intervals
+// error paths can use it without importing health.ts (which imports aieClient → would be a cycle).
+// Re-exported here so existing importers keep working.
+export { redactSecrets } from "./util/redact.js";

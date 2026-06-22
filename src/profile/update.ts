@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { join, isAbsolute } from "node:path";
+import { join, isAbsolute, resolve, relative } from "node:path";
+import { homedir } from "node:os";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { config } from "../config.js";
 import { LOCAL_PROFILE, EXAMPLE_PROFILE } from "./load.js";
@@ -51,6 +52,27 @@ function localTarget(): string {
   return isAbsolute(p) ? p : join(process.cwd(), p);
 }
 
+/** True when `abs` resolves inside `dir` (not the dir itself). */
+function isInside(dir: string, abs: string): boolean {
+  const rel = relative(resolve(dir), resolve(abs));
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+/**
+ * Containment for the write target (defence-in-depth): `update_profile` writes YAML from a possibly
+ * remote session, so a misconfigured `COACH_PROFILE_PATH` must not let it clobber a system file or a
+ * secret. The target must be a `.yaml`/`.yml` file inside the project or the user's home directory.
+ * Exported so it's unit-tested without touching disk.
+ */
+export function assertSafeProfileTarget(target: string): void {
+  if (!/\.ya?ml$/i.test(target)) {
+    throw new Error(`update_profile: refusing to write to "${target}" — the profile must be a .yaml/.yml file (check COACH_PROFILE_PATH).`);
+  }
+  if (!isInside(process.cwd(), target) && !isInside(homedir(), target)) {
+    throw new Error(`update_profile: refusing to write outside the project or your home directory ("${target}") — check COACH_PROFILE_PATH.`);
+  }
+}
+
 /**
  * Read the current profile as the merge base WITHOUT validating it — the override/local file if present
  * (so an update preserves the fields already there), else the committed blank example. Parsing the raw
@@ -71,6 +93,7 @@ async function readBase(): Promise<Profile> {
 export async function updateLocalProfile(patch: unknown): Promise<{ path: string; changed: string[] }> {
   const next = applyProfilePatch(await readBase(), patch);
   const target = localTarget();
+  assertSafeProfileTarget(target);
   await writeFile(target, stringifyYaml(next));
   return { path: target, changed: isPlainObject(patch) ? Object.keys(patch) : [] };
 }

@@ -1,5 +1,6 @@
 import { computeDoseCycle, type DoseCycle, type Profile } from "./schema.js";
 import { bikeRaceWeights } from "./equipment.js";
+import { medicalExposed } from "../mcp/medicalExposure.js";
 import type { LoadedProfile } from "./load.js";
 
 /**
@@ -190,12 +191,16 @@ function todoLine(p: Profile): string | null {
   return parts.length ? `- Set-in-AI-Endurance (read-only here): ${parts.join(", ")}.` : null;
 }
 
-/** Compact profile block for the coaching prompts. Returns "" when there's nothing meaningful to add. */
-export function renderProfileContext(profile: Profile, today: string): string {
+/**
+ * Compact profile block for the coaching prompts. Returns "" when there's nothing meaningful to add.
+ * `exposeMedical` (default: the surface gate, ON locally) drops the medication + bloods lines so the
+ * remote HTTP/Cowork surface doesn't launder medical detail into an LLM prompt unless opted in.
+ */
+export function renderProfileContext(profile: Profile, today: string, exposeMedical = medicalExposed()): string {
   const lines = [
     identityLine(profile, today),
-    ...medicationLines(profile, today),
-    ...bloodsLines(profile, today),
+    ...(exposeMedical ? medicationLines(profile, today) : []),
+    ...(exposeMedical ? bloodsLines(profile, today) : []),
     biomechanicsLine(profile),
     availabilityLine(profile),
     bikeWeightLine(profile),
@@ -210,16 +215,37 @@ export function renderProfileContext(profile: Profile, today: string): string {
   ].join("\n");
 }
 
-/** Readable `get_profile` MCP output: which file won, the dose-cycle, then the validated profile JSON. */
-export function formatProfileForTool(loaded: LoadedProfile, today: string): string {
+/** Strip the medical context (medication/conditions, blood panels, date of birth) from a profile copy
+ *  for a surface that isn't allowed to see it. Pure — returns a shallow copy, mutates nothing. */
+function withoutMedical(p: Profile): Profile {
+  const copy = { ...p } as Record<string, unknown>;
+  delete copy.health;
+  delete copy.bloods;
+  if (copy.identity && typeof copy.identity === "object") {
+    const id = { ...(copy.identity as Record<string, unknown>) };
+    delete id.date_of_birth;
+    copy.identity = id;
+  }
+  return copy as Profile;
+}
+
+/**
+ * Readable `get_profile` MCP output: which file won, the dose-cycle, then the validated profile JSON.
+ * `exposeMedical` (default: the surface gate, ON locally) withholds medical context — medication/dose
+ * cycle, blood panels, date of birth — on the remote HTTP/Cowork surface unless the operator opts in.
+ */
+export function formatProfileForTool(loaded: LoadedProfile, today: string, exposeMedical = medicalExposed()): string {
   const dc = computeDoseCycle(loaded.profile, today);
   const header = [
     `Athlete profile [source: ${loaded.source} — ${loaded.path}]`,
-    dc
-      ? `dose_cycle (computed for ${today}): ${dc.days_since_dose}d since ${dc.dose_day} dose, in_gi_trough=${dc.in_gi_trough}`
-      : "dose_cycle: n/a (no medication.dose_day set)",
+    exposeMedical
+      ? dc
+        ? `dose_cycle (computed for ${today}): ${dc.days_since_dose}d since ${dc.dose_day} dose, in_gi_trough=${dc.in_gi_trough}`
+        : "dose_cycle: n/a (no medication.dose_day set)"
+      : "medical context (medication, dose cycle, bloods, date of birth) is WITHHELD on this surface — set COACH_MCP_EXPOSE_MEDICAL=true to include it.",
     "Live numbers (FTP, weight, paces, swim CSS, HRV, load) are NOT here — use get_state for those.",
     "",
   ].join("\n");
-  return header + JSON.stringify({ ...loaded.profile, dose_cycle: dc }, null, 2);
+  const body = exposeMedical ? { ...loaded.profile, dose_cycle: dc } : withoutMedical(loaded.profile);
+  return header + JSON.stringify(body, null, 2);
 }

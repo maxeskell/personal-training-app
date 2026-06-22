@@ -152,9 +152,12 @@ auto-restarts onto the new code. Now both the tunnel and the server survive rebo
 open — point Cowork at the stable `…/mcp` URL once and it keeps working.
 
 > **What it exposes — shown on every start.** The server prints a banner to its log naming exactly
-> what's reachable: your training data, health metrics, and your **medical** profile via `get_profile`
-> (conditions, medication), plus the gated plan-write tools unless read-only. `auth=none`,
-> `COACH_MCP_PROFILE_WRITE=true` and `COACH_MCP_FILE_ACCESS=true` get extra warning lines. It's there so the stakes are visible at the
+> what's reachable: your training data, health metrics, and (only when `COACH_MCP_EXPOSE_MEDICAL=true`)
+> your **medical** profile via `get_profile` (conditions, medication, blood panels, date of birth), plus
+> the gated plan-write tools unless read-only. **Medical context is WITHHELD by default on this remote
+> surface** — both from `get_profile` and the LLM coaching prompt — and the banner says so; set
+> `COACH_MCP_EXPOSE_MEDICAL=true` to include it. `auth=none`, `COACH_MCP_PROFILE_WRITE=true` and
+> `COACH_MCP_FILE_ACCESS=true` get extra warning lines. It's there so the stakes are visible at the
 > moment you stand the server up, not just in this doc — keep it behind your private, authenticated tunnel.
 
 > The launchd job runs the server as a **single node process** (`node --import tsx src/mcpHttp.ts`),
@@ -199,7 +202,9 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
   health/medication, availability, equipment, fuelling, race targets) plus a computed `dose_cycle`
   (`days_since_dose`, `in_gi_trough`) when a medication cycle is set. **No live numbers** — FTP, weight,
   paces, swim CSS, HRV and load come from `get_state`. Reads `profile.local.yaml`, else the committed
-  `profile.example.yaml`. Deterministic — no LLM cost. See [docs/profile.md](profile.md).
+  `profile.example.yaml`. Deterministic — no LLM cost. On the **HTTP/Cowork** surface the **medical**
+  context (medication + dose cycle, blood panels, date of birth) is **withheld unless
+  `COACH_MCP_EXPOSE_MEDICAL=true`**; local stdio always includes it. See [docs/profile.md](profile.md).
 - **`update_profile`** `{ patch }` — **write** the athlete profile by talking to Claude. `patch` is a
   partial profile object (same shape as `get_profile`); it's **deep-merged** onto your current profile
   (nested objects merged, arrays/scalars replaced), **validated**, then written to the gitignored

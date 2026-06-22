@@ -1,4 +1,6 @@
 import { config } from "../../config.js";
+import { redactSecrets } from "../../util/redact.js";
+import { retry, RetryableHttpError, isRetryableStatus, parseRetryAfterMs } from "../../util/retry.js";
 import type { IntervalsRaw } from "./map.js";
 
 /**
@@ -21,12 +23,21 @@ function ymd(d: Date): string {
 async function getJson<T>(path: string): Promise<T> {
   const { baseUrl, apiKey, athleteId, timeoutMs } = config.intervals;
   const url = `${baseUrl}/athlete/${encodeURIComponent(athleteId)}${path}`;
-  const res = await fetch(url, {
-    headers: { authorization: authHeader(apiKey), accept: "application/json" },
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!res.ok) throw new Error(`intervals.icu ${res.status} for ${path.split("?")[0]} (check COACH_INTERVALS_API_KEY / ATHLETE_ID)`);
-  return (await res.json()) as T;
+  const where = path.split("?")[0];
+  // Read-only GET → safe to retry on a transient 429/5xx (honouring Retry-After); a 4xx is a config
+  // problem we don't hammer, and an abort/timeout is a deliberate cap we don't fight.
+  return retry(async () => {
+    const res = await fetch(url, {
+      headers: { authorization: authHeader(apiKey), accept: "application/json" },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) {
+      const msg = redactSecrets(`intervals.icu ${res.status} for ${where} (check COACH_INTERVALS_API_KEY / ATHLETE_ID)`);
+      if (isRetryableStatus(res.status)) throw new RetryableHttpError(msg, res.status, parseRetryAfterMs(res.headers.get("retry-after")));
+      throw new Error(msg);
+    }
+    return (await res.json()) as T;
+  }, { attempts: config.retry.attempts });
 }
 
 /** Pull the analysis window: activities + wellness (trailing) and events (trailing + upcoming races). */
@@ -47,11 +58,11 @@ export async function fetchIntervals(today: Date): Promise<IntervalsRaw> {
     getJson<Record<string, unknown>[]>(`/events?oldest=${ymd(oldest)}&newest=${ymd(future)}`),
   ]);
   if (results.every((r) => r.status === "rejected")) {
-    throw new Error(`intervals.icu: all endpoints failed — ${(results[0] as PromiseRejectedResult).reason}`);
+    throw new Error(redactSecrets(`intervals.icu: all endpoints failed — ${(results[0] as PromiseRejectedResult).reason}`));
   }
   const [activities, wellness, events] = results.map((r, i) => {
     if (r.status === "fulfilled") return r.value;
-    console.warn(`intervals.icu: ${labels[i]} fetch failed (${(r.reason as Error)?.message ?? r.reason}); degrading that slice to empty.`);
+    console.warn(redactSecrets(`intervals.icu: ${labels[i]} fetch failed (${(r.reason as Error)?.message ?? r.reason}); degrading that slice to empty.`));
     return [] as Record<string, unknown>[];
   });
   return { activities, wellness, events };
