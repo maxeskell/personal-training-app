@@ -497,9 +497,10 @@ For the one-off HTML or a PDF, use `npm run dashboard -- --share`.
 **Career & PBs tab (`/career`):** a read-only page (linked top-left of the dashboard) for the *long view* —
 your **race history** (date · event/location · your recorded performance, with an expandable per-race
 **splits** table), your **lifetime bests vs current form** side by side (all-time / last 90 days / season,
-per sport: fastest at each distance, longest, best power), and an overlaid **power curve** (best ever vs
-recent). It reads a **gitignored** data file you build once from your multi-year TrainingPeaks / intervals.icu
-archive plus your exported `.FIT` files — the dashboard's live state only knows the recent past, so this
+per sport: fastest at each distance, longest, best power), and an overlaid **power curve** — all-time (from
+your power export) vs the **Last-90-days / Season** curves computed from your recent `.FIT` rides. It reads a
+**gitignored** data file you build once from your multi-year TrainingPeaks / intervals.icu archive plus your
+exported `.FIT` files — the dashboard's live state only knows the recent past, so this
 history lives apart (see [SETUP.md → "Career history"](./SETUP.md)). It's display-only and **honest by
 construction**: performances are *your own recorded numbers* — pulled from your raw `.FIT` files (finish
 time, splits, power, HR) or, when a race has no `.FIT`, your activity export for summary numbers only; **no

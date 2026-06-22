@@ -311,6 +311,11 @@ cd /Users/maxeskell/personal-training-app && npm run career:build -- \
 - **Bests + power curve are auto-computed** from `--intervals` / `--tp` / `--power`, with GPS/calibration
   outliers dropped (honest models). Locations you don't mark `"confidence":"confirmed"` are treated as
   approximations in the UI.
+- **The power curve's "recent" (Last-90-days + Season) lines are computed from your `.FIT` RIDE streams**
+  (mean-maximal power in those windows) — so keep recent `.FIT`s in `data/fit-streams/` (the dashboard
+  Sync / `npm run fit-sync` puts them there automatically). The **all-time** line comes from `--power`;
+  if a window has no `.FIT`s, it falls back to that export's windows. With no ride `.FIT`s and only an
+  all-time `--power` export, the recent lines simply won't appear.
 - Set `COACH_CAREER_PATH` if you keep the file somewhere other than `data/career-history.json`.
 
 ## Step 7 — Done & troubleshooting

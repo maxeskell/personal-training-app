@@ -23,7 +23,8 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { loadActivityFits } from "../src/insights/fit.js";
-import { enrichRaceResults, type ActivitySummary, type DatedFit, type SportFamily } from "../src/coach/raceResults.js";
+import { meanMaximalCurve, type CurvePoint } from "../src/insights/powerCurve.js";
+import { enrichRaceResults, sportFamily, type ActivitySummary, type DatedFit, type SportFamily } from "../src/coach/raceResults.js";
 
 const DURATIONS = [5, 15, 30, 60, 120, 300, 480, 600, 1200, 1800, 3600];
 
@@ -218,6 +219,35 @@ function buildPower(powerJson: any, season: number) {
   return pc;
 }
 
+/**
+ * Power curve for the /career page. All-time comes from the intervals `--power` export (or, if absent, your
+ * .FIT rides). The "recent" Last-90-days + Season windows are computed from your raw .FIT RIDE power streams
+ * (robust — no dependence on the export's labels), falling back to the export's windows when no .FITs cover
+ * them. Returns undefined when there's no usable all-time curve.
+ */
+function buildPowerCurve(powerJson: any, fits: DatedFit[], season: number) {
+  const exportPc = powerJson ? buildPower(powerJson, season) : undefined;
+  const rides = fits
+    .filter((f) => sportFamily(f.sport) === "ride")
+    .map((f) => ({ date: f.date, watts: f.fit.samples.map((s) => s.power) }))
+    .filter((a) => a.watts.some((w) => w != null));
+  const d90 = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+  const seasonStart = `${season}-01-01`;
+  const fitLast90 = meanMaximalCurve(rides.filter((a) => a.date >= d90), DURATIONS);
+  const fitSeason = meanMaximalCurve(rides.filter((a) => a.date >= seasonStart), DURATIONS);
+
+  const allTime: CurvePoint[] | undefined =
+    exportPc?.allTime?.length ? exportPc.allTime : rides.length ? meanMaximalCurve(rides, DURATIONS) : undefined;
+  if (!allTime || !allTime.length) return undefined;
+
+  const last90 = fitLast90.length ? fitLast90 : exportPc?.last90;
+  const seasonCurve = fitSeason.length ? fitSeason : exportPc?.season;
+  const pc: { allTime: CurvePoint[]; last90?: CurvePoint[]; season?: CurvePoint[] } = { allTime };
+  if (last90?.length) pc.last90 = last90;
+  if (seasonCurve?.length) pc.season = seasonCurve;
+  return pc;
+}
+
 function main() {
   const args = parseArgs();
   const season = Number(args.season ?? new Date().getFullYear());
@@ -245,7 +275,7 @@ function main() {
   races = enriched.races;
 
   const bests = all.length ? buildBests(all, intervals.length ? intervals : all, season) : [];
-  const powerCurve = typeof args.power === "string" ? buildPower(readJson(args.power), season) : undefined;
+  const powerCurve = buildPowerCurve(typeof args.power === "string" ? readJson(args.power) : null, datedFits, season);
 
   const result: Record<string, unknown> = { generatedAt: new Date().toISOString().slice(0, 10), seasonYear: season, races, bests };
   if (powerCurve) result.powerCurve = powerCurve;
@@ -253,8 +283,11 @@ function main() {
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(result, null, 2) + "\n");
   const e = enriched.stats;
+  const pcStr = powerCurve
+    ? `allTime ${powerCurve.allTime.length}, last90 ${powerCurve.last90?.length ?? 0}, season ${powerCurve.season?.length ?? 0} pts`
+    : "none";
   console.log(
-    `wrote ${out}\n  races: ${races.length} | bests: ${bests.map((b) => `${b.sport}(${b.rows.length})`).join(", ") || "none"} | power: ${powerCurve ? powerCurve.allTime.length + "pts" : "none"}\n` +
+    `wrote ${out}\n  races: ${races.length} | bests: ${bests.map((b) => `${b.sport}(${b.rows.length})`).join(", ") || "none"} | power: ${pcStr}\n` +
       `  race performance: ${e.fromFit} from .FIT, ${e.fromActivity} from activity export, ${e.withSplits} with splits (of ${e.total}; ${datedFits.length} .FIT files scanned${fitDir ? ` in ${fitDir}` : ""})`,
   );
 }
