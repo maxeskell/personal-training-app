@@ -1,6 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { recsToFindings, latestAdviceFindings, renderCoachRecs } from "../src/coach/adviceRecs.js";
+import {
+  recsToFindings,
+  latestAdviceFindings,
+  renderCoachRecs,
+  adviceSourceOfKey,
+  groupAdviceBySource,
+  ADVICE_RECS_SCHEMA,
+} from "../src/coach/adviceRecs.js";
 import type { InsightSnapshot, SurfacedFinding } from "../src/state/insightLog.js";
 
 test("recsToFindings: keys + family-tags each rec; off-list family → General; dedupes + drops blanks", () => {
@@ -58,4 +65,48 @@ test("renderCoachRecs: reactable cards carry key + family + the four actions; hi
   assert.match(html, /data-reaction-state="like"/, "renders the persisted reaction state");
   assert.equal(renderCoachRecs([], undefined), "", "no card when there's nothing to show");
   assert.equal(renderCoachRecs(recs, undefined, true), "", "hidden in share/screenshot mode");
+});
+
+test("ADVICE_RECS_SCHEMA: no minimum floor (so one strong rec is allowed), capped at 4", () => {
+  const schema = ADVICE_RECS_SCHEMA as { maxItems?: number; minItems?: number; description: string };
+  assert.equal(schema.maxItems, 4);
+  assert.equal(schema.minItems, undefined, "must not mandate a floor — padding is what we're fixing");
+  assert.doesNotMatch(schema.description, /2[–-]4/, "the old 2–4 floor wording is gone");
+  assert.match(schema.description, /fewest/i);
+});
+
+test("adviceSourceOfKey: parses the source from the key; null for non-advice/garbled keys", () => {
+  assert.equal(adviceSourceOfKey("advice:readiness:keep-it-easy"), "readiness");
+  assert.equal(adviceSourceOfKey("advice:deep-dive:ease-the-long-run"), "deep-dive");
+  assert.equal(adviceSourceOfKey("advice:ask:add-a-gel"), "ask");
+  assert.equal(adviceSourceOfKey("advice:weekly:something"), null, "unknown source → null");
+  assert.equal(adviceSourceOfKey("load:ramp:high"), null, "non-advice key → null");
+});
+
+test("groupAdviceBySource: fixed readiness→deep-dive→ask order; unknown keys trail header-less", () => {
+  const groups = groupAdviceBySource([
+    sf("advice:ask:d"),
+    sf("advice:readiness:a"),
+    sf("advice:deep-dive:c"),
+    sf("advice:readiness:b"),
+    sf("orphan-key"),
+  ]);
+  assert.deepEqual(
+    groups.map((g) => ({ source: g.source, keys: g.items.map((f) => f.key) })),
+    [
+      { source: "readiness", keys: ["advice:readiness:a", "advice:readiness:b"] },
+      { source: "deep-dive", keys: ["advice:deep-dive:c"] },
+      { source: "ask", keys: ["advice:ask:d"] },
+      { source: null, keys: ["orphan-key"] }, // garbled key kept, just header-less
+    ],
+  );
+});
+
+test("renderCoachRecs: shows provenance group headings, most-timely source first", () => {
+  const html = renderCoachRecs([sf("advice:deep-dive:c"), sf("advice:readiness:a")]);
+  assert.match(html, /readiness check/); // heading text (apostrophe is escaped to &#39; by escapeHtml)
+  assert.match(html, /latest deep dive/);
+  // readiness heading appears before the deep-dive heading regardless of input order
+  assert.ok(html.indexOf("readiness check") < html.indexOf("latest deep dive"), "readiness group is rendered first");
+  assert.match(html, /class="setup-group"/, "reuses the existing group-header style");
 });
