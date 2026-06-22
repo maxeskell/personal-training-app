@@ -272,14 +272,14 @@ export interface BuildOptions {
 
 function runLoadRampFindings(runRamp: ReturnType<typeof runLoadRamp>): Finding[] {
   const out: Finding[] = [];
-  // 1. Run-load ramp guard — the marathon-off-tri injury window (priority detector).
+  // 1. Run-load ramp guard — the run-load injury window (priority detector).
   if (runRamp.jumpPct != null && runRamp.weeks.length >= 3) {
     if (runRamp.jumpPct > 50) {
       out.push({
         family: "Injury risk",
         title: "Run load spiked this week",
         severity: "flag",
-        detail: `Run stress is up ${runRamp.jumpPct}% on your recent baseline — the kind of jump that precedes running injuries, and you're in the marathon-off-tri window.`,
+        detail: `Run stress is up ${runRamp.jumpPct}% on your recent baseline — the kind of jump that precedes running injuries.`,
         evidence: `this week ${runRamp.thisWeekEss} ESS vs baseline ${runRamp.baselineEss} [ai-endurance]`,
         recommendation: "Cap the increase — pull back run volume/intensity toward baseline this week; ramp gradually.",
       });
@@ -288,7 +288,7 @@ function runLoadRampFindings(runRamp: ReturnType<typeof runLoadRamp>): Finding[]
         family: "Injury risk",
         title: "Run load climbing",
         severity: "watch",
-        detail: `Run stress up ${runRamp.jumpPct}% on baseline — fine if deliberate, but watch it given the marathon build.`,
+        detail: `Run stress up ${runRamp.jumpPct}% on baseline — fine if deliberate, but watch the rate of increase.`,
         evidence: `this week ${runRamp.thisWeekEss} ESS vs baseline ${runRamp.baselineEss} [ai-endurance]`,
       });
     }
@@ -374,7 +374,7 @@ function efficiencyDurabilityFindings(
         family: "Durability",
         title: "Run durability slipping",
         severity: "watch",
-        detail: `DFA-α1 run durability shows more late-session decay than before (${durRun.prior} → ${durRun.recent}) — fatigue resistance holds marathon pace late, so worth watching.`,
+        detail: `DFA-α1 run durability shows more late-session decay than before (${durRun.prior} → ${durRun.recent}) — fatigue resistance is slipping late in long runs, so worth watching.`,
         evidence: `durability index ${durRun.recent} vs ${durRun.prior} (closer to 0 = more durable) [ai-endurance]`,
       });
     } else if (change >= 2) {
@@ -382,7 +382,7 @@ function efficiencyDurabilityFindings(
         family: "Durability",
         title: "Run durability improving",
         severity: "info",
-        detail: `Less late-session decay than before (${durRun.prior} → ${durRun.recent}) — fatigue resistance trending up, encouraging for the marathon.`,
+        detail: `Less late-session decay than before (${durRun.prior} → ${durRun.recent}) — fatigue resistance trending up.`,
         evidence: `durability index ${durRun.recent} vs ${durRun.prior} (closer to 0 = more durable) [ai-endurance]`,
       });
     }

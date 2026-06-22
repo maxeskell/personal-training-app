@@ -1,6 +1,6 @@
 /**
  * Taper-response finder (data-scientist brief Q6): what form (TSB) coincided with the athlete's best
- * past races/benchmarks, to set a personalised taper target for July (tri) and September (marathon).
+ * past races/benchmarks, to set a personalised taper target for the athlete's key races.
  *
  * We read TSB straight off the local CTL/ATL/TSB series (metrics.loadModel) on each PAST race date from
  * getRaceGoalEvent, and — where the model exposes a predicted vs target time for that race — rank races
@@ -86,7 +86,7 @@ export function taperFinding(t: TaperAnalysis): Finding | null {
     title: `You've historically raced at form (TSB) ~${t.recommendedTsbLow} to ${t.recommendedTsbHigh}`,
     severity: "info",
     detail:
-      `Your past races clustered in this form band — a descriptive starting point for the July tri and September marathon taper, ` +
+      `Your past races clustered in this form band — a descriptive starting point for your taper, ` +
       `more personal than the generic "just go positive". (Descriptive only: we don't have actual finish times to confirm which TSB raced best.) ` +
       `Time the taper so TSB rises into this range on race day, then refine once real results are in.`,
     evidence: `${t.basis}; ${t.past.map((p) => `${p.race} ${p.date} TSB ${p.tsbOnDay}`).join("; ")} [derived]`,

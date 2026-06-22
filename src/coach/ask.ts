@@ -10,6 +10,7 @@ import { screenNutritionPrompt } from "../guardrails/wellbeing.js";
 import { runSessionFeedback } from "./session.js";
 import { loadSessionDecays } from "../insights/fit.js";
 import { ArchiveStore } from "../archive/store.js";
+import { fmt } from "./dashboardHelpers.js";
 import { classifyIntent, isLastSessionQuestion } from "./intent.js";
 import { renderProfileContext } from "../profile/context.js";
 import { ADVICE_RECS_SCHEMA, recsToFindings, type AdviceRec } from "./adviceRecs.js";
@@ -39,9 +40,6 @@ export { isLastSessionQuestion };
  * restriction screen runs BEFORE the model, and the prompt forbids inventing numbers.
  */
 
-function fmt(n: number | null | undefined, d = 0): string {
-  return n == null ? "—" : n.toFixed(d);
-}
 
 /** One-line threshold/FTP summary for the Q&A context (empty when nothing is configured). */
 function thresholdLine(state: AthleteState): string {

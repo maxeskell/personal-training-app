@@ -3,6 +3,7 @@ import type { AthleteState, ActualActivity } from "../state/types.js";
 import { liveCoachingContext } from "./seasonContext.js";
 import { engagementSteer } from "../insights/engagement.js";
 import type { EngagementContext } from "../insights/engagement.js";
+import { fmt } from "./dashboardHelpers.js";
 
 /** Activities within the trailing `days` of `asOf` (YYYY-MM-DD), from the latest state's list. */
 function recentActivities(today: AthleteState, asOf: string, days: number): ActualActivity[] {
@@ -12,9 +13,6 @@ function recentActivities(today: AthleteState, asOf: string, days: number): Actu
   return (today.actualActivities.value ?? []).filter((a) => a.date && a.date >= cutISO && a.date <= asOf);
 }
 
-function fmt(n: number | null | undefined, d = 0): string {
-  return n == null ? "—" : n.toFixed(d);
-}
 
 /** Build the computed weekly summary (load by sport, adherence, trends) for the model. */
 export function summarizeWeek(window: AthleteState[]): string {

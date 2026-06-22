@@ -85,7 +85,7 @@ export function mlr2(y: number[], x1: number[], x2: number[]): Mlr2 | null {
 }
 
 /** Lag-1 autocorrelation of a series — used to discount the effective sample size. */
-export function lag1Autocorr(xs: number[]): number {
+function lag1Autocorr(xs: number[]): number {
   if (xs.length < 3) return 0;
   const m = mean(xs)!;
   let num = 0;
@@ -160,7 +160,7 @@ export function corrWithCi(xsIn: Maybe[], ysIn: Maybe[]): Corr | null {
 }
 
 /** Shift y forward by `lag` so x[t] pairs with y[t+lag] (predictor leads outcome). */
-export function applyLag(xs: Maybe[], ys: Maybe[], lag: number): [Maybe[], Maybe[]] {
+function applyLag(xs: Maybe[], ys: Maybe[], lag: number): [Maybe[], Maybe[]] {
   if (lag <= 0) return [xs, ys];
   return [xs.slice(0, -lag), ys.slice(lag)];
 }

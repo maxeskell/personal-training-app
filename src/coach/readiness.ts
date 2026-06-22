@@ -1,6 +1,7 @@
 import type { CoachLLM } from "../llm/client.js";
 import type { AthleteState } from "../state/types.js";
 import { ADVICE_RECS_SCHEMA, type AdviceRec } from "./adviceRecs.js";
+import { fmt } from "./dashboardHelpers.js";
 
 export interface ReadinessVerdict {
   verdict: "green" | "amber" | "red";
@@ -36,9 +37,6 @@ export const READINESS_SCHEMA: Record<string, unknown> = {
   additionalProperties: false,
 };
 
-function fmt(n: number | null | undefined, digits = 0): string {
-  return n == null ? "—" : n.toFixed(digits);
-}
 
 /** Build a compact, provenance-tagged snapshot for the model. Includes the trailing trend. */
 export function summarizeForReadiness(window: AthleteState[]): string {
@@ -130,7 +128,7 @@ export function adverseSignalCount(window: AthleteState[]): { count: number; mul
  * collapse, an orthopedic-recovery crash (injury), or a very low cardio recovery. The generic "needs a
  * pattern" floor must not wave these through. Returns a short reason, or null.
  */
-export function highSpecificityAlarm(today: AthleteState): string | null {
+function highSpecificityAlarm(today: AthleteState): string | null {
   const rhr = today.restingHr.value, rhrBase = today.restingHr7dBaseline.value;
   if (rhr != null && rhrBase != null && rhrBase > 0 && rhr > rhrBase + 10) return `resting HR ${rhr} ≫ baseline ${rhrBase.toFixed(0)} (+${(rhr - rhrBase).toFixed(0)})`;
   const hrv = today.hrvOvernight.value, hrvBase = today.hrv7dBaseline.value;
@@ -143,7 +141,7 @@ export function highSpecificityAlarm(today: AthleteState): string | null {
 }
 
 /** How many interpretable inputs are actually present today — so a red isn't downgraded on thin data. */
-export function presentInterpretableCount(today: AthleteState): number {
+function presentInterpretableCount(today: AthleteState): number {
   let n = 0;
   if (today.hrvOvernight.value != null && today.hrv7dBaseline.value != null) n++;
   if (today.restingHr.value != null && today.restingHr7dBaseline.value != null) n++;

@@ -39,7 +39,7 @@ export function trainingStatusFinding(ts: TrainingStatusSignals | null | undefin
       `Garmin acute:chronic load ratio is ${ratio ?? "—"}${ts.acwrStatus ? ` (${ts.acwrStatus})` : ""}` +
       `${overreaching ? `, status ${prettyLabel(ts.label)}` : ""} — acute ${ts.acuteLoad ?? "—"} vs chronic ${ts.chronicLoad ?? "—"}` +
       `${ts.optimalChronicLoadMax != null ? ` (optimal chronic ${Math.round(ts.optimalChronicLoadMin ?? 0)}–${Math.round(ts.optimalChronicLoadMax)})` : ""}. ` +
-      `A ratio above ~1.5 is the most evidence-backed overreach/injury flag — especially in your marathon-off-tri window.`,
+      `A ratio above ~1.5 is the most evidence-backed overreach/injury flag.`,
     evidence: `get_training_status: ratio ${ratio}, ${ts.acwrStatus ?? ""} [garmin MODEL — directional]`,
     recommendation: "Pull back acute load toward the chronic baseline this week — drop a hard session or cut volume; let the ratio settle under ~1.3.",
     confidence: high && overreaching ? 0.8 : 0.7,
@@ -66,7 +66,7 @@ export function hrvStatusFinding(h: HrvStatusSignals | null | undefined): Findin
   };
 }
 
-/** Endurance score — sustained-effort capacity. Rising = the marathon-relevant adaptation (E5). */
+/** Endurance score — sustained-effort capacity. Rising = the sustained-effort endurance adaptation (E5). */
 export function enduranceScoreFinding(e: EnduranceScoreSignals | null | undefined): Finding | null {
   if (!e || e.current == null) return null;
   const vsAvg = e.periodAvg != null ? e.current - e.periodAvg : null;
@@ -79,7 +79,7 @@ export function enduranceScoreFinding(e: EnduranceScoreSignals | null | undefine
       `Garmin endurance score ${e.current}${e.classification ? ` (${e.classification})` : ""}` +
       `${vsAvg != null ? `, ${dir} ${Math.abs(vsAvg)} vs your recent average` : ""}` +
       `${e.nextThresholdLabel != null ? ` — ${e.nextThresholdGap} from "${e.nextThresholdLabel.replace(/_/g, " ")}"` : ""}. ` +
-      `Rising endurance score (especially while VO2max plateaus) is exactly the sustained-effort adaptation the marathon build is after.`,
+      `Rising endurance score (especially while VO2max plateaus) is exactly the sustained-effort adaptation that long-course endurance is built on.`,
     evidence: `get_endurance_score [garmin MODEL — trend over absolute]`,
     confidence: 0.5,
   };

@@ -295,7 +295,7 @@ export function fitFindings(decays: SessionDecay[]): Finding[] {
       detail:
         `Your last long run lost ${Math.abs(latest.cadenceDropPct)}% cadence from first to last quarter` +
         `${latest.gctRisePct != null ? `, with ground-contact time up ${latest.gctRisePct}%` : ""}` +
-        ` — neuromuscular fatigue setting in late, the form-decay pattern that raises overstriding/injury risk into the marathon.`,
+        ` — neuromuscular fatigue setting in late, the form-decay pattern that raises overstriding/injury risk late in long runs.`,
       evidence: `per-second .FIT streams, ${longRuns.length} long runs analysed [garmin FR970]`,
       recommendation: "Add late-run cadence cues and finish-fast strides; check it shrinks as durability builds.",
       confidence: 0.6,

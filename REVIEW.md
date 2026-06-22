@@ -383,3 +383,26 @@ Single highest-leverage recommendation: de-hardcode the marathon/race context (B
 
 Stage 5 STOP: analysis complete. Awaiting approval of the consolidated plan before any Execution-stage code changes. On approval, execute Batch 0 first, smallest blast radius, with typecheck/test/diff shown and a stop after each batch.
 
+---
+
+## Execution log
+
+User approval: execute Batch 0 + Batch 1, then write a handover so a FRESH session can continue Batches 2-5. Threat model confirmed: MCP is stdio-local (no remote MCP surface); the dashboard is LAN-reachable on the phone but fully token-gated. Detailed runbook for the remaining batches: see `REVIEW-HANDOVER.md`.
+
+### Batch 0 — cleanup — DONE, green
+Verified: `npm run typecheck` clean, `npm test` 584/584 pass, `npm run build` clean.
+- Deleted dead `WriteGate.assertNoDirectWrite` (`writeGate.ts`) + its test. It was wired into nothing (a false safety net). If defence-in-depth is wanted later, add a real guard at the `aieClient.callRaw` boundary (Batch 3) rather than reinstating this.
+- Deleted dead `decodeFitFromResult` (`fitParser.ts`) + its test. The live FIT path uses `garminInner` (`fitSync.ts:127`), not this function.
+- Dropped unnecessary `export` on internal-only `byCategory` (fuelInventory), `highSpecificityAlarm`/`presentInterpretableCount` (readiness), `lag1Autocorr`/`applyLag` (stats).
+- Consolidated 4 byte-identical `fmt` copies (weekly/session/ask/readiness) to import the canonical `fmt` from `dashboardHelpers.ts:176`.
+
+### Batch 1 — correctness + honesty — DONE, green
+Verified: typecheck clean, 584/584 tests pass, build clean.
+- De-hardcoded the marathon/July/September race context in deterministic output: `engine.ts` (line 275 comment, 282, 291, 377, 385), `garminHealth.ts` (42, line 69 comment, 82), `fit.ts:298`, `taper.ts` (line 3 comment, 89). Wording is now sport-neutral; live race context still flows from `seasonContext.ts` (unchanged, already calendar-driven).
+- Made the readiness persona rule conditional rather than asserting a marathon as fact (`persona.ts:57-59`).
+- Labelled the racePrep prediction as a MODEL estimate with an as-of date and an explicit `…(truncated)` marker instead of a silent mid-JSON cut (`racePrep.ts:99`).
+- Stopped printing a fabricated default "60%" confidence; the % is omitted when confidence is undefined (`deepDive.ts:78`).
+- Corrected the inaccurate `/season` "shows no identifying data" comment (`seasonPage.ts:9-11`).
+
+Remaining: Batches 2-5 — see `REVIEW-HANDOVER.md` (self-sufficient for a fresh session).
+

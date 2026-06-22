@@ -6,8 +6,9 @@ import type { YearStat } from "./careerHistory.js";
  * Read-only `/season` page: the deterministic multi-season strategic review (see seasonArc.ts +
  * docs/specs/Season_Arc_Spec.md). Linked from the dashboard ("Season arc →"). PURE; everything
  * interpolated is escaped (dashboard escaping convention). Degrades to a friendly empty state when no
- * `season_plan` is set. `share` is accepted for route symmetry with /career — this page shows no
- * identifying data (only your own plan + MODEL load numbers), so it's effectively a no-op here.
+ * `season_plan` is set. `share` is accepted for route symmetry with /career but is currently a no-op:
+ * this page can surface derived medical context (e.g. GLP-1 medication presence, blood-panel recency),
+ * so it relies on the dashboard's auth gate rather than a share-redaction pass.
  */
 
 const DOT: Record<Lever["status"], string> = { ok: "#1a8a3a", watch: "#c98a00", gap: "#c0392b", info: "#9a8f78" };

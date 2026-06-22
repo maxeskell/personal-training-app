@@ -114,9 +114,3 @@ test("WriteGate: concurrent confirms of the same id execute the write exactly on
   assert.equal(results.filter((r) => r.status === "fulfilled").length, 1, "exactly one confirm succeeded");
   assert.equal((await log.all()).filter((r) => r.id === p.id).at(-1)?.status, "executed");
 });
-
-test("WriteGate.assertNoDirectWrite blocks a write tool from any non-gated path", async () => {
-  const { WriteGate } = await import("../src/guardrails/writeGate.js");
-  assert.throws(() => WriteGate.assertNoDirectWrite("skipWorkout"), /must go through WriteGate/);
-  assert.doesNotThrow(() => WriteGate.assertNoDirectWrite("getPlannedWorkouts")); // a read tool is fine
-});

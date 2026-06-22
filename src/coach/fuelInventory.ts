@@ -154,7 +154,7 @@ export function loadInventory(profile: Profile | undefined): FuelProduct[] {
 
 // ---- Selection helpers (pure) ----------------------------------------------
 
-export const byCategory = (inv: FuelProduct[], ...cats: FuelCategory[]): FuelProduct[] => inv.filter((p) => cats.includes(p.category));
+const byCategory = (inv: FuelProduct[], ...cats: FuelCategory[]): FuelProduct[] => inv.filter((p) => cats.includes(p.category));
 
 /** During-session carbohydrate candidates with a known per-serving carb figure, biggest carb first. */
 export function carbCandidates(inv: FuelProduct[]): FuelProduct[] {

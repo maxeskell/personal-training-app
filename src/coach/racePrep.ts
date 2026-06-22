@@ -96,7 +96,14 @@ export async function runRacePrep(
     `CURRENT RECOVERY [ai-endurance]: cardio ${r?.cardioRecovery ?? "—"}/100, run orthopedic ${
       r?.orthopedic?.run ?? "—"
     }/100, limiter ${r?.limiterToday ?? "—"}`,
-    `ML PREDICTION [ai-endurance]: ${prediction ? JSON.stringify(prediction).slice(0, 600) : "unavailable"}`,
+    `ML PREDICTION [ai-endurance] (MODEL estimate — predicted times as of ${today.date ?? "—"}, not a target): ${
+      prediction
+        ? (() => {
+            const s = JSON.stringify(prediction);
+            return s.length > 600 ? `${s.slice(0, 600)}…(truncated)` : s;
+          })()
+        : "unavailable"
+    }`,
     "",
     `Apply discipline-specific prep for a ${kind} race:`,
     raceTypeGuidance(kind),
