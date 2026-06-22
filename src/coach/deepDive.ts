@@ -75,7 +75,7 @@ export function insightFindings(ins: InsightReport, ctx?: FindingContext): strin
   const now = Date.now();
   return [
     `TOP SURFACED INSIGHTS (good-signal, ranked; snoozed removed):`,
-    ...ins.topFindings.slice(0, 5).map((f) => `- [${f.severity}, ${Math.round((f.confidence ?? 0.6) * 100)}%] ${f.title}: ${f.detail} (${f.evidence})${annotateFinding(f, ctx, now)}`),
+    ...ins.topFindings.slice(0, 5).map((f) => `- [${f.severity}${f.confidence != null ? `, ${Math.round(f.confidence * 100)}%` : ""}] ${f.title}: ${f.detail} (${f.evidence})${annotateFinding(f, ctx, now)}`),
     "",
     `ALL DETECTOR FINDINGS (triaged by severity):`,
     ...ins.findings.map((f) => `- [${f.severity}] ${f.title}: ${f.detail} (${f.evidence})`),

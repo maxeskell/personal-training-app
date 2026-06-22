@@ -314,3 +314,95 @@ Stage 4 yields the concrete execution items. Highest-priority security fix: cont
 
 Stage 4 STOP: reported in chat; awaiting "continue" for Stage 5 (strategy, kill list, bravest cut, consolidated execution plan) or redirect.
 
+---
+
+## Stage 5: Strategy, scope, consolidated plan
+
+User threat-model answer (drives the re-rank): MCP runs stdio-locally (NO remote MCP surface); the dashboard is viewed on a phone over the same home WiFi. Verified: the dashboard binds LAN only with `COACH_LAN=1`, and EVERY route incl. all read pages is token-gated (`server.ts:366`, only `/pair?token=` pre-auth) behind a host allow-list (`serverAuth.ts:105-110`). `/season` renders derived medical (GLP-1 presence, blood-panel recency, `seasonArc.ts:147,166-177`) but token-gated. Residual LAN risks: plaintext HTTP so the token/cookie is WiFi-sniffable; `/season`'s "shows no identifying data" comment is inaccurate.
+
+Re-rank consequence: H-1 (ingest_fit oracle) and H-2 (MCP get_profile medical) drop to LOW (no remote MCP surface). The live exposed surface is the LAN dashboard, which is well-gated; its residuals are LOW. So the top of the plan is CORRECTNESS + HONESTY (marathon hard-coding) and the SOUNDNESS items, not the security findings.
+
+### Purpose fit ("coach me from my data, n=1, evidence-based")
+
+- Strong fit at the core: faithful load model, real statistical discipline (FDR + permutation holdout), gated writes, degrade-don't-crash, honest UI labels. This IS the stated purpose, executed with unusual rigor.
+- Over-reach: 26 tools, ~80 npm scripts, and peripheral flows (research web-search digest, knowledge pending layer, advice-clustering embeddings, careerHistory) are a lot of surface for n=1. Three intent-routing backends (regex, local Ollama, Haiku) for one tiny task is choice-surface over-engineering.
+- Under-deliver: season-arc CTL trend silently "—" (dead `load` slot); change-point computes but rarely surfaces; brick signal is mislabelled.
+- Solving a problem you don't have: the marathon/July/September hard-coding solves the ORIGINAL author's season, not yours.
+
+### Kill list (cut a third = scope, not cruft, since Stage 3 found ~no dead code)
+
+Ranked by lowest value-per-maintenance at n=1:
+1. Change-point detection: self-labelled not-significance-tested, confidence 0.45 below the 0.5 gate so it rarely surfaces. Cut.
+2. Brick analysis: same-day proxy is an invalid "brick" signal (Stage 2). Cut, or relabel to "same-day decoupling".
+3. The two model intent-routers (local Ollama + Haiku) + advice-clustering embeddings: collapse to regex-only intent. Removes the Ollama/embeddings dependency surface for a task regex mostly handles. (Keep regex.)
+4. Research web-search digest + knowledge pending layer: tangential to "coach me from my data", adds web-search cost + an approval gate. Cut or defer.
+5. careerHistory / careerPage: a script-built archive page, nice-to-have not core coaching. Candidate.
+6. Collapse the overlapping analysis flows (weekly / deep_dive / season_arc) toward fewer, horizon-distinct ones (also fixes the Stage 4 UX collision).
+Cutting 1-5 plus collapsing 6 plausibly reaches a third by LOC. Honest caveat: each cut removes capability; the case rests on whether they earn keep at n=1.
+
+### The bravest cut: should the custom insight engine exist at all?
+
+For deleting it (AIE + a well-written coaching system prompt): AIE already computes CTL/ATL/TSB, recovery, predictions, DFA-α1 durability. A good Claude system prompt over the raw AIE data could produce the readiness/weekly/race narratives without ~4,700 LOC of engine. Less code, no n=1 statistical pitfalls, no drift bugs. Much of the felt value is the LLM narrative, which does not need the engine; the single-point findings, brick and change-point are arguably negative value.
+
+Against deleting it (keep): the engine earns its keep exactly where raw-data-to-LLM fails. (1) Statistical discipline: FDR-corrected n=1 correlations, permutation-validated monitoring rules, autocorrelation-discounted CIs, explicit exploratory-vs-confirmed labels. An LLM asked to "find patterns in my HRV/load" will surface spurious correlations with no multiple-comparisons control; the engine is built specifically NOT to, and that is the one thing the LLM-only stack cannot replicate. (2) Determinism + zero token cost for the dashboard/check flows. (3) The write-gate proposal grounding and the honesty controls live in the deterministic layer.
+
+Call it: KEEP the engine, TRIM its weakest third. Keep the load model, the FDR-corrected correlations + permutation-validated monitoring (the crown jewels), zones/CSS, the readiness trend-floor, the write-gate grounding. Move/cut the parts that do not earn keep: brick, change-point, single-point prediction/anomaly findings (fix or cut), and the research/knowledge/clustering peripherals. The bravest cut is therefore "delete the engine's weakest third", not "delete the engine".
+
+Strongest argument AGAINST my call: the rigor may be theatre at n=1. FDR-corrected correlations on ~60 autocorrelated days with effN floored at 4 will RARELY reach "confirmed", and the monitoring holdout needs ≥50 usable days. If in practice the crown-jewel detectors almost never validate (I could not check this without your real `data/`), then you are maintaining ~4,700 LOC for outputs that are perpetually "exploratory, not confirmed", and the honest verdict flips to "AIE + prompt + a small load model". My keep-but-trim call is therefore PROVISIONAL on the real-data question flagged since Stage 2.
+
+### What is missing
+
+- An outcome feedback loop: taper is "descriptive" because there are no race finish times in the feed; predictions are never back-tested against actuals; the engine never learns if it was right. For "evidence-based n=1" this is the biggest gap (session_feedback/retrospect/log_fuel exist but do not feed model calibration).
+- Data-sufficiency surfacing: no readout of how close detectors are to firing or whether your data volume supports the claims (the exact thing the engine's value hinges on).
+- A de-drift guard: the marathon hard-coding shows nothing tests that output matches the live calendar.
+- TLS (or localhost-only + a tunnel) for the LAN dashboard (plaintext token).
+
+### Consolidated execution plan (sequenced; tags = lens / severity / confidence / blast radius)
+
+Deletion + simplification first (shrink/de-risk), then correctness+honesty, then soundness, then hardening (down-ranked), then UX, then scope cuts (need your buy-in).
+
+- Batch 0 cleanup (smallest blast): delete dead exports `assertNoDirectWrite`+test, `decodeFitFromResult`+test; drop unnecessary `export`s; consolidate the 4 `fmt` copies to the canonical import. [dead-code / Low / High conf / tiny]
+- Batch 1 correctness+honesty (highest value): de-hardcode marathon/July/September across `engine.ts:282,291,377,385`, `garminHealth.ts:42,82`, `fit.ts:298`, `taper.ts:89`, `persona.ts:57` — gate on the live calendar (`classifyRace`/`deriveSeasonShape`). Format+label the racePrep raw prediction blob (`racePrep.ts:99`). Fix the `/season` "no identifying data" comment. Omit the printed default confidence when undefined (`deepDive.ts:78`). [soundness+honesty / HIGH / Confirmed / broad — needs tests]
+- Batch 2 soundness: relabel/cut brick (`brick.ts`); add trend/as-of guard or down-rank the single-point anomaly + prediction findings (`correlations.ts:140-145`, `engine.ts:427`); add a range to the tri bike split (`splits.ts:308`); cut or harden change-point; wire up or remove the `load` slot + season-arc trend. [soundness / Med-High / Confirmed / medium]
+- Batch 3 hardening (down-ranked, stdio-local): prompt-injection guard on deep_dive/tune/season/fuel_review (cheap parity); AIE per-tool timeout + bounded 429/5xx retry on AIE/intervals/weather + CoachLLM timeout; redact AIE/intervals error path; contain+gate `ingest_fit` (now Low); make MCP medical read opt-in (now Low); contain `update_profile` target; note/justify plaintext-LAN token. [security+reliability / mostly Low-Med after re-rank / Confirmed / small-medium]
+- Batch 4 UX (no logic change): headline line on `insights`; staleness cue on `get_state`; use-when/cost tags on ask/weekly/deep_dive/season_arc descriptions. [UX / Med / Confirmed / tiny]
+- Batch 5 scope (needs your decision): trim peripherals (research/knowledge/clustering/careerHistory), collapse intent routers to regex, collapse analysis flows; reconcile docs (mark spec 04 FDR done, fix C1-C8 drifts, update esbuild HANDOVER note). [strategy / N/A / — / large]
+
+Do FIRST: Batch 0 then Batch 1. Do NOT touch: the load-model maths, the FDR/permutation statistical core, the write-gate, the dashboard escaping/host-allow-list/token auth, the "—"/MODEL honesty layer in the render code. These are the good parts.
+
+Single highest-leverage recommendation: de-hardcode the marathon/race context (Batch 1, gate on the live calendar). It is the one issue that actively MIS-COACHES (asserts a non-existent goal as fact), spans the most surface, and directly violates "coach me from MY data". Strongest argument against doing it first: it is not the smallest blast radius (6+ files + persona + tests to avoid regressing legit distance lookups), so a strict smallest-first ordering would run Batch 0 first; I still put marathon first because impact dominates, but the sequencing counter is legitimate (hence Batch 0 is genuinely tiny and goes immediately before it).
+
+### Self-grade
+
+- Claims ledger complete: ~90%. Built across 10 themes with file:line; a subagent flagged SETUP.md and 4 non-improvement specs were not fully mined. Gap acknowledged.
+- Every Critical/High Confirmed with traced evidence: yes. Read-only verdict traced (two-caller proof); marathon hard-coding cited per file; `ingest_fit` verified personally; medical exposure and timeout gaps traced. No High left as Suspected.
+- Soundness lens with real skepticism: yes. Per-insight verdicts; brick/change-point/single-point flagged; FDR re-examined and the over-claim suspicion reversed; the keep-but-trim call explicitly made provisional on real n.
+- Kill list + bravest cut: delivered, with the honest provisional caveat.
+- Anti-sycophancy obligations: met. Genuinely-good-and-keep (write-gate, statistical core, dashboard honesty layer, clean codebase, error strings); beliefs reversed (engine rigor; FDR honesty; the load-slot overstatement self-corrected in Stage 4); strongest-counter to the top recommendation given.
+- Where the review is WEAK: (1) could not assess ACTUAL sample size / whether the statistical core fires on real data — the bravest-cut verdict hinges on this and is provisional; (2) did not run the suite locally (read-only) so "green" is from CI; (3) claims ledger left a few spec docs unmined; (4) UX judged structurally, not by real use; (5) a handful of Suspected items (lockfile-only dependency reasoning, per-field provenance impact, lock-primitive atomicity) were not runtime-verified.
+
+Stage 5 STOP: analysis complete. Awaiting approval of the consolidated plan before any Execution-stage code changes. On approval, execute Batch 0 first, smallest blast radius, with typecheck/test/diff shown and a stop after each batch.
+
+---
+
+## Execution log
+
+User approval: execute Batch 0 + Batch 1, then write a handover so a FRESH session can continue Batches 2-5. Threat model confirmed: MCP is stdio-local (no remote MCP surface); the dashboard is LAN-reachable on the phone but fully token-gated. Detailed runbook for the remaining batches: see `REVIEW-HANDOVER.md`.
+
+### Batch 0 — cleanup — DONE, green
+Verified: `npm run typecheck` clean, `npm test` 584/584 pass, `npm run build` clean.
+- Deleted dead `WriteGate.assertNoDirectWrite` (`writeGate.ts`) + its test. It was wired into nothing (a false safety net). If defence-in-depth is wanted later, add a real guard at the `aieClient.callRaw` boundary (Batch 3) rather than reinstating this.
+- Deleted dead `decodeFitFromResult` (`fitParser.ts`) + its test. The live FIT path uses `garminInner` (`fitSync.ts:127`), not this function.
+- Dropped unnecessary `export` on internal-only `byCategory` (fuelInventory), `highSpecificityAlarm`/`presentInterpretableCount` (readiness), `lag1Autocorr`/`applyLag` (stats).
+- Consolidated 4 byte-identical `fmt` copies (weekly/session/ask/readiness) to import the canonical `fmt` from `dashboardHelpers.ts:176`.
+
+### Batch 1 — correctness + honesty — DONE, green
+Verified: typecheck clean, 584/584 tests pass, build clean.
+- De-hardcoded the marathon/July/September race context in deterministic output: `engine.ts` (line 275 comment, 282, 291, 377, 385), `garminHealth.ts` (42, line 69 comment, 82), `fit.ts:298`, `taper.ts` (line 3 comment, 89). Wording is now sport-neutral; live race context still flows from `seasonContext.ts` (unchanged, already calendar-driven).
+- Made the readiness persona rule conditional rather than asserting a marathon as fact (`persona.ts:57-59`).
+- Labelled the racePrep prediction as a MODEL estimate with an as-of date and an explicit `…(truncated)` marker instead of a silent mid-JSON cut (`racePrep.ts:99`).
+- Stopped printing a fabricated default "60%" confidence; the % is omitted when confidence is undefined (`deepDive.ts:78`).
+- Corrected the inaccurate `/season` "shows no identifying data" comment (`seasonPage.ts:9-11`).
+
+Remaining: Batches 2-5 — see `REVIEW-HANDOVER.md` (self-sufficient for a fresh session).
+

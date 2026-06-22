@@ -18,6 +18,7 @@ import { fitStreamsDir, type SessionDecay } from "../insights/fit.js";
 import type { FitSummary } from "../archive/store.js";
 import { richActivities, type RichActivity } from "../insights/metrics.js";
 import { raceCalendarLines, liveGoals } from "./seasonContext.js";
+import { fmt } from "./dashboardHelpers.js";
 
 function mean(xs: number[]): number | null {
   const v = xs.filter((x) => Number.isFinite(x));
@@ -28,9 +29,6 @@ function r1(n: number | null): number | null {
 }
 function r3(n: number | null): number | null {
   return n == null ? null : +n.toFixed(3);
-}
-function fmt(n: number | null | undefined, d = 0): string {
-  return n == null ? "—" : n.toFixed(d);
 }
 
 export interface ComparableContext {

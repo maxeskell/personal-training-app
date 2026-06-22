@@ -1,13 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseFit, decodeFitFromResult } from "../src/insights/fitParser.js";
+import { parseFit } from "../src/insights/fitParser.js";
 
 /**
  * The dependency-free .FIT decoder feeds confident biomechanics findings off hardcoded field numbers,
  * scales and base-type sizes — a wrong constant silently surfaces a wrong "cadence fades" watch, and it
  * had no parser test. This builds minimal but valid .FIT byte buffers (12-byte header + definition/data
- * records) and round-trips known values through `parseFit`, pinning the scales/offsets and the header
- * sniffing in `decodeFitFromResult`.
+ * records) and round-trips known values through `parseFit`, pinning the scales/offsets.
  */
 
 const FIT_EPOCH_OFFSET = 631065600;
@@ -115,11 +114,4 @@ test("parseFit rejects non-FIT buffers; the invalid sentinel decodes to undefine
   // heart_rate = 0xFF is the uint8 invalid sentinel → null → sample.hr undefined.
   const buf = fitFile([recordDef, recordData(1000, 0xff, 250, 90, 20)]);
   assert.equal(parseFit(buf)!.samples[0].hr, undefined);
-});
-
-test("decodeFitFromResult finds base64 .FIT bytes inside an MCP-style content envelope", () => {
-  const b64 = fitFile([recordDef, recordData(1000, 150, 250, 90, 20)]).toString("base64");
-  const decoded = decodeFitFromResult({ content: [{ text: b64 }] });
-  assert.ok(decoded && decoded.toString("ascii", 8, 12) === ".FIT");
-  assert.equal(decodeFitFromResult({ content: [{ text: "not base64 fit" }] }), null);
 });

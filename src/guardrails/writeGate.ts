@@ -125,13 +125,4 @@ export class WriteGate {
     await this.log.updateStatus(id, "declined");
   }
 
-  /** Hard guard: any direct write attempt that didn't come through propose()+confirm() throws. */
-  static assertNoDirectWrite(tool: string): void {
-    if (WRITE_SET.has(tool)) {
-      throw new Error(
-        `Blocked: ${tool} is a write tool and must go through WriteGate.propose() + confirm(). ` +
-          `No autonomous writes.`,
-      );
-    }
-  }
 }
