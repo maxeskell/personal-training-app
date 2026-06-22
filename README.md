@@ -521,7 +521,9 @@ For a written **strategic narrative** on top of that report, run **`npm run seas
 high-effort, cost-logged LLM call) that grounds a multi-season coach write-up in the *same* deterministic
 numbers (leads on your single biggest lever, ranks the structural ones, lays out a season-by-season arc to
 70.3 → Ironman) and saves it to `reports/`. No `ANTHROPIC_API_KEY` → it prints the deterministic digest
-only; the `/season` page always stays free.
+only; the `/season` page always stays free. It's also the **`season_arc`** MCP tool (ask Claude for it
+directly), and the **scheduled morning ping nudges you once a quarter** to revisit it (idempotent — it
+won't re-fire daily), so the review cadence runs itself.
 
 ```bash
 # Foreground / DEV only — dies when you close the terminal. For the always-on server, see below.

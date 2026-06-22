@@ -4,6 +4,9 @@ import { buildSeasonArc, pickActivePhase, parseTarget, ctlTrend, seasonReportTex
 import { renderSeasonPage } from "../src/coach/seasonPage.js";
 import type { Profile, SeasonPlan } from "../src/profile/schema.js";
 import type { CareerHistory } from "../src/coach/careerHistory.js";
+import { seasonNudgeDue } from "../src/coach/seasonNudge.js";
+
+const isoDaysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 
 const PLAN: SeasonPlan = {
   horizon_goal: "Ironman by 2028",
@@ -138,6 +141,22 @@ test("seasonReportText: a deterministic digest citing the key numbers (grounding
   assert.match(txt, /Peak year: 2013 \(390h\)/);
   assert.match(txt, /Strength \[gap\]/);
   assert.match(txt, /Risk flags:/);
+});
+
+test("seasonNudgeDue: quarterly cadence — fires when due, held by a recent review or nudge", () => {
+  const today = isoDaysAgo(0);
+  // no plan → never nudge
+  assert.equal(seasonNudgeDue({ today, hasPlan: false }), false);
+  // plan but never reviewed/nudged → prompt the first one
+  assert.equal(seasonNudgeDue({ today, hasPlan: true }), true);
+  // reviewed 100d ago → due
+  assert.equal(seasonNudgeDue({ today, hasPlan: true, lastReviewDate: isoDaysAgo(100) }), true);
+  // reviewed 30d ago → not due
+  assert.equal(seasonNudgeDue({ today, hasPlan: true, lastReviewDate: isoDaysAgo(30) }), false);
+  // reviewed 100d ago but nudged 10d ago → the recent nudge holds it
+  assert.equal(seasonNudgeDue({ today, hasPlan: true, lastReviewDate: isoDaysAgo(100), lastNudgeDate: isoDaysAgo(10) }), false);
+  // custom cadence
+  assert.equal(seasonNudgeDue({ today, hasPlan: true, lastReviewDate: isoDaysAgo(40), everyDays: 30 }), true);
 });
 
 test("renderSeasonPage escapes injected plan text (no raw markup)", () => {
