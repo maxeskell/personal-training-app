@@ -261,12 +261,13 @@ function pctOver(factor: number): string {
 
 /**
  * Flat-course speed (m/s) from power, Newton-solved from P = v·(Crr·m·g + ½ρ·CdA·v²).
- * Road-bike-on-clip-ons assumptions: Crr 0.005, CdA 0.32, ρ 1.225, bike+kit +9 kg.
+ * Road-bike-on-clip-ons assumptions: Crr 0.005, CdA 0.32 (default), ρ 1.225, bike+kit +9 kg.
+ * CdA is parameterised so the caller can probe the model's sensitivity to riding position.
  */
-function speedMsFromPower(watts: number, riderKg: number): number {
+function speedMsFromPower(watts: number, riderKg: number, cda = 0.32): number {
   const mass = riderKg + 9;
   const roll = 0.005 * mass * 9.81;
-  const aero = 0.5 * 1.225 * 0.32;
+  const aero = 0.5 * 1.225 * cda;
   let v = 9;
   for (let i = 0; i < 25; i++) {
     v -= (v * (roll + aero * v * v) - watts) / (roll + 3 * aero * v * v);
@@ -296,6 +297,7 @@ export function estimateTriSplits(
   const segments: Segment[] = [];
   const basis: string[] = [];
   const missing: string[] = [];
+  let bikeSensitivity = "";
   let cum = 0;
   let prevCum = 0;
   let raced = 0;
@@ -319,9 +321,17 @@ export function estimateTriSplits(
 
   if (hasBike) {
     const watts = Math.round(perf.ftpW! * c.bikeIF);
-    const v = speedMsFromPower(watts, perf.riderWeightKg ?? 75);
+    const riderKg = perf.riderWeightKg ?? 75;
+    const v = speedMsFromPower(watts, riderKg);
     push(`Bike ${c.bikeKm} km`, c.bikeKm, (c.bikeKm * 1000) / v, `${watts} W · ~${Math.round(v * 3.6)} km/h`);
     basis.push(`bike ~${Math.round(c.bikeIF * 100)}% FTP (${watts} W of ${perf.ftpW} W, flat-course aero model)`);
+    // Aero drag (CdA) dominates at speed and is the least-known input, so the bike split is far more
+    // uncertain than a point estimate implies. Quantify its sensitivity to riding position (CdA 0.29
+    // aggressive ↔ 0.36 relaxed) so the leg reads as a MODEL range; Crr, mass and wind widen it further.
+    const vFast = speedMsFromPower(watts, riderKg, 0.29);
+    const vSlow = speedMsFromPower(watts, riderKg, 0.36);
+    const swingMin = Math.round(((c.bikeKm * 1000) / vSlow - (c.bikeKm * 1000) / vFast) / 60);
+    bikeSensitivity = ` The bike is the most input-sensitive leg: riding position alone (CdA 0.29–0.36) moves it ~${Math.round(vSlow * 3.6)}–${Math.round(vFast * 3.6)} km/h, about a ${swingMin} min swing over ${c.bikeKm} km — treat the bike split as a MODEL range, not a fixed time (Crr/mass/wind widen it further).`;
   } else {
     missing.push("bike (no FTP)");
   }
@@ -347,7 +357,7 @@ export function estimateTriSplits(
       : durability === "slipping"
         ? "Durability is slipping — open the run conservatively and protect against the late fade."
         : "Open the run conservatively until your durability trend firms up.";
-  const strategy = `${c.label}-distance plan from your current numbers: ${basis.join("; ")}. Transitions are fixed estimates. ${runAdvice}${
+  const strategy = `${c.label}-distance plan from your current numbers: ${basis.join("; ")}. Transitions are fixed estimates.${bikeSensitivity} ${runAdvice}${
     missing.length ? ` No estimate for ${missing.join(", ")}.` : ""
   }`;
 

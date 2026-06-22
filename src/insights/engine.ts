@@ -399,10 +399,12 @@ function anomalyCorrelationFindings(
   for (const a of anomalies) {
     out.push({
       family: "Anomaly",
-      title: `${a.metric} outlier today`,
+      title: `${a.metric} outlier today (single reading)`,
       severity: "watch",
-      detail: a.detail + " One day isn't a trend, but worth noting alongside how you feel.",
-      evidence: `z=${a.z} vs 60-day baseline [ai-endurance]`,
+      detail:
+        a.detail +
+        " This is a SINGLE reading vs your 60-day baseline, not a trend — read it alongside how you feel, and watch whether it persists over the next few days before acting.",
+      evidence: `z=${a.z} vs 60-day baseline, single most-recent reading [ai-endurance]`,
     });
   }
   // 3c. A strong n=1 pattern worth knowing (info, not an alarm). Confidence keys off FDR survival.
@@ -430,8 +432,13 @@ function predictionFindings(predictions: ReturnType<typeof predictionsVsGoals>):
       family: "Goal tracking",
       title: `${next.race}: ${behind ? "behind" : "on/ahead of"} target`,
       severity: behind ? "watch" : "info",
-      detail: `Predicted ${hhmm(next.predictedSec)} vs target ${hhmm(next.targetSec)} (${behind ? "+" : ""}${Math.round(next.gapSec / 60)} min) with ${next.daysTo} days to go.`,
-      evidence: `getPrediction vs getRaceGoalEvent [ai-endurance]`,
+      detail:
+        `Predicted ${hhmm(next.predictedSec)} vs target ${hhmm(next.targetSec)} (${behind ? "+" : ""}${Math.round(next.gapSec / 60)} min) with ${next.daysTo} days to go. ` +
+        `This is a SINGLE platform model estimate, not a trend — check the race-predictor trajectory for whether it's actually moving before acting on this one reading.`,
+      evidence: `getPrediction vs getRaceGoalEvent, single reading [ai-endurance]`,
+      // A single noisy platform estimate shouldn't read as confidently as a trend-validated finding
+      // (Goal-tracking default is 0.7); pin it below trend level so it can't launder into a "behind goal" verdict.
+      confidence: 0.55,
     });
   }
   return out;

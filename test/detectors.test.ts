@@ -57,11 +57,18 @@ test("anomalyCorrelationFindings + predictionFindings emit the expected shapes",
     [{ metric: "HRV", z: -2.3, detail: "HRV well below baseline." }] as never,
     [{ r: 0.6, label: "Sleep → next-day load", interpretation: "More sleep precedes bigger days.", n: 40, fdrPass: true }] as never,
   );
-  assert.ok(ac.some((x) => x.family === "Anomaly"));
+  const anomaly = ac.find((x) => x.family === "Anomaly");
+  assert.ok(anomaly);
+  // A single-point outlier must be unmistakably labelled a single reading, never a trend.
+  assert.match(anomaly!.title, /single reading/i, "anomaly title flags it as a single reading");
+  assert.match(anomaly!.detail, /single reading[\s\S]*not a trend/i, "anomaly detail carries the single-reading caveat");
   const corr = ac.find((x) => x.family === "Your patterns (n=1)");
   assert.equal(corr?.confidence, 0.8); // FDR-confirmed → high confidence
 
   const pf = predictionFindings([{ race: "Demo Marathon", gapSec: 600, predictedSec: 12300, targetSec: 11700, daysTo: 40 }] as never);
   assert.equal(pf[0]?.severity, "watch"); // +10 min behind target
   assert.match(pf[0]?.title ?? "", /behind target/);
+  // Single-snapshot prediction: caveated + down-ranked below the trend-finding tier so it can't read as a trend.
+  assert.match(pf[0]?.detail ?? "", /single platform model estimate[\s\S]*not a trend/i, "prediction detail carries the single-estimate caveat");
+  assert.equal(pf[0]?.confidence, 0.55, "single-snapshot prediction is pinned below the 0.7 Goal-tracking default");
 });
