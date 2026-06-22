@@ -1,6 +1,6 @@
 # Spec 3 — Dashboard rendering safety (escaping + handler robustness)
 
-**Status:** proposed · **Priority:** P0 (release gate) · **Size:** S (≈½ day) · **Owner:** TBD
+**Status:** ✅ landed on `main` (reconciled 2026-06-22) · **Priority:** P0 (release gate) · **Size:** S (≈½ day) · **Owner:** TBD
 
 ## Problem
 `src/coach/dashboard.ts` builds a large HTML+inline-JS string. Event-handler args are produced by **string

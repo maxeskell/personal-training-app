@@ -1,6 +1,8 @@
 # Spec 1 — Local dashboard server security
 
-**Status:** proposed · **Priority:** P0 (release gate) · **Size:** S–M · **Owner:** TBD
+**Status:** ✅ landed on `main` (reconciled 2026-06-22) · **Priority:** P0 (release gate) · **Size:** S–M · **Owner:** TBD
+
+> **Reconciliation (2026-06-22):** shipped. `COACH_HOST` now defaults to `127.0.0.1` (LAN bind is explicit opt-in via `COACH_LAN=1`) and every route is token-gated behind a host allow-list. The "Problem" / "current behaviour" below describes the PRE-fix state, kept for context.
 
 ## Problem
 `src/server.ts` binds `0.0.0.0` (all LAN interfaces) with **no authentication** and exposes endpoints that

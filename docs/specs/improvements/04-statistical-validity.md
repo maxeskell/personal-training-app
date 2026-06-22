@@ -1,6 +1,8 @@
 # Spec 4 — Statistical validity (make the certainty labels honest)
 
-**Status:** proposed · **Priority:** P0/P1 · **Size:** M · **Owner:** TBD
+**Status:** ✅ landed on `main` (reconciled 2026-06-22) · **Priority:** P0/P1 · **Size:** M · **Owner:** TBD
+
+> **Reconciliation (2026-06-22):** shipped. In particular the **"FDR double-dip" is resolved** — the engine applies a Bonferroni step over the lag-scan BEFORE Benjamini-Hochberg, and `fdrPass` requires BH **and** a CI that excludes 0 (`correlations.ts`; verified in REVIEW.md Stage 2). The "Problem" below describes the pre-fix state.
 
 ## Problem
 Several "honest-uncertainty" mechanisms quietly undermine themselves, so labels like "FDR-confirmed,

@@ -1,6 +1,6 @@
 # Spec 2 — Write-path integrity (validate what gets confirmed)
 
-**Status:** proposed · **Priority:** P0 (release gate) · **Size:** M · **Owner:** TBD
+**Status:** ✅ landed on `main` (reconciled 2026-06-22) · **Priority:** P0 (release gate) · **Size:** M · **Owner:** TBD
 
 ## Problem
 The gate stops _unconfirmed_ writes but not _wrong_ ones. A human is asked to confirm opaque JSON the LLM

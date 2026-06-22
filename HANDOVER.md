@@ -31,7 +31,7 @@ It is **single-user** and **local-first**: no multi-tenant backend, no database 
 # 1. Build
 npm install
 cp .env.example .env            # defaults are correct for the public AI Endurance server
-npm run typecheck && npm test   # 99 tests, all green, no network needed
+npm run typecheck && npm test   # 600+ tests, all green, no network needed
 
 # 2. Connect the required spine (one-time OAuth; opens a browser)
 npm run auth:aie                # caches tokens in ~/.endurance-coach (0700)
@@ -125,8 +125,9 @@ on Opus. The local server is not required and has its own `HANDOVER.md`.
   and an overall Garmin wall-clock budget; a slow/missing dependency yields a missing card with a note,
   never an error page or a hung `/refresh`.
 - **Cost-aware LLM use.** Deterministic flows make zero LLM calls. Cheap/frequent flows run at
-  `effort: "medium"`, deep flows at `"high"`, the system prompt is prompt-cached, and every call's
-  token usage + dollar cost is logged locally (`npm run cost`).
+  `effort: "medium"`, deep flows (weekly / race / deep-dive / season / propose / research) at `"high"`;
+  a couple of analysis flows (`tune`, `fuel_review`) deliberately stay at `"medium"` to keep them cheap.
+  The system prompt is prompt-cached, and every call's token usage + dollar cost is logged locally (`npm run cost`).
 - **Honest models.** Estimated outputs (zones, race splits, road dryness, predictions) are explicitly
   labelled MODEL/estimate in the UI and docs, with assumptions stated. The insight engine reports
   effect sizes with CIs and FDR control rather than naive correlations.
@@ -140,7 +141,7 @@ on Opus. The local server is not required and has its own `HANDOVER.md`.
 ## 6. Quality gates (keep these green)
 
 - `npm run typecheck` → `tsc --noEmit`, clean.
-- `npm test` → `node:test` suite (currently **99 tests**, pure, no network). New logic adds tests.
+- `npm test` → `node:test` suite (currently **600+ tests**, pure, no network). New logic adds tests.
 - `npm run build` → `tsc` compiles.
 - **CI** (`.github/workflows/ci.yml`) runs typecheck + test + build on every PR and push to `main`.
 - **Honest coverage note:** the deterministic detectors (insights, weather, season context, cost,
@@ -229,9 +230,9 @@ fire-only health check), `npm run backfill:install` (history grind).
   one back to `absent()`. The decision log holds its own lock for the confirm critical section.
 - **Demo / no-account mode shipped.** `npm run demo` renders the dashboard on bundled sample data with
   no account or API key, so a stranger can evaluate the app. The live flows still need real accounts.
-- **`npm audit`** flags a high-severity advisory in **esbuild** — a *dev-only* transitive dependency
-  (via `tsx`), and the advisories are Deno/Windows-dev-server specific, so runtime risk here is
-  negligible. `npm audit fix` clears it; keep it clear.
+- **`npm audit` is clean** (0 vulnerabilities as of 2026-06-22). The earlier esbuild advisory — a
+  *dev-only* transitive dependency via `tsx`, Deno/Windows-dev-server specific — is resolved: the
+  lockfile is on `esbuild@0.28.1`, past the fix. Keep it clear on dependency bumps.
 - **Deeper technical debt** remains: test inversion on the parser/server/write-gate, a few statistical
   edge cases, duplicated small utilities, and the perf of re-parsing the archive per request. The
   earlier security/integrity initiatives (server auth + localhost default, write-path arg validation,
