@@ -67,6 +67,20 @@ test("renderCoachRecs: reactable cards carry key + family + the four actions; hi
   assert.equal(renderCoachRecs(recs, undefined, true), "", "hidden in share/screenshot mode");
 });
 
+test("renderCoachRecs: a clustered rep shows a 'shown once' note naming the other sources; titles are escaped", () => {
+  const rep = sf("advice:readiness:rest", "Recovery (HRV status)");
+  const merged = new Map<string, SurfacedFinding[]>([
+    ["advice:readiness:rest", [sf("advice:ask:<script>", "General")]],
+  ]);
+  const html = renderCoachRecs([rep], undefined, false, merged);
+  assert.match(html, /Same point also raised in/);
+  assert.match(html, /your recent question/); // the ask source phrase
+  assert.match(html, /shown once/);
+  assert.doesNotMatch(html, /<script>/, "merged titles in the tooltip are HTML-escaped");
+  // Without the merged map, the note is absent (back-compat: existing callers pass 3 args).
+  assert.doesNotMatch(renderCoachRecs([rep], undefined, false), /shown once/);
+});
+
 test("ADVICE_RECS_SCHEMA: no minimum floor (so one strong rec is allowed), capped at 4", () => {
   const schema = ADVICE_RECS_SCHEMA as { maxItems?: number; minItems?: number; description: string };
   assert.equal(schema.maxItems, 4);

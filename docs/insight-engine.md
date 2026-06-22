@@ -162,8 +162,17 @@ dashboard, `insights` and `deep-dive`:
   than the same point restated to fill a 2–4 quota, with overlapping actions merged and the most important
   first. On the card the survivors are **grouped by source** ("From today's readiness check" / "…latest deep
   dive" / "…recent question", most-timely first), so a coherent stance reads as one group, not several
-  near-identical nags. (Cross-*source* semantic de-duplication — collapsing the same idea phrased differently
-  by two flows — is the next step, handled out of the render path so the card stays deterministic and LLM-free.)
+  near-identical nags. **Cross-*source* semantic de-duplication** — collapsing the same idea phrased
+  differently by two flows (e.g. readiness and the deep dive both saying "take it easy today") — is an
+  **opt-in** layer on top (`COACH_ADVICE_CLUSTERING=true`): at *sync* time each recommendation is embedded via
+  the `local-llm-server` (`/v1/embeddings`, Ollama) and the vectors are cached to
+  `data/insights/advice-embeddings.json`; at *render* time the card reads that cache (no network, no LLM) and
+  collapses recommendations whose cosine similarity clears a threshold (default 0.86) into one line — the
+  most-timely source as the representative, with a small note saying where else it came up. It is strictly
+  degradable and handled **out of the render path**: a cache miss (server down, model not pulled, feature off,
+  or text changed) is just an un-clustered singleton, so the card silently falls back to exactly the per-source
+  grouping above. We only merge *across* sources — same-source near-duplicates already collapse to one key
+  upstream, and keeping within-source items distinct preserves their independent reactions.
 - **New "Follow-through" findings.** Two insights are now **generated from your own behaviour**: a
   *recurring signal you've set aside* (something you snoozed that the engine keeps re-raising — surfaced
   only after it recurs ≥2×) and *plan adherence is slipping* (you're doing <70% of planned hours, or it

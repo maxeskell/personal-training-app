@@ -157,6 +157,27 @@ export const config = {
   },
 
   /**
+   * Cross-source de-duplication of the "Coach's recommendations" card — OPTIONAL, degradable, NO coaching
+   * output. When on, a sync-time pass embeds each recommendation via the local-llm-server's /v1/embeddings
+   * (Ollama) and caches the vectors; the deterministic render then collapses recommendations that are the
+   * SAME idea phrased differently across DIFFERENT write-ups (readiness vs deep-dive vs ask) using cosine
+   * similarity. Off by default. Degrades to the per-source grouping when the server/model is unavailable —
+   * a cache miss is just an un-clustered singleton, never a blocked render. Reuses the local-llm-server
+   * base URL/auth (the same OpenAI-compatible server as intent routing).
+   */
+  adviceClustering: {
+    enabled: process.env.COACH_ADVICE_CLUSTERING === "true",
+    baseUrl: (process.env.LOCAL_LLM_URL ?? "http://localhost:8000/v1").replace(/\/+$/, ""),
+    apiKey: process.env.LOCAL_LLM_API_KEY ?? "",
+    /** Embedding model the server should use — must be pulled in Ollama (e.g. `ollama pull nomic-embed-text`). */
+    model: process.env.LOCAL_LLM_EMBED_MODEL ?? "nomic-embed-text",
+    /** Cosine-similarity threshold (0–1) above which two recommendations are treated as the same idea. */
+    similarityThreshold: Number(process.env.COACH_ADVICE_CLUSTER_SIMILARITY ?? 0.86),
+    /** Hard timeout (ms) for the embeddings call — a slow/missing server must never stall a sync. */
+    timeoutMs: Number(process.env.LOCAL_LLM_EMBED_TIMEOUT_MS ?? 5000),
+  },
+
+  /**
    * Week-ahead weather (dashboard "Week ahead — plan vs weather" card). Open-Meteo, free, no key.
    * Coordinates default to a neutral location (London) — set COACH_WEATHER_LAT/LON to your own base.
    * Thresholds encode the athlete's stated preferences (rides want dry + low wind; open-water swims

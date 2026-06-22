@@ -255,7 +255,13 @@ any finding. Each flow distils only the **fewest genuinely distinct** actions �
 padding to a count, so one strong recommendation stays one — and the card **groups them by where they came from**
 (today's readiness / your last deep dive / your last question), so a single coherent stance reads as one group
 instead of several near-identical nags. (`ask` emits the prose answer and its recommendations in one structured
-call, so there's no extra cost.)
+call, so there's no extra cost.) Optionally, when the `local-llm-server` is running, a sync-time pass can go one
+step further and **collapse the same idea phrased differently across those sources** (e.g. readiness and the deep
+dive both saying "take it easy today") into a single line that notes where else it came up — using
+embeddings + cosine similarity computed **off the render path** (the card itself stays deterministic and
+LLM-free). It's off by default (`COACH_ADVICE_CLUSTERING=true`), needs a pulled embedding model
+(`ollama pull nomic-embed-text`), and **degrades to the per-source grouping** whenever the server or model
+is unavailable — a missing vector is just an un-clustered line, never a blocked card.
 
 **→ Full detail — the Q1–Q7 methods, the like/dislike/snooze mechanics and the engagement loop:
 [docs/insight-engine.md](docs/insight-engine.md).**

@@ -162,6 +162,8 @@ export interface DashboardInput {
   metricOverrides?: MetricOverrides;
   /** Reactable recommendations distilled from your latest readiness + deep-dive write-ups (item 4-iii). */
   coachRecs?: SurfacedFinding[];
+  /** repKey → recommendations it absorbed when cross-source clustering is on; drives the "shown once" note. */
+  coachRecsMerged?: ReadonlyMap<string, SurfacedFinding[]>;
   /**
    * One-tap fuelling feedback log (data/fuel-log.jsonl) — renders the "Fuelling — week ahead" card's
    * per-session 👍/👎 in its logged state and powers the learning review. Omitted → buttons render fresh.
@@ -996,7 +998,7 @@ function shareRaceNames(today: AthleteState, profile?: Profile): string[] {
   return names.filter(Boolean);
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, fuelLog, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Fuelling — week ahead (deterministic, no LLM on render): per-session pre/during/after from the
@@ -1373,7 +1375,7 @@ async function confirmWaterTemp(btn){var box=btn.closest('.watertemp');var s=box
 
 ${renderSetupImprove(profile, share, { suppressed, reactions, appliedKeys: executedSourceKeys(decisions), insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined })}
 
-${renderCoachRecs(coachRecs ?? [], reactions, share)}
+${renderCoachRecs(coachRecs ?? [], reactions, share, coachRecsMerged)}
 
 ${insights ? collapse(renderSignals(insights)) : ""}
 

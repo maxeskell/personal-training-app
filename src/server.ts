@@ -14,7 +14,8 @@ import { renderCareerPage } from "./coach/careerPage.js";
 import { loadCareerHistory } from "./coach/careerHistory.js";
 import { buildSeasonArc } from "./coach/seasonArc.js";
 import { renderSeasonPage } from "./coach/seasonPage.js";
-import { latestAdviceFindings } from "./coach/adviceRecs.js";
+import { latestAdviceFindings, clusterAdvice, clustersToDisplay } from "./coach/adviceRecs.js";
+import { loadAdviceEmbeddingIndex } from "./state/adviceEmbeddings.js";
 import { updateLocalProfile } from "./profile/update.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
 import { listPending, readPending } from "./knowledge/store.js";
@@ -103,7 +104,21 @@ async function renderLatest(share = false): Promise<string> {
   // Read first-seen BEFORE recording this render, so a finding new to this render reads as brand new.
   const firstSeen = await insightLog.firstSeenByKey();
   // Reactable advice from the latest readiness + deep-dive write-ups (item 4-iii), dropping suppressed.
-  const coachRecs = latestAdviceFindings(await insightLog.all(), suppressed);
+  let coachRecs = latestAdviceFindings(await insightLog.all(), suppressed);
+  let coachRecsMerged: ReadonlyMap<string, (typeof coachRecs)[number][]> | undefined;
+  // Cross-source de-dup (opt-in): collapse the same idea phrased differently across write-ups using
+  // sync-time embeddings (read from cache here — NO network/LLM on the render path). A miss/empty cache
+  // degrades to the per-source grouping. See coach/adviceRecs.ts (clusterAdvice) + state/adviceEmbeddings.ts.
+  if (config.adviceClustering.enabled && coachRecs.length > 1) {
+    const index = await loadAdviceEmbeddingIndex(coachRecs);
+    if (index.size) {
+      const { display, merged } = clustersToDisplay(
+        clusterAdvice(coachRecs, index, config.adviceClustering.similarityThreshold),
+      );
+      coachRecs = display;
+      if (merged.size) coachRecsMerged = merged;
+    }
+  }
   const insights = latest.raw ? buildInsights(latest, archive, { suppressed, history: window, engagement }) : undefined;
   // Record the full surfaced set (not just what gets a reaction) so the "what I listen to" model
   // (npm run listening) can read feedback against everything shown. Best-effort, de-duped, never blocks.
@@ -151,6 +166,7 @@ async function renderLatest(share = false): Promise<string> {
     fuelLog: await loadFuelLog(), // one-tap fuelling feedback — renders the week-ahead card's logged state
     metricOverrides: await loadMetricOverrides(), // your pins on auto-detected metrics (Data-changes card)
     coachRecs, // reactable recommendations from your latest readiness + deep-dive write-ups
+    coachRecsMerged, // cross-source clusters (opt-in): repKey → absorbed recs, for the "shown once" note
     setupHealth: {
       hasApiKey: CoachLLM.hasApiKey(),
       waterTempSet: water?.tempC != null,
