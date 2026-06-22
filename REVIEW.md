@@ -216,3 +216,55 @@ Largely SOUND. The load model is mathematically faithful and the standard model 
 
 Stage 2 STOP: reported in chat; awaiting "continue" for Stage 3 (dead code + simplification) or redirect.
 
+---
+
+## Stage 3: Dead code, simplification, refactoring
+
+Method: 3 read-only subagents (dead-code sweep across exports/modules; dead deps/scripts/env/config; duplication + refactor targets). Stage 2 landed on main (`4a16b65`); Stage 3 work continues on this branch. Headline: the codebase is remarkably clean. There is very little dead code and zero dangling deps/scripts/env/config. The bulk that Stage 5 might cut is feature SCOPE, not cruft.
+
+### Dead-code delete list
+
+True dead exports (delete, with their tests):
+- `assertNoDirectWrite` (`guardrails/writeGate.ts:129`): Confirmed dead in production. Only references are the definition and `test/writegate.test.ts:118-122`. The live write path uses `WriteGate.propose/confirm/decline`, never this static guard. It is documented as a "hard guard against direct writes" but is wired into nothing, so it is a false safety net. Decision pending: delete, OR wire it into the write path so the guard is real (Stage 4 hardening choice).
+- `decodeFitFromResult` (`insights/fitParser.ts:237`): Confirmed dead (definition + `test/fitparser.test.ts` only).
+
+Unnecessary `export` (keep code, drop the keyword; functions are used in-file):
+- `byCategory` (`coach/fuelInventory.ts:157`), `highSpecificityAlarm` (`coach/readiness.ts:133`), `presentInterpretableCount` (`coach/readiness.ts:146`), `applyLag` (`insights/stats.ts:163`), `lag1Autocorr` (`insights/stats.ts:88`). Lower-confidence same pattern: `reactionOf` (`decisionLog.ts:180`), `dateLabel` (`weather/assess.ts:75`), and the `garminTrends.ts` detectors (`stressTrend:73`, `bodyBatteryRecharge:93`, `sleepArchitecture:112`) which are called only via the same-file `garminTrendFindings` aggregator (likely exported for unit testing, so leave them).
+
+Latent-dead DATA slot (this is a real bug, not just dead code):
+- `AthleteState.load` (`state/types.ts:212`) is READ in production for a CTL sparkline (`cli.ts:448`, `mcpServer.ts:534`, `server.ts:653`, all `s.load.value?.ctl`) but is ASSIGNED only in `demo/sampleData.ts:155`. `assemble.ts` never populates it, so it stays `absent()` and **all three live reads always yield undefined**: the CTL sparkline silently never renders outside the demo. Fix: either populate `state.load` from `loadModel` during assemble, or remove the slot plus its three readers. Promote to Stage 4 (degrade-honestly: a feature that never fires should not pretend to exist). Confirmed.
+
+Script-only module (not runtime dead, but not part of the app): `powerCurve.ts` exports (`bestAvgPower`, `meanMaximalCurve`) are consumed only by `scripts/build-career-history.ts` + tests. Keep, but note it is build-tooling, not the running engine.
+
+Do-not-delete (reachable via dispatch/registration, would look dead to a naive sweep): all insight detectors aggregated in `engine.ts buildInsights()`; all MCP handlers registered in `mcpServer.ts`; all CLI flows dispatched in `cli.ts`/`cli/dataCommands.ts`; dashboard/server render functions; `screenWellbeingPrompt` alias; schema-version consts. The prior hint about `powerCurveAtDurations` was spurious (no such symbol exists).
+
+### Dead deps / scripts / env / config
+
+Nothing dead. Every dependency is imported, every `tsx src/cli.ts <cmd>` has a handler (`cli.ts:1043-1087`), every `bash scripts/*.sh` target exists, every env var read in `config.ts` maps to a consumed field, and `.env.example` matches (vars not in `config.ts` are read by `server.ts`/archive/shell by design, not drift). Only intentional duplicates: `start`/`serve` (both `src/server.ts`), `pm2:*` (documented launchd alternative). This is a genuine positive: the surface is large by scope, not by accumulation of cruft.
+
+### Duplication + refactor targets
+
+- `fmt(n,d)` (`n==null ? "—" : n.toFixed(d)`) is BYTE-IDENTICAL in `coach/weekly.ts:15`, `session.ts:32`, `readiness.ts:39`, `ask.ts:42`, while the canonical one is already exported at `dashboardHelpers.ts:176`. Survivor: the exported one.
+- `num/str/obj/arr` unknown-to-typed coercers re-derived in ~10 files (`metrics.ts:77`, `taper.ts:37`, `backfill.ts:34`, `fitSync.ts:62`, `forecast.ts:43`, `intervals/map.ts:17,22`, `profile/context.ts:16-20`, `seasonArc.ts:101`, `fuelInventory.ts:49-56`, `careerHistory.ts:115`), canonical `asNumber` already at `state/payload.ts:29`. Biggest duplication by volume; subtle `|null` vs `|undefined` divergence is a latent-bug source. Survivor: one coercion module.
+- `daysBetween` reimplemented ~7× (`seasonContext.ts:30` exported, `racePrep.ts:13`, `seasonArc.ts:87`, `seasonNudge.ts:9`, `listening.ts:128`; near-twins `horizon.ts:18`, `dataQuality.ts:67`). `garminInner` duplicated as local `inner` in `backfill.ts:144` (canonical `payload.ts:68`).
+- Legacy `raceContext` (`seasonContext.ts:129`, self-flagged "kept for planAdjust + its test") vs richer `raceCalendarLines` (`:75`). Survivor: `raceCalendarLines`; migrate `planAdjust` + its test, delete `raceContext`. Textbook negative-rent.
+- Recs-extraction trio (`recsToFindings` → `InsightLog.recordSurfaced` → `refreshAdviceEmbeddings`) verbatim in `ask.ts:167-169`, `deepDive.ts:128-130`, `orchestrator.ts:191-193`. Extract `surfaceRecommendations(recs, source, surface)` into `coach/adviceRecs.ts`.
+
+Type safety: `archive/backfill.ts:171-216` (~14 `as any` on untyped Garmin DTO) is the one real hotspot and the best candidate for a zod boundary parser (zod is already a dep). `store.ts:65`, `assemble.ts:738`, `fuelInventory.ts:146` casts are guarded/benign. No `@ts-ignore`/`@ts-expect-error`/`eslint-disable` anywhere; `strict:true`. Over-engineering: `dashboard.ts` (1413 lines) is big but cohesive (not bad abstraction); the coercer proliferation is the clearest negative rent.
+
+Target structures for the worst offenders: (A) one coercion + date + format util (`util/coerce.ts` or extend `payload.ts`) absorbing `asNumber/num/str/obj/arr`, `daysBetween`, `garminInner`, retiring the ×7 and ×10 duplications at once; (B) `archive/garminDto.ts` zod schemas parsed once after `garminInner`, replacing backfill's `as any` cluster; (C) `surfaceRecommendations` helper.
+
+### Single highest-leverage, lowest-risk refactor
+
+Delete the 4 duplicate `fmt` copies and import the already-exported `fmt` from `dashboardHelpers.ts:176`. The copies are byte-identical to a canonical export already used elsewhere, so zero behaviour change, no new module, no API decision, fully covered by the existing typecheck/test gate. Highest dup removed per unit of risk. (The coercion-helper consolidation is higher TOTAL leverage but carries a `null`-vs-`undefined` convention decision, so it ranks second on risk.)
+
+### Sequencing + interaction with Stage 2
+
+Deletion/un-export and the `fmt` + coercion consolidations come first (they shrink and de-risk the surface before Stage 4 hardening). The Garmin zod boundary parser (B) doubles as a Stage 4 hardening item (it removes the one unchecked-external-JSON hotspot). Stage 2 soundness cut-candidates (brick same-day proxy, change-point) are NOT dead code, they are reachable; they belong to the Stage 5 kill-list as scope/quality decisions, not Stage 3 deletes. The `load`-slot fix is the one item that is both dead-code cleanup and an honesty fix (a silently-empty feature).
+
+### Positive + belief reversed
+
+Positive to keep: the codebase has almost no dead code and zero dangling deps/scripts/env/config under a strict-typed, no-escape-hatch build. That is unusual discipline. Belief reversed this stage: I expected a 25k-LOC solo project to carry significant dead weight to cut; it does not. So Stage 5's "cut a third" must target FEATURE SCOPE (does this feature earn its keep), not code cruft, because the cruft is not there.
+
+Stage 3 STOP: reported in chat; awaiting "continue" for Stage 4 (hardening + UX) or redirect.
+
