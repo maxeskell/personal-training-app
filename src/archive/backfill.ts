@@ -89,6 +89,7 @@ export async function backfillGarminActivities(
   store: ArchiveStore,
   log: (m: string) => void,
   pageSize = 100,
+  incremental = false,
 ): Promise<number> {
   const seen = await store.garminActivityIds();
   let start = 0;
@@ -113,6 +114,9 @@ export async function backfillGarminActivities(
     await store.appendGarminActivities(batch);
     added += batch.length;
     log(`  Garmin activities: page @${start} → +${batch.length} (total new ${added})`);
+    // Incremental refresh (recurring auto-heal): activities come newest-first, so a page that yields no
+    // new ids means everything older is already known — stop, instead of re-walking the whole history.
+    if (incremental && batch.length === 0) break;
     start += pageSize;
     await sleep(150);
   }
