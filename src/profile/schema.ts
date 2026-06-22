@@ -33,7 +33,8 @@ export const RaceSchema = z
     name: optStr,
     priority: z.enum(["A", "B", "C"]).nullable().optional(),
     date: optDate,
-    distance: z.enum(["sprint", "olympic", "70.3", "ironman", "other"]).nullable().optional(),
+    // "middle" is the standard UK term for a 70.3 (1.9/90/21.1) — a first-class distance, not "other".
+    distance: z.enum(["sprint", "olympic", "70.3", "middle", "ironman", "other"]).nullable().optional(),
     target_time: optStr, // a TARGET like "sub 2:00" — never a live number
     note: optStr,
   })

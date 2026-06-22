@@ -17,7 +17,7 @@ import { renderSeasonPage } from "./coach/seasonPage.js";
 import { latestAdviceFindings, clusterAdvice, clustersToDisplay } from "./coach/adviceRecs.js";
 import { loadAdviceEmbeddingIndex } from "./state/adviceEmbeddings.js";
 import { updateLocalProfile } from "./profile/update.js";
-import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
+import { latestWeeklyReview, latestResearchDigest, latestWeeklyReviewProse, latestSeasonNarrative } from "./coach/setupSources.js";
 import { listPending, readPending } from "./knowledge/store.js";
 import { loadSessionFeedbacks, saveSessionFeedback, findSessionFeedback, sessionFeedbackKey } from "./coach/sessionFeedbackStore.js";
 import { loadFuelLog, saveFuelLog, isFuelOutcome } from "./coach/fuelLogStore.js";
@@ -663,7 +663,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         career: loadCareerHistory(),
         profile,
       });
-      const html = renderSeasonPage(report, url.searchParams.get("share") === "1");
+      // Surface the two latest coach-prose reports read-only (no LLM on render): the multi-season narrative
+      // (npm run season) and the weekly review (npm run weekly). Both loaders degrade to undefined on any
+      // error, so a missing/garbled report is a missing card, never a broken page.
+      const [narrative, weekly] = await Promise.all([latestSeasonNarrative(), latestWeeklyReviewProse()]);
+      const html = renderSeasonPage(report, url.searchParams.get("share") === "1", { narrative, weekly });
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
       return;
     }

@@ -544,12 +544,18 @@ reads it automatically. See [SETUP.md → "Activity archive"](./SETUP.md).
 multi-season review** for rebuilding toward **70.3 → Ironman over years**. Reading your **own** plan
 (`profile.season_plan`: a horizon goal + dated phases with text CTL targets), your **live chronic load**
 (CTL now + trend), your **career trajectory** (year-by-year hours — your 2013 peak, your 2019 trough) and
-your profile, it shows: the **active phase + focus**, **CTL now vs target vs trend** (the year-over-year
-lever), the **long-arc bar chart**, a **structural-lever checklist** (strength / swim CSS / bloods age /
-threshold band — the things that compound over seasons, sharpened by your GLP-1 context), and the
-**multi-season risk flags** (consistency cliff, stale bloods, falling CTL into a deadline). It's
-display-only and makes **no LLM call** (deterministic = free); every section degrades to "—" with a
-how-to-fill hint when its input is missing. See [SETUP.md → "Season arc"](./SETUP.md) and
+your profile, it shows: at the **top**, the two **latest coach-prose reports** read straight from
+`reports/` — your **season narrative** ("Coach's season read") and beneath it your **latest weekly review**
+— each with an honest *"Updated {date}"* stamp and a *stale-refresh* hint once it's over ~10 days old (the
+weekly's "## Next week" actions are stripped here, since they already surface on the dashboard); then the
+**active phase + focus**, **CTL now vs target vs trend** (the year-over-year lever), the **long-arc bar
+chart**, a **structural-lever checklist** (strength / swim CSS / bloods age / threshold band — the things
+that compound over seasons, sharpened by your GLP-1 context), and the **multi-season risk flags**
+(consistency cliff, stale bloods, falling CTL into a deadline). It's display-only and makes **no LLM call**
+(deterministic = free) — the prose is just the *last saved* report, never regenerated on page load — and
+every section degrades cleanly (a missing report = no card, a missing input = "—" with a how-to-fill
+hint). The narrative refreshes when you run **`npm run season`** and the weekly review when you run
+**`npm run weekly`** (or when the scheduled job runs them). See [SETUP.md → "Season arc"](./SETUP.md) and
 [docs/specs/Season_Arc_Spec.md](docs/specs/Season_Arc_Spec.md).
 
 For a written **strategic narrative** on top of that report, run **`npm run season`** — a deep flow (one

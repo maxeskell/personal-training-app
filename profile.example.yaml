@@ -161,7 +161,7 @@ races:
   - name:
     priority:               # A | B | C
     date:                   # YYYY-MM-DD
-    distance:               # sprint | olympic | 70.3 | ironman | other
+    distance:               # sprint | olympic | 70.3 | middle | ironman | other  (middle = UK term for a 70.3)
     target_time:            # e.g. "sub 2:00"
     note:
 

@@ -20,6 +20,30 @@ export async function latestWeeklyReview(): Promise<{ date: string; actions: str
   }
 }
 
+/** The most recent weekly review's FULL markdown + its date (the `/season` page renders the prose, the
+ *  dashboard surfaces only its action bullets via {@link latestWeeklyReview}). Best-effort → undefined. */
+export async function latestWeeklyReviewProse(): Promise<{ markdown: string; date: string } | undefined> {
+  try {
+    const r = (await listReports()).find((i) => i.name.endsWith("-weekly-review.md"));
+    if (!r?.date) return undefined;
+    return { markdown: await readReport(r.name), date: r.date };
+  } catch {
+    return undefined;
+  }
+}
+
+/** The most recent season-narrative report's FULL markdown + its date (written by `runSeasonNarrative` /
+ *  `npm run season` under the `season-arc` flow → `YYYY-MM-DD-season-arc.md`). Best-effort → undefined. */
+export async function latestSeasonNarrative(): Promise<{ markdown: string; date: string } | undefined> {
+  try {
+    const r = (await listReports()).find((i) => i.name.endsWith("-season-arc.md"));
+    if (!r?.date) return undefined;
+    return { markdown: await readReport(r.name), date: r.date };
+  } catch {
+    return undefined;
+  }
+}
+
 /** Latest research digest (date + file name + parsed structured items) from `knowledge/pending/`, or
  *  undefined. The file name is threaded through so the card's `approve` command is concrete. */
 export async function latestResearchDigest(): Promise<{ date: string; file: string; items: ResearchTopic[] } | undefined> {

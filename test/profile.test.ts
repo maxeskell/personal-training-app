@@ -52,6 +52,16 @@ test("a richly-filled profile validates; the guard ignores equipment/fit numbers
   assert.doesNotThrow(() => validateProfile(RICH));
 });
 
+// Regression: a real profile used distance "middle" (the UK term for a 70.3), which the strict enum
+// rejected — so loadProfile threw and loadProfileSafe silently fell back to the empty example, blanking
+// every profile-driven card (fuelling, races, dose cycle). "middle" is now a first-class distance.
+test("race distance accepts 'middle' (UK term for a 70.3) and still rejects a non-member", () => {
+  const withMiddle = { ...RICH, races: [{ name: "Outlaw", priority: "A", date: "2027-07-25", distance: "middle", target_time: "4:55-5:10" }] };
+  assert.doesNotThrow(() => validateProfile(withMiddle));
+  const withJunk = { ...RICH, races: [{ name: "Bad", distance: "marathon" }] };
+  assert.throws(() => validateProfile(withJunk));
+});
+
 // A profile carrying dated blood panels (no PII): older + newer panel, numeric markers, flags + notes.
 const WITH_BLOODS: unknown = {
   schema_version: 1,
