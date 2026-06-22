@@ -49,10 +49,23 @@ test("formatCost: empty log, and a windowed report with a per-operation line", a
 test("summarizeState renders provenance + a sync-gaps section for an empty state", async () => {
   const { summarizeState } = await import("../src/mcpServer.js");
   const { emptyState } = await import("../src/state/types.js");
-  const out = summarizeState(emptyState("2026-06-14", "2026-06-14T06:00:00Z"));
+  // today === the assembled day → a FRESH snapshot, so no stale cue.
+  const out = summarizeState(emptyState("2026-06-14", "2026-06-14T06:00:00Z"), "2026-06-14");
   assert.match(out, /AthleteState for 2026-06-14/);
   assert.match(out, /planned sessions\s+—/); // unset slots render an em-dash, never a fake zero
   assert.match(out, /sync gaps: 0/);
+  assert.doesNotMatch(out, /STALE SNAPSHOT/, "a same-day snapshot is not flagged stale");
+});
+
+test("summarizeState flags a snapshot assembled before today (no silent stale read)", async () => {
+  const { summarizeState } = await import("../src/mcpServer.js");
+  const { emptyState } = await import("../src/state/types.js");
+  const out = summarizeState(emptyState("2026-06-14", "2026-06-14T06:00:00Z"), "2026-06-17");
+  assert.match(out, /⚠ STALE SNAPSHOT/);
+  assert.match(out, /3 days before today \(2026-06-17\)/);
+  assert.match(out, /Run `sync`/);
+  // The cue leads the output, before the AthleteState body.
+  assert.ok(out.indexOf("STALE SNAPSHOT") < out.indexOf("AthleteState for"), "stale cue comes first");
 });
 
 test("formatReadiness: tolerates a wellbeing risk with no message and renders drivers", async () => {
