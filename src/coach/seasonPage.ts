@@ -27,7 +27,7 @@ a.back{display:inline-block;margin-bottom:14px;font-size:13px;color:#c8642d;text
 .bar{display:flex;align-items:center;gap:8px;font-size:12px;margin:3px 0}
 .bar .yr{width:34px;color:#777;font-variant-numeric:tabular-nums}
 .bar .track{flex:1;background:#f0ede5;border-radius:3px;overflow:hidden;height:12px}
-.bar .fill{height:12px;border-radius:3px;background:#bcae90}.bar .fill.peak{background:#2e7d57}.bar .fill.cur{background:#c8642d}
+.bar .fill{display:block;height:12px;border-radius:3px;background:#bcae90}.bar .fill.peak{background:#2e7d57}.bar .fill.cur{background:#c8642d}
 .bar .val{width:46px;text-align:right;color:#666;font-variant-numeric:tabular-nums}
 .flag{background:#fdf3f2;border-left:3px solid #c0392b;border-radius:5px;padding:7px 11px;margin:6px 0;font-size:14px}
 .focus{background:#eef4ff;border-left:3px solid #1558d6;border-radius:5px;padding:10px 13px;font-size:15px;font-weight:500}
