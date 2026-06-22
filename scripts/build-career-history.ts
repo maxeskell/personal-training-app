@@ -10,19 +10,21 @@
  *     --tp        /abs/path/activities_tp.csv \  # TrainingPeaks archive (all-time bests, 2011+)
  *     --power     /abs/path/power_curve.json \   # intervals power-curve export (mean-maximal watts)
  *     --races     /abs/path/career-races.json \  # YOUR curated race list (names/locations/optional result) — optional
- *     --fit-dir   /abs/path/fit-streams \        # raw .FIT exports for per-race performance + splits (default: data/fit-streams)
+ *     --fit-dir   /abs/path/archive \            # your activity-file archive (.fit/.tcx, optionally .gz, nested) for splits
  *     --season    2026 \                         # season year for the "Season" column (default: this year)
  *     --out       data/career-history.json       # default
  *
  * RACE PERFORMANCE + SPLITS come from YOUR OWN files, never the web (no official results are scraped): each
- * race is matched by date+sport to a raw `.FIT` (finish time, distance, pace, avg power/HR, and a per-lap
+ * race is matched by date+sport to an activity file (finish time, distance, pace, avg power/HR, and a per-lap
  * or — for a triathlon — per-discipline split table), falling back to the matching `--intervals`/`--tp`
- * activity for summary numbers only when no `.FIT` exists. Anything you hand-author in `--races` always wins.
+ * activity for summary numbers only when none exists. It reads `.FIT` and `.TCX`, optionally gzipped, from
+ * data/fit-streams (recent, full samples → power curve) AND `--fit-dir` (walked recursively, samples dropped
+ * — for a multi-thousand-file TrainingPeaks WorkoutFileExport). Hand-authored `--races` fields always win.
  * Re-running preserves the existing file's races when no --races is given. No network.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { loadActivityFits } from "../src/insights/fit.js";
+import { loadActivityFits, fitStreamsDir, type ActivityFit } from "../src/insights/fit.js";
 import { meanMaximalCurve, type CurvePoint } from "../src/insights/powerCurve.js";
 import { enrichRaceResults, sportFamily, type ActivitySummary, type DatedFit, type SportFamily } from "../src/coach/raceResults.js";
 
@@ -248,6 +250,18 @@ function buildPowerCurve(powerJson: any, fits: DatedFit[], season: number) {
   return pc;
 }
 
+/** Drop duplicate activities across the streams + archive dirs (same date/sport/duration), keeping the copy
+ *  that still has per-second samples (so a recent race in both dirs doesn't lose its power-curve data). */
+function dedupFits(fits: ActivityFit[]): ActivityFit[] {
+  const by = new Map<string, ActivityFit>();
+  for (const f of fits) {
+    const key = `${f.date}|${f.fit.sportName}|${Math.round(f.fit.session.durationSec ?? 0)}`;
+    const cur = by.get(key);
+    if (!cur || (cur.fit.samples.length === 0 && f.fit.samples.length > 0)) by.set(key, f);
+  }
+  return [...by.values()];
+}
+
 function main() {
   const args = parseArgs();
   const season = Number(args.season ?? new Date().getFullYear());
@@ -266,10 +280,17 @@ function main() {
     races = readJson(out)?.races ?? [];
   }
 
-  // Race performance + splits from YOUR files (no scraping): match each race to a raw .FIT (preferred) or
-  // the activity export (summary fallback); hand-authored result fields always win.
+  // Race performance + splits from YOUR files (no scraping): match each race to a raw activity file
+  // (preferred) or the activity export (summary fallback); hand-authored result fields always win.
+  //  - recentFits: the streams dir (recent .FIT, full per-second samples) → drives the power curve;
+  //  - archiveFits: --fit-dir, your historical archive (.fit/.tcx, optionally .gz, in nested year folders),
+  //    scanned recursively with samples dropped (it can be thousands of files — laps are all races need).
   const fitDir = typeof args["fit-dir"] === "string" ? (args["fit-dir"] as string) : undefined;
-  const datedFits: DatedFit[] = loadActivityFits(fitDir).map((f) => ({ date: f.date, sport: f.sport, fit: f.fit }));
+  const streamsDir = fitStreamsDir();
+  const recentFits = loadActivityFits(streamsDir);
+  const archiveFits =
+    fitDir && resolve(fitDir) !== resolve(streamsDir) ? loadActivityFits(fitDir, { recursive: true, dropSamples: true }) : [];
+  const datedFits: DatedFit[] = dedupFits([...recentFits, ...archiveFits]).map((f) => ({ date: f.date, sport: f.sport, fit: f.fit }));
   const activities: ActivitySummary[] = all.map((a) => ({ date: a.date, sport: a.sport, distKm: a.distKm, durSec: a.durSec, np: a.np }));
   const enriched = enrichRaceResults(races, datedFits, activities);
   races = enriched.races;
@@ -311,7 +332,7 @@ function main() {
     : "none";
   console.log(
     `wrote ${out}\n  races: ${races.length} | bests: ${bests.map((b) => `${b.sport}(${b.rows.length})`).join(", ") || "none"} | power: ${pcStr} | trajectory: ${trajectory.length ? trajectory.length + "yrs" : "none"}\n` +
-      `  race performance: ${e.fromFit} from .FIT, ${e.fromActivity} from activity export, ${e.withSplits} with splits (of ${e.total}; ${datedFits.length} .FIT files scanned${fitDir ? ` in ${fitDir}` : ""})`,
+      `  race performance: ${e.fromFit} from file, ${e.fromActivity} from activity export, ${e.withSplits} with splits (of ${e.total}; ${recentFits.length} recent + ${archiveFits.length} archive activity files${fitDir ? ` from ${fitDir}` : ""})`,
   );
 }
 

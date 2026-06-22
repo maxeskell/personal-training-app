@@ -13,11 +13,13 @@
  * cleanly, exactly like the optional Garmin gap-filler.
  */
 
-import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
+import { basename, join } from "node:path";
 import { mean, sd, type Maybe } from "./stats.js";
 import type { Finding } from "./metrics.js";
 import { parseFit, decodeLrBalanceLeftPct, type FitActivity } from "./fitParser.js";
+import { parseTcx } from "./tcxParser.js";
 import { config } from "../config.js";
 
 /** Where synced/raw .FIT streams live: $FIT_STREAMS_DIR, else <dataDir>/fit-streams. */
@@ -188,24 +190,63 @@ export interface ActivityFit {
   fit: FitActivity;
 }
 
-/**
- * Parse every raw `.FIT` in the streams dir into ActivityFit (id + date + sport + parsed FIT), so the
- * splits / CSS tools can pick one by date. JSON pre-extracts are ignored here — laps/lengths only live in
- * the binary .FIT. Empty when none. Best-effort: an unreadable file is skipped, never throws.
- */
-export function loadActivityFits(dir = fitStreamsDir()): ActivityFit[] {
-  if (!dir || !existsSync(dir)) return [];
-  const out: ActivityFit[] = [];
-  for (const name of readdirSync(dir)) {
-    if (!/\.(fit|FIT)$/.test(name)) continue;
+/** Every file under `dir` (recursively). Best-effort: an unreadable dir/entry is skipped, never throws. */
+function walkFiles(dir: string): string[] {
+  const out: string[] = [];
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return out;
+  }
+  for (const name of names) {
+    const p = join(dir, name);
+    let isDir = false;
     try {
-      const fit = parseFit(readFileSync(join(dir, name)));
+      isDir = statSync(p).isDirectory();
+    } catch {
+      continue;
+    }
+    if (isDir) out.push(...walkFiles(p));
+    else out.push(p);
+  }
+  return out;
+}
+
+/**
+ * Parse activity files into ActivityFit (id + date + sport + parsed activity), so the splits / CSS tools and
+ * the career build can pick one by date. Reads raw `.FIT` (via fitParser) and `.TCX` (via tcxParser),
+ * each optionally gzip-compressed (`.fit.gz` / `.tcx.gz`, as a TrainingPeaks "WorkoutFileExport" ships them).
+ * JSON pre-extracts are ignored — laps/lengths only live in the binary/XML. Empty when none. Best-effort: an
+ * unreadable/corrupt file is skipped, never throws.
+ *
+ * Options:
+ *  - `recursive` — walk subfolders (a TP export nests by year). Default false (the flat streams dir).
+ *  - `dropSamples` — discard per-second samples after parsing (keeps only laps/session): essential when
+ *    scanning a multi-thousand-file archive for race splits, where the samples aren't needed and holding
+ *    them all would blow memory. The date is taken BEFORE dropping, so matching still works.
+ */
+export function loadActivityFits(dir = fitStreamsDir(), opts: { recursive?: boolean; dropSamples?: boolean } = {}): ActivityFit[] {
+  if (!dir || !existsSync(dir)) return [];
+  const files = opts.recursive ? walkFiles(dir) : readdirSync(dir).map((n) => join(dir, n));
+  const out: ActivityFit[] = [];
+  for (const path of files) {
+    const lower = path.toLowerCase();
+    const base = lower.endsWith(".gz") ? lower.slice(0, -3) : lower;
+    const isFit = base.endsWith(".fit");
+    const isTcx = base.endsWith(".tcx");
+    if (!isFit && !isTcx) continue;
+    try {
+      let buf = readFileSync(path);
+      if (lower.endsWith(".gz")) buf = gunzipSync(buf);
+      let fit = isFit ? parseFit(buf) : parseTcx(buf);
       if (!fit) continue;
       const firstT = fit.samples.find((s) => s.t != null)?.t ?? fit.laps.find((l) => l.startTimeS != null)?.startTimeS;
       const date = firstT != null ? new Date(firstT * 1000).toISOString().slice(0, 10) : "";
-      out.push({ activityId: name.replace(/\.(fit|FIT)$/, ""), date, sport: fit.sportName, fit });
+      if (opts.dropSamples && fit.samples.length) fit = { ...fit, samples: [] };
+      out.push({ activityId: basename(path).replace(/\.(fit|tcx)(\.gz)?$/i, ""), date, sport: fit.sportName, fit });
     } catch {
-      // skip unreadable/malformed .FIT
+      // skip unreadable/malformed/corrupt-gzip activity file
     }
   }
   return out.sort((a, b) => a.date.localeCompare(b.date));
