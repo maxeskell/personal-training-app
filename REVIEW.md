@@ -157,3 +157,62 @@ Grouped by theme. Status: Verified / Refuted / Unprovable-from-code / Defer (nee
 
 **Open limitation for Stage 2 (blocking):** `profile.local.yaml` and `data/` are gitignored and absent in this fresh container, so I can assess the engine's n-GATES and degradation structurally but cannot see the ACTUAL sample size / data cadence the soundness lens is really about. Resolution options recorded for the user at the Stage 1 stop.
 
+---
+
+## Stage 2: Soundness + physiology correctness
+
+Method: 3 read-only subagents (physiology maths exactness, soundness edge-checks, drift degradation). User chose structural assessment (real `data/` absent), so verdicts are about gates, formulas and surfacing, with "Cannot tell without real n" noted where it bites. Stage 1 fix landed on main (`8f37aad`); Stage 2 work continues on this branch.
+
+### Physiology correctness (maths vs standard model)
+
+Largely SOUND. The load model is mathematically faithful and the standard model is correctly chosen.
+- CTL/ATL/TSB: `ctlK=1−e^(−1/42)`, `atlK=1−e^(−1/7)`, EWMA, `tsb=ctl−atl` (`metrics.ts:161-171`). Matches Banister/Coggan; code explicitly rejects the wrong `2/(τ+1)` EMA form (`metrics.ts:151-154`). Impulse = AIE `external_stress_score`, not recomputed (`metrics.ts:112,158`). Confirmed. Minor: TSB is same-day CTL−ATL vs TrainingPeaks' yesterday convention (1-day lag, `metrics.ts:171`); rampPerWeek assumes gap-free daily series (`metrics.ts:175`).
+- No local TSS/IF computed anywhere (grep). NP (`fit.ts:144-159`) is the standard Coggan 30-sample rolling → mean of 4th powers → 4th root, "assumes ~1Hz, gaps dropped" (MODEL); used ONLY as display VI=NP/avgP (`session.ts:257`), never to derive IF/TSS. Confirmed.
+- Zones (`zones.ts:32-42`): POWER_EDGES and HR_EDGES are exactly Coggan %FTP / %LTHR; run-power reuses cycling model (flagged approx); threshold absent → metric OMITTED, no default fabricated (`zones.ts:49-69`). CSS=(T400−T200)/2 with maximality/HR guards, returns error STRING not a number on invalid input (`sessionSplits.ts:131,128-164`). Confirmed sound.
+- Tri bike split physics (`splits.ts:266-275`): correct steady-state `P=v(Crr·m·g+½ρ·CdA·v²)` Newton solve, plausible constants (Crr 0.005, CdA 0.32, ρ 1.225, +9kg). BUT reported as a bare POINT ESTIMATE, no CI/sensitivity (`splits.ts:308,354`), despite being the most input-sensitive calc. Diverges from the repo's own honest-models convention. Confirmed.
+
+### Statistical soundness per insight (verdict)
+
+- CTL/ATL/TSB, ramp, monotony/strain (Foster), TID vs 80/20: Sound (standard). Caveat: ramp jumpPct can inflate off one big session / low baseline (gated weeks≥3).
+- Lagged correlations (`correlations.ts`): Sound with caveats, and more rigorous than typical n=1: autocorr-discounted effN, Bonferroni-on-lag-scan THEN Benjamini-Hochberg q=0.1, fdrPass = BH AND CI-excludes-0, non-pass tagged exploratory. **This resolves C7**: the lag-scan multiplicity IS corrected in code, so the "FDR-confirmed" label is honest and spec 04's open "FDR double-dip" item is stale doc, not a live bug. Residual caveat: it is associational, never causal at n=1, and effN flooring is crude.
+- Monitoring rule set (`monitoring.ts`): Sound (most rigorous: walk-forward holdout ≥50 days, K=400 circular-shift permutation, Bonferroni). Circularity handled: in the AIE-recovery fallback predictors (HRV/RHR) and outcome (recovery) share the `recData` payload (`engine.ts:175-182`), but the code recognises and RELABELS this as "concordance, not prediction", tags `[dependent outcome]`, and prefers the independent Garmin sleep-score outcome when ≥60 days exist. Good design.
+- Efficiency (FWL EF~CTL+time, n≥10, CI-gated): Sound with caveats (heat/route/pacing/device confounders; heat explicitly not adjusted, "apparent"). Durability (trends AIE DFA-α1, 5v5 split): Sound with caveats (black-box metric, noisy split can flip).
+- Brick (`brick.ts`): UNSOUND AS A "BRICK" SIGNAL. Brick-day = ANY same-day Run+Ride by date only, no order/gap check (`brick.ts:31,45`), so a morning run + evening ride counts as a "brick". The decoupling% it reports is between two SEPARATE sessions, not run-off-bike fatigue. It IS labelled a proxy ("no within-leg timing") and gated brickDays≥3. Verdict: sound only as "same-day decoupling", mislabelled as brick.
+- Taper (`taper.ts`): Sound with caveats (descriptive band from 1-3 past race-day TSBs, spread floor 5 if one race; risk it reads as a target).
+- Change-point (`changepoint.ts`): Sound with caveats but mostly INVISIBLE. Binary segmentation, self-labelled "not significance-tested", confidence 0.45 < the 0.5 surface gate (`changepoint.ts:125`, `metrics.ts:58`) so it never reaches topFindings, only the raw `report.findings`/`report.changePoints` (deep_dive). Weak detector that mostly does not surface = soundness-low + Stage 3 dead-ish compute.
+- Anomaly z (`correlations.ts:140-145`): Sound with caveats. Fires off the SINGLE most-recent value vs whole-series mean (population SD), severity "watch", confidence 0.55 ≥ gate, so a single bad HRV/RHR day DOES surface to the dashboard/topFindings (not promoted to a proactive alert). Defensible for morning readiness and labelled "one day isn't a trend", but a trailing-window baseline would be more honest.
+- Prediction-vs-goal single snapshot (`engine.ts:423-437`): Sound with caveats, borderline. One platform predicted-vs-target reading creates a surfaced finding (confidence 0.7, watch/info) with NO trend requirement (`engine.ts:427`, gate `gapSec!=null`). A separate trend finding needs ≥6 history, but the single-snapshot one launders one noisy estimate into a "behind goal" line.
+- Heat (≥8 pts, range ≥4°C), fuelling weight/muscle (≥6 readings/≥21 days, dual threshold), race-split projection (7% cap, tau 10wk, shows floor+best): Sound with caveats (projection constants are uncited heuristics).
+
+### Drift handling (known season drift)
+
+3 of 4 degrade cleanly; 1 does not.
+- FTP discrepancy (Garmin 183 vs AIE 223): CLEAN. Keeps the higher configured FTP, writes `bikeFtpNote` (`assemble.ts:515-518`), surfaced as a dashboard ⚠ (`dashboard.ts:625`) and in ftp_check (`ftpSource.ts:71`). Zones derive from the kept FTP.
+- Unset swim CSS: CLEAN. Swim zones gated `if(swimCssSecPer100>0)` → omitted, no default fabricated; `parseManualSwimCss(undefined)→undefined` (`zones.ts:68`, `assemble.ts:479-484`, `config.ts:53-62`).
+- Blank race targets: CLEAN. `racePrep.ts:67-74` returns explicit "No race goals are set... Do NOT invent races", `TARGET: —`; `liveCoachingContext` prints "(no upcoming races set)".
+- **Stale "marathon" framing: NOT CLEAN (laundered).** Hardcoded "marathon" framing in deterministic insight `detail` strings (`engine.ts:282,291,377,385`; `garminHealth.ts:42,82`) and in the cached system prompt persona (`persona.ts:57`: "the athlete is building a marathon off a triathlon base"), gated only on a DATA TREND, never on whether a marathon is on the live `getRaceGoalEvent` calendar. For an athlete whose season is three triathlons and no marathon, a run-load spike emits user-facing text naming a marathon that is not on the calendar. Surfaced via `buildInsights` to the dashboard (`server.ts:122,243`) and the `insights` MCP tool (`mcpServer.ts:310`). Note: `coach-instructions.md:33,43` (which OVERRIDES persona.ts as the live system prompt) phrases it correctly as a conditional, so the persona leak bites only the fallback brief; the engine detail strings always leak. Distance lookups using "marathon" as one of many distances (`engine.ts:188-189`, `splits.ts:218,230,242`) are legitimate and fine.
+
+### Findings ranked
+
+- HIGH-1 (Confirmed): Stale "marathon" framing laundered into live deterministic output + persona system prompt (`engine.ts:282,291,377,385`; `garminHealth.ts:42,82`; `persona.ts:57`). A known-drift guarantee ("degrade, don't invent") is REFUTED here. Blast radius: every run-load/durability/ACWR finding + the fallback system prompt. Closest thing to Critical this stage: it can steer LLM coaching toward a goal that does not exist.
+- HIGH-2 (Confirmed): Brick decoupling on a same-day proxy with no order/gap check (`brick.ts:31,45`) mislabels between-session variance as brick fatigue, surfaced as a finding a triathlete acts on. Tempered by honest "proxy" labelling.
+- MED-3 (Confirmed): Prediction-vs-goal single-snapshot finding surfaces at confidence 0.7 with no trend requirement (`engine.ts:427`).
+- MED-4 (Confirmed): Anomaly z single-point surfaces (`correlations.ts:140-145`, conf 0.55, population SD, whole-series-mean baseline).
+- MED-5 (Confirmed): Tri bike split reported as a bare point estimate, no uncertainty on the sensitive CdA/Crr/mass inputs (`splits.ts:308,354`).
+- MED-6 (Confirmed): Change-point computes on short autocorrelated series, self-labelled not-significance-tested, suppressed from top findings (0.45<0.5) yet present in deep_dive (`changepoint.ts:125`, `metrics.ts:58`).
+- LOW: TSB same-day-vs-yesterday convention; rampPerWeek gap-free assumption; efficiency/durability confounders; taper band from 1-3 races; projection constants uncited.
+
+### Positives to keep (anti-sycophancy) + belief reversed
+
+- Keep: correct `1−e^(−1/τ)` decay with an in-code defence against the wrong form; no fabricated TSS/IF (load = platform ESS); exact Coggan zone edges; threshold-absent OMITS not fabricates; CSS returns error strings not numbers; monitoring circularity recognised and relabelled "concordance not prediction"; correlations correct lag-scan multiplicity; FTP/swim-CSS/race-target drift all degrade cleanly.
+- Belief reversed this stage: I suspected (via C7) that the "FDR-confirmed" correlation claim was laundered/over-claimed. Stage 2 reverses that. The code applies Bonferroni-on-the-lag-scan before BH, so the label is honest and spec 04 (which lists the double-dip as "open") is the stale artefact, not the code.
+
+### How this updates the kill list + plan
+
+- Stage 3 cut/fix candidates seeded by soundness: brick same-day proxy (relabel to "same-day decoupling" or gate to true off-bike runs needing FIT timing), change-point (raise rigor or cut, since it mostly does not surface).
+- Stage 4 honesty fixes: gate "marathon" wording on `classifyRace`/live calendar (as `seasonContext.ts:114-122` already does for season shape) and fix `persona.ts:57`; add an uncertainty band to the tri bike split; add a trend/as-of guard or down-rank the single-point prediction and anomaly findings.
+- Stage 5 doc reconciliation: spec 04 (FDR double-dip) is stale and should be marked done; C3 spec-status drift confirmed again here.
+- Order for Stages 3-5 unchanged.
+
+Stage 2 STOP: reported in chat; awaiting "continue" for Stage 3 (dead code + simplification) or redirect.
+
