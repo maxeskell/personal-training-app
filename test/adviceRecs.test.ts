@@ -76,7 +76,9 @@ test("renderCoachRecs: a clustered rep shows a 'shown once' note naming the othe
   assert.match(html, /Same point also raised in/);
   assert.match(html, /your recent question/); // the ask source phrase
   assert.match(html, /shown once/);
-  assert.doesNotMatch(html, /<script>/, "merged titles in the tooltip are HTML-escaped");
+  // The merged title (which contains a script tag) must be HTML-escaped in the tooltip: assert the
+  // escaped form is present (a positive check — not a regex that tries to spot a raw tag).
+  assert.match(html, /&lt;script&gt;/, "merged titles in the tooltip are HTML-escaped");
   // Without the merged map, the note is absent (back-compat: existing callers pass 3 args).
   assert.doesNotMatch(renderCoachRecs([rep], undefined, false), /shown once/);
 });
