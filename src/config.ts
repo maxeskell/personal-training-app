@@ -173,8 +173,13 @@ export const config = {
     model: process.env.LOCAL_LLM_EMBED_MODEL ?? "nomic-embed-text",
     /** Cosine-similarity threshold (0–1) above which two recommendations are treated as the same idea. */
     similarityThreshold: Number(process.env.COACH_ADVICE_CLUSTER_SIMILARITY ?? 0.86),
-    /** Hard timeout (ms) for the embeddings call — a slow/missing server must never stall a sync. */
-    timeoutMs: Number(process.env.LOCAL_LLM_EMBED_TIMEOUT_MS ?? 5000),
+    /**
+     * Hard timeout (ms) for the embeddings call. Generous by default because the FIRST embed after Ollama
+     * has unloaded the model is a cold load (~10–20 s observed for nomic-embed-text); a shorter cap would
+     * abort it and skip clustering for that sync. It runs OFF the render path, so a long wait only delays a
+     * best-effort sync step, never a page load — but it's still bounded so a hung server can't stall a sync.
+     */
+    timeoutMs: Number(process.env.LOCAL_LLM_EMBED_TIMEOUT_MS ?? 30000),
   },
 
   /**
