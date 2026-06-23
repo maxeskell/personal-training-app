@@ -7,6 +7,7 @@ import {
   adviceSourceOfKey,
   groupAdviceBySource,
   ADVICE_RECS_SCHEMA,
+  MAX_ADVICE_RECS,
 } from "../src/coach/adviceRecs.js";
 import type { InsightSnapshot, SurfacedFinding } from "../src/state/insightLog.js";
 
@@ -83,12 +84,18 @@ test("renderCoachRecs: a clustered rep shows a 'shown once' note naming the othe
   assert.doesNotMatch(renderCoachRecs([rep], undefined, false), /shown once/);
 });
 
-test("ADVICE_RECS_SCHEMA: no minimum floor (so one strong rec is allowed), capped at 4", () => {
+test("ADVICE_RECS_SCHEMA: no array length constraints (structured-output 400s on them); cap lives in code", () => {
   const schema = ADVICE_RECS_SCHEMA as { maxItems?: number; minItems?: number; description: string };
-  assert.equal(schema.maxItems, 4);
+  // Anthropic structured-output rejects maxItems/minItems on arrays — neither may appear in the schema.
+  assert.equal(schema.maxItems, undefined, "no maxItems — it 400s the structured-output call");
   assert.equal(schema.minItems, undefined, "must not mandate a floor — padding is what we're fixing");
   assert.doesNotMatch(schema.description, /2[–-]4/, "the old 2–4 floor wording is gone");
   assert.match(schema.description, /fewest/i);
+});
+
+test("recsToFindings: caps surfaced recommendations at MAX_ADVICE_RECS (the cap the schema can't carry)", () => {
+  const many = Array.from({ length: 7 }, (_, i) => ({ text: `Distinct rec ${i}`, family: "Load & form" }));
+  assert.equal(recsToFindings(many, "readiness").length, MAX_ADVICE_RECS);
 });
 
 test("adviceSourceOfKey: parses the source from the key; null for non-advice/garbled keys", () => {
