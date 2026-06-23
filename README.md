@@ -24,7 +24,7 @@ anything of your own.
 
 ![The Endurance Coach dashboard — today's readiness verdict, top insights, load by sport over the last 7 days (with a Total row), multi-week trends, and the race countdown](docs/dashboard.png)
 
-<sub>Generated from the built-in sample data — regenerate with `npm run demo`, then `python3 scripts/render_dashboard_png.py reports/demo-dashboard.html docs/dashboard.png` (needs `weasyprint` + `pymupdf`).</sub>
+<sub>Illustrative — the live dashboard now organises this into four tabs (Today · Plan · Decide · Performance; see "Online dashboard" below). Generated from the built-in sample data — regenerate with `npm run demo`, then `python3 scripts/render_dashboard_png.py reports/demo-dashboard.html docs/dashboard.png` (needs `weasyprint` + `pymupdf`).</sub>
 
 > 📸 _Want to share your own? Run `npm run demo` and screenshot `reports/demo-dashboard.html` — the quickest pitch._
 

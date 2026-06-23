@@ -283,8 +283,8 @@ pull-based auto-updater runs by default. Prefer hands-free pull updates instead?
 
 ## Step 6a — (optional) Career history (the `/career` tab)
 
-The dashboard's live state only knows the recent past. The **Career & PBs** page (`/career`, linked
-top-left of the dashboard) shows the *long view* — your full **race log** (with your recorded performance
+The dashboard's live state only knows the recent past. **Career & PBs** (folded into the dashboard's
+**Performance** tab, and a standalone page at `/career`) shows the *long view* — your full **race log** (with your recorded performance
 and per-race **splits**), **lifetime bests vs current form**, and an all-time-vs-recent **power curve**.
 Because that history is a multi-year archive, it lives in a **gitignored** file, `data/career-history.json`,
 that you build once from your own exports. The committed `career-history.example.json` shows the exact
@@ -367,7 +367,7 @@ cd /Users/maxeskell/dev/personal-training-app && npm run archive:import
 
 ## Step 6b — (optional) Season arc (the `/season` strategic review)
 
-The **Season arc** page (`/season`, linked top-left of the dashboard) is the multi-season strategic layer —
+The **Season arc** (folded into the dashboard's **Plan** tab, and a standalone page at `/season`) is the multi-season strategic layer —
 *where am I in the multi-year build, am I building or stalling, what's this phase's focus, what's the risk* —
 for rebuilding toward 70.3 → Ironman. It's deterministic (no LLM, no cost) and reads three things you
 already have: your **career trajectory** (from Step 6a's `career-history.json`), your **live CTL** (from your

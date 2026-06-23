@@ -22,7 +22,7 @@ import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport, listReports } from "./coach/reports.js";
 import { seasonNudgeDue } from "./coach/seasonNudge.js";
 import { renderDashboard } from "./coach/dashboard.js";
-import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
+import { latestWeeklyReview, latestResearchDigest, latestSeasonNarrative, latestWeeklyReviewProse } from "./coach/setupSources.js";
 import { loadSessionFeedbacks, saveSessionFeedback } from "./coach/sessionFeedbackStore.js";
 import { loadMetricOverrides } from "./state/metricOverrides.js";
 import { buildDemoWindow, buildDemoGarminDays, demoCostRecords, demoProfile } from "./demo/sampleData.js";
@@ -620,6 +620,32 @@ async function cmdDashboard(): Promise<void> {
       weather = assessWeek(plan.sessions, fc, { ...config.weather, planAsOf: plan.asOf }, latestActuals(window));
     }
   }
+  // Season arc + career history — folded into the Plan and Performance tabs, matching the served dashboard
+  // (server.ts). Best-effort: any failure leaves that fold absent (degrade-don't-crash).
+  const profile = (await loadProfileSafe())?.profile;
+  const career = loadCareerHistory();
+  let seasonReport: ReturnType<typeof buildSeasonArc> | undefined;
+  let seasonProse: { narrative?: Awaited<ReturnType<typeof latestSeasonNarrative>>; weekly?: Awaited<ReturnType<typeof latestWeeklyReviewProse>> } | undefined;
+  try {
+    let ctlSeries: Array<{ date: string; v: number }> = [];
+    try {
+      ctlSeries = await new StateStore().series(todayIso(), 60, (s) => s.load.value?.ctl);
+    } catch {
+      /* no state series yet */
+    }
+    seasonReport = buildSeasonArc({
+      today: todayIso(),
+      plan: profile?.season_plan,
+      ctlNow: ctlSeries.length ? ctlSeries[ctlSeries.length - 1].v : undefined,
+      ctlSeries,
+      career,
+      profile,
+    });
+    const [narrative, weekly] = await Promise.all([latestSeasonNarrative(), latestWeeklyReviewProse()]);
+    seasonProse = { narrative, weekly };
+  } catch {
+    /* the Plan tab degrades to the week-ahead view */
+  }
   const html = renderDashboard({
     window,
     decisions,
@@ -629,7 +655,10 @@ async function cmdDashboard(): Promise<void> {
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,
     weather,
-    profile: (await loadProfileSafe())?.profile,
+    profile,
+    seasonReport,
+    seasonProse,
+    career,
     suppressed,
     weeklyReview: await latestWeeklyReview(), // "This week" actions — reads the persisted report
     researchDigest: await latestResearchDigest(), // "Worth considering" — reads the persisted digest
