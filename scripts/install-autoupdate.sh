@@ -44,10 +44,29 @@ cat > "$PLIST" <<PLIST_EOF
 </plist>
 PLIST_EOF
 
-launchctl unload "$PLIST" 2>/dev/null || true
-launchctl load "$PLIST"
+# Load via launchd, then VERIFY and report honestly. Current macOS can reject BOTH the legacy
+# `launchctl load` (which also LIES — it prints "Load failed" yet returns exit 0) and `bootstrap` with
+# "Input/output error" when the per-user domain is in a bad state. So: try bootstrap, fall back to load,
+# then confirm with `launchctl print` rather than assuming success.
+DOMAIN="gui/$(id -u)"
+launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null || launchctl load "$PLIST" 2>/dev/null || true
+launchctl enable "$DOMAIN/$LABEL" 2>/dev/null || true
+launchctl kickstart -k "$DOMAIN/$LABEL" 2>/dev/null || true
 
-printf '\nInstalled %s — pulls merged code every %ds (and at login) on '\''%s'\'' and restarts the dashboard.\n' "$LABEL" "$INTERVAL" "$BRANCH"
-echo "You no longer need to run git. Merged changes go live within ~$((INTERVAL / 60)) min."
-echo "Log:       $PROJECT/reports/autoupdate.log"
-echo "On demand: npm run update    |    Uninstall: bash $PROJECT/scripts/uninstall-autoupdate.sh"
+if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+  printf '\nInstalled %s — pulls merged code every %ds (and at login) on '\''%s'\'' and restarts the dashboard.\n' "$LABEL" "$INTERVAL" "$BRANCH"
+  echo "You no longer need to run git. Merged changes go live within ~$((INTERVAL / 60)) min."
+  echo "Log:       $PROJECT/reports/autoupdate.log"
+  echo "On demand: npm run update    |    Uninstall: bash $PROJECT/scripts/uninstall-autoupdate.sh"
+else
+  MINS=$((INTERVAL / 60))
+  CRON_LINE="*/$MINS * * * * /bin/bash $PROJECT/scripts/autoupdate.sh >> $PROJECT/reports/autoupdate.log 2>&1"
+  echo "⚠ The plist is written ($PLIST) but launchd wouldn't load the timer now — a known macOS"
+  echo "  per-user-domain hiccup (Input/output error), NOT a problem with the plist itself."
+  echo "  • Easiest: log out and back in (or reboot) — LaunchAgents load automatically at login. Then:"
+  echo "        launchctl list | grep -i endurance"
+  echo "  • No reboot? Schedule it with cron instead (copy-paste):"
+  echo "        ( crontab -l 2>/dev/null | grep -v scripts/autoupdate.sh; echo '$CRON_LINE' ) | crontab -"
+  echo "  Either way the updater already works on demand:  npm run update"
+fi
