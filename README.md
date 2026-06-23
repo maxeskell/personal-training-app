@@ -372,10 +372,13 @@ fuelling:
 ```
 
 **2 — See it on the dashboard.** The **"Fuelling — next session"** card shows just the *next* session's
-plan, short and sharp — pre/during/after as one line each (e.g. a 3 h endurance ride gets `During ~75 g
-carb/hr (≈225 g): 3× Flapjack · ~500 ml/hr + an electrolyte tab` and a recovery line), or a single
-"water's fine" line when nothing's needed. It auto-picks your **caffeine-free** electrolyte for an evening
-session, scales fluid/sodium up in heat, and respects your **learned carb/hr ceiling**; daily supplements,
+plan, short and sharp — pre/during/after as one line each (e.g. a 3 h endurance ride gets `During ~80 g
+carb/hr (≈240 g carb): 3× Flapjack Co Flapjack (195 g carb) + 2× OTE gel (40 g carb) ≈ 235 g carb · ~500
+ml/hr + an electrolyte tab` and a recovery line), or a single "water's fine" line when nothing's needed.
+Each pick shows its **carbohydrate contribution** (so the picks sum to the total — never a bar's serving
+weight), and the target uses **your own `fuelling.carb_target_g_per_hour`** (capped by your learned ceiling)
+over any generic range. It auto-picks your **caffeine-free** electrolyte for an evening session, scales
+fluid/sodium up in heat; daily supplements,
 the model assumptions and the "Review my fuelling" button tuck behind a **More** disclosure. Everything is
 labelled a MODEL. On the terminal `npm run fuelling` prints the whole week's plans; from Claude/MCP the
 `fuelling` tool does too.
@@ -544,11 +547,12 @@ reads it automatically. See [SETUP.md → "Activity archive"](./SETUP.md).
 multi-season review** for rebuilding toward **70.3 → Ironman over years**. Reading your **own** plan
 (`profile.season_plan`: a horizon goal + dated phases with text CTL targets), your **live chronic load**
 (CTL now + trend), your **career trajectory** (year-by-year hours — your 2013 peak, your 2019 trough) and
-your profile, it shows: at the **top**, the two **latest coach-prose reports** read straight from
-`reports/` — your **season narrative** ("Coach's season read") and beneath it your **latest weekly review**
-— each with an honest *"Updated {date}"* stamp and a *stale-refresh* hint once it's over ~10 days old (the
-weekly's "## Next week" actions are stripped here, since they already surface on the dashboard); then the
-**active phase + focus**, **CTL now vs target vs trend** (the year-over-year lever), the **long-arc bar
+your profile, it shows, **most-actionable first**: your **latest weekly review** at the **top** (open),
+then the **active phase + focus** and **CTL now vs target vs trend** (the year-over-year lever), then your
+longer **season narrative** folded into a collapsed *"Coach's full season read"* — both prose reports read
+straight from `reports/`, each with an honest *"Updated {date}"* stamp and a *stale-refresh* hint once over
+~10 days old (the weekly's "## Next week" actions are stripped here, since they already surface on the
+dashboard); the **long-arc bar
 chart**, a **structural-lever checklist** (strength / swim CSS / bloods age / threshold band — the things
 that compound over seasons, sharpened by your GLP-1 context), and the **multi-season risk flags**
 (consistency cliff, stale bloods, falling CTL into a deadline). It's display-only and makes **no LLM call**

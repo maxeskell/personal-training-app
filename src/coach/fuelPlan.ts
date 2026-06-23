@@ -29,6 +29,9 @@ import {
 export interface FuelPrefs {
   /** Learned per-hour carb tolerance cap (g/h) — the gut-trained ceiling; the plan never exceeds it. */
   carbCeilingGPerHour?: number;
+  /** The athlete's OWN stated carb/hr target for endurance/long efforts. n=1 data outranks the generic
+   *  ranges: when the athlete has trained to (and prefers) a number, the plan uses it, not the textbook. */
+  carbTargetGPerHour?: number;
   /** Local hour (0–23) after which caffeine is avoided (sleep) — steers to caffeine-free electrolytes. */
   caffeineCutoffHour?: number;
   /** Free-text the athlete/learning-loop wants echoed (e.g. "gels sit badly running — prefer drink"). */
@@ -88,17 +91,29 @@ export function inferIntensity(title: string | undefined, sport: string | undefi
 }
 
 /**
- * Target carbohydrate g/h for the session. Mainstream ranges (gut-trained), capped by the learned ceiling:
+ * Target carbohydrate g/h for the session. The generic thresholds below decide WHETHER a session needs
+ * carbs at all (mainstream gut-trained ranges); but if the athlete has stated their OWN carb/hr target,
+ * that number wins for HOW MUCH (n=1 data outranks the textbook) — capped by the learned ceiling.
  *   < 75 min, not hard → 0 (water's fine)
  *   75–150 min easy/endurance → ~45 g/h ; hard → ~60 g/h
- *   > 150 min or a key/race effort → ~75 g/h (endurance) / up to 90 with a higher learned ceiling
+ *   > 150 min or a key/race effort → ~75 g/h (endurance)
+ * With an athlete target set (e.g. 80 g/h), any fuelled session uses it instead of the generic figure.
  */
-export function carbTargetGPerHour(durationMin: number, intensity: Intensity, isKey: boolean, ceiling?: number): number {
+export function carbTargetGPerHour(
+  durationMin: number,
+  intensity: Intensity,
+  isKey: boolean,
+  ceiling?: number,
+  athleteTarget?: number,
+): number {
   let target = 0;
   if (durationMin >= 150 || (isKey && durationMin >= 90)) target = 75;
   else if (durationMin >= 75) target = intensity === "hard" ? 60 : 45;
   else if (intensity === "hard" && durationMin >= 60) target = 30; // long-ish hard session still benefits
   else target = 0;
+  // The athlete's own stated target replaces the generic figure whenever carbs are actually needed — it's
+  // their gut-trained number (and, on appetite-suppressing meds, under-fuelling is the riskier error).
+  if (target > 0 && athleteTarget != null && athleteTarget > 0) target = athleteTarget;
   if (ceiling != null && ceiling > 0) target = Math.min(target, ceiling);
   return target;
 }
@@ -110,10 +125,19 @@ function fluidMlPerHour(tempC: number | null | undefined): number {
   return 500;
 }
 
-function fmtProduct(p: FuelProduct, count: number): string {
-  const n = count > 1 ? `${count}× ` : "";
+/** Product label with any serving-size parenthetical ("(120 g)", "(500 ml)") stripped, so a bar's WEIGHT
+ *  is never shown next to — and confused with — a carbohydrate figure. */
+function cleanProductName(p: FuelProduct): string {
   const label = p.brand ? `${p.brand} ${p.name}` : p.name;
-  return `${n}${label}`;
+  return label.replace(/\s*\(\s*\d+(?:\.\d+)?\s*(?:g|kg|ml|oz)\b[^)]*\)\s*$/i, "").trim();
+}
+
+/** A during-carb pick as "2× OTE Energy Gel (40 g carb)" — the carb CONTRIBUTION (count × per-serving), so
+ *  the picks visibly sum to the stated total. The serving weight is dropped (it isn't a carb figure). */
+function fmtCarbProduct(p: FuelProduct, count: number): string {
+  const n = count > 1 ? `${count}× ` : "";
+  const carbs = p.carbsG != null ? Math.round(p.carbsG * count) : undefined;
+  return `${n}${cleanProductName(p)}${carbs != null ? ` (${carbs} g carb)` : ""}`;
 }
 
 function isLateForCaffeine(startHour: number | null | undefined, cutoff: number | undefined): boolean {
@@ -138,7 +162,8 @@ export function planFuel(input: FuelPlanInput): FuelPlan {
   const lateCaffeine = isLateForCaffeine(input.startHour, input.prefs?.caffeineCutoffHour);
 
   const assumptions: string[] = [];
-  const carbTarget = carbTargetGPerHour(dur, intensity, isKey, ceiling);
+  const athleteCarbTarget = input.prefs?.carbTargetGPerHour;
+  const carbTarget = carbTargetGPerHour(dur, intensity, isKey, ceiling, athleteCarbTarget);
 
   // ---- DURING -------------------------------------------------------------
   let during: FuelSection | null = null;
@@ -147,10 +172,10 @@ export function planFuel(input: FuelPlanInput): FuelPlan {
     const totalCarb = Math.round(carbTarget * hours);
     const combo = chooseCarbCombo(totalCarb, carbCandidates(inv), { avoidCaffeine: lateCaffeine });
     if (combo.items.length) {
-      const picks = combo.items.map((e) => fmtProduct(e.product, e.count)).join(" + ");
-      duringLines.push(`Aim ~${carbTarget} g carb/hr (~${totalCarb} g total): ${picks}${combo.totalCarbsG ? ` ≈ ${combo.totalCarbsG} g` : ""}.`);
+      const picks = combo.items.map((e) => fmtCarbProduct(e.product, e.count)).join(" + ");
+      duringLines.push(`Aim ~${carbTarget} g carb/hr (≈${totalCarb} g carb for the session): ${picks}${combo.totalCarbsG ? ` ≈ ${combo.totalCarbsG} g carb` : ""}.`);
     } else {
-      duringLines.push(`Aim ~${carbTarget} g carb/hr (~${totalCarb} g total). You've no dedicated carb fuel logged — a flapjack/banana/real food covers it; consider a drink-mix or gels for longer days.`);
+      duringLines.push(`Aim ~${carbTarget} g carb/hr (≈${totalCarb} g carb for the session). You've no dedicated carb fuel logged — a flapjack/banana/real food covers it; consider a drink-mix or gels for longer days.`);
     }
   }
   // Fluid + sodium: meaningful past ~60 min, or sooner in heat.
@@ -216,7 +241,14 @@ export function planFuel(input: FuelPlanInput): FuelPlan {
 
   // Assumptions (honest model). Only the ones that bear on this plan.
   assumptions.push(`${intensity} ${sport.toLowerCase()}${dur ? `, ${Math.round(dur)} min` : ""}`);
-  if (carbTarget > 0 && ceiling != null) assumptions.push(`carb/hr capped at your learned ${ceiling} g/h ceiling`);
+  if (carbTarget > 0 && athleteCarbTarget != null && athleteCarbTarget > 0) {
+    assumptions.push(
+      `carb/hr from your stated ${athleteCarbTarget} g/h target` +
+        (ceiling != null && athleteCarbTarget > ceiling ? `, capped at your ${ceiling} g/h ceiling` : ""),
+    );
+  } else if (carbTarget > 0 && ceiling != null) {
+    assumptions.push(`carb/hr capped at your learned ${ceiling} g/h ceiling`);
+  }
   if (input.weightKg) assumptions.push(`per-kg amounts use ${input.weightKg} kg`);
   if (input.tempC != null) assumptions.push(`forecast ~${Math.round(input.tempC)}°C`);
   assumptions.push("MODEL estimate — gut-train any new carb rate gradually");
@@ -292,8 +324,15 @@ export function loadFuelPrefs(fuelling: unknown): FuelPrefs {
   const o = fuelling && typeof fuelling === "object" && !Array.isArray(fuelling) ? (fuelling as Record<string, unknown>) : {};
   const prefs = o.preferences && typeof o.preferences === "object" ? (o.preferences as Record<string, unknown>) : {};
   const numOf = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : typeof v === "string" && /^\d+(\.\d+)?$/.test(v.trim()) ? Number(v.trim()) : undefined);
+  // The athlete's own carb/hr target is a map by session type (e.g. {olympic_and_long_rides: 80, sprint: 0});
+  // take the highest stated number as the endurance/long-effort target the plan should hit.
+  const targetMap = o.carb_target_g_per_hour && typeof o.carb_target_g_per_hour === "object" && !Array.isArray(o.carb_target_g_per_hour)
+    ? (o.carb_target_g_per_hour as Record<string, unknown>)
+    : {};
+  const statedTargets = Object.values(targetMap).map(numOf).filter((n): n is number => n != null && n > 0);
   return {
     carbCeilingGPerHour: numOf(prefs.carb_ceiling_g_per_hour) ?? numOf(prefs.carb_ceiling),
+    carbTargetGPerHour: statedTargets.length ? Math.max(...statedTargets) : undefined,
     caffeineCutoffHour: numOf(prefs.caffeine_cutoff_hour),
     notes: typeof prefs.notes === "string" ? prefs.notes : typeof o.notes === "string" ? o.notes : undefined,
   };

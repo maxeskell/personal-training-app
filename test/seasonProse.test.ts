@@ -52,15 +52,18 @@ test("renderSeasonPage renders both prose cards when passed, newest content visi
     weekly: { markdown: "# Weekly review — 2026-06-22\n\nSolid base week.\n\n## Next week\n- Cut a grey ride", date: FRESH },
   };
   const html = renderSeasonPage(REPORT, false, prose);
-  assert.match(html, /Coach&#39;s season read|Coach's season read/);
-  assert.match(html, /Latest weekly review/);
+  assert.match(html, /Coach&#39;s full season read|Coach's full season read/);
+  assert.match(html, /This week/);
   assert.ok(html.includes("Raise the aerobic floor patiently."));
   assert.ok(html.includes("Solid base week."));
+  // weekly is first and open; the long narrative folds into a collapsed <details> lower down
+  assert.ok(html.indexOf("This week") < html.indexOf("full season read"), "weekly comes before the season read");
+  assert.match(html, /<details[^>]*>\s*<summary[^>]*>Coach&#39;s full season read/, "the narrative is collapsed");
   // the H1 title line is stripped (the card carries its own title)
   assert.ok(!html.includes("Season arc — review"));
   // the weekly "## Next week" bullets are stripped (they live on the dashboard)
   assert.ok(!html.includes("Cut a grey ride"));
-  assert.ok(!/Next week/.test(html.replace(/Latest weekly review/g, "")));
+  assert.ok(!/Next week/i.test(html), "the weekly Next-week section is stripped");
   // honest staleness stamp present, fresh → no stale hint
   assert.match(html, /Updated /);
   assert.ok(!html.includes("stale —"));
@@ -69,15 +72,15 @@ test("renderSeasonPage renders both prose cards when passed, newest content visi
 test("renderSeasonPage omits a prose card cleanly when that piece is absent (no empty card)", () => {
   const onlyNarrative = renderSeasonPage(REPORT, false, { narrative: { markdown: "# T\n\nbody", date: FRESH } });
   assert.match(onlyNarrative, /Coach/);
-  assert.ok(!onlyNarrative.includes("Latest weekly review"));
+  assert.ok(!onlyNarrative.includes("This week"));
 
   const none = renderSeasonPage(REPORT, false, {});
   assert.ok(!none.includes("Coach"));
-  assert.ok(!none.includes("Latest weekly review"));
+  assert.ok(!none.includes("This week"));
 
   // backwards-compatible: no prose arg at all
   const noArg = renderSeasonPage(REPORT);
-  assert.ok(!noArg.includes("Latest weekly review"));
+  assert.ok(!noArg.includes("This week"));
 });
 
 test("renderSeasonPage escapes hostile markdown in prose (no raw markup breaks out)", () => {

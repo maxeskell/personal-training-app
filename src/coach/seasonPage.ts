@@ -93,7 +93,13 @@ function trajectoryBars(traj: YearStat[], peakYear: number | undefined, curYear:
  * the refresh command once the report is older than {@link STALE_DAYS}. Returns "" for an absent report so
  * a missing piece renders nothing (degrade-don't-crash) rather than an empty card.
  */
-function proseCard(title: string, prose: ProseReport | undefined, refreshCmd: string, prep: (md: string) => string): string {
+function proseCard(
+  title: string,
+  prose: ProseReport | undefined,
+  refreshCmd: string,
+  prep: (md: string) => string,
+  collapsed = false,
+): string {
   if (!prose) return "";
   const body = mdLite(prep(prose.markdown).trim());
   if (!body.trim()) return "";
@@ -101,8 +107,15 @@ function proseCard(title: string, prose: ProseReport | undefined, refreshCmd: st
   const stale = age != null && age > STALE_DAYS
     ? ` <span class="stale">(stale — run <code>${escapeHtml(refreshCmd)}</code> to refresh)</span>`
     : "";
+  const stamp = `Updated ${escapeHtml(prose.date)}${stale}`;
+  // Collapsed: a long strategic read (the season narrative) folds behind a one-click summary so it doesn't
+  // dominate the page; the weekly review stays open and prominent at the top.
+  if (collapsed) {
+    return `<details class="card"><summary style="cursor:pointer;font-weight:600;color:#555">${escapeHtml(title)} <span class="stamp" style="font-weight:400">${stamp}</span></summary>
+      <div class="prose" style="margin-top:10px">${body}</div></details>`;
+  }
   return `<div class="card"><h2>${escapeHtml(title)}</h2>
-    <div class="stamp">Updated ${escapeHtml(prose.date)}${stale}</div>
+    <div class="stamp">${stamp}</div>
     <div class="prose">${body}</div></div>`;
 }
 
@@ -112,15 +125,11 @@ export function renderSeasonPage(report: SeasonArcReport, share = false, prose?:
   void share;
   const r = report;
 
-  // Two latest coach-prose reports, surfaced near the top (most prominent): the multi-season narrative,
-  // then the weekly review beneath it. Each degrades to nothing when its report is absent or unreadable.
-  const narrativeCard = proseCard("Coach's season read", prose?.narrative, "npm run season", stripLeadingH1);
-  const weeklyCard = proseCard(
-    "Latest weekly review",
-    prose?.weekly,
-    "npm run weekly",
-    (md) => stripNextWeek(stripLeadingH1(md)),
-  );
+  // This week's review goes FIRST and stays open (the most recent, most actionable read). The longer
+  // multi-season narrative folds into a collapsed "full read" lower down so it doesn't bloat the page.
+  // Each degrades to nothing when its report is absent or unreadable.
+  const weeklyCard = proseCard("This week", prose?.weekly, "npm run weekly", (md) => stripNextWeek(stripLeadingH1(md)));
+  const narrativeCard = proseCard("Coach's full season read", prose?.narrative, "npm run season", stripLeadingH1, true);
 
   const planless = !r.hasPlan
     ? `<div class="note">No multi-season plan yet. Add a <code>season_plan</code> block to <code>profile.local.yaml</code> (horizon goal + dated phases with a text <code>ctl_target</code>) — see <code>profile.example.yaml</code> and <code>SETUP.md → "Season arc"</code>. The chronic-load, trajectory and lever sections below still work without it.</div>`
@@ -174,7 +183,9 @@ export function renderSeasonPage(report: SeasonArcReport, share = false, prose?:
     ? `<div class="card"><h2>Watch (multi-season risks)</h2>${r.flags.map((f) => `<div class="flag">${escapeHtml(f)}</div>`).join("")}</div>`
     : "";
 
+  // Order, most-actionable first: this week → where you are now (phase, load, focus) → the full strategic
+  // read (collapsed) → where you're headed (horizon, the long arc) → levers and risks.
   return shell(
-    `<h1>Season arc</h1><div class="sub">Multi-season strategic review — deterministic, your own plan + numbers. Built to grow you back to 70.3 → Ironman.</div>${narrativeCard}${weeklyCard}${planless}${horizon}${phase}${ctl}${focus}${traj}${levers}${flags}`,
+    `<h1>Season arc</h1><div class="sub">Your plan, your numbers — the multi-season view.</div>${planless}${weeklyCard}${phase}${ctl}${focus}${narrativeCard}${horizon}${traj}${levers}${flags}`,
   );
 }
