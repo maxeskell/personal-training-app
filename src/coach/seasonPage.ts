@@ -98,11 +98,21 @@ export function renderSeasonPage(report: SeasonArcReport, share = false, prose?:
 }
 
 /**
+ * The "This week" coach-prose card (the latest weekly review, with its dashboard-duplicated "## Next week"
+ * section stripped). It's a *this-week* read, so the dashboard lifts it up into the Plan tab's this-week
+ * block — above the season-arc fold — and tells {@link renderSeasonInner} to omit it there (`omitWeekly`).
+ * The standalone /season page keeps it at the top instead. Returns "" when there's no weekly report.
+ */
+export function renderWeeklyProse(prose?: SeasonProse): string {
+  return proseCard("This week", prose?.weekly, "npm run weekly", (md) => stripNextWeek(stripLeadingH1(md)));
+}
+
+/**
  * The season-arc content WITHOUT the page shell — wrapped in `.season-inner` so its scoped styles apply
  * (see shell.ts). Reused two ways: the standalone /season page wraps it in {@link pageShell}, and the
  * dashboard's Plan tab folds it in directly under a section rule.
  */
-export function renderSeasonInner(report: SeasonArcReport, share = false, prose?: SeasonProse): string {
+export function renderSeasonInner(report: SeasonArcReport, share = false, prose?: SeasonProse, omitWeekly = false): string {
   // `share` is accepted for route symmetry but is a no-op here, as on the rest of this auth-gated page
   // (see the file header): the prose cards follow the same no-redaction convention as the existing cards.
   void share;
@@ -110,8 +120,10 @@ export function renderSeasonInner(report: SeasonArcReport, share = false, prose?
 
   // This week's review goes FIRST and stays open (the most recent, most actionable read). The longer
   // multi-season narrative folds into a collapsed "full read" lower down so it doesn't bloat the page.
-  // Each degrades to nothing when its report is absent or unreadable.
-  const weeklyCard = proseCard("This week", prose?.weekly, "npm run weekly", (md) => stripNextWeek(stripLeadingH1(md)));
+  // Each degrades to nothing when its report is absent or unreadable. On the dashboard the weekly card is
+  // lifted up into the Plan tab's this-week block (above this fold), so `omitWeekly` drops it from here to
+  // avoid showing it twice; the standalone /season page keeps it.
+  const weeklyCard = omitWeekly ? "" : renderWeeklyProse(prose);
   const narrativeCard = proseCard("Coach's full season read", prose?.narrative, "npm run season", stripLeadingH1, true);
 
   const planless = !r.hasPlan
@@ -124,10 +136,14 @@ export function renderSeasonInner(report: SeasonArcReport, share = false, prose?
       }</div>`
     : "";
 
+  // Focus shows once, inside "This phase". `r.focus` IS the phase's own focus when the plan sets one
+  // (see seasonArc.ts) and otherwise a derived CTL-gap nudge, so a single line covers both — no separate
+  // "Focus now" card repeating the same string. The fallback `focus` card below only fires when there's
+  // no active phase to host it.
   const phase = r.activePhase
     ? `<div class="card"><h2>This phase</h2>
         <div class="big" style="font-size:20px">${escapeHtml(r.activePhase.name ?? "—")}</div>
-        ${r.activePhase.focus ? `<div style="margin:4px 0 8px">${escapeHtml(r.activePhase.focus)}</div>` : ""}
+        ${r.focus ? `<div class="focus" style="margin:6px 0 8px">${escapeHtml(r.focus)}</div>` : ""}
         <div class="grid">
           ${r.activePhase.ctlTargetText ? `<div><div class="k">CTL target</div><div class="v">${escapeHtml(r.activePhase.ctlTargetText)}</div></div>` : ""}
           ${r.activePhase.until ? `<div><div class="k">Until</div><div class="v">${escapeHtml(r.activePhase.until)} <span class="unit">(${escapeHtml(countdown(r.activePhase.daysLeft))})</span></div></div>` : ""}
@@ -161,12 +177,14 @@ export function renderSeasonInner(report: SeasonArcReport, share = false, prose?
         .join("")}</div>`
     : "";
 
-  const focus = r.focus ? `<div class="card"><h2>Focus now</h2><div class="focus">${escapeHtml(r.focus)}</div></div>` : "";
+  // Only when there's no active phase to fold the focus into (otherwise it'd repeat the phase-card line).
+  const focus = r.focus && !r.activePhase ? `<div class="card"><h2>Focus now</h2><div class="focus">${escapeHtml(r.focus)}</div></div>` : "";
   const flags = r.flags.length
     ? `<div class="card"><h2>Watch (multi-season risks)</h2>${r.flags.map((f) => `<div class="flag">${escapeHtml(f)}</div>`).join("")}</div>`
     : "";
 
-  // Order, most-actionable first: this week → where you are now (phase, load, focus) → the full strategic
-  // read (collapsed) → where you're headed (horizon, the long arc) → levers and risks.
-  return `<div class="season-inner"><h1>Season arc</h1><div class="sub">Your plan, your numbers — the multi-season view.</div>${planless}${weeklyCard}${phase}${ctl}${focus}${narrativeCard}${horizon}${traj}${levers}${flags}</div>`;
+  // Reads top-down by narrowing focus: this week (lifted to the Plan tab on the dashboard) → the anchor
+  // (where you're headed + the phase you're in, with its focus) → the load story (CTL now vs target, then
+  // the long arc) → the deep strategic read (collapsed) → the structural levers and multi-season risks.
+  return `<div class="season-inner"><h1>Season arc</h1><div class="sub">Your plan, your numbers — the multi-season view.</div>${planless}${weeklyCard}${horizon}${phase}${focus}${ctl}${traj}${narrativeCard}${levers}${flags}</div>`;
 }

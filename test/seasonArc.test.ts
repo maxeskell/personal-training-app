@@ -132,6 +132,27 @@ test("renderSeasonPage: empty state names season_plan; full page renders section
   assert.match(full, /Structural levers/);
 });
 
+test("renderSeasonPage: sections read anchor-first (horizon → phase → CTL → long arc) and focus shows once", () => {
+  const full = renderSeasonPage(buildSeasonArc(baseInput()));
+  const iHorizon = full.indexOf("<h2>Horizon</h2>");
+  const iPhase = full.indexOf("<h2>This phase</h2>");
+  const iCtl = full.indexOf("Chronic load");
+  const iArc = full.indexOf("The long arc");
+  assert.ok(iHorizon > -1 && iHorizon < iPhase, "the horizon (the goal) leads, before the active phase");
+  assert.ok(iPhase < iCtl, "this phase before chronic load");
+  assert.ok(iCtl < iArc, "chronic load before the long arc");
+  // Focus is folded into the phase card — no separate "Focus now" card, and the focus text isn't doubled.
+  assert.ok(!full.includes("Focus now"), "no standalone Focus now card when there's an active phase");
+  assert.equal(full.split("raise the aerobic floor").length - 1, 1, "the phase focus appears exactly once");
+});
+
+test("renderSeasonPage: with no active phase, the derived focus still surfaces as a standalone Focus now card", () => {
+  // A horizon goal but no phases → no active phase → r.focus is the derived CTL nudge, with nowhere to fold.
+  const noActive = renderSeasonPage(buildSeasonArc(baseInput({ plan: { horizon_goal: "Ironman by 2028", phases: [] } })));
+  assert.match(noActive, /Focus now/);
+  assert.ok(!noActive.includes("<h2>This phase</h2>"), "no This phase card when nothing is active");
+});
+
 test("renderSeasonPage: long-arc bars render a filled width (regression — inline fill span had no width)", () => {
   const full = renderSeasonPage(buildSeasonArc(baseInput()));
   // The fill MUST be a block: width:%/height are ignored on an inline <span>, so every bar reads empty

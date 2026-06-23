@@ -21,6 +21,7 @@ import type { InsightReport } from "../src/insights/engine.js";
 import type { Finding } from "../src/insights/metrics.js";
 import type { Profile } from "../src/profile/schema.js";
 import type { InsightReaction, DecisionRecord } from "../src/state/decisionLog.js";
+import type { SeasonArcReport } from "../src/coach/seasonArc.js";
 
 const NASTY = `O'Brien "5x3'" \\ </script><b>x</b>`; // apostrophe, quote, backslash, tag, </script>
 
@@ -235,6 +236,29 @@ test("load card shows no Total row when there are no activities", () => {
   const html = renderDashboard({ window: [s], decisions: [] });
   assert.match(html, /no activities/);
   assert.doesNotMatch(html, /class="total"/);
+});
+
+test("the last-7-days load recap lives on Performance (backward-looking), not the forward-looking Plan tab", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.actualActivities = { value: [{ date: "2026-06-08", sport: "Run", durationMin: 60, distanceKm: 12 }], source: "ai-endurance" };
+  const html = renderDashboard({ window: [s], decisions: [] });
+  // Tab order in the page: today → plan → decide → performance.
+  const planSlice = html.slice(html.indexOf('id="tab-plan"'), html.indexOf('id="tab-decide"'));
+  const perfSlice = html.slice(html.indexOf('id="tab-performance"'));
+  assert.ok(!planSlice.includes("load by sport"), "Plan tab no longer carries the load recap");
+  assert.match(perfSlice, /Last 7 days — load by sport/);
+});
+
+test("the weekly review is lifted into the Plan tab's this-week block, above the Season-arc fold, shown once", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  const seasonReport = { hasPlan: false, levers: [], flags: [], trajectory: [] } as unknown as SeasonArcReport;
+  const seasonProse = { weekly: { markdown: "# Weekly review\n\nSolid base week WKMARKER.", date: new Date().toISOString().slice(0, 10) } };
+  const html = renderDashboard({ window: [s], decisions: [], seasonReport, seasonProse });
+  const planSlice = html.slice(html.indexOf('id="tab-plan"'), html.indexOf('id="tab-decide"'));
+  // Shown once — lifted into the this-week block AND omitted from the season fold (no duplication).
+  assert.equal(planSlice.split("WKMARKER").length - 1, 1, "weekly body appears exactly once on the Plan tab");
+  // …and it sits above the Season-arc section rule (the forward-looking block, not inside the fold).
+  assert.ok(planSlice.indexOf("WKMARKER") < planSlice.indexOf("section-rule-label"), "weekly is above the season fold");
 });
 
 test("trends keep one sleep graph (score); power-curve bests carry the date they were set", () => {
