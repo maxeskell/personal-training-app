@@ -42,6 +42,11 @@ import {
   fmt,
 } from "./dashboardHelpers.js";
 import { renderResearchDigestPage } from "./researchPage.js";
+import { pageHead, renderNav, type NavId } from "./shell.js";
+import { renderSeasonInner, type SeasonProse } from "./seasonPage.js";
+import type { SeasonArcReport } from "./seasonArc.js";
+import { renderCareerInner } from "./careerPage.js";
+import type { CareerHistory } from "./careerHistory.js";
 import {
   renderSetupImprove,
   buildSetupItems,
@@ -169,6 +174,19 @@ export interface DashboardInput {
    * per-session 👍/👎 in its logged state and powers the learning review. Omitted → buttons render fresh.
    */
   fuelLog?: FuelLogRecord[];
+  /**
+   * Deterministic season-arc review (built by the server from the profile's `season_plan`, the CTL series
+   * and the career trajectory) — folded into the Plan tab. Omitted → the Plan tab just shows the week-ahead
+   * view (degrade-don't-crash). The standalone /season page renders the same content via {@link renderSeasonInner}.
+   */
+  seasonReport?: SeasonArcReport;
+  /** The two latest persisted coach-prose reports (season narrative + weekly review) shown on the Plan tab. */
+  seasonProse?: SeasonProse;
+  /**
+   * Career history (race results, lifetime bests, power curve) — folded into the Performance tab. Omitted →
+   * the tab shows current form only. The standalone /career page renders the same content via {@link renderCareerInner}.
+   */
+  career?: CareerHistory | null;
 }
 
 const SEV_COLOR: Record<string, string> = { red: "#c0392b", amber: "#c98a00", green: "#1a8a3a", flag: "#c0392b", watch: "#c98a00", info: "#1a8a3a" };
@@ -992,7 +1010,7 @@ function shareRaceNames(today: AthleteState, profile?: Profile): string[] {
   return names.filter(Boolean);
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, seasonReport, seasonProse, career, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Fuelling — week ahead (deterministic, no LLM on render): per-session pre/during/after from the
@@ -1075,104 +1093,43 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
     .join("");
 
 
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Endurance Coach — ${today.date}</title>
-<style>
-:root{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#222}
-body{margin:0;background:#f4f1ea;padding:24px;max-width:760px;margin:auto}
-h1{font-size:20px;margin:0 0 2px} .sub{color:#777;font-size:13px;margin-bottom:18px}
-.card{background:#fff;border-radius:10px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
-.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#999;margin:0 0 12px}
-details.card>summary{list-style:none;cursor:pointer;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#999;font-weight:600}
-details.card>summary::-webkit-details-marker{display:none}
-details.card>summary::before{content:"▸";color:#b9aa93;margin-right:6px}
-details.card[open]>summary{margin-bottom:12px}
-details.card[open]>summary::before{content:"▾"}
-.verdict{display:flex;align-items:center;gap:12px}
-.dot{width:16px;height:16px;border-radius:50%}
-.big{font-size:22px;font-weight:600;text-transform:capitalize}
-table{width:100%;border-collapse:collapse;font-size:14px} td{padding:5px 6px;border-bottom:1px solid #f0ede5}
-tr.total td{border-top:2px solid #e7d9c6;border-bottom:0;font-weight:600}
-.num{text-align:right;font-variant-numeric:tabular-nums} .muted{color:#bbb}
-.spark polyline{stroke:#888}.spark.up polyline{stroke:#1a8a3a}.spark.down polyline{stroke:#c0392b}
-.grid{display:flex;gap:14px;flex-wrap:wrap}.grid>div{flex:1;min-width:120px}
-.disc{border-top:2px solid #f0ede5;margin-top:12px;padding-top:10px}.disc:first-of-type{border-top:0;margin-top:0;padding-top:0}
-.disch{font-size:13px;font-weight:600;color:#555;margin-bottom:6px}
-.k{color:#999;font-size:12px}.v{font-size:18px;font-weight:600}
-.finding{padding:8px 0;border-bottom:1px solid #f0ede5}.finding:last-child{border:0}
-.finding.done{opacity:.5}.donetag{font-size:10px;color:#1a8a3a;font-weight:600;margin-left:4px}
-.badge{color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:10px;margin-right:8px}
-.fdetail{font-size:13px;color:#444;margin:3px 0}.ev{font-size:11px;color:#999}
-.syncbtn{padding:8px 16px;border:0;border-radius:8px;background:#c8642d;color:#fff;font-size:14px;cursor:pointer}
-.syncbtn:disabled{opacity:.55;cursor:default}
-.syncstatus{margin-left:10px;font-size:13px;color:#888}
-.insights{border:1px solid #e7d9c6}
-.insight{padding:10px 12px;border-bottom:1px solid #f0ede5;border-left:3px solid transparent;margin-bottom:2px}.insight:last-child{border-bottom:0}
-.insight.sev-flag{border-left-color:#c0392b;background:#fdf3f2}
-.insight.sev-watch{border-left-color:#c98a00;background:#fdfaf2}
-.insight.sev-info{border-left-color:#cfe7d6}
-.acts{margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.acts button{font-size:12px;padding:4px 10px;border:1px solid #ddd;border-radius:14px;background:#fff;cursor:pointer}
-.acts button:disabled{opacity:.4;cursor:default}
-.acts .agree:hover{background:#e6f5ea;border-color:#1a8a3a}.acts .disagree:hover{background:#fdeaea;border-color:#c0392b}
-.acts .ignore:hover{background:#f3f3f3}.reacted{font-size:11px;color:#1a8a3a;margin-left:4px}
-.acts .agree.on{background:#e6f5ea;border-color:#1a8a3a;font-weight:600}.acts .disagree.on{background:#fdeaea;border-color:#c0392b;font-weight:600}
-.insight[data-reaction-state="applied"]{opacity:.65}
-.newbadge{background:#1558d6;color:#fff;font-size:9px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:9px;margin-right:6px;vertical-align:middle}
-.age{font-size:11px;color:#bbb;margin-top:4px}
-.route{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.02em;color:#6b5b45;background:#f4f1ea;border:1px solid #e7d9c6;border-radius:9px;padding:1px 7px;margin-left:4px;white-space:nowrap}
-.cat{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border-radius:9px;padding:1px 7px;margin-right:6px;vertical-align:middle;white-space:nowrap}
-.cat-training{background:#e7eefb;color:#1558d6}.cat-fuelling{background:#fdeede;color:#b45309}.cat-gear{background:#eef0f2;color:#475569}.cat-recovery{background:#e6f5ea;color:#1a8a3a}.cat-general{background:#f3f3f3;color:#666}
-.item-proposals:not(:empty){margin:6px 0}
-details.setup-item{border-bottom:1px solid #f0ede5;padding:5px 0}details.setup-item:last-child{border-bottom:0}
-details.setup-item>summary{cursor:pointer;line-height:1.5;list-style:none}
-details.setup-item>summary::-webkit-details-marker{display:none}
-details.setup-item>summary::before{content:"▸";color:#b9aa93;display:inline-block;width:14px}
-details.setup-item[open]>summary::before{content:"▾"}
-.setup-action{margin:6px 0 8px 14px;padding:8px 11px;background:#faf8f3;border-left:2px solid #e7d9c6;border-radius:4px;font-size:13px;line-height:1.55;color:#444;white-space:pre-wrap}
-.setup-links{margin:0 0 9px 14px;display:flex;flex-wrap:wrap;gap:14px}
-.setup-link{font-size:12px;font-weight:600;color:#c8642d;text-decoration:none}.setup-link:hover{text-decoration:underline}
-.setup-acts{margin-left:4px;white-space:nowrap}
-.setup-item .su-act{font-size:11px;line-height:1;color:#b9aa93;background:none;border:0;cursor:pointer;padding:0 3px}
-.setup-item .su-done:hover{color:#1a8a3a}.setup-item .su-snooze:hover{color:#9a8a72}.setup-item .su-ignore:hover{color:#c0392b}
-.setup-group{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#9a8a72;margin:10px 0 3px}
-.actbtn{font-size:13px;padding:7px 14px;border:1px solid #c8642d;border-radius:8px;background:#fff;color:#c8642d;cursor:pointer}.actbtn:hover{background:#c8642d;color:#fff}
-code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
-.proposal{border:1px solid #e7d9c6;border-radius:8px;padding:10px 12px;margin-top:10px}
-/* Print / Save-as-PDF: a clean one-document capture — hide interactive controls, keep cards intact, open the glossaries. */
-@media print {
-  body{background:#fff}
-  .card{break-inside:avoid;box-shadow:none;border:1px solid #ddd}
-  .acts, .syncbtn, .actbtn, button, #ask, #askcard, #proposals, .sharelink, .sharebanner a, .syncbar{display:none !important}
-  details{display:block}
-  details > summary{display:none}
-  a{color:inherit;text-decoration:none}
-}
-</style></head><body>
-<h1>Endurance Coach</h1>
-<div class="sub">${freshnessLine(today)}</div>
-${
-  share
-    ? `<div class="card sharebanner" style="background:#eef4ff;border:1px solid #cfe0ff;color:#244">🔒 <b>Share view</b> — real race names, exact dates and your location/weather are hidden, the analysis is intact. <a href="?">Exit share view</a></div>`
-    : ""
-}
-<div class="topnav" style="display:flex;justify-content:space-between;align-items:center;margin:-8px 0 8px;font-size:12px">
-  <span><a href="/career${share ? "?share=1" : ""}" style="color:#c8642d;text-decoration:none;font-weight:600">📊 Career &amp; PBs →</a>
-  <a href="/season${share ? "?share=1" : ""}" style="color:#c8642d;text-decoration:none;font-weight:600;margin-left:14px">🗓 Season arc →</a></span>
-  ${share ? "" : `<a href="?share=1" style="color:#888;text-decoration:none">🔒 Share view (hide race names + location for screenshots)</a>`}
-</div>
-${
-  // The Sync control is an interactive button with a live server behind it — useless (and an empty
-  // card once the button is print-hidden) in the share/screenshot view, so drop the card AND its
-  // script there entirely. autoSync() is only ever invoked on a live server page, never a share view.
-  share
-    ? ""
-    : `<div class="card syncbar" style="display:flex;align-items:center">
+  // The "Set up & improve" options, built once so the Decide-tab card and the nav/teaser count agree.
+  const setupOpts = { suppressed, reactions, appliedKeys: executedSourceKeys(decisions), insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined };
+  // Decide-inbox count for the nav badge + the Today teaser: top insights shown (≤5) + coach recs +
+  // data changes + setup items — the same sources the Decide tab renders, summed. Zero in share view,
+  // where those interactive surfaces are hidden.
+  const decideCount = share
+    ? 0
+    : (insights ? Math.min(insights.topFindings.length, 5) : 0) +
+      (coachRecs?.length ?? 0) +
+      detectMetricChanges(window, {}).filter((c) => !suppressed?.has(c.key) && !(c.metric in (metricOverrides ?? {}))).slice(0, 5).length +
+      buildSetupItems(profile, setupOpts).length;
+
+  return `${pageHead(`Endurance Coach — ${today.date}`)}<body>
+<header class="site-head"><div class="wrap">
+  <div class="brand"><h1>Endurance Coach</h1>
+    <div class="headmeta">${freshnessLine(today)}${share ? "" : ` · <a href="?share=1" style="color:#9a8a72;text-decoration:none">🔒 Share view</a>`}</div>
+  </div>
+  ${renderNav("today", { home: "", share, counts: { decide: decideCount } })}
+  ${
+    // The Sync button + the persistent Ask bar are interactive (live server behind them) — useless in the
+    // share/screenshot view, so they're dropped there. sync()/autoSync()/ask() are defined in the page
+    // script bundle at the end of the body.
+    share
+      ? ""
+      : `<div class="syncbar" style="display:flex;align-items:center;margin:10px 0 6px">
   <button id="syncbtn" class="syncbtn" onclick="sync()">🔄 Sync latest data</button>
   <span id="syncstatus" class="syncstatus"></span>
 </div>
+<form class="askbar" id="askcard" onsubmit="return ask(event)">
+  <input id="q" placeholder="Ask your data — e.g. how were my long rides this month?" autocomplete="off"/>
+  <button>Ask</button>
+</form>
+<div id="answer" style="font-size:14px;color:#333;white-space:pre-wrap;margin:8px 0 2px"></div>
 <script>
 async function sync(note){
   var b=document.getElementById('syncbtn'), s=document.getElementById('syncstatus');
+  if(!b||!s)return;
   b.disabled=true; b.textContent='Syncing…'; s.textContent=(note?note+' ':'')+'Pulling latest from AI Endurance + Garmin (~10s)…';
   try{ var r=await fetch('/refresh',{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status);
     s.textContent='Done — reloading.'; location.reload(); }
@@ -1180,32 +1137,35 @@ async function sync(note){
 }
 function autoSync(min){ sync('Data is '+min+' min old — auto-refreshing:'); }
 </script>`
-}
+  }
+</div></header>
+<main class="wrap">
+${share ? `<div class="card sharebanner" style="background:#eef4ff;border:1px solid #cfe0ff;color:#244">🔒 <b>Share view</b> — real race names, exact dates and your location/weather are hidden, the analysis is intact. <a href="?">Exit share view</a></div>` : ""}
+<section id="tab-today" class="tab on">
 
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
 ${insights ? renderHeader(today, hl, decisions, garminDays, redact) : ""}
 
 ${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks, setupHealth?.hasApiKey, share, redact)}
+${decideCount > 0 ? `<a class="card nav-link" data-tab="decide" href="#decide" style="display:block;text-decoration:none;color:#c8642d;font-weight:600">📥 ${decideCount} ${decideCount === 1 ? "item" : "items"} waiting on your call →</a>` : ""}
+</section>
 
-<div class="card"><h2>Last 7 days — load by sport</h2>
-  <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows ? loadRows + loadTotalRow : '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
-</div>
-
+<section id="tab-plan" class="tab">
+<p class="tab-intro">Your plan at every horizon — this week's sessions and weather, fuelling, then the season arc.</p>
 ${weatherHtml}
 
 ${fuelCard}
 
+<div class="card"><h2>Last 7 days — load by sport</h2>
+  <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows ? loadRows + loadTotalRow : '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
+</div>
+${seasonReport ? `<hr class="section-rule"><div class="section-rule-label">Season arc</div>${renderSeasonInner(seasonReport, share, seasonProse)}` : ""}
+</section>
+
+<section id="tab-decide" class="tab">
+<p class="tab-intro">Everything waiting on your call — one inbox. 👍 Agree / 👎 Disagree / 🚫 Ignore (💤 Snooze hides for ~2 weeks). Items you action in AI Endurance show a gated <b>Apply</b> instead of a plain agree.</p>
 ${insights ? renderInsightsBox(insights, reactions, firstSeen, leadKey, redact) : ""}
 ${collapse(renderDataChanges(window, reactions, suppressed, metricOverrides))}
-
-<div class="card" id="askcard"><h2>Ask your data</h2>
-  <form id="askform" onsubmit="return ask(event)">
-    <input id="q" placeholder="e.g. how were my long rides this month? am I overtraining?" autocomplete="off"
-      style="width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;box-sizing:border-box"/>
-    <button style="margin-top:8px;padding:8px 16px;border:0;border-radius:8px;background:#c8642d;color:#fff;font-size:14px">Ask</button>
-  </form>
-  <div id="answer" style="margin-top:12px;font-size:14px;color:#333;white-space:pre-wrap"></div>
-</div>
 <script>
 function mdToHtml(md){
   var h=esc(String(md));
@@ -1367,10 +1327,12 @@ async function confirmWaterTemp(btn){var box=btn.closest('.watertemp');var s=box
     s.textContent=j.ok?('✓ confirmed ~'+j.waterTempC+'°C — reload to refresh the swim verdict'):'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
 </script>
 
-${renderSetupImprove(profile, share, { suppressed, reactions, appliedKeys: executedSourceKeys(decisions), insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined })}
-
 ${renderCoachRecs(coachRecs ?? [], reactions, share, coachRecsMerged)}
+${renderSetupImprove(profile, share, setupOpts)}
+</section>
 
+<section id="tab-performance" class="tab">
+<p class="tab-intro">Your numbers — current form and load, race readiness, then your career history &amp; PBs.</p>
 ${insights ? collapse(renderSignals(insights)) : ""}
 
 ${collapse(`<div class="card"><h2>${trendsHeading(gar.length)}</h2>
@@ -1389,7 +1351,9 @@ ${collapse(renderScores(today))}
 ${collapse(renderRacePredictions(today))}
 
 ${insights ? collapse(renderSplits(insights, share)) : ""}
-<footer style="max-width:880px;margin:24px auto 8px;padding:0 16px;color:#aaa;font-size:12px;line-height:1.5">
+${career ? `<hr class="section-rule"><div class="section-rule-label">Career &amp; PBs</div>${renderCareerInner(career, share)}` : ""}
+</section>
+<footer style="margin:24px 0 8px;padding:0;color:#aaa;font-size:12px;line-height:1.5">
   Not medical advice. This is a personal training tool, not a medical professional — estimates are labelled MODEL.
   For pain, injury, illness or any acute symptom, stop and consult a doctor or sports physician.
 </footer>
@@ -1403,5 +1367,29 @@ ${
       ? `<script>autoSync(${Math.round(autoSyncStaleMin)})</script>`
       : `<script>if(document.getElementById('sessfb'))loadSessionFeedback();</script>`
 }
+<script>
+// Section tabs: hash-driven, no round-trip. Without JS the body has no .js class, so every tab shows
+// (a plain long scroll) — degrade-don't-crash. A nav link with a bare #hash switches in-page; a /#hash
+// link (from a standalone page) navigates home and the load-time fromHash() opens that tab.
+(function(){
+  var ids=['today','plan','decide','performance'];
+  function show(id){
+    if(ids.indexOf(id)<0)id='today';
+    for(var i=0;i<ids.length;i++){var sec=document.getElementById('tab-'+ids[i]);if(sec)sec.classList.toggle('on',ids[i]===id);}
+    var links=document.querySelectorAll('.nav-link');
+    for(var j=0;j<links.length;j++){links[j].classList.toggle('on',links[j].getAttribute('data-tab')===id);}
+  }
+  function fromHash(){show((location.hash||'').replace('#','')||'today');}
+  document.body.classList.add('js');
+  var nav=document.querySelectorAll('.nav-link');
+  for(var k=0;k<nav.length;k++){nav[k].addEventListener('click',function(e){
+    var t=this.getAttribute('data-tab'); var href=this.getAttribute('href')||'';
+    if(href.charAt(0)==='#'){e.preventDefault();if(history.replaceState)history.replaceState(null,'','#'+t);show(t);window.scrollTo(0,0);}
+  });}
+  window.addEventListener('hashchange',fromHash);
+  fromHash();
+})();
+</script>
+</main>
 </body></html>`;
 }

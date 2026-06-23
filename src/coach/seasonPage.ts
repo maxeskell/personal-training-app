@@ -1,4 +1,5 @@
 import { escapeHtml } from "../util/html.js";
+import { pageShell } from "./shell.js";
 import { mdLite, ageDaysFrom } from "./dashboardHelpers.js";
 import type { SeasonArcReport, Lever } from "./seasonArc.js";
 import type { YearStat } from "./careerHistory.js";
@@ -39,34 +40,6 @@ export function stripNextWeek(md: string): string {
  */
 
 const DOT: Record<Lever["status"], string> = { ok: "#1a8a3a", watch: "#c98a00", gap: "#c0392b", info: "#9a8f78" };
-
-const STYLE = `body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:820px;margin:0 auto;padding:26px 20px 64px;color:#2b2b2b;line-height:1.55;background:#f4f1ea}
-h1{font-size:22px;margin:.1em 0}.sub{color:#777;font-size:13px;margin-bottom:16px}
-a.back{display:inline-block;margin-bottom:14px;font-size:13px;color:#c8642d;text-decoration:none}
-.card{background:#fff;border-radius:10px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
-.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#999;margin:0 0 12px}
-.big{font-size:26px;font-weight:700}.unit{font-size:13px;color:#888;font-weight:400}
-.grid{display:flex;gap:18px;flex-wrap:wrap}.grid>div{flex:1;min-width:130px}
-.k{color:#999;font-size:12px}.v{font-size:18px;font-weight:600}
-.trend-rising{color:#1a8a3a}.trend-falling{color:#c0392b}.trend-flat{color:#9a8f78}
-.lever{display:flex;align-items:flex-start;gap:9px;padding:7px 0;border-bottom:1px solid #f0ede5;font-size:14px}.lever:last-child{border:0}
-.dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex:0 0 auto}
-.lever .nm{font-weight:600;min-width:96px}
-.bar{display:flex;align-items:center;gap:8px;font-size:12px;margin:3px 0}
-.bar .yr{width:34px;color:#777;font-variant-numeric:tabular-nums}
-.bar .track{flex:1;background:#f0ede5;border-radius:3px;overflow:hidden;height:12px}
-.bar .fill{display:block;height:12px;border-radius:3px;background:#bcae90}.bar .fill.peak{background:#2e7d57}.bar .fill.cur{background:#c8642d}
-.bar .val{width:46px;text-align:right;color:#666;font-variant-numeric:tabular-nums}
-.flag{background:#fdf3f2;border-left:3px solid #c0392b;border-radius:5px;padding:7px 11px;margin:6px 0;font-size:14px}
-.focus{background:#eef4ff;border-left:3px solid #1558d6;border-radius:5px;padding:10px 13px;font-size:15px;font-weight:500}
-.note{background:#faf8f3;border-left:3px solid #e7d9c6;border-radius:5px;padding:12px 14px;font-size:14px;margin:0 0 16px}
-.prose{font-size:14px;color:#333;line-height:1.6}.prose b{color:#222}
-.stamp{color:#999;font-size:12px;margin:2px 0 10px}.stamp .stale{color:#c98a00}
-code{background:#f4f1ea;border-radius:4px;padding:1px 5px;font-size:.92em}`;
-
-function shell(inner: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Season arc</title><style>${STYLE}</style></head><body><a class="back" href="/">← Back to the dashboard</a>${inner}</body></html>`;
-}
 
 function countdown(days: number | undefined): string {
   if (days == null) return "";
@@ -119,7 +92,17 @@ function proseCard(
     <div class="prose">${body}</div></div>`;
 }
 
+/** Standalone /season page: the season-arc content in the shared site shell (nav highlights Plan). */
 export function renderSeasonPage(report: SeasonArcReport, share = false, prose?: SeasonProse): string {
+  return pageShell({ title: "Season arc", active: "plan", share }, renderSeasonInner(report, share, prose));
+}
+
+/**
+ * The season-arc content WITHOUT the page shell — wrapped in `.season-inner` so its scoped styles apply
+ * (see shell.ts). Reused two ways: the standalone /season page wraps it in {@link pageShell}, and the
+ * dashboard's Plan tab folds it in directly under a section rule.
+ */
+export function renderSeasonInner(report: SeasonArcReport, share = false, prose?: SeasonProse): string {
   // `share` is accepted for route symmetry but is a no-op here, as on the rest of this auth-gated page
   // (see the file header): the prose cards follow the same no-redaction convention as the existing cards.
   void share;
@@ -185,7 +168,5 @@ export function renderSeasonPage(report: SeasonArcReport, share = false, prose?:
 
   // Order, most-actionable first: this week → where you are now (phase, load, focus) → the full strategic
   // read (collapsed) → where you're headed (horizon, the long arc) → levers and risks.
-  return shell(
-    `<h1>Season arc</h1><div class="sub">Your plan, your numbers — the multi-season view.</div>${planless}${weeklyCard}${phase}${ctl}${focus}${narrativeCard}${horizon}${traj}${levers}${flags}`,
-  );
+  return `<div class="season-inner"><h1>Season arc</h1><div class="sub">Your plan, your numbers — the multi-season view.</div>${planless}${weeklyCard}${phase}${ctl}${focus}${narrativeCard}${horizon}${traj}${levers}${flags}</div>`;
 }

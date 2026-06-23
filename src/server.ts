@@ -13,7 +13,7 @@ import { renderDashboard, renderResearchDigestPage, aieGapKeyFromSetupKey } from
 import { renderCareerPage } from "./coach/careerPage.js";
 import { loadCareerHistory } from "./coach/careerHistory.js";
 import { buildSeasonArc } from "./coach/seasonArc.js";
-import { renderSeasonPage } from "./coach/seasonPage.js";
+import { renderSeasonPage, type SeasonProse } from "./coach/seasonPage.js";
 import { latestAdviceFindings, clusterAdvice, clustersToDisplay } from "./coach/adviceRecs.js";
 import { loadAdviceEmbeddingIndex } from "./state/adviceEmbeddings.js";
 import { updateLocalProfile } from "./profile/update.js";
@@ -145,6 +145,34 @@ async function renderLatest(share = false): Promise<string> {
   // snapshot, and when it's old enough, have the page kick a background Sync and reload itself.
   const staleMin = Math.round((Date.now() - new Date(latest.assembledAt).getTime()) / 60_000);
   const autoSyncStaleMin = config.autoSyncMinutes > 0 && staleMin >= config.autoSyncMinutes ? staleMin : undefined;
+  // Season arc + career history — folded into the Plan and Performance tabs of the dashboard. Both are
+  // best-effort: any failure leaves that fold absent (degrade-don't-crash), never an error page. Mirrors
+  // the standalone /season and /career routes so the tab and the deep page show identical content.
+  const profile = (await loadProfileSafe())?.profile;
+  const career = loadCareerHistory();
+  let seasonReport: ReturnType<typeof buildSeasonArc> | undefined;
+  let seasonProse: SeasonProse | undefined;
+  try {
+    const seasonToday = todayIso();
+    let ctlSeries: Array<{ date: string; v: number }> = [];
+    try {
+      ctlSeries = await new StateStore().series(seasonToday, 60, (s) => s.load.value?.ctl);
+    } catch {
+      /* no state series yet */
+    }
+    seasonReport = buildSeasonArc({
+      today: seasonToday,
+      plan: profile?.season_plan,
+      ctlNow: ctlSeries.length ? ctlSeries[ctlSeries.length - 1].v : undefined,
+      ctlSeries,
+      career,
+      profile,
+    });
+    const [narrative, weekly] = await Promise.all([latestSeasonNarrative(), latestWeeklyReviewProse()]);
+    seasonProse = { narrative, weekly };
+  } catch {
+    /* the Plan tab degrades to the week-ahead view */
+  }
   return renderDashboard({
     window,
     decisions,
@@ -157,7 +185,10 @@ async function renderLatest(share = false): Promise<string> {
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,
     weather,
-    profile: (await loadProfileSafe())?.profile,
+    profile,
+    seasonReport,
+    seasonProse,
+    career,
     autoSyncStaleMin,
     suppressed, // dismissed "Set up & improve" items (shares the insight snooze machinery)
     weeklyReview: await latestWeeklyReview(), // "This week" group — read persisted, never re-run
