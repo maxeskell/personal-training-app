@@ -48,8 +48,14 @@
 ## Talking things through (coaching chat — not always a code change)
 
 Sometimes the user wants to **talk a training question through** (fuelling, pacing, a race plan) rather
-than change code. Treat that as a first-class use of this repo, and run it as the same three-step loop the
-rest of the app uses: **confirm the question → pull the right data live → answer.**
+than change code. Treat that as a first-class use of this repo.
+
+**The coaching surface is Claude Code opened in this folder, on the Mac.** The committed `.mcp.json`
+auto-connects the endurance MCP server, so the coach has the athlete's profile *and* live AI Endurance /
+Garmin data (FTP, weight, HRV, the plan, the calendar) on hand. The dashboard website is **display-only**
+(no Ask box), and a **web / claude.ai session is NOT a coaching surface** — it can't reach the data, so
+don't coach from it: say so and point the user to Claude Code on the Mac. Run a coaching chat as the same
+three-step loop the rest of the app uses: **confirm the question → pull the right data live → answer.**
 
 1. **Confirm & refine the question first.** Ask only the clarifiers that actually change the answer
    (e.g. *which* Outlaw, what the goal is), then restate what you're answering. Don't fire a generic
@@ -61,10 +67,9 @@ rest of the app uses: **confirm the question → pull the right data live → an
      `profile.local.yaml`, via the `get_profile` MCP tool (or read the file when local).
    - **Live numbers** (FTP, CSS, threshold pace, weight, HRV, load, the plan + race calendar) → AI
      Endurance / Garmin via the MCP tools (`npm run mcp`) — never assume or remember them.
-   - If a source isn't reachable in the current environment (a **web** container has no MCP auth and no
-     gitignored `profile.local.yaml`), say so and answer from what you *can* reach, or ask — **never
-     substitute a stale snapshot.** Data-grounded answers belong where the data is reachable: a local Mac
-     session (stdio MCP), or a cloud/web session wired to the HTTP MCP transport (`docs/mcp-server.md`).
+   - If the data isn't reachable (e.g. you're in a **web** session — no MCP auth, no gitignored
+     `profile.local.yaml`), **say so and don't improvise from a stale snapshot.** Point the user to Claude
+     Code on the Mac, where the data lives — that's the coaching surface.
 3. **Answer in the coach's voice.** Read `coach-instructions.md` (persona + how it weighs evidence) and
    `knowledge/sports-science.md` (priors) first; lead with the recommendation, not caveats; label every
    estimate a MODEL; n=1 (the athlete's own *pulled* data) outranks the textbook.

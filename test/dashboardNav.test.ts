@@ -104,7 +104,7 @@ test("Today: a 'needs your call' teaser deep-links to Decide with an honest coun
   assert.match(one, /📥 1 item waiting on your call/);
 });
 
-test("share view: no inbox badge or teaser, and the interactive Sync + Ask controls are dropped", () => {
+test("share view: no inbox badge or teaser, and the interactive Sync control is dropped", () => {
   const s = baseState();
   const ins = buildInsights(s, undefined, {});
   ins.topFindings = [watch({ title: "t1" })];
@@ -112,7 +112,6 @@ test("share view: no inbox badge or teaser, and the interactive Sync + Ask contr
   assert.ok(!html.includes("📥"), "no teaser in share view (the 📥 marker is the teaser's alone)");
   assert.ok(!html.includes('class="count"'), "no nav badge in share view");
   assert.ok(!/Sync latest data/.test(html), "no Sync control (nor its handler string) in share view");
-  assert.ok(!html.includes('class="askbar"'), "no Ask bar in share view");
   // The nav itself still rides every link with the share flag so the redacted view survives navigation.
   assert.match(html, /href="\?share=1#plan"/);
 });

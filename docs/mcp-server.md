@@ -16,6 +16,11 @@ the answers Claude gives match the CLI and dashboard exactly.
 Pick stdio if Desktop/Code is fine — it's zero-exposure and the simplest. Use HTTP only when it has
 to be **Cowork**, and only behind the bearer token + tunnel described below.
 
+> **Claude Code (the everyday coaching surface):** this repo ships a committed **`.mcp.json`** that
+> launches the stdio server, so you just **open the folder in Claude Code** and approve the
+> `endurance-coach` server — no manual registration. From there you chat with the coach with your profile
+> and live data on hand (and the gated propose→confirm write path).
+
 > **You do not need a tunnel, Tailscale or cloudflared** unless you specifically want **Claude Cowork**
 > (Anthropic's cloud) to reach your Mac. The CLI, the dashboard, and Claude Desktop/Code all run fully
 > locally with no tunnel. Tailscale/cloudflared appear below *only* to give Cowork's cloud VM a stable

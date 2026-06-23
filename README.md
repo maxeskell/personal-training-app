@@ -65,14 +65,13 @@ The core loop (readiness / weekly / race / propose→confirm) is the product, an
 gated**: `propose` only logs a change + its trade-off; nothing is written to AI Endurance until you
 explicitly `confirm`.
 
-**Talking it through with an assistant.** Beyond the CLI you can just *discuss* training (fuelling,
-pacing, a race plan) with Claude Code / Claude on the web. The chat runs as **confirm the question → pull
-the right data live → answer**: stable context comes from `profile.local.yaml` (the `get_profile` MCP
-tool) and live numbers from AI Endurance / Garmin via the **MCP server**
-([docs/mcp-server.md](docs/mcp-server.md)) — nothing is cached, so nothing goes stale. Data-grounded
-answers therefore belong where the data is reachable: a local Mac session, or a cloud session wired to the
-HTTP MCP transport. [`coaching-notes.md`](./coaching-notes.md) is **not** a data store — just a committed
-list of to-dos and decisions that travels with the repo.
+**Talking it through with your coach.** To chat with the coach, **open this folder in Claude Code on your
+Mac** — the committed [`.mcp.json`](./.mcp.json) auto-connects the endurance MCP server, so the coach has
+your profile *and* live AI Endurance / Garmin data (FTP, weight, the plan, the calendar) in hand. It runs
+as **confirm the question → pull the right data live → answer**, nothing cached. The dashboard is
+display-only (no Ask box), and a web/claude.ai session can't reach your data — so coaching lives in Claude
+Code. [`coaching-notes.md`](./coaching-notes.md) is **not** a data store — just a committed list of to-dos
+and decisions that travels with the repo.
 
 **Deterministic safety guardrails (not just prompt instructions):**
 - **Pre-LLM safety screen.** Free-text questions are screened in code *before* the model, in three classes:
@@ -293,7 +292,7 @@ joins your **AI Endurance metrics** (power/HR/ESS/durability) with the
 **archive thermal summary**, then reads it against your **prior comparable sessions** and that day's **TSB**
 — so a dip in deep fatigue or heat isn't mistaken for lost fitness. It also reads your **upcoming 7 days
 of planned sessions** and says what (if anything) this session should change ahead — suggestions only;
-plan writes stay behind the gated two-step confirm. "What happened in my last run?" in the Ask box routes
+plan writes stay behind the gated two-step confirm. A question like "What happened in my last run?" routes
 here automatically. Routing has three strategies via `COACH_INTENT_ROUTER` (all degrade to the regex on
 any error): **`regex`** (default, zero-cost, no model); **`haiku`** — the recommended upgrade — a cheap
 `claude-haiku-4-5` micro-call on your existing `ANTHROPIC_API_KEY` (no extra server) that catches
@@ -638,8 +637,8 @@ last snapshot, and when that snapshot is older than `COACH_AUTOSYNC_MIN` (defaul
 kicks a background Sync on load and reloads itself when done, so plan edits made in AI Endurance
 show up without button-pressing (set `COACH_AUTOSYNC_MIN=0` to disable). Concurrent syncs from two
 devices share one pull.
-The dashboard has an **"Ask your data"** chat box — type a question (e.g. *"am I overtraining?"*) and the
-coach answers from your assembled state + insights, with the same guardrails as every other flow.
+The dashboard is **display-only** — to ask the coach questions, open this folder in **Claude Code** (the
+committed `.mcp.json` connects it to your profile + live data); see [docs/mcp-server.md](docs/mcp-server.md).
 
 **The canonical way to run the server — install it once as an always-on service** (macOS launchd, no
 extra dependency). This, not an open terminal, is what serves the site: it starts at login, restarts on
