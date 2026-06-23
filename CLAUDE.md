@@ -14,13 +14,18 @@
    source of truth for what changed.
 2. **Green before commit.** `npm run typecheck` and `npm test` must pass locally. New logic gets
    unit tests (node:test, pure functions preferred, no network in tests — fixtures instead).
-3. **Branch, then ship — local-first (no PRs).** Never edit on `main`; work on a feature branch.
-   Deploy with one command, `npm run ship` (run from the branch): it runs the test + typecheck gate,
-   merges the branch into `main`, restarts the dashboard, pushes `main` to GitHub as a backup, and
-   returns you to your branch. **No PRs, no branch protection, no CI gate — the local gate IS the gate;
-   GitHub is a backup mirror, not the deploy source.** Claude commits the branch and stops there; **the
-   user runs `npm run ship`** (it deploys *and* pushes) unless they explicitly ask Claude to ship. Don't
-   leave work uncommitted in the session.
+3. **Branch, then deploy — Claude owns the deploy; the user runs no CLI for it.** Never edit on `main`;
+   work on a feature branch. After the green gate, **Claude deploys** — how depends on WHERE the session runs:
+   - **Local (Claude Code on the Mac):** Claude runs `npm run ship` from the branch itself — it gates,
+     merges the branch into `main`, restarts the dashboard, pushes `main` to GitHub, and returns to the
+     branch. The local gate IS the gate.
+   - **Web (cloud container — no line to the Mac):** Claude can't restart the Mac's service, so it runs the
+     gate **in-container** (`npm ci && npm run typecheck && npm test`), pushes the branch, and merges it
+     into `main` on GitHub. The Mac's **autoupdate** launchd job pulls `main` + restarts (enabled once with
+     `npm run autoupdate:install`); for web-origin work, GitHub `main` IS the deploy source.
+   Either way: commit the work (don't leave it uncommitted), deploy it yourself, and **report the deploy
+   honestly** (which gate ran, what merged) — only hand the user a command if they ask to do it by hand.
+   `npm run ship` is **Mac-only**; never run it from a web container.
 4. **Report honestly.** If tests fail or something was skipped, say so — never present it as done.
 5. **Gitignored user data ships a committed template + guidance.** Any new *user-authored* gitignored
    file or structure (a new block in `profile.local.yaml`, a new local data file the user fills in) lands
@@ -75,11 +80,16 @@ the site: it starts at login, restarts on crash (RunAtLoad + KeepAlive), and a `
 restarts it after a merge (including the local merge `npm run ship` does). This is the everyday model;
 treat it as the default in all advice.
 
-- **Deploying is ONE command, run from a feature branch:** `cd /Users/maxeskell/dev/personal-training-app && npm run ship`.
-  It gates (test + typecheck), merges the branch into `main`, restarts the service, and pushes `main` to
-  GitHub as a backup. The old pull-based `npm run update` / launchd autoupdate model is **retired**
-  (autoupdate uninstalled 2026-06-23; `npm run autoupdate:install` still exists if you ever want it back).
-  Never tell the user to *also* run `npm start` / `npm run serve` afterwards.
+- **Deploying is Claude's job (the user runs no CLI for it), by session origin:**
+  - **From the Mac:** Claude runs `cd /Users/maxeskell/dev/personal-training-app && npm run ship` itself —
+    it gates (test + typecheck), merges the branch into `main`, restarts the service, and pushes `main` to
+    GitHub as a backup.
+  - **From a web session:** Claude gates in-container, pushes the branch and merges it into `main`; the
+    Mac's **autoupdate** launchd job pulls `main` and restarts the service. Autoupdate and the dashboard
+    service are **complementary** — one updates, one serves — so they don't clash on port 3000.
+  Re-enable autoupdate once with `npm run autoupdate:install` (it backs the web path; it was off
+  2026-06-23 → 06-23, re-enabled for hands-off web deploys). Never tell the user to *also* run
+  `npm start` / `npm run serve` afterwards.
 - **`npm start` / `npm run serve` is DEV-ONLY** (foreground, dies with the terminal). Running it while
   the service is up starts a second instance fighting for port 3000. Never present it as an alternative
   way to "run the server", and never in the same breath as the service.
