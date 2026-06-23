@@ -169,18 +169,22 @@ export function planFuel(input: FuelPlanInput): FuelPlan {
   let during: FuelSection | null = null;
   const duringLines: string[] = [];
   if (carbTarget > 0) {
-    // Grouped, timeline-style: a steady feed CADENCE, not a pile of products. Pick a per-feed amount and
-    // the combo that hits it — small amounts naturally land on gels/liquid, which is easier on the gut.
+    // Grouped, timeline-style: ONE WHOLE item per feed at a steady cadence — never "2× …" or a half-item
+    // (you can't take half a gel). Prefer a sippable item (gel/drink/chew — easier on the gut) and take the
+    // LARGEST so feeds are whole and well-spaced; set the INTERVAL to hit the rate (60 × itemCarbs / target).
+    // A 40 g gel at 80 g/hr → one every 30 min.
     const startMin = intensity === "hard" && dur < 90 ? 0 : 20; // let the pre-fuel settle on an endurance day
-    const intervalMin = 30;
-    const perFeed = Math.max(1, Math.round((carbTarget * intervalMin) / 60));
-    const feed = chooseCarbCombo(perFeed, carbCandidates(inv), { avoidCaffeine: lateCaffeine });
-    if (feed.items.length) {
-      const each = feed.items.map((e) => fmtCarbProduct(e.product, e.count)).join(" + ");
-      duringLines.push(`From H+${startMin}: ${each} every ~${intervalMin} min — ≈ ${carbTarget} g carb/hr.`);
+    const pool = carbCandidates(inv).filter((p) => !(lateCaffeine && (p.caffeineMg ?? 0) > 0));
+    const SIPPABLE = new Set<string>(["drink_mix", "gel", "chew"]);
+    const sippable = pool.filter((p) => SIPPABLE.has(p.category));
+    const primary = (sippable.length ? sippable : pool)[0]; // carbCandidates is sorted biggest-carb first
+    const itemCarbs = primary?.carbsG ?? 0;
+    if (primary && itemCarbs > 0) {
+      const intervalMin = Math.max(10, Math.round((60 * itemCarbs) / carbTarget / 5) * 5);
+      duringLines.push(`From H+${startMin}: ${fmtCarbProduct(primary, 1)} every ~${intervalMin} min — ≈ ${carbTarget} g carb/hr.`);
     } else {
       duringLines.push(
-        `From H+${startMin}: ~${perFeed} g carb every ~${intervalMin} min (≈ ${carbTarget} g carb/hr) — no dedicated carb fuel logged; a flapjack/banana/real food covers it, ideally a drink-mix or gels.`,
+        `From H+${startMin}: ≈ ${carbTarget} g carb/hr — no dedicated carb fuel logged; a flapjack/banana/real food covers it, ideally a carb drink-mix or gels.`,
       );
     }
   }

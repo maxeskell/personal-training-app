@@ -90,19 +90,21 @@ test("with no carb product the plan still gives the g/h target and names the gap
   assert.match(plan.during!.lines.join(" "), /no dedicated carb fuel logged/);
 });
 
-test("the During line is a per-feed cadence (carbs per feed + hourly rate, never a bar's serving weight)", () => {
+test("the During line is one whole sippable item per feed at the right cadence (no half-gels, no bar weight)", () => {
   const inv = loadInventory({ schema_version: 1, identity: {}, fuelling: { products: [
     { name: "Flapjack (120 g)", brand: "Flapjack Co", category: "bar", carbs_g: 65 },
-    { name: "Energy Gel", brand: "OTE", category: "gel", carbs_g: 20 },
+    { name: "Anytime Bar", brand: "OTE", category: "bar", carbs_g: 28 },
+    { name: "Energy Gel", brand: "OTE", category: "gel", carbs_g: 40 },
   ] } } as unknown as Profile);
   const plan = planFuel({ sport: "Ride", durationMin: 180, title: "Long ride", inventory: inv, prefs: { carbTargetGPerHour: 80, carbCeilingGPerHour: 90 } });
   const during = plan.during!.lines.join(" ");
-  assert.match(during, /every ~\d+ min/, "shows a steady feed cadence");
   assert.match(during, /≈ 80 g carb\/hr/, "shows the hourly rate (from the athlete's stated target)");
-  assert.match(during, /\(\d+ g carb\)/, "the per-feed amount is labelled as carbs");
   assert.doesNotMatch(during, /\(120 g\)/, "a bar's serving weight is never shown as a carb figure");
-  // per-feed ≈ rate × interval/60 (80 g/hr × 30 min = 40 g); small amounts land on liquid (gels)
-  assert.match(during, /2× OTE Energy Gel \(40 g carb\)/);
+  assert.doesNotMatch(during, /\d× /, "one whole item per feed, not a multi-pack or fraction");
+  // Prefers the SIPPABLE gel over the smaller solid bar (liquid is easier on the gut; you can't half a gel).
+  // A 40 g gel at 80 g/hr is one every 30 min (60 × 40 / 80).
+  assert.match(during, /OTE Energy Gel \(40 g carb\) every ~30 min/);
+  assert.doesNotMatch(during, /Anytime Bar/, "didn't pick the solid bar over the sippable gel");
 });
 
 test("pre items carry H-relative times (timeline format), earliest first", () => {

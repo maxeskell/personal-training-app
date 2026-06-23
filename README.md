@@ -374,10 +374,13 @@ fuelling:
 **2 — See it on the dashboard.** The **"Fuelling — next session"** card shows just the *next* session's
 plan as a **timeline anchored to the session start (H)** — pre items at `H-`, the during section as one
 steady **feed cadence**, then post-recovery (e.g. a 3 h endurance ride: `Pre — H-150: beetroot · H-120:
-carb meal (~1–2 g/kg) · During — From H+20: 2× OTE gel (40 g carb) every ~30 min ≈ 80 g carb/hr · ~500
+carb meal (~1–2 g/kg) · During — From H+20: OTE gel (40 g carb) every ~30 min ≈ 80 g carb/hr · ~500
 ml/hr + an electrolyte tab · After — recovery`), or a single "water's fine" line when nothing's needed.
-The rate uses **your own `fuelling.carb_target_g_per_hour`** (capped by your learned ceiling) over any
-generic range, and small per-feed amounts naturally land on gels/liquid (easier on the GLP-1 gut). It
+The during section is **one whole item per feed**, with the interval set to hit the rate (60 × item-carbs ÷
+target) — so a 40 g gel at 80 g/hr is one every ~30 min, never a confusing "2×" or a fraction (you can't
+half a gel). It prefers a **sippable** item (gel/drink/chew — easier on the gut) at the largest size. The
+rate uses **your own `fuelling.carb_target_g_per_hour`** (capped by your learned ceiling) over any generic
+range. It
 auto-picks your **caffeine-free** electrolyte for an evening session, scales fluid/sodium up in heat; daily
 supplements,
 the model assumptions and the "Review my fuelling" button tuck behind a **More** disclosure. Everything is
