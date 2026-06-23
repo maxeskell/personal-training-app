@@ -514,14 +514,15 @@ stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and 
 
 - **Today** — the daily operational view: your readiness verdict + the day's action, the last session, and a
   *"📥 N waiting on your call →"* teaser into Decide.
-- **Plan** — the plan at every horizon: this week's sessions vs weather, fuelling, last-7-days load, then the
-  **Season arc** folded in.
+- **Plan** — the forward-looking view: this week's sessions vs weather and fuelling, the coach's **this-week
+  review**, then the **Season arc** folded in (last-7-days load moved to Performance, where the backward-looking
+  numbers live).
 - **Decide** — one unified **inbox** for everything that needs your call (top insights, coach's
   recommendations, data changes, the Set-up & improve hub), all sharing the same **👍 Agree / 👎 Disagree /
   🚫 Ignore** (💤 Snooze) controls — with a gated **Apply to AI Endurance** on items that write back, so a real
   plan change never hides behind a plain thumbs-up.
-- **Performance** — your numbers: current form & load, zones, Garmin scores, race readiness, then **Career &
-  PBs** folded in.
+- **Performance** — your numbers: current form & load, multi-week trends, **last-7-days load by sport**, zones,
+  Garmin scores, race readiness, then **Career & PBs** folded in.
 
 The standalone `/career` and `/season` pages still exist (identical content, the same shared nav) for
 bookmarking or printing one topic.
@@ -578,15 +579,16 @@ reads it automatically. See [SETUP.md → "Activity archive"](./SETUP.md).
 multi-season review** for rebuilding toward **70.3 → Ironman over years**. Reading your **own** plan
 (`profile.season_plan`: a horizon goal + dated phases with text CTL targets), your **live chronic load**
 (CTL now + trend), your **career trajectory** (year-by-year hours — your 2013 peak, your 2019 trough) and
-your profile, it shows, **most-actionable first**: your **latest weekly review** at the **top** (open),
-then the **active phase + focus** and **CTL now vs target vs trend** (the year-over-year lever), then your
-longer **season narrative** folded into a collapsed *"Coach's full season read"* — both prose reports read
-straight from `reports/`, each with an honest *"Updated {date}"* stamp and a *stale-refresh* hint once over
-~10 days old (the weekly's "## Next week" actions are stripped here, since they already surface on the
-dashboard); the **long-arc bar
-chart**, a **structural-lever checklist** (strength / swim CSS / bloods age / threshold band — the things
-that compound over seasons, sharpened by your GLP-1 context), and the **multi-season risk flags**
-(consistency cliff, stale bloods, falling CTL into a deadline). It's display-only and makes **no LLM call**
+your profile, it reads **top-down by narrowing horizon**: your **latest weekly review** surfaces first, in the
+Plan tab's this-week block (above the fold; still at the top of the standalone `/season` page) — then the arc
+itself opens on its **anchor** (your **horizon goal + countdown** and the **active phase + its one focus
+line**), the **load story** (**CTL now vs target vs trend** — the year-over-year lever — then the **long-arc
+bar chart**), your longer **season narrative** folded into a collapsed *"Coach's full season read"*, and
+finally a **structural-lever checklist** (strength / swim CSS / bloods age / threshold band — the things
+that compound over seasons, sharpened by your GLP-1 context) and the **multi-season risk flags**
+(consistency cliff, stale bloods, falling CTL into a deadline). Both prose reports read straight from
+`reports/`, each with an honest *"Updated {date}"* stamp and a *stale-refresh* hint once over ~10 days old
+(the weekly's "## Next week" actions are stripped here, since they already surface on the dashboard). It's display-only and makes **no LLM call**
 (deterministic = free) — the prose is just the *last saved* report, never regenerated on page load — and
 every section degrades cleanly (a missing report = no card, a missing input = "—" with a how-to-fill
 hint). The narrative refreshes when you run **`npm run season`** and the weekly review when you run

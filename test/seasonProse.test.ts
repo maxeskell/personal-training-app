@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   renderSeasonPage,
+  renderSeasonInner,
   stripLeadingH1,
   stripNextWeek,
   type SeasonProse,
@@ -83,6 +84,18 @@ test("renderSeasonPage omits a prose card cleanly when that piece is absent (no 
   // backwards-compatible: no prose arg at all
   const noArg = renderSeasonPage(REPORT);
   assert.ok(!noArg.includes("This week"));
+});
+
+test("renderSeasonInner omits the weekly card under omitWeekly (the dashboard lifts it into the Plan tab instead)", () => {
+  const prose: SeasonProse = { weekly: { markdown: "# Weekly review\n\nSolid base week.", date: FRESH } };
+  // Default (standalone /season page): the weekly card stays at the top.
+  const kept = renderSeasonInner(REPORT, false, prose);
+  assert.ok(kept.includes("This week"));
+  assert.ok(kept.includes("Solid base week."));
+  // omitWeekly (dashboard Plan tab): dropped here so it isn't shown twice — the Plan tab renders it above.
+  const dropped = renderSeasonInner(REPORT, false, prose, true);
+  assert.ok(!dropped.includes("This week"));
+  assert.ok(!dropped.includes("Solid base week."));
 });
 
 test("renderSeasonPage escapes hostile markdown in prose (no raw markup breaks out)", () => {

@@ -43,7 +43,7 @@ import {
 } from "./dashboardHelpers.js";
 import { renderResearchDigestPage } from "./researchPage.js";
 import { pageHead, renderNav, type NavId } from "./shell.js";
-import { renderSeasonInner, type SeasonProse } from "./seasonPage.js";
+import { renderSeasonInner, renderWeeklyProse, type SeasonProse } from "./seasonPage.js";
 import type { SeasonArcReport } from "./seasonArc.js";
 import { renderCareerInner } from "./careerPage.js";
 import type { CareerHistory } from "./careerHistory.js";
@@ -1055,7 +1055,9 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
 
   // Load by sport over a trailing 7 days (cutoff today-7 inclusive — the same window weekly.ts calls
   // "last 7 days", NOT the calendar week). Time in h:mm (user ask); a zero distance renders "—" not a
-  // misleading 0.0 km. A bottom Total row sums sessions/time/distance across every sport.
+  // misleading 0.0 km. A bottom Total row sums sessions/time/distance across every sport. This is a
+  // backward-looking recap, so it lives on the Performance tab (next to Trends), keeping the Plan tab
+  // purely forward-looking.
   const load = activitiesLast7(today);
   const loadRows = [...load.entries()]
     .map(([s, e]) => `<tr><td>${s}</td><td>${e.n}</td><td>${hMin(e.min)}</td><td>${e.km > 0 ? `${e.km.toFixed(1)} km` : '<span class="muted">—</span>'}</td></tr>`)
@@ -1064,6 +1066,9 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
   const loadTotalRow = load.size
     ? `<tr class="total"><td>Total</td><td>${loadTotal.n}</td><td>${hMin(loadTotal.min)}</td><td>${loadTotal.km > 0 ? `${loadTotal.km.toFixed(1)} km` : '<span class="muted">—</span>'}</td></tr>`
     : "";
+  const loadCard = `<div class="card"><h2>Last 7 days — load by sport</h2>
+  <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows ? loadRows + loadTotalRow : '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
+</div>`;
 
   // Trends from the backfilled Garmin daily series (the multi-week archive), not the 1-day state store.
   const gar = (garminDays ?? []).slice(-42);
@@ -1146,15 +1151,13 @@ ${decideCount > 0 ? `<a class="card nav-link" data-tab="decide" href="#decide" s
 </section>
 
 <section id="tab-plan" class="tab">
-<p class="tab-intro">Your plan at every horizon — this week's sessions and weather, fuelling, then the season arc.</p>
+<p class="tab-intro">Looking forward — this week's sessions, weather and fuelling, then the season ahead.</p>
 ${weatherHtml}
 
 ${fuelCard}
 
-<div class="card"><h2>Last 7 days — load by sport</h2>
-  <table><tr class="k"><td>Sport</td><td>Sessions</td><td>Time</td><td>Distance</td></tr>${loadRows ? loadRows + loadTotalRow : '<tr><td colspan="4" class="muted">no activities</td></tr>'}</table>
-</div>
-${seasonReport ? `<hr class="section-rule"><div class="section-rule-label">Season arc</div>${renderSeasonInner(seasonReport, share, seasonProse)}` : ""}
+${renderWeeklyProse(seasonProse)}
+${seasonReport ? `<hr class="section-rule"><div class="section-rule-label">Season arc</div>${renderSeasonInner(seasonReport, share, seasonProse, true)}` : ""}
 </section>
 
 <section id="tab-decide" class="tab">
@@ -1329,6 +1332,8 @@ ${collapse(`<div class="card"><h2>${trendsHeading(gar.length)}</h2>
   ${trendRows ? `<table>${trendRows}</table>` : '<div class="muted">Backfill the Garmin daily archive to populate trends (npm run backfill).</div>'}
   <div class="k" style="margin-top:8px">From the backfilled Garmin daily history.</div>
 </div>`)}
+
+${collapse(loadCard)}
 
 ${collapse(renderZones(today))}
 
