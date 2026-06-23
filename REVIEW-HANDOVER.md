@@ -44,7 +44,7 @@ From `CLAUDE.md`:
   main` + pull/FF-merge `origin/main` + `post-merge` hook. During the Batch 2 session it **twice**
   silently moved HEAD from the feature branch back to `main` mid-task, so commits/edits landed on local
   `main` instead of the branch. **Defence: do all feature-branch work in a separate `git worktree`** —
-  `git worktree add /Users/maxeskell/ptapp-wt <branch>` then `ln -s /Users/maxeskell/personal-training-app/node_modules /Users/maxeskell/ptapp-wt/node_modules`. The autoupdate only touches the PRIMARY dir on
+  `git worktree add /Users/maxeskell/ptapp-wt <branch>` then `ln -s /Users/maxeskell/dev/personal-training-app/node_modules /Users/maxeskell/ptapp-wt/node_modules`. The autoupdate only touches the PRIMARY dir on
   `main`; a linked worktree is insulated. Commit + push from the worktree, then `git worktree remove`.
   Also **re-check `git branch --show-current` right before every commit/push.** (In a fresh ephemeral
   container with no launchd this doesn't bite — but assume it does on the Mac.)
@@ -184,7 +184,7 @@ All items landed; verify on `main` before starting Batch 3:
 ## 6. Pre-commit verification checklist
 
 ```
-cd /Users/maxeskell/personal-training-app   # (/home/user/... in a fresh container)
+cd /Users/maxeskell/dev/personal-training-app   # (/home/user/... in a fresh container)
 npm ci            # fresh container only
 npm run typecheck # must be clean
 npm test          # must be all green (589 after Batch 2; grows with new tests)

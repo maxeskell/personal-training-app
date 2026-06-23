@@ -292,7 +292,7 @@ shape if you'd rather hand-write it.
 
 ```bash
 ▶ RUN   # use absolute paths to YOUR exported files; every flag is optional (missing input = empty section)
-cd /Users/maxeskell/personal-training-app && npm run career:build -- \
+cd /Users/maxeskell/dev/personal-training-app && npm run career:build -- \
   --intervals /abs/path/activities.json \     # intervals.icu activities export (last-90d + season bests + no-FIT race fallback)
   --tp        /abs/path/activities_tp.csv \    # a TrainingPeaks summary CSV (all-time bests, 2011+)
   --power     /abs/path/power_curve.json \     # intervals power-curve export (mean-maximal watts)
@@ -338,9 +338,9 @@ The whole folder is self-contained — copy it to a drive or another machine and
 
 ```bash
 ▶ RUN   # one-time: import an existing export (e.g. a TrainingPeaks "WorkoutFileExport"), deduped + idempotent
-cd /Users/maxeskell/personal-training-app && npm run archive:import -- --from /abs/path/to/export --source trainingpeaks
+cd /Users/maxeskell/dev/personal-training-app && npm run archive:import -- --from /abs/path/to/export --source trainingpeaks
 # any time: just show what's archived
-cd /Users/maxeskell/personal-training-app && npm run archive:import
+cd /Users/maxeskell/dev/personal-training-app && npm run archive:import
 ```
 
 - **Going forward is automatic** — every raw `.FIT` the dashboard Sync / `npm run fit-sync` pulls from Garmin
@@ -350,7 +350,7 @@ cd /Users/maxeskell/personal-training-app && npm run archive:import
 - **Fill anything an export lacks straight from Garmin** (incl. older races a TP export missed):
   ```bash
   ▶ RUN   # pull raw .FIT for your whole Garmin history — resumable + throttled; re-run to continue
-  cd /Users/maxeskell/personal-training-app && npm run archive:backfill            # or: -- --chunk 500
+  cd /Users/maxeskell/dev/personal-training-app && npm run archive:backfill            # or: -- --chunk 500
   ```
   It skips anything already archived (so it won't re-download what the import covered), pauses between calls
   to respect Garmin's rate limits, and `--chunk N` caps a run so a decade grinds over a few sittings.
@@ -359,7 +359,7 @@ cd /Users/maxeskell/personal-training-app && npm run archive:import
   **auto-heal** is the safety net that refills any gap (a missed sync, an offline stretch) on its own:
   ```bash
   ▶ RUN   # permanent: refills archive gaps every 6h, resumable + cheap in steady state. LEAVE IT RUNNING.
-  cd /Users/maxeskell/personal-training-app && npm run archive:heal:install        # stop: archive:heal:uninstall
+  cd /Users/maxeskell/dev/personal-training-app && npm run archive:heal:install        # stop: archive:heal:uninstall
   ```
   (Unlike the finite daily-metrics `backfill:install` grind, this one is ongoing — gaps can always happen.)
 - Set `COACH_ARCHIVE_DIR` to keep the archive somewhere other than `data/activity-archive/`, and
@@ -399,7 +399,7 @@ notes: "raise the year's floor, not the week's ceiling; defend consistency"
   and explains how to add the plan. See `profile.example.yaml` → `season_plan` and
   `docs/specs/Season_Arc_Spec.md`.
 - For a written strategic write-up (not just the page), run
-  `cd /Users/maxeskell/personal-training-app && npm run season` — one high-effort, cost-logged LLM call
+  `cd /Users/maxeskell/dev/personal-training-app && npm run season` — one high-effort, cost-logged LLM call
   (needs `ANTHROPIC_API_KEY`), saved to `reports/`; without a key it prints the deterministic digest.
 
 ## Step 7 — Done & troubleshooting

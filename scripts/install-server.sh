@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the dashboard server automatically at login and keep it alive (macOS launchd).
 # Starts on boot/login, restarts if it crashes, binds the LAN so your phone can reach it.
-# Usage: bash /Users/maxeskell/personal-training-app/scripts/install-server.sh [PORT]
+# Usage: bash /Users/maxeskell/dev/personal-training-app/scripts/install-server.sh [PORT]
 set -euo pipefail
 
 PORT="${1:-3000}"

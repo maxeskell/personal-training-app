@@ -2,7 +2,7 @@
 # Watch the Endurance Coach connector from the OUTSIDE, the way Cowork reaches it: hit the PUBLIC tunnel
 # URL's /health?deep=1 on a schedule and fire a macOS alert if the tunnel is down, the server is unhealthy,
 # or AI Endurance needs re-auth — so you hear about it before Cowork does. Pair with install-mcp.sh.
-# Usage: bash /Users/maxeskell/personal-training-app/scripts/install-healthcheck.sh <PUBLIC_HTTPS_URL> [INTERVAL_SEC]
+# Usage: bash /Users/maxeskell/dev/personal-training-app/scripts/install-healthcheck.sh <PUBLIC_HTTPS_URL> [INTERVAL_SEC]
 set -euo pipefail
 
 PUBLIC_URL="${1:-}"

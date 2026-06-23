@@ -29,7 +29,7 @@ never goes in git.
 ## Setup
 
 ```bash
-cd /Users/maxeskell/personal-training-app && npm run profile:init     # copy template + walk required fields
+cd /Users/maxeskell/dev/personal-training-app && npm run profile:init     # copy template + walk required fields
 ```
 
 `npm run setup` also offers this step. The intake copies `profile.example.yaml` to

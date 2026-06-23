@@ -3,7 +3,7 @@
 # Installs a launchd agent that runs `npm run backfill -- --daily-only --chunk N` every INTERVAL
 # seconds. Resumable: each run fetches the next N un-archived days, then exits. Over days it
 # completes the decade without one fragile multi-hour process. Uninstall when the archive is full.
-# Usage: bash /Users/maxeskell/personal-training-app/scripts/install-backfill.sh [CHUNK] [INTERVAL_SEC]
+# Usage: bash /Users/maxeskell/dev/personal-training-app/scripts/install-backfill.sh [CHUNK] [INTERVAL_SEC]
 set -euo pipefail
 
 CHUNK="${1:-200}"

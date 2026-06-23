@@ -2,7 +2,7 @@
 # Run the coach MCP HTTP server (OAuth mode, for Claude Cowork) automatically at login and keep it
 # alive (macOS launchd). Starts at login, restarts if it crashes — no terminal to babysit. Pair it
 # with a stable tunnel (Tailscale Funnel / a Cloudflare named tunnel) whose public URL you pass here.
-# Usage: bash /Users/maxeskell/personal-training-app/scripts/install-mcp.sh <PUBLIC_HTTPS_URL> [--allow-writes]
+# Usage: bash /Users/maxeskell/dev/personal-training-app/scripts/install-mcp.sh <PUBLIC_HTTPS_URL> [--allow-writes]
 set -euo pipefail
 
 PUBLIC_URL="${1:-}"

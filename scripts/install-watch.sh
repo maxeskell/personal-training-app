@@ -2,7 +2,7 @@
 # Proactive daily watch: refresh recent .FIT summaries (fit-sync) then run the fire-only `check`,
 # which sends a macOS notification ONLY if a flag / health early-warning fires. Quiet otherwise.
 # Installs a launchd agent that runs once a day at HH:MM (default 07:30).
-# Usage: bash /Users/maxeskell/personal-training-app/scripts/install-watch.sh [HH] [MM]
+# Usage: bash /Users/maxeskell/dev/personal-training-app/scripts/install-watch.sh [HH] [MM]
 set -euo pipefail
 
 HH="${1:-7}"

@@ -4,7 +4,7 @@
 # Garmin activity list and pulls the raw .FIT for anything not yet archived. Cheap in steady state (the
 # forward sync hook already archives new activities); after any gap/outage it quietly refills over a few
 # runs. Unlike the finite daily-metrics backfill grind, LEAVE THIS RUNNING — gaps can always happen.
-# Usage: bash /Users/maxeskell/personal-training-app/scripts/install-archive-heal.sh [CHUNK] [INTERVAL_SEC]
+# Usage: bash /Users/maxeskell/dev/personal-training-app/scripts/install-archive-heal.sh [CHUNK] [INTERVAL_SEC]
 set -euo pipefail
 
 CHUNK="${1:-200}"

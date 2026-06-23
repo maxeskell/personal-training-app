@@ -36,9 +36,9 @@
 ## Talking to the user
 
 - **Always give absolute paths in CLI instructions.** Any command the user is told to run must be
-  copy-pasteable from anywhere: `cd /Users/maxeskell/personal-training-app && npm run ship`,
+  copy-pasteable from anywhere: `cd /Users/maxeskell/dev/personal-training-app && npm run ship`,
   never a bare `npm run ship` that assumes a working directory. The repo lives at
-  `/Users/maxeskell/personal-training-app` on the user's Mac.
+  `/Users/maxeskell/dev/personal-training-app` on the user's Mac.
 
 ## Running the server (ONE canonical model — never give conflicting commands)
 
@@ -48,7 +48,7 @@ the site: it starts at login, restarts on crash (RunAtLoad + KeepAlive), and a `
 restarts it after a merge (including the local merge `npm run ship` does). This is the everyday model;
 treat it as the default in all advice.
 
-- **Deploying is ONE command, run from a feature branch:** `cd /Users/maxeskell/personal-training-app && npm run ship`.
+- **Deploying is ONE command, run from a feature branch:** `cd /Users/maxeskell/dev/personal-training-app && npm run ship`.
   It gates (test + typecheck), merges the branch into `main`, restarts the service, and pushes `main` to
   GitHub as a backup. The old pull-based `npm run update` / launchd autoupdate model is **retired**
   (autoupdate uninstalled 2026-06-23; `npm run autoupdate:install` still exists if you ever want it back).
