@@ -508,6 +508,25 @@ route (incl. the AI Endurance write path) requires a per-install **pairing token
 writes + LLM spend, so it is not left open. To reach it from your **phone on the same Wi-Fi**, set
 `COACH_LAN=1`. Credentials never leave the Mac.
 
+**The layout — four tabs, one page.** A persistent top nav splits the dashboard into four sections. It's
+still **one self-contained HTML page**: the tabs switch in-browser with no round-trip (deep-link to one with
+the URL hash — `/#plan`, `/#decide`, …), and with JavaScript off — or in Print → Save-as-PDF — every tab just
+stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and **🔄 Sync** sit in the header.
+
+- **Today** — the daily operational view: your readiness verdict + the day's action, the last session, and a
+  *"📥 N waiting on your call →"* teaser into Decide.
+- **Plan** — the plan at every horizon: this week's sessions vs weather, fuelling, last-7-days load, then the
+  **Season arc** folded in.
+- **Decide** — one unified **inbox** for everything that needs your call (top insights, coach's
+  recommendations, data changes, the Set-up & improve hub), all sharing the same **👍 Agree / 👎 Disagree /
+  🚫 Ignore** (💤 Snooze) controls — with a gated **Apply to AI Endurance** on items that write back, so a real
+  plan change never hides behind a plain thumbs-up.
+- **Performance** — your numbers: current form & load, zones, Garmin scores, race readiness, then **Career &
+  PBs** folded in.
+
+The standalone `/career` and `/season` pages still exist (identical content, the same shared nav) for
+bookmarking or printing one topic.
+
 > **Residual risk (`COACH_LAN=1`): plaintext HTTP.** On the LAN the dashboard is served over plain
 > HTTP, so the pairing **token and session cookie travel unencrypted** and are sniffable by another
 > device on the same Wi-Fi. This is an accepted trade-off for a **trusted home network**; treat it as
@@ -529,7 +548,7 @@ names a race by its city/venue, so each is replaced with the same neutral "Race 
 aren't on the dashboard at all; HRV/RHR/sleep/VO2max are health numbers but don't identify *who* you are.)
 For the one-off HTML or a PDF, use `npm run dashboard -- --share`.
 
-**Career & PBs tab (`/career`):** a read-only page (linked top-left of the dashboard) for the *long view* —
+**Career & PBs (Performance tab, also standalone at `/career`):** folded into the **Performance** tab — the *long view* —
 your **race history** (date · event/location · your recorded performance, with an expandable per-race
 **splits** table), your **lifetime bests vs current form** side by side (all-time / last 90 days / season,
 per sport: fastest at each distance, longest, best power), and an overlaid **power curve** — all-time (from
@@ -556,7 +575,7 @@ export — `npm run archive:import -- --from <dir>` — and every new `.FIT` the
 It's kept **separate** from the hot `data/fit-streams/` so it never slows the dashboard, and the career build
 reads it automatically. See [SETUP.md → "Activity archive"](./SETUP.md).
 
-**Season arc tab (`/season`):** the *strategic* layer the daily loop can't give — a **deterministic
+**Season arc (Plan tab, also standalone at `/season`):** folded into the **Plan** tab — the *strategic* layer the daily loop can't give — a **deterministic
 multi-season review** for rebuilding toward **70.3 → Ironman over years**. Reading your **own** plan
 (`profile.season_plan`: a horizon goal + dated phases with text CTL targets), your **live chronic load**
 (CTL now + trend), your **career trajectory** (year-by-year hours — your 2013 peak, your 2019 trough) and
