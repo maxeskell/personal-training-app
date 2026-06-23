@@ -5,9 +5,10 @@
 #   npm run ship            # ships the branch you're currently on
 #   npm run ship -- <name>  # ships a named branch instead
 #
-# SAFE: aborts before merging if tests/typecheck fail or the tree is dirty. A failed backup push
-# (e.g. branch protection still on, or offline) does NOT abort — your local deploy is already live;
-# it just warns and tells you how to push later.
+# SAFE: aborts before merging if tests/typecheck fail, the tree is dirty, or a merge/rebase is already
+# in progress. If the merge itself conflicts it backs out cleanly (git merge --abort) and returns you to
+# your branch — nothing half-merged is ever left on the deploy branch. A failed backup push (e.g.
+# offline) does NOT abort — your local deploy is already live; it just warns how to push later.
 set -euo pipefail
 
 PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,6 +28,14 @@ BRANCH="${1:-$(git rev-parse --abbrev-ref HEAD)}"
 git diff --quiet && git diff --cached --quiet || die "uncommitted changes on '$BRANCH' — commit or stash first."
 git rev-parse --verify --quiet "$BRANCH" >/dev/null || die "branch '$BRANCH' not found."
 
+# Never start on top of an unfinished merge/rebase — that is exactly how a half-finished state gets stranded.
+if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+  die "a merge is already in progress in $PROJECT — finish it, or run 'git merge --abort', before shipping."
+fi
+if [ -d "$(git rev-parse --git-path rebase-merge 2>/dev/null)" ] || [ -d "$(git rev-parse --git-path rebase-apply 2>/dev/null)" ]; then
+  die "a rebase is in progress in $PROJECT — finish it, or run 'git rebase --abort', before shipping."
+fi
+
 # --- 1. local gate (replaces the dropped CI) ------------------------------
 log "gate: npm test + typecheck on '$BRANCH'…"
 npm test
@@ -35,7 +44,13 @@ npm run typecheck
 # --- 2-3. merge feature → main --------------------------------------------
 log "merging '$BRANCH' → '$DEPLOY_BRANCH'…"
 git checkout "$DEPLOY_BRANCH"
-git merge --no-ff "$BRANCH" -m "ship: merge $BRANCH into $DEPLOY_BRANCH"
+if ! git merge --no-ff "$BRANCH" -m "ship: merge $BRANCH into $DEPLOY_BRANCH"; then
+  git merge --abort
+  git checkout "$BRANCH"
+  die "merge of '$BRANCH' into '$DEPLOY_BRANCH' hit conflicts — backed it out cleanly; you are back on '$BRANCH' and NOTHING was deployed. Resolve on your branch first, then re-ship:
+       git rebase $DEPLOY_BRANCH    # replay your work onto $DEPLOY_BRANCH, fixing conflicts there
+       npm run ship"
+fi
 
 # --- 4. restart the live dashboard (post-merge hook usually already did) ---
 log "restarting dashboard…"
