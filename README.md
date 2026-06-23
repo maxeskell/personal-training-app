@@ -65,13 +65,14 @@ The core loop (readiness / weekly / race / propose→confirm) is the product, an
 gated**: `propose` only logs a change + its trade-off; nothing is written to AI Endurance until you
 explicitly `confirm`.
 
-**Talking it through with an assistant.** Beyond the CLI, you can just *discuss* training (fuelling,
-pacing, a race plan) with Claude Code / Claude on the web. Two channels feed those chats: the **MCP
-server** ([docs/mcp-server.md](docs/mcp-server.md)) for **live** numbers when you chat **on the Mac**, and
-[`coaching-notes.md`](./coaching-notes.md) — a committed file of durable context + decisions + a to-do list
-that travels with the repo, so even a fresh **web** session (where the MCP and the gitignored profile can't
-reach your data) starts with the context it needs. Keep live numbers in MCP/AI Endurance, durable context
-in `coaching-notes.md`.
+**Talking it through with an assistant.** Beyond the CLI you can just *discuss* training (fuelling,
+pacing, a race plan) with Claude Code / Claude on the web. The chat runs as **confirm the question → pull
+the right data live → answer**: stable context comes from `profile.local.yaml` (the `get_profile` MCP
+tool) and live numbers from AI Endurance / Garmin via the **MCP server**
+([docs/mcp-server.md](docs/mcp-server.md)) — nothing is cached, so nothing goes stale. Data-grounded
+answers therefore belong where the data is reachable: a local Mac session, or a cloud session wired to the
+HTTP MCP transport. [`coaching-notes.md`](./coaching-notes.md) is **not** a data store — just a committed
+list of to-dos and decisions that travels with the repo.
 
 **Deterministic safety guardrails (not just prompt instructions):**
 - **Pre-LLM safety screen.** Free-text questions are screened in code *before* the model, in three classes:
