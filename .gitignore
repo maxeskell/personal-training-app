@@ -41,6 +41,8 @@ data/
 # Personal athlete data, never commit (profile.example.yaml is the committed blank template)
 profile.local.yaml
 profile.local.*
+# manual Garmin power-curve dump; personal watts, not read by the app
+garmin_power_curve.csv
 
 # Drafted research digests awaiting review (transient; approved content lands in sports-science.md)
 knowledge/pending/
