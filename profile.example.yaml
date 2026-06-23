@@ -154,6 +154,12 @@ fuelling:
   preferences:
     carb_ceiling_g_per_hour:   # your gut-trained per-hour cap — the plan never exceeds it, e.g. 90
     caffeine_cutoff_hour:      # local hour after which to avoid caffeine (steers to caffeine-free), e.g. 16
+    sweat_rate_ml_per_hour:    # measured fluid loss per hour — REPLACES the generic ml/hr MODEL in fuelling. Weigh
+                               # (near-naked, towel-dry) before/after a ~60 min steady session and note any fluid drunk:
+                               # (pre_kg - post_kg + drunk_litres) / hours * 1000. e.g. 800
+    sweat_sodium_mg_per_l:     # optional: your sweat's sodium concentration (mg/L); with the rate above it gives a
+                               # sodium mg/hr loss to replace. From a sweat-patch test, or estimate (salty ~1200 / average
+                               # ~900 / light ~500). e.g. 900
 
 races:
   # Your own targets. Mirror these into AI Endurance manually: this connector is

@@ -31,9 +31,13 @@ invented. Per-serving fields; field names are chosen to pass the profile's no-li
 | `timing` | any of `[pre, during, after, daily]` — inferred from category when omitted |
 | `notes` | free text |
 
-### Preferences (learned) — `fuelling.preferences`
+### Preferences (learned/measured) — `fuelling.preferences`
 - `carb_ceiling_g_per_hour` — the gut-trained per-hour cap; the plan never exceeds it.
 - `caffeine_cutoff_hour` — local hour after which caffeine is avoided (steers to caffeine-free tabs).
+- `sweat_rate_ml_per_hour` — measured fluid loss (weigh-in/out test); n=1 data that **replaces** the generic
+  temperature-only ml/hr MODEL with the athlete's own number, labelled "measured".
+- `sweat_sodium_mg_per_l` — measured sweat sodium; with the rate it lets the plan state the actual sodium
+  mg/hr loss to replace instead of a generic "add a tab".
 
 ### Feedback log — `data/fuel-log.jsonl` (gitignored)
 Append-only JSONL, same discipline as the cost/decision/session-feedback logs (`src/coach/fuelLogStore.ts`).
@@ -53,8 +57,9 @@ hour, the inventory and prefs.
   - `75–150 min` → ~**45** g/h (endurance) / ~**60** g/h (hard)
   - `> 150 min` or a key effort ≥90 min → ~**75** g/h
 - **During** appears when carbs are needed, or fluid/sodium matters (≥60 min, or ≥45 min in heat). Picks a
-  product combo to hit the carb total (`chooseCarbCombo`), suggests ~500–750 ml/hr (more in heat), and an
-  electrolyte tab — **caffeine-free** when the session is past the caffeine cutoff.
+  product combo to hit the carb total (`chooseCarbCombo`), suggests ~500–750 ml/hr (more in heat) — or the
+  athlete's `sweat_rate_ml_per_hour` when measured (with the sodium mg/hr loss when `sweat_sodium_mg_per_l`
+  is set too) — and an electrolyte tab, **caffeine-free** when the session is past the caffeine cutoff.
 - **Pre** appears for a key, long (endurance ≥90 min) or hard (≥75 min) session: a carb top-up (~1–2 g/kg)
   1–3 h before, **nitrate** ~2–3 h before for key endurance (if owned), and **caffeine** ~45–60 min before
   a quality effort (skipped if it's past the cutoff).

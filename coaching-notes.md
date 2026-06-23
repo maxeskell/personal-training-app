@@ -17,8 +17,8 @@
       session; record fluid drunk during it; weigh again after. Sweat loss (L) ≈ (pre-kg − post-kg) +
       fluid drunk (L); rate = that ÷ session hours. Repeat once cooler / once warmer if you can. Note
       shirt salt-staining / sweat taste for a rough sodium read (a patch test is the accurate version).
-      When you have a number, decide where it should live so the coach can *pull* it — likely a
-      `profile.local.yaml → fuelling` field, mirroring `carb_ceiling_g_per_hour`.
+      The field now exists — put the result in `profile.local.yaml → fuelling.preferences.sweat_rate_ml_per_hour`
+      (and `sweat_sodium_mg_per_l` if known); the fuelling plan then uses your number instead of the MODEL.
 
 ## Decisions / things we've talked through
 - **2026-06-23 — 70.3 Outlaw fuelling.** Agreed the framework (coaching guidance, not athlete data):
