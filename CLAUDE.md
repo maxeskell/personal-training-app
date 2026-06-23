@@ -14,18 +14,16 @@
    source of truth for what changed.
 2. **Green before commit.** `npm run typecheck` and `npm test` must pass locally. New logic gets
    unit tests (node:test, pure functions preferred, no network in tests — fixtures instead).
-3. **Branch, then deploy — Claude owns the deploy; the user runs no CLI for it.** Never edit on `main`;
-   work on a feature branch. After the green gate, **Claude deploys** — how depends on WHERE the session runs:
-   - **Local (Claude Code on the Mac):** Claude runs `npm run ship` from the branch itself — it gates,
-     merges the branch into `main`, restarts the dashboard, pushes `main` to GitHub, and returns to the
-     branch. The local gate IS the gate.
-   - **Web (cloud container — no line to the Mac):** Claude can't restart the Mac's service, so it runs the
-     gate **in-container** (`npm ci && npm run typecheck && npm test`), pushes the branch, and merges it
-     into `main` on GitHub. The Mac's **autoupdate** launchd job pulls `main` + restarts (enabled once with
-     `npm run autoupdate:install`); for web-origin work, GitHub `main` IS the deploy source.
-   Either way: commit the work (don't leave it uncommitted), deploy it yourself, and **report the deploy
-   honestly** (which gate ran, what merged) — only hand the user a command if they ask to do it by hand.
-   `npm run ship` is **Mac-only**; never run it from a web container.
+3. **Branch, then ship — Mac-first, local. Claude owns the deploy; the user runs no CLI for it.** Never
+   edit on `main`; work on a feature branch. The deploy is **`npm run ship`, run on the Mac** — Claude runs
+   it after the green gate: it gates (test + typecheck), merges the branch into `main`, restarts the
+   dashboard, pushes `main` to GitHub **as a backup**, and returns to the branch. **The local gate IS the
+   gate; GitHub is a backup mirror, not the deploy source.** Commit the work, ship it yourself, and report
+   the deploy honestly — only hand the user a command if they ask. **Web sessions are the exception**: a
+   cloud container can't reach the Mac, so it's GitHub-first (gate in-container, push, merge `main`) and the
+   Mac picks it up on a `git pull`. That fallback needs the *optional* pull-based autoupdate, which is **off
+   by default** — only `npm run autoupdate:install` (or cron) if you actually work from the web. `npm run
+   ship` is **Mac-only**; never run it from a web container.
 4. **Report honestly.** If tests fail or something was skipped, say so — never present it as done.
 5. **Gitignored user data ships a committed template + guidance.** Any new *user-authored* gitignored
    file or structure (a new block in `profile.local.yaml`, a new local data file the user fills in) lands
@@ -85,16 +83,13 @@ the site: it starts at login, restarts on crash (RunAtLoad + KeepAlive), and a `
 restarts it after a merge (including the local merge `npm run ship` does). This is the everyday model;
 treat it as the default in all advice.
 
-- **Deploying is Claude's job (the user runs no CLI for it), by session origin:**
-  - **From the Mac:** Claude runs `cd /Users/maxeskell/dev/personal-training-app && npm run ship` itself —
-    it gates (test + typecheck), merges the branch into `main`, restarts the service, and pushes `main` to
-    GitHub as a backup.
-  - **From a web session:** Claude gates in-container, pushes the branch and merges it into `main`; the
-    Mac's **autoupdate** launchd job pulls `main` and restarts the service. Autoupdate and the dashboard
-    service are **complementary** — one updates, one serves — so they don't clash on port 3000.
-  Re-enable autoupdate once with `npm run autoupdate:install` (it backs the web path; it was off
-  2026-06-23 → 06-23, re-enabled for hands-off web deploys). Never tell the user to *also* run
-  `npm start` / `npm run serve` afterwards.
+- **Deploying is Claude's job (the user runs no CLI for it): `npm run ship`, on the Mac.** Claude runs
+  `cd /Users/maxeskell/dev/personal-training-app && npm run ship` itself after the gate — it merges the
+  branch into `main`, restarts the service, and pushes `main` to GitHub **as a backup. GitHub is a backup
+  mirror, not the deploy source.** *Exception:* work done from a **web** session can't reach the Mac, so
+  Claude merges to `main` on GitHub and the Mac picks it up on the next `git pull` — automatable with the
+  **optional** `npm run autoupdate:install` (off by default; only if you work from the web). Never tell the
+  user to *also* run `npm start` / `npm run serve` afterwards.
 - **`npm start` / `npm run serve` is DEV-ONLY** (foreground, dies with the terminal). Running it while
   the service is up starts a second instance fighting for port 3000. Never present it as an alternative
   way to "run the server", and never in the same breath as the service.
