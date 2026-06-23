@@ -489,7 +489,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
 
   server.tool(
     "ask",
-    "Free-form question over your assembled data + insights (the same engine as the dashboard 'Ask your data' box). e.g. 'how were my long rides this month?'. Use-when: one specific question. Medium LLM cost. For a full structured review use `weekly` (last week) or `deep_dive` (all-time trends); for the raw numbers with no LLM use `insights`.",
+    "Free-form question over your assembled data + insights — this is the coaching surface for one-off questions (the dashboard has no Ask box; Q&A lives here). e.g. 'how were my long rides this month?'. Use-when: one specific question. Medium LLM cost. For a full structured review use `weekly` (last week) or `deep_dive` (all-time trends); for the raw numbers with no LLM use `insights`.",
     { question: z.string().min(1) },
     async ({ question }) => {
       const miss = missingKey();
