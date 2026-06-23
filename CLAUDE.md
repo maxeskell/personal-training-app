@@ -40,6 +40,28 @@
   never a bare `npm run ship` that assumes a working directory. The repo lives at
   `/Users/maxeskell/dev/personal-training-app` on the user's Mac.
 
+## Talking things through (coaching chat — not always a code change)
+
+Sometimes the user isn't asking for code — they want to **talk a training question through** (fuelling,
+pacing, a race plan, "how should I think about X"). That is a first-class use of this repo, not a detour.
+
+- **Read the coaching brief first, then answer in that voice.** Before responding, read
+  `coach-instructions.md` (the coach persona + how it weighs evidence), `knowledge/sports-science.md`
+  (the priors) and `coaching-notes.md` (this athlete's durable context, open questions and past decisions).
+  All three are committed, so they're available even in a fresh Claude-Code-on-the-web checkout — unlike
+  `profile.local.yaml`, which is gitignored and will **not** be present there.
+- **Pull live numbers when you can, but know where they live.** The MCP server (`npm run mcp`) exposes
+  races/FTP/weight/plan, but it reads local OAuth tokens + `data/` on the Mac — so it only answers in a
+  **local** Claude Code/Desktop session, never in a web container (no tokens/account/`data/` there).
+- **Lead with the recommendation, grounded in those files — don't front-load caveats.** If a live number
+  (weight, the forecast, the product list) would sharpen the answer but isn't to hand, say so in one line,
+  state the assumption you're using, and answer anyway. Ask for a number only when it changes the call.
+- **n=1 outranks the textbook** — same rule as the app coach: this athlete's own logged response beats any
+  population prior; say so when they conflict.
+- **Keep the notes current — that's how the next conversation gets better.** When a chat produces a durable
+  fact, a decision, or a follow-up action, write it into `coaching-notes.md` in the same turn (right heading
+  / the "To do" list). Keep secrets and live/drifting numbers out of it (trends and targets are fine).
+
 ## Running the server (ONE canonical model — never give conflicting commands)
 
 The dashboard runs as a **single always-on macOS launchd service** (`com.endurance-coach.dashboard`,

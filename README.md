@@ -65,6 +65,14 @@ The core loop (readiness / weekly / race / propose→confirm) is the product, an
 gated**: `propose` only logs a change + its trade-off; nothing is written to AI Endurance until you
 explicitly `confirm`.
 
+**Talking it through with an assistant.** Beyond the CLI, you can just *discuss* training (fuelling,
+pacing, a race plan) with Claude Code / Claude on the web. Two channels feed those chats: the **MCP
+server** ([docs/mcp-server.md](docs/mcp-server.md)) for **live** numbers when you chat **on the Mac**, and
+[`coaching-notes.md`](./coaching-notes.md) — a committed file of durable context + decisions + a to-do list
+that travels with the repo, so even a fresh **web** session (where the MCP and the gitignored profile can't
+reach your data) starts with the context it needs. Keep live numbers in MCP/AI Endurance, durable context
+in `coaching-notes.md`.
+
 **Deterministic safety guardrails (not just prompt instructions):**
 - **Pre-LLM safety screen.** Free-text questions are screened in code *before* the model, in three classes:
   **acute medical symptoms** (chest pain, breathlessness, fainting, numbness, bleeding → stop and see a
