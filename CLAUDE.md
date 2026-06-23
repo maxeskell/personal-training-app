@@ -42,25 +42,30 @@
 
 ## Talking things through (coaching chat — not always a code change)
 
-Sometimes the user isn't asking for code — they want to **talk a training question through** (fuelling,
-pacing, a race plan, "how should I think about X"). That is a first-class use of this repo, not a detour.
+Sometimes the user wants to **talk a training question through** (fuelling, pacing, a race plan) rather
+than change code. Treat that as a first-class use of this repo, and run it as the same three-step loop the
+rest of the app uses: **confirm the question → pull the right data live → answer.**
 
-- **Read the coaching brief first, then answer in that voice.** Before responding, read
-  `coach-instructions.md` (the coach persona + how it weighs evidence), `knowledge/sports-science.md`
-  (the priors) and `coaching-notes.md` (this athlete's durable context, open questions and past decisions).
-  All three are committed, so they're available even in a fresh Claude-Code-on-the-web checkout — unlike
-  `profile.local.yaml`, which is gitignored and will **not** be present there.
-- **Pull live numbers when you can, but know where they live.** The MCP server (`npm run mcp`) exposes
-  races/FTP/weight/plan, but it reads local OAuth tokens + `data/` on the Mac — so it only answers in a
-  **local** Claude Code/Desktop session, never in a web container (no tokens/account/`data/` there).
-- **Lead with the recommendation, grounded in those files — don't front-load caveats.** If a live number
-  (weight, the forecast, the product list) would sharpen the answer but isn't to hand, say so in one line,
-  state the assumption you're using, and answer anyway. Ask for a number only when it changes the call.
-- **n=1 outranks the textbook** — same rule as the app coach: this athlete's own logged response beats any
-  population prior; say so when they conflict.
-- **Keep the notes current — that's how the next conversation gets better.** When a chat produces a durable
-  fact, a decision, or a follow-up action, write it into `coaching-notes.md` in the same turn (right heading
-  / the "To do" list). Keep secrets and live/drifting numbers out of it (trends and targets are fine).
+1. **Confirm & refine the question first.** Ask only the clarifiers that actually change the answer
+   (e.g. *which* Outlaw, what the goal is), then restate what you're answering. Don't fire a generic
+   answer at an under-specified question.
+2. **Pull the right data live, at question time — never cache it.** Hardcoding athlete numbers in a
+   committed file is the one thing this repo refuses to do: they go stale, which is why "live numbers come
+   live" exists. Pull from the right source:
+   - **Stable context** (body, kit, fuelling inventory + GI notes, race targets) → the profile,
+     `profile.local.yaml`, via the `get_profile` MCP tool (or read the file when local).
+   - **Live numbers** (FTP, CSS, threshold pace, weight, HRV, load, the plan + race calendar) → AI
+     Endurance / Garmin via the MCP tools (`npm run mcp`) — never assume or remember them.
+   - If a source isn't reachable in the current environment (a **web** container has no MCP auth and no
+     gitignored `profile.local.yaml`), say so and answer from what you *can* reach, or ask — **never
+     substitute a stale snapshot.** Data-grounded answers belong where the data is reachable: a local Mac
+     session (stdio MCP), or a cloud/web session wired to the HTTP MCP transport (`docs/mcp-server.md`).
+3. **Answer in the coach's voice.** Read `coach-instructions.md` (persona + how it weighs evidence) and
+   `knowledge/sports-science.md` (priors) first; lead with the recommendation, not caveats; label every
+   estimate a MODEL; n=1 (the athlete's own *pulled* data) outranks the textbook.
+
+`coaching-notes.md` is **not** a data store — it holds only things with no live source that don't go
+stale: open questions / to-dos and decisions we've agreed. Keep it current as a by-product of chats.
 
 ## Running the server (ONE canonical model — never give conflicting commands)
 

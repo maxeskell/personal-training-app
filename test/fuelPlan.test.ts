@@ -136,5 +136,38 @@ test("loadFuelPrefs reads the learned preferences + the athlete's stated carb ta
   assert.equal(prefs.carbCeilingGPerHour, 70);
   assert.equal(prefs.carbTargetGPerHour, 80, "highest stated carb target becomes the endurance target");
   assert.equal(prefs.caffeineCutoffHour, 16);
-  assert.deepEqual(loadFuelPrefs(undefined), { carbCeilingGPerHour: undefined, carbTargetGPerHour: undefined, caffeineCutoffHour: undefined, notes: undefined });
+  assert.deepEqual(loadFuelPrefs(undefined), {
+    carbCeilingGPerHour: undefined,
+    carbTargetGPerHour: undefined,
+    caffeineCutoffHour: undefined,
+    sweatRateMlPerHour: undefined,
+    sweatSodiumMgPerL: undefined,
+    notes: undefined,
+  });
+});
+
+test("loadFuelPrefs reads a measured sweat rate + sweat sodium", () => {
+  const prefs = loadFuelPrefs({ preferences: { sweat_rate_ml_per_hour: 800, sweat_sodium_mg_per_l: 900 } });
+  assert.equal(prefs.sweatRateMlPerHour, 800);
+  assert.equal(prefs.sweatSodiumMgPerL, 900);
+});
+
+test("a measured sweat rate replaces the generic fluid MODEL (and is named as the athlete's own)", () => {
+  // No sweat rate → the generic temperature MODEL (base 500 ml/hr) and no "measured" wording.
+  const generic = planFuel({ sport: "Ride", durationMin: 120, title: "Endurance", inventory: inv });
+  assert.match(generic.during!.lines.join(" "), /Drink ~500 ml\/hr/);
+  assert.doesNotMatch(generic.during!.lines.join(" "), /measured sweat rate/);
+  // With a measured rate → the athlete's own number, labelled measured, and flagged in the assumptions.
+  const measured = planFuel({ sport: "Ride", durationMin: 120, title: "Endurance", inventory: inv, prefs: { sweatRateMlPerHour: 800 } });
+  assert.match(measured.during!.lines.join(" "), /Drink ~800 ml\/hr \(your measured sweat rate\)/);
+  assert.match(measured.assumptions.join(" "), /measured sweat rate \(800 ml\/hr\)/);
+});
+
+test("a measured sweat rate + sweat sodium states the actual sodium loss to replace", () => {
+  // 800 ml/hr × 900 mg/L ÷ 1000 = 720 mg sodium/hr.
+  const plan = planFuel({ sport: "Ride", durationMin: 120, title: "Endurance", inventory: inv, prefs: { sweatRateMlPerHour: 800, sweatSodiumMgPerL: 900 } });
+  assert.match(plan.during!.lines.join(" "), /≈ 720 mg sodium\/hr \(measured\)/);
+  // Without the sodium figure, no mg/hr claim is invented.
+  const noSodium = planFuel({ sport: "Ride", durationMin: 120, title: "Endurance", inventory: inv, prefs: { sweatRateMlPerHour: 800 } });
+  assert.doesNotMatch(noSodium.during!.lines.join(" "), /mg sodium\/hr/);
 });

@@ -34,6 +34,12 @@ export interface FuelPrefs {
   carbTargetGPerHour?: number;
   /** Local hour (0–23) after which caffeine is avoided (sleep) — steers to caffeine-free electrolytes. */
   caffeineCutoffHour?: number;
+  /** Measured fluid-loss rate (ml/hr) from a weigh-in/out sweat test. n=1 data: when set it replaces the
+   *  generic temperature-only ml/hr MODEL with the athlete's own number. */
+  sweatRateMlPerHour?: number;
+  /** Measured sweat sodium concentration (mg/L). Paired with the sweat rate it yields a sodium mg/hr loss
+   *  the plan can state, instead of a generic "add a tab". */
+  sweatSodiumMgPerL?: number;
   /** Free-text the athlete/learning-loop wants echoed (e.g. "gels sit badly running — prefer drink"). */
   notes?: string;
 }
@@ -190,7 +196,10 @@ export function planFuel(input: FuelPlanInput): FuelPlan {
   }
   // Fluid + sodium: meaningful past ~60 min, or sooner in heat.
   if (dur >= 60 || (warm && dur >= 45)) {
-    const ml = fluidMlPerHour(input.tempC);
+    // n=1 over textbook: a measured sweat rate replaces the generic temperature-only MODEL.
+    const sweatRate = input.prefs?.sweatRateMlPerHour;
+    const measured = sweatRate != null && sweatRate > 0;
+    const ml = measured ? Math.round(sweatRate! / 10) * 10 : fluidMlPerHour(input.tempC);
     const tabs = electrolyteProducts(inv);
     const tab = lateCaffeine ? tabs.find((t) => (t.caffeineMg ?? 0) === 0) ?? tabs[0] : tabs[0];
     const tabBit = tab
@@ -198,7 +207,16 @@ export function planFuel(input: FuelPlanInput): FuelPlan {
       : hot
         ? " Add electrolytes (you've none logged) — a salt/electrolyte source matters in this heat."
         : "";
-    duringLines.push(`Drink ~${ml} ml/hr${hot ? " (hot day — toward the upper end)" : ""}.${tabBit}`);
+    // With a measured sweat rate AND sweat sodium, state the actual sodium loss to replace.
+    const sweatSodium = input.prefs?.sweatSodiumMgPerL;
+    const sodiumBit =
+      measured && sweatSodium != null && sweatSodium > 0
+        ? ` You lose ≈ ${Math.round((sweatRate! * sweatSodium) / 1000 / 10) * 10} mg sodium/hr (measured) — replace most of it.`
+        : "";
+    const fluidNote = measured
+      ? `Drink ~${ml} ml/hr (your measured sweat rate)${hot ? " — likely more in this heat, you'll be sweating above that" : ""}.`
+      : `Drink ~${ml} ml/hr${hot ? " (hot day — toward the upper end)" : ""}.`;
+    duringLines.push(`${fluidNote}${tabBit}${sodiumBit}`);
   }
   if (duringLines.length) during = { label: "During", lines: duringLines };
 
@@ -258,6 +276,7 @@ export function planFuel(input: FuelPlanInput): FuelPlan {
   }
   if (input.weightKg) assumptions.push(`per-kg amounts use ${input.weightKg} kg`);
   if (input.tempC != null) assumptions.push(`forecast ~${Math.round(input.tempC)}°C`);
+  if (input.prefs?.sweatRateMlPerHour) assumptions.push(`fluid from your measured sweat rate (${input.prefs.sweatRateMlPerHour} ml/hr)`);
   assumptions.push("MODEL estimate — gut-train any new carb rate gradually");
 
   const summary = needed
@@ -341,6 +360,8 @@ export function loadFuelPrefs(fuelling: unknown): FuelPrefs {
     carbCeilingGPerHour: numOf(prefs.carb_ceiling_g_per_hour) ?? numOf(prefs.carb_ceiling),
     carbTargetGPerHour: statedTargets.length ? Math.max(...statedTargets) : undefined,
     caffeineCutoffHour: numOf(prefs.caffeine_cutoff_hour),
+    sweatRateMlPerHour: numOf(prefs.sweat_rate_ml_per_hour),
+    sweatSodiumMgPerL: numOf(prefs.sweat_sodium_mg_per_l),
     notes: typeof prefs.notes === "string" ? prefs.notes : typeof o.notes === "string" ? o.notes : undefined,
   };
 }
