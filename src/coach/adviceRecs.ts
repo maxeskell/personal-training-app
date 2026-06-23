@@ -43,10 +43,16 @@ export const ADVICE_FAMILIES = [
 
 const ADVICE_FAMILY_SET = new Set<string>(ADVICE_FAMILIES);
 
+/** Hard cap on surfaced recommendations per source — enforced HERE (in code) because the JSON schema
+ *  can't carry `maxItems` for structured output (the API rejects it). Keeps the dashboard card tight. */
+export const MAX_ADVICE_RECS = 4;
+
 /** JSON-schema fragment for the structured `recommendations` array (shared by the readiness + deep-dive calls). */
 export const ADVICE_RECS_SCHEMA = {
   type: "array",
-  maxItems: 4,
+  // No `maxItems` here: Anthropic structured-output (output_config.format) rejects array length
+  // constraints — a `maxItems`/`minItems` 400s the whole call ("for 'array' type, property 'maxItems'
+  // is not supported"). The 0–4 cap is conveyed in the description and ENFORCED in recsToFindings().
   description:
     "The FEWEST genuinely distinct, actionable recommendations the write-up supports (0–4) — each a single " +
     "self-contained imperative line, tagged with the insight family it belongs to. Merge anything that is the " +
@@ -111,7 +117,7 @@ export function recsToFindings(recs: AdviceRec[] | undefined, source: AdviceSour
       key,
     });
   }
-  return out;
+  return out.slice(0, MAX_ADVICE_RECS);
 }
 
 /**

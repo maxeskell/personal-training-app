@@ -73,6 +73,21 @@ export class CoachLLM {
    * returned as T. The system prompt is cached across calls within the 5-minute TTL.
    */
   async structured<T>(userContent: string, schema: Record<string, unknown>): Promise<{ value: T; cacheRead: number; costUsd: number }> {
+    // Anthropic structured-output (output_config.format) rejects array length constraints anywhere in the
+    // schema — a `maxItems`/`minItems` 400s the WHOLE call ("for 'array' type, property 'maxItems' is not
+    // supported"). Strip them defensively so no schema can break a coaching flow; count caps live in code
+    // (e.g. recsToFindings()).
+    const stripArrayLimits = (n: unknown): unknown =>
+      Array.isArray(n)
+        ? n.map(stripArrayLimits)
+        : n && typeof n === "object"
+          ? Object.fromEntries(
+              Object.entries(n as Record<string, unknown>)
+                .filter(([k]) => k !== "maxItems" && k !== "minItems")
+                .map(([k, v]) => [k, stripArrayLimits(v)]),
+            )
+          : n;
+    const safeSchema = stripArrayLimits(schema) as Record<string, unknown>;
     const res = await this.withDeadline((signal) => this.client.messages.create(
       {
         model: this.model,
@@ -80,7 +95,7 @@ export class CoachLLM {
         thinking: { type: "adaptive" },
         output_config: {
           effort: this.effort,
-          format: { type: "json_schema", schema },
+          format: { type: "json_schema", schema: safeSchema },
         } as never, // SDK types for output_config.effort+format are still settling; shape is correct per API.
         system: [
           { type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } },
