@@ -78,7 +78,13 @@ function missingKey(): string | null {
 // ---- pure formatters (exported for tests) ------------------------------------------------------
 
 type Provenance = { value: unknown; source: string; note?: string };
-const prov = (p: Provenance) => `${p.value == null ? "—" : "set"} [${p.source}${p.note ? `: ${p.note}` : ""}]`;
+// Show the actual VALUE for scalars (the headline live numbers — weight, HRV, RHR, VO2max, …); fall back
+// to "set" only for STRUCTURED fields (plan, zones, recovery model) where a presence flag is enough.
+const prov = (p: Provenance) => {
+  const v = p.value;
+  const shown = v == null ? "—" : typeof v === "object" ? "set" : String(v);
+  return `${shown} [${p.source}${p.note ? `: ${p.note}` : ""}]`;
+};
 
 /** A glanceable, provenance-tagged digest of an AthleteState (mirrors `npm run state`). */
 export function summarizeState(state: AthleteState, today: string = todayIso()): string {
@@ -92,6 +98,21 @@ export function summarizeState(state: AthleteState, today: string = todayIso()):
     daysOld > 0
       ? [`⚠ STALE SNAPSHOT: assembled ${state.assembledAt} — ${daysOld} day${daysOld === 1 ? "" : "s"} before today (${today}). Run \`sync\` (or get_state fresh=true) to refresh.`, ""]
       : [];
+  // thresholds is a structured field, so spell out the headline markers (FTP, run threshold pace, swim CSS,
+  // max HR) explicitly rather than a bare "set" — these are exactly the numbers a coach needs at a glance.
+  const tv = state.thresholds.value;
+  const mmss = (sec: number, unit: string) => `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, "0")}${unit}`;
+  const thrBits = tv
+    ? [
+        tv.bikeFtpW != null ? `bike FTP ${tv.bikeFtpW} W${tv.bikeFtpWkg != null ? ` (${tv.bikeFtpWkg} W/kg)` : ""}` : null,
+        tv.runThresholdPaceSecPerKm != null ? `run thr ${mmss(tv.runThresholdPaceSecPerKm, "/km")}` : null,
+        tv.swimCssSecPer100 != null ? `swim CSS ${mmss(tv.swimCssSecPer100, "/100m")}` : null,
+        tv.maxHr != null ? `max HR ${tv.maxHr}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+  const thresholdLine = `  ${"thresholds (ftp/pace)".padEnd(22)} ${thrBits || "—"} [${state.thresholds.source}${state.thresholds.note ? `: ${state.thresholds.note}` : ""}]`;
   return [
     ...staleCue,
     `AthleteState for ${state.date} (assembled ${state.assembledAt}):`,
@@ -107,7 +128,7 @@ export function summarizeState(state: AthleteState, today: string = todayIso()):
     L("weight 7d trend", state.weight7dTrend),
     L("sleep (garmin)", state.sleep),
     L("vo2max", state.vo2max),
-    L("thresholds (ftp/pace)", state.thresholds),
+    thresholdLine,
     L("zones", state.zones),
     L("tiebreak (garmin)", state.tiebreak),
     L("nutrition targets", state.nutritionTargets),
