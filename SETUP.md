@@ -269,14 +269,17 @@ client — treat any flakiness as "degrade to AI Endurance," not an outage. Keep
 ▶ RUN   # localhost only; prints a one-time /pair?token=… link to open in the browser
 npm start                  # alias for `npm run serve` — the everyday "run the coach" command
 ```
-To run it on phone-over-WiFi, start with `COACH_LAN=1 npm start` (still token-gated). To keep it
-running and auto-updating (macOS launchd; the installer prints a Linux systemd/cron equivalent):
+To run it on phone-over-WiFi, start with `COACH_LAN=1 npm start` (still token-gated). To keep the
+dashboard running across logins (macOS launchd; the installer prints a Linux systemd/cron equivalent):
 
 ```bash
-▶ RUN   # use the absolute path to THIS user's clone — `service:install` does both at once
-cd /path/to/personal-training-app && npm run service:install      # start at login + auto-update on a timer
-#   (or the two granular installers separately: `npm run serve:install` and `npm run autoupdate:install`)
+▶ RUN   # use the absolute path to THIS user's clone
+cd /path/to/personal-training-app && npm run serve:install        # start at login + restart on crash
 ```
+
+Code is deployed **locally** with `npm run ship` (see the deploy section of the README), so no
+pull-based auto-updater runs by default. Prefer hands-free pull updates instead? `npm run autoupdate:install`
+(or `npm run service:install`, which adds it) still exists.
 
 ## Step 6a — (optional) Career history (the `/career` tab)
 

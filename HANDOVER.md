@@ -193,13 +193,14 @@ cd /path/to/personal-training-app && npm run serve:uninstall  # stop auto-starti
 On Linux the installer prints the equivalent `systemd --user` / cron line and no-ops. `pm2` is an
 alternative (`npm run pm2:start`).
 
-**Keep the code current (never run git by hand):**
+**Deploy code changes (local-first):**
 ```bash
-cd /path/to/personal-training-app && npm run autoupdate:install   # fast-forward pull every 15 min + at login, then restart
-cd /path/to/personal-training-app && npm run update               # pull + restart right now
+cd /path/to/personal-training-app && git checkout -b my-change    # branch — never edit main directly
+#   …edit, then commit…
+cd /path/to/personal-training-app && npm run ship                 # gate → merge to main → restart → push backup
 ```
-The auto-updater is **fast-forward only** and **skips the pull entirely if there are uncommitted local
-edits**, so it cannot clobber work in progress.
+`npm run ship` runs the local test + typecheck gate (aborts on red) before merging. The old pull-based
+`npm run autoupdate:install` / `npm run update` is retired (still available opt-in).
 
 **Health & routine maintenance:**
 - `npm run doctor` — checks creds, **Garmin token age** (re-auth before the ~6-month expiry), API key,
