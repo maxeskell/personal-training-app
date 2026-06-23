@@ -68,6 +68,31 @@ test("summarizeState flags a snapshot assembled before today (no silent stale re
   assert.ok(out.indexOf("STALE SNAPSHOT") < out.indexOf("AthleteState for"), "stale cue comes first");
 });
 
+test("summarizeState surfaces the actual live numbers (not a bare 'set'), incl. formatted thresholds", async () => {
+  const { summarizeState } = await import("../src/mcpServer.js");
+  const { emptyState } = await import("../src/state/types.js");
+  const s = emptyState("2026-06-14", "2026-06-14T06:00:00Z");
+  s.weightKg = { value: 71, source: "garmin" };
+  s.hrvOvernight = { value: 88, source: "garmin" };
+  s.restingHr = { value: 44, source: "garmin" };
+  s.vo2max = { value: 58, source: "garmin" };
+  s.thresholds = {
+    value: { bikeFtpW: 199, bikeFtpWkg: 2.8, runThresholdPaceSecPerKm: 255, swimCssSecPer100: 95, maxHr: 188 },
+    source: "ai-endurance",
+  };
+  const out = summarizeState(s, "2026-06-14");
+  // Scalars show the value, not "set".
+  assert.match(out, /weight \(kg\)\s+71 /);
+  assert.match(out, /hrv overnight\s+88 /);
+  assert.match(out, /resting hr\s+44 /);
+  assert.match(out, /vo2max\s+58 /);
+  // Thresholds spelled out: FTP (W + W/kg), run pace mm:ss/km, swim CSS mm:ss/100m, max HR.
+  assert.match(out, /bike FTP 199 W \(2\.8 W\/kg\)/);
+  assert.match(out, /run thr 4:15\/km/); // 255 s = 4:15
+  assert.match(out, /swim CSS 1:35\/100m/); // 95 s = 1:35
+  assert.match(out, /max HR 188/);
+});
+
 test("formatReadiness: tolerates a wellbeing risk with no message and renders drivers", async () => {
   const { formatReadiness } = await import("../src/mcpServer.js");
   const out = formatReadiness(
