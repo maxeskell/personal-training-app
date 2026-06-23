@@ -90,22 +90,31 @@ test("with no carb product the plan still gives the g/h target and names the gap
   assert.match(plan.during!.lines.join(" "), /no dedicated carb fuel logged/);
 });
 
-test("the During line shows each pick's CARB contribution (summing to the total), not its serving weight", () => {
+test("the During line is a per-feed cadence (carbs per feed + hourly rate, never a bar's serving weight)", () => {
   const inv = loadInventory({ schema_version: 1, identity: {}, fuelling: { products: [
     { name: "Flapjack (120 g)", brand: "Flapjack Co", category: "bar", carbs_g: 65 },
     { name: "Energy Gel", brand: "OTE", category: "gel", carbs_g: 20 },
   ] } } as unknown as Profile);
   const plan = planFuel({ sport: "Ride", durationMin: 180, title: "Long ride", inventory: inv, prefs: { carbTargetGPerHour: 80, carbCeilingGPerHour: 90 } });
   const during = plan.during!.lines.join(" ");
-  assert.match(during, /Flapjack Co Flapjack \(\d+ g carb\)/, "carb contribution shown per product");
-  assert.doesNotMatch(during, /\(120 g\)/, "the bar's 120 g serving weight is stripped (not a carb figure)");
-  // the per-product carb contributions sum to the stated total — the maths now adds up
-  const contribs = [...during.matchAll(/\((\d+) g carb\)/g)].map((m) => Number(m[1]));
-  // the line carries the target (≈240) then the products' delivered total at the end — take the LAST ≈.
-  const totals = [...during.matchAll(/≈\s*(\d+) g carb/g)].map((m) => Number(m[1]));
-  const deliveredTotal = totals[totals.length - 1];
-  assert.ok(contribs.length >= 1 && Number.isFinite(deliveredTotal), "found per-product carbs and a delivered total");
-  assert.equal(contribs.reduce((a, b) => a + b, 0), deliveredTotal, "per-product carbs sum to the delivered total");
+  assert.match(during, /every ~\d+ min/, "shows a steady feed cadence");
+  assert.match(during, /≈ 80 g carb\/hr/, "shows the hourly rate (from the athlete's stated target)");
+  assert.match(during, /\(\d+ g carb\)/, "the per-feed amount is labelled as carbs");
+  assert.doesNotMatch(during, /\(120 g\)/, "a bar's serving weight is never shown as a carb figure");
+  // per-feed ≈ rate × interval/60 (80 g/hr × 30 min = 40 g); small amounts land on liquid (gels)
+  assert.match(during, /2× OTE Energy Gel \(40 g carb\)/);
+});
+
+test("pre items carry H-relative times (timeline format), earliest first", () => {
+  const inv = loadInventory({ schema_version: 1, identity: {}, fuelling: { products: [
+    { name: "Flapjack (120 g)", brand: "Flapjack Co", category: "bar", carbs_g: 65 },
+    { name: "Beetroot Shot", brand: "Beet It", category: "nitrate" },
+  ] } } as unknown as Profile);
+  const plan = planFuel({ sport: "Ride", durationMin: 180, title: "Long ride", isKey: true, weightKg: 72, inventory: inv, prefs: { carbTargetGPerHour: 80 } });
+  const pre = plan.pre!.lines.join("\n");
+  assert.match(pre, /H-150:.*[Bb]eet/, "nitrate at H-150");
+  assert.match(pre, /H-120: carb meal/, "carb meal at H-120");
+  assert.ok(pre.indexOf("H-150") < pre.indexOf("H-120"), "earliest time first");
 });
 
 test("buildWeekFuelPlans maps planned sessions and skips strength", () => {
