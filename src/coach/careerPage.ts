@@ -1,4 +1,5 @@
 import { escapeHtml } from "../util/html.js";
+import { pageShell } from "./shell.js";
 import type { CareerHistory, PowerPoint, Race, BestValue, RaceSplit } from "./careerHistory.js";
 import { isMultisport } from "./raceResults.js";
 
@@ -164,33 +165,15 @@ function powerCurveSvg(pc: NonNullable<CareerHistory["powerCurve"]>): string {
   return `<div class="pcwrap">${out.join("")}</div><div class="legend">${legend}</div>`;
 }
 
-const STYLE = `body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:820px;margin:0 auto;padding:26px 20px 64px;color:#2b2b2b;line-height:1.55;background:#f4f1ea}
-h1{font-size:22px;margin:.1em 0 .1em}h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#999;margin:0 0 12px}
-.sub{color:#777;font-size:13px;margin-bottom:18px}
-a.back{display:inline-block;margin-bottom:14px;font-size:13px;color:#c8642d;text-decoration:none}
-.card{background:#fff;border-radius:10px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
-table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:6px 7px;border-bottom:1px solid #f0ede5;text-align:left;vertical-align:top}
-th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#999;font-weight:600}
-.num{text-align:right;font-variant-numeric:tabular-nums}.muted{color:#bbb}
-.when{font-size:11px;color:#b1a78f}
-.tag{font-size:10px;color:#9a7b3a;background:#faf3e3;border:1px solid #ecdcbf;border-radius:9px;padding:0 6px}
-.pcwrap{overflow-x:auto}.pcurve{width:100%;height:auto;min-width:520px}
-.pcurve .grid{stroke:#eee7d8}.pcurve .ax{fill:#9a8f78;font-size:11px}
-.legend{margin-top:8px;font-size:12px;color:#666}.leg{margin-right:16px;white-space:nowrap}.sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
-details.splits{margin-top:6px;text-align:left}details.splits>summary{cursor:pointer;font-size:12px;color:#c8642d}
-table.splitt{margin-top:6px;font-size:12px}table.splitt td,table.splitt th{padding:3px 7px;border-bottom:1px solid #f4f1ea}
-.note{background:#faf8f3;border-left:3px solid #e7d9c6;border-radius:5px;padding:12px 14px;font-size:14px;margin:0 0 18px}
-code{background:#f4f1ea;border-radius:4px;padding:1px 5px;font-size:.92em}
-.cols{display:flex;gap:16px;flex-wrap:wrap}.cols>div{flex:1;min-width:300px}`;
-
-function shell(inner: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Career & PBs</title><style>${STYLE}</style></head><body><a class="back" href="/">← Back to the dashboard</a>${inner}</body></html>`;
-}
-
-export function renderCareerPage(data: CareerHistory | null, share = false): string {
+/**
+ * The career content WITHOUT the page shell — wrapped in `.career-inner` so its scoped styles apply
+ * (see shell.ts). Reused two ways: the standalone /career page wraps it in {@link pageShell}, and the
+ * dashboard's Performance tab folds it in directly under a section rule.
+ */
+export function renderCareerInner(data: CareerHistory | null, share = false): string {
   if (!data) {
-    return shell(`<h1>Career &amp; PBs</h1>
-      <div class="note">No career history yet. This page reads <code>data/career-history.json</code> — generate it from your TrainingPeaks / intervals.icu archive (plus your exported <code>.FIT</code> files for per-race performance &amp; splits) with <code>npm run career:build</code> (<code>scripts/build-career-history.ts</code>; see <code>SETUP.md</code> → "Career history"). The file is gitignored; <code>career-history.example.json</code> shows the shape.</div>`);
+    return `<div class="career-inner"><h1>Career &amp; PBs</h1>
+      <div class="note">No career history yet. This page reads <code>data/career-history.json</code> — generate it from your TrainingPeaks / intervals.icu archive (plus your exported <code>.FIT</code> files for per-race performance &amp; splits) with <code>npm run career:build</code> (<code>scripts/build-career-history.ts</code>; see <code>SETUP.md</code> → "Career history"). The file is gitignored; <code>career-history.example.json</code> shows the shape.</div></div>`;
   }
 
   const seasonHdr = data.seasonYear ? `Season ${data.seasonYear}` : "Season";
@@ -222,5 +205,10 @@ export function renderCareerPage(data: CareerHistory | null, share = false): str
         <div class="sub" style="margin:8px 0 0">Mean-maximal power at each duration. All-time is your best ever; the recent lines show where you are now.</div></div>`
     : "";
 
-  return shell(`<h1>Career &amp; PBs</h1><div class="sub">${gen}</div>${shareNote}${races}${bests}${power}`);
+  return `<div class="career-inner"><h1>Career &amp; PBs</h1><div class="sub">${gen}</div>${shareNote}${races}${bests}${power}</div>`;
+}
+
+/** Standalone /career page: the career content in the shared site shell (nav highlights Performance). */
+export function renderCareerPage(data: CareerHistory | null, share = false): string {
+  return pageShell({ title: "Career & PBs", active: "performance", share }, renderCareerInner(data, share));
 }

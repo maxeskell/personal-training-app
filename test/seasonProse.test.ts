@@ -70,12 +70,14 @@ test("renderSeasonPage renders both prose cards when passed, newest content visi
 });
 
 test("renderSeasonPage omits a prose card cleanly when that piece is absent (no empty card)", () => {
+  // "Coach" alone is no longer a reliable proxy (the shared site shell brands every page "Endurance
+  // Coach"), so assert against the narrative card's own title — "Coach's full season read".
   const onlyNarrative = renderSeasonPage(REPORT, false, { narrative: { markdown: "# T\n\nbody", date: FRESH } });
-  assert.match(onlyNarrative, /Coach/);
+  assert.match(onlyNarrative, /season read/);
   assert.ok(!onlyNarrative.includes("This week"));
 
   const none = renderSeasonPage(REPORT, false, {});
-  assert.ok(!none.includes("Coach"));
+  assert.ok(!none.includes("season read"));
   assert.ok(!none.includes("This week"));
 
   // backwards-compatible: no prose arg at all
