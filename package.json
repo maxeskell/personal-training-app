@@ -11,6 +11,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "ship": "bash scripts/ship.sh",
     "setup": "tsx src/cli.ts setup",
     "profile:init": "tsx src/cli.ts profile-init",
     "profile:questions": "tsx src/cli.ts profile-questions",

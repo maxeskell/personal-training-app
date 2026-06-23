@@ -110,16 +110,17 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 | `npm run schedule:install` (`-- HH MM`) | schedule the daily `ping` (e.g. `-- 6 30`); `schedule:uninstall` to remove |
 | `npm run watch:install` (`-- HH MM`) | proactive daily watch (fit-sync + fire-only check); `watch:uninstall` to remove |
 | `npm run serve:install` / `serve:uninstall` | keep the dashboard server running at login |
-| `npm run autoupdate:install` / `autoupdate:uninstall` | fast-forward pull + restart on a timer |
+| `npm run autoupdate:install` / `autoupdate:uninstall` | _(legacy, off by default)_ fast-forward pull + restart on a timer — superseded by `npm run ship` |
 | `npm run mcp:install` / `mcp:uninstall` | run the MCP HTTP server as a background service |
 | `npm run healthcheck:install -- <https-url>` | schedule the remote `/health` probe |
 | `npm run backfill:install` / `backfill:uninstall` | nightly history archive |
-| `npm run update` | one-off fast-forward pull + restart |
+| `npm run update` | _(legacy)_ one-off fast-forward pull + restart — use `npm run ship` instead |
 
 ## Maintenance & development
 | Command | What it does |
 |---|---|
 | `npm run help` | the curated everyday commands (a short version of this page) |
+| `npm run ship` | **deploy:** from a feature branch — gate (test + typecheck) → merge into `main` → restart dashboard → push `main` to GitHub as backup → return to your branch |
 | `npm test` | unit tests (node:test, no network) |
 | `npm run typecheck` | TypeScript typecheck |
 | `npm run build` | compile to `dist/` |

@@ -14,8 +14,13 @@
    source of truth for what changed.
 2. **Green before commit.** `npm run typecheck` and `npm test` must pass locally. New logic gets
    unit tests (node:test, pure functions preferred, no network in tests — fixtures instead).
-3. **Commit, push, PR.** Commit with a clear message, push the working branch, and open a draft
-   PR if one doesn't exist. Don't leave work uncommitted in the session.
+3. **Branch, then ship — local-first (no PRs).** Never edit on `main`; work on a feature branch.
+   Deploy with one command, `npm run ship` (run from the branch): it runs the test + typecheck gate,
+   merges the branch into `main`, restarts the dashboard, pushes `main` to GitHub as a backup, and
+   returns you to your branch. **No PRs, no branch protection, no CI gate — the local gate IS the gate;
+   GitHub is a backup mirror, not the deploy source.** Claude commits the branch and stops there; **the
+   user runs `npm run ship`** (it deploys *and* pushes) unless they explicitly ask Claude to ship. Don't
+   leave work uncommitted in the session.
 4. **Report honestly.** If tests fail or something was skipped, say so — never present it as done.
 5. **Gitignored user data ships a committed template + guidance.** Any new *user-authored* gitignored
    file or structure (a new block in `profile.local.yaml`, a new local data file the user fills in) lands
@@ -31,8 +36,8 @@
 ## Talking to the user
 
 - **Always give absolute paths in CLI instructions.** Any command the user is told to run must be
-  copy-pasteable from anywhere: `cd /Users/maxeskell/personal-training-app && npm run update`,
-  never a bare `npm run update` that assumes a working directory. The repo lives at
+  copy-pasteable from anywhere: `cd /Users/maxeskell/personal-training-app && npm run ship`,
+  never a bare `npm run ship` that assumes a working directory. The repo lives at
   `/Users/maxeskell/personal-training-app` on the user's Mac.
 
 ## Running the server (ONE canonical model — never give conflicting commands)
@@ -40,11 +45,14 @@
 The dashboard runs as a **single always-on macOS launchd service** (`com.endurance-coach.dashboard`,
 port 3000), installed once with `npm run serve:install`. That service — not an open terminal — serves
 the site: it starts at login, restarts on crash (RunAtLoad + KeepAlive), and a `post-merge` git hook
-restarts it after a pull. This is the everyday model; treat it as the default in all advice.
+restarts it after a merge (including the local merge `npm run ship` does). This is the everyday model;
+treat it as the default in all advice.
 
-- **Deploying an update is ONE command:** `cd /Users/maxeskell/personal-training-app && npm run update`.
-  It pulls `COACH_DEPLOY_BRANCH` (default `main`) and restarts the service. Never tell the user to *also*
-  run `npm start` / `npm run serve` afterwards.
+- **Deploying is ONE command, run from a feature branch:** `cd /Users/maxeskell/personal-training-app && npm run ship`.
+  It gates (test + typecheck), merges the branch into `main`, restarts the service, and pushes `main` to
+  GitHub as a backup. The old pull-based `npm run update` / launchd autoupdate model is **retired**
+  (autoupdate uninstalled 2026-06-23; `npm run autoupdate:install` still exists if you ever want it back).
+  Never tell the user to *also* run `npm start` / `npm run serve` afterwards.
 - **`npm start` / `npm run serve` is DEV-ONLY** (foreground, dies with the terminal). Running it while
   the service is up starts a second instance fighting for port 3000. Never present it as an alternative
   way to "run the server", and never in the same breath as the service.

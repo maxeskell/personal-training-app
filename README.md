@@ -625,21 +625,21 @@ for port 3000. To check what's actually running: `lsof -nP -iTCP:3000 -sTCP:LIST
 `npm i -g pm2 && npm run pm2:start && pm2 startup && pm2 save` — is an alternative manager to use
 *instead of* launchd, never alongside it.)
 
-**Hands-free code updates (never run git):** install the auto-updater and merged changes pull + restart
-the dashboard on their own — you just use the app.
+**Deploying code changes — local-first, one command.** Development is local-first: GitHub is a backup
+mirror, not the deploy source or a CI gate. Work on a feature branch, then ship it:
 
 ```bash
-cd /path/to/personal-training-app && npm run autoupdate:install     # pulls every 15 min + at login, then restarts
-cd /path/to/personal-training-app && npm run autoupdate:install -- 3600   # …or a custom interval (seconds)
-npm run update                                                              # pull + restart right now, on demand
-npm run autoupdate:uninstall                                                # turn it off
+cd /path/to/personal-training-app && git checkout -b my-change   # branch — never edit on main
+#   …edit, then…
+git add -A && git commit -m "…"
+npm run ship                                                     # deploy
 ```
 
-It's safe: **fast-forward only**, and it skips the pull if you have uncommitted edits, so it can't clobber
-anything. It tracks a fixed **deploy branch** (`COACH_DEPLOY_BRANCH`, default `main`) rather than whatever
-branch you happen to be on — so if you ever end up parked on an old feature branch, the next update
-switches you back to `main` and pulls (on a clean tree) instead of silently sitting on stale code. The
-dashboard's **🔄 Sync** button is unrelated — it re-pulls your *training data*, not code.
+`npm run ship` runs the local gate (**`npm test` + `npm run typecheck`**, aborting on red), merges your
+branch into `main`, restarts the dashboard service, pushes `main` to GitHub as a backup, and returns you
+to your branch — **no PRs, no branch protection, no CI.** *Prefer hands-free pull-based updates instead?*
+`npm run autoupdate:install` still exists (pulls + restarts on a timer) — it's just no longer the default.
+The dashboard's **🔄 Sync** button is unrelated — it re-pulls your *training data*, not code.
 
 > Note: on the LAN the dashboard is gated only by the per-install pairing token (there is no separate
 > per-user login) — fine on a trusted home network. Don't expose port 3000 to the public internet; for
