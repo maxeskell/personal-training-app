@@ -86,9 +86,6 @@ tr.total td{border-top:2px solid #e7d9c6;border-bottom:0;font-weight:600}
 .syncbtn{padding:8px 16px;border:0;border-radius:8px;background:#c8642d;color:#fff;font-size:14px;cursor:pointer}
 .syncbtn:disabled{opacity:.55;cursor:default}
 .syncstatus{margin-left:10px;font-size:13px;color:#888}
-.askbar{display:flex;gap:8px;align-items:center;margin:10px 0 0}
-.askbar input{flex:1;padding:9px 12px;border:1px solid #e0d6c4;border-radius:9px;font-size:14px;background:#fff}
-.askbar button{padding:9px 16px;border:0;border-radius:9px;background:#c8642d;color:#fff;font-size:14px;cursor:pointer}
 .insights{border:1px solid #e7d9c6}
 .insight{padding:10px 12px;border-bottom:1px solid #f0ede5;border-left:3px solid transparent;margin-bottom:2px}.insight:last-child{border-bottom:0}
 .insight.sev-flag{border-left-color:#c0392b;background:#fdf3f2}
@@ -162,7 +159,7 @@ code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 @media print {
   body{background:#fff}
   .site-head{position:static;border:0}
-  .nav,.askbar,.headmeta{display:none !important}
+  .nav,.headmeta{display:none !important}
   body.js .tab{display:block !important}
   .card{break-inside:avoid;box-shadow:none;border:1px solid #ddd}
   .acts,.syncbtn,.actbtn,button,.sharelink,.sharebanner a,.syncbar{display:none !important}
