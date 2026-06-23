@@ -1112,20 +1112,15 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
   </div>
   ${renderNav("today", { home: "", share, counts: { decide: decideCount } })}
   ${
-    // The Sync button + the persistent Ask bar are interactive (live server behind them) — useless in the
-    // share/screenshot view, so they're dropped there. sync()/autoSync()/ask() are defined in the page
-    // script bundle at the end of the body.
+    // The Sync button is interactive (live server behind it) — useless in the share/screenshot view, so
+    // it's dropped there. sync()/autoSync() are defined in the page script bundle at the end of the body.
+    // (Free-form Q&A lives in Claude Code via the MCP `ask` tool now, not a dashboard box.)
     share
       ? ""
       : `<div class="syncbar" style="display:flex;align-items:center;margin:10px 0 6px">
   <button id="syncbtn" class="syncbtn" onclick="sync()">🔄 Sync latest data</button>
   <span id="syncstatus" class="syncstatus"></span>
 </div>
-<form class="askbar" id="askcard" onsubmit="return ask(event)">
-  <input id="q" placeholder="Ask your data — e.g. how were my long rides this month?" autocomplete="off"/>
-  <button>Ask</button>
-</form>
-<div id="answer" style="font-size:14px;color:#333;white-space:pre-wrap;margin:8px 0 2px"></div>
 <script>
 async function sync(note){
   var b=document.getElementById('syncbtn'), s=document.getElementById('syncstatus');
@@ -1176,11 +1171,6 @@ function mdToHtml(md){
   h=h.replace(/^- /gm,'• ');
   return h;
 }
-async function ask(e){e.preventDefault();var q=document.getElementById('q').value.trim();if(!q)return false;
-  var a=document.getElementById('answer');a.textContent='Thinking…';
-  try{var r=await fetch('/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:q})});
-    var j=await r.json();a.innerHTML=mdToHtml(j.answer||'(no answer)');}catch(err){a.textContent='Error: '+err;}
-  return false;}
 // Last-session deep feedback, fetched on load when it isn't stored yet: the server downloads this
 // session's raw .FIT if needed, generates the readout, persists it (so the next open is inline), and
 // returns it. The H1 is stripped (the card heading already names the session).

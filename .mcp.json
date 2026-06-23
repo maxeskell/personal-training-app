@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "endurance-coach": {
+      "command": "node",
+      "args": ["--import", "tsx", "src/mcpServer.ts"]
+    }
+  }
+}

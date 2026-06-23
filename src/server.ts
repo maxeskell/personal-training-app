@@ -31,7 +31,6 @@ import { loadArchive } from "./coach/orchestrator.js";
 import { ArchiveStore } from "./archive/store.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
-import { answerQuestion } from "./coach/ask.js";
 import { loadProfileSafe } from "./profile/load.js";
 import { runSessionFeedback, assembleSession } from "./coach/session.js";
 import { loadSessionDecays, fitStreamsDir } from "./insights/fit.js";
@@ -396,36 +395,6 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     // Everything else requires the token (cookie from /pair, or X-Coach-Token header).
     if (!isAuthorized(req.headers, TOKEN)) {
       res.writeHead(401, { "content-type": "text/plain" }).end("Unauthorized — open the /pair?token=… link printed at startup.");
-      return;
-    }
-
-    // Free-form Q&A (dashboard chat box posts here).
-    if (url.pathname === "/ask" && req.method === "POST") {
-      if (!CoachLLM.hasApiKey()) {
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer: "ANTHROPIC_API_KEY isn't set on the server, so I can't answer questions yet." }));
-        return;
-      }
-      const body = await readBody(req);
-      const question = String((JSON.parse(body || "{}") as { question?: string }).question ?? "").trim();
-      if (!question) {
-        res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ answer: "Ask me something about your training." }));
-        return;
-      }
-      const store = new StateStore();
-      const today = todayIso();
-      const window = await store.recent(today, 1);
-      const state = window[window.length - 1];
-      if (!state) {
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer: "No data assembled yet — hit ↻ refresh first." }));
-        return;
-      }
-      // Best-effort: attach the stable profile so the dashboard Ask box has the same medical/biomechanical
-      // context as CLI/MCP ask (which build state via buildTodayState). In-memory only; degrades to
-      // no-profile when absent/invalid, and the store strips it so it never reaches data/state/*.json.
-      const loaded = await loadProfileSafe();
-      if (loaded) state.profile = loaded.profile;
-      const { answer } = await answerQuestion(new CoachLLM(await loadSystemPrompt(), "ask", "medium"), question, state, await loadArchive());
-      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ answer }));
       return;
     }
 

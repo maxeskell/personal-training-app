@@ -7,6 +7,7 @@ if [[ "$(uname)" != "Darwin" ]]; then
   echo "Not macOS — remove your systemd timer / cron entry for scripts/autoupdate.sh manually."
   exit 0
 fi
-launchctl unload "$PLIST" 2>/dev/null || true
+# Modern API first (bootout); fall back to the legacy unload on older macOS.
+launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || launchctl unload "$PLIST" 2>/dev/null || true
 rm -f "$PLIST"
 echo "Removed $LABEL — auto-update is off. (Pull manually with: npm run update)"
