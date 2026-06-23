@@ -169,13 +169,23 @@ export function planFuel(input: FuelPlanInput): FuelPlan {
   let during: FuelSection | null = null;
   const duringLines: string[] = [];
   if (carbTarget > 0) {
-    const totalCarb = Math.round(carbTarget * hours);
-    const combo = chooseCarbCombo(totalCarb, carbCandidates(inv), { avoidCaffeine: lateCaffeine });
-    if (combo.items.length) {
-      const picks = combo.items.map((e) => fmtCarbProduct(e.product, e.count)).join(" + ");
-      duringLines.push(`Aim ~${carbTarget} g carb/hr (≈${totalCarb} g carb for the session): ${picks}${combo.totalCarbsG ? ` ≈ ${combo.totalCarbsG} g carb` : ""}.`);
+    // Grouped, timeline-style: ONE WHOLE item per feed at a steady cadence — never "2× …" or a half-item
+    // (you can't take half a gel). Prefer a sippable item (gel/drink/chew — easier on the gut) and take the
+    // LARGEST so feeds are whole and well-spaced; set the INTERVAL to hit the rate (60 × itemCarbs / target).
+    // A 40 g gel at 80 g/hr → one every 30 min.
+    const startMin = intensity === "hard" && dur < 90 ? 0 : 20; // let the pre-fuel settle on an endurance day
+    const pool = carbCandidates(inv).filter((p) => !(lateCaffeine && (p.caffeineMg ?? 0) > 0));
+    const SIPPABLE = new Set<string>(["drink_mix", "gel", "chew"]);
+    const sippable = pool.filter((p) => SIPPABLE.has(p.category));
+    const primary = (sippable.length ? sippable : pool)[0]; // carbCandidates is sorted biggest-carb first
+    const itemCarbs = primary?.carbsG ?? 0;
+    if (primary && itemCarbs > 0) {
+      const intervalMin = Math.max(10, Math.round((60 * itemCarbs) / carbTarget / 5) * 5);
+      duringLines.push(`From H+${startMin}: ${fmtCarbProduct(primary, 1)} every ~${intervalMin} min — ≈ ${carbTarget} g carb/hr.`);
     } else {
-      duringLines.push(`Aim ~${carbTarget} g carb/hr (≈${totalCarb} g carb for the session). You've no dedicated carb fuel logged — a flapjack/banana/real food covers it; consider a drink-mix or gels for longer days.`);
+      duringLines.push(
+        `From H+${startMin}: ≈ ${carbTarget} g carb/hr — no dedicated carb fuel logged; a flapjack/banana/real food covers it, ideally a carb drink-mix or gels.`,
+      );
     }
   }
   // Fluid + sodium: meaningful past ~60 min, or sooner in heat.
@@ -199,20 +209,17 @@ export function planFuel(input: FuelPlanInput): FuelPlan {
   if (wantsPre) {
     const bars = carbCandidates(inv).filter((p) => p.category === "bar" || p.category === "real_food");
     const topUp = bars[0];
-    const perKg = input.weightKg ? ` (~${Math.round(input.weightKg)}–${Math.round(input.weightKg * 2)} g, ≈1–2 g/kg)` : "";
-    preLines.push(
-      `Top up carbs 1–3 h before${perKg}${topUp ? ` — e.g. ${topUp.brand ? `${topUp.brand} ${topUp.name}` : topUp.name}` : ""}.`,
-    );
-    // Nitrate for a key endurance effort (beetroot ~2–3 h before).
+    // Chronological (earliest first): nitrate ~2–3 h out, carb meal ~2 h out, caffeine ~45 min out.
     if (isKey || dur >= 120) {
       const beet = nitrateProducts(inv)[0];
-      if (beet) preLines.push(`Nitrate: ${beet.brand ? `${beet.brand} ${beet.name}` : beet.name} ~2–3 h before (best evidence for sustained endurance efforts).`);
+      if (beet) preLines.push(`H-150: ${cleanProductName(beet)} (nitrate — best evidence for sustained endurance).`);
     }
-    // Caffeine for a hard/key effort, unless it's too late in the day.
+    const perKg = input.weightKg ? ` (~${Math.round(input.weightKg)}–${Math.round(input.weightKg * 2)} g, ≈1–2 g/kg)` : "";
+    preLines.push(`H-120: carb meal${perKg}${topUp ? ` — e.g. ${cleanProductName(topUp)}` : ""}.`);
     const caf = caffeineSources(inv)[0];
     if ((intensity === "hard" || isKey) && caf) {
       if (lateCaffeine) preLines.push(`Skip caffeine this late (after your ${input.prefs?.caffeineCutoffHour}:00 cut-off) so it doesn't cost you sleep.`);
-      else preLines.push(`Caffeine: ${caf.brand ? `${caf.brand} ${caf.name}` : caf.name} ~45–60 min before for a quality session.`);
+      else preLines.push(`H-45: ${cleanProductName(caf)} (caffeine for a quality session).`);
     }
   }
   if (preLines.length) pre = { label: "Pre", lines: preLines };
