@@ -638,6 +638,19 @@ test("Decide reads in two halves: Decisions (advice + This week) above Housekeep
   assert.ok(decide.indexOf("Set up &amp; improve") > iHousekeeping, "Set up & improve sits in the Housekeeping half");
 });
 
+test("Performance groups its cards into labelled sections, with the race cards under 'Race readiness'", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  const html = renderDashboard({ window: [s], decisions: [] });
+  const perf = html.slice(html.indexOf('id="tab-performance"'));
+  const iForm = perf.indexOf('section-rule-label">Form &amp; load');
+  const iRace = perf.indexOf('section-rule-label">Race readiness');
+  assert.ok(iForm > -1, "the Form & load section is labelled");
+  assert.ok(iRace > iForm, "Race readiness comes after Form & load");
+  // The last-7-days load recap sits in Form & load; the Race calendar sits under Race readiness.
+  assert.ok(perf.indexOf("Last 7 days — load by sport") < iRace, "the load recap is in the Form & load group");
+  assert.ok(perf.indexOf("<h2>Race</h2>") > iRace, "the Race table sits under Race readiness");
+});
+
 test("buildSetupItems: stable keys + a dismissed (snoozed) key is dropped, freeing its slot", () => {
   const profile = {
     schema_version: 1,

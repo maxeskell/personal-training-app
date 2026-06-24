@@ -1130,6 +1130,20 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
   const decisionsHalf = [insightsBox, coachRecsHtml, thisWeekHtml].filter((s) => s.trim()).join("\n");
   const housekeepingHalf = [dataChangesHtml, setupHousekeepingHtml].filter((s) => s.trim()).join("\n");
 
+  // Performance tab, grouped into labelled sections so its nine cards read as clusters, not a flat
+  // accordion wall: form & load → zones & capacity → race readiness → career. Each label only renders
+  // when its group has content (an empty group shows nothing, not a bare heading).
+  const trendsCard = collapse(`<div class="card"><h2>${trendsHeading(gar.length)}</h2>
+  ${trendRows ? `<table>${trendRows}</table>` : '<div class="muted">Backfill the Garmin daily archive to populate trends (npm run backfill).</div>'}
+  <div class="k" style="margin-top:8px">From the backfilled Garmin daily history.</div>
+</div>`);
+  const raceCard = `<div class="card"><h2>Race</h2>
+  <table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>
+</div>`;
+  const perfFormLoad = [insights ? collapse(renderSignals(insights)) : "", trendsCard, collapse(loadCard)].filter((s) => s.trim()).join("\n");
+  const perfZones = [collapse(renderZones(today)), collapse(renderScores(today))].filter((s) => s.trim()).join("\n");
+  const perfRace = [raceCard, collapse(renderRacePredictions(today)), insights ? collapse(renderSplits(insights, share)) : ""].filter((s) => s.trim()).join("\n");
+
   return `${pageHead(`Endurance Coach — ${today.date}`)}<body>
 <header class="site-head"><div class="wrap">
   <div class="brand"><h1>Endurance Coach</h1>
@@ -1342,27 +1356,10 @@ async function confirmWaterTemp(btn){var box=btn.closest('.watertemp');var s=box
 </section>
 
 <section id="tab-performance" class="tab">
-<p class="tab-intro">Your numbers — current form and load, race readiness, then your career history &amp; PBs.</p>
-${insights ? collapse(renderSignals(insights)) : ""}
-
-${collapse(`<div class="card"><h2>${trendsHeading(gar.length)}</h2>
-  ${trendRows ? `<table>${trendRows}</table>` : '<div class="muted">Backfill the Garmin daily archive to populate trends (npm run backfill).</div>'}
-  <div class="k" style="margin-top:8px">From the backfilled Garmin daily history.</div>
-</div>`)}
-
-${collapse(loadCard)}
-
-${collapse(renderZones(today))}
-
-${collapse(renderScores(today))}
-
-<div class="card"><h2>Race</h2>
-  <table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>
-</div>
-
-${collapse(renderRacePredictions(today))}
-
-${insights ? collapse(renderSplits(insights, share)) : ""}
+<p class="tab-intro">Your numbers — form &amp; load, your zones &amp; capacity, race readiness, then career history &amp; PBs.</p>
+${perfFormLoad ? `<div class="section-rule-label">Form &amp; load</div>${perfFormLoad}` : ""}
+${perfZones ? `<hr class="section-rule"><div class="section-rule-label">Zones &amp; capacity</div>${perfZones}` : ""}
+${perfRace ? `<hr class="section-rule"><div class="section-rule-label">Race readiness</div>${perfRace}` : ""}
 ${career ? `<hr class="section-rule"><div class="section-rule-label">Career &amp; PBs</div>${renderCareerInner(career, share)}` : ""}
 </section>
 <footer style="margin:24px 0 8px;padding:0;color:#aaa;font-size:12px;line-height:1.5">

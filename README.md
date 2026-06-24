@@ -525,8 +525,9 @@ stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and 
   all sharing the same **👍 Agree / 👎 Disagree / 🚫 Ignore** (💤 Snooze) controls, hoisted to one legend at
   the top, with a gated **Make this change / Apply to AI Endurance** on items that write back, so a real plan
   change never hides behind a plain thumbs-up.
-- **Performance** — your numbers: current form & load, multi-week trends, **last-7-days load by sport**, zones,
-  Garmin scores, race readiness, then **Career & PBs** folded in.
+- **Performance** — your numbers in four labelled groups: **Form & load** (the load model, multi-week trends,
+  last-7-days load by sport), **Zones & capacity** (zones & thresholds, Garmin scores), **Race readiness**
+  (your race calendar, estimated times + race-day splits), then **Career & PBs** folded in.
 
 The standalone `/career` and `/season` pages still exist (identical content, the same shared nav) for
 bookmarking or printing one topic.
