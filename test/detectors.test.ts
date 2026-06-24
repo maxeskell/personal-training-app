@@ -43,13 +43,26 @@ test("formAndIntensityFindings: deep fatigue, fast ramp, monotony and grey-zone 
 });
 
 test("efficiencyDurabilityFindings: heat caveat only when EF slips without thermal data", () => {
-  const slipNoHeat = efficiencyDurabilityFindings({ deltaPct: -8, n: 8, recent: 1.0, prior: 1.09 } as never, { recent: null, prior: null, n: 0 } as never, false);
+  const slipNoHeat = efficiencyDurabilityFindings("Run", { deltaPct: -8, n: 8, recent: 1.0, prior: 1.09 } as never, { recent: null, prior: null, n: 0 } as never, false);
   assert.match(slipNoHeat[0]?.detail ?? "", /hot spell can't be ruled out/);
-  const slipWithHeat = efficiencyDurabilityFindings({ deltaPct: -8, n: 8, recent: 1.0, prior: 1.09 } as never, { recent: null, prior: null, n: 0 } as never, true);
+  const slipWithHeat = efficiencyDurabilityFindings("Run", { deltaPct: -8, n: 8, recent: 1.0, prior: 1.09 } as never, { recent: null, prior: null, n: 0 } as never, true);
   assert.doesNotMatch(slipWithHeat[0]?.detail ?? "", /hot spell/);
   // durability improving → info
-  const durUp = efficiencyDurabilityFindings({ deltaPct: null, n: 0 } as never, { recent: -1, prior: -4, n: 8 } as never, true);
+  const durUp = efficiencyDurabilityFindings("Run", { deltaPct: null, n: 0 } as never, { recent: -1, prior: -4, n: 8 } as never, true);
   assert.equal(durUp.find((x) => x.family === "Durability")?.severity, "info");
+});
+
+test("efficiencyDurabilityFindings: surfaces bike trends with discipline-correct labels", () => {
+  // Same detector, sport='Ride' → "Bike …" titles and "rides" wording, so bike trends are no longer invisible.
+  const bikeEfSlip = efficiencyDurabilityFindings("Ride", { deltaPct: -8, n: 8, recent: 1.5, prior: 1.63 } as never, { recent: null, prior: null, n: 0 } as never, false);
+  assert.equal(bikeEfSlip.find((x) => x.family === "Aerobic efficiency")?.title, "Bike efficiency slipping");
+  assert.match(bikeEfSlip[0]?.detail ?? "", /these rides/); // heat caveat uses the bike noun, not "runs"
+  const bikeDurSlip = efficiencyDurabilityFindings("Ride", { deltaPct: null, n: 0 } as never, { recent: -6, prior: -2, n: 8 } as never, true);
+  const dur = bikeDurSlip.find((x) => x.family === "Durability");
+  assert.equal(dur?.title, "Bike durability slipping");
+  assert.match(dur?.detail ?? "", /long rides/);
+  // Below the ±2 change threshold → no durability finding (unchanged guard).
+  assert.equal(efficiencyDurabilityFindings("Ride", { deltaPct: null, n: 0 } as never, { recent: -3, prior: -2, n: 8 } as never, true).length, 0);
 });
 
 test("anomalyCorrelationFindings + predictionFindings emit the expected shapes", () => {
