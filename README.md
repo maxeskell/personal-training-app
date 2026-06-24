@@ -295,8 +295,19 @@ joins your **AI Endurance metrics** (power/HR/ESS/durability) with the
 **archive thermal summary**, then reads it against your **prior comparable sessions** and that day's **TSB**
 — so a dip in deep fatigue or heat isn't mistaken for lost fitness. It also reads your **upcoming 7 days
 of planned sessions** and says what (if anything) this session should change ahead — suggestions only;
-plan writes stay behind the gated two-step confirm. A question like "What happened in my last run?" routes
-here automatically. Routing has three strategies via `COACH_INTENT_ROUTER` (all degrade to the regex on
+plan writes stay behind the gated two-step confirm.
+
+**Review → plan bridge.** Beyond the prose suggestion, the Last-session card runs a **deterministic** read of
+how the session landed and, when it crosses a conservative threshold, **flags a change to the days ahead** with
+a one-click **➡️ Adjust the days ahead**. The flag itself is free (no LLM): it fires only on clearly directional
+signals — **aerobic decoupling > 10 %** on a long steady effort (aerobic base under-built for that duration), or
+training **deep in fatigue** (session-day TSB ≤ −25, so the days after want protected recovery). The button then
+re-computes the signal **server-side** (the browser sends only *which* session, never the trigger text) and drafts
+the **smallest** edit against a real upcoming workout through the **same gated propose→confirm proposer** as the
+"This week" cards — so it lands as the familiar **Apply / Dismiss** proposal, writing nothing until you confirm.
+This closes the loop from how a session *actually executed* into a gated plan change — something AI Endurance and
+Humango don't do (their daily adaptation keys off readiness scores, not session execution). A question like "What
+happened in my last run?" routes here automatically. Routing has three strategies via `COACH_INTENT_ROUTER` (all degrade to the regex on
 any error): **`regex`** (default, zero-cost, no model); **`haiku`** — the recommended upgrade — a cheap
 `claude-haiku-4-5` micro-call on your existing `ANTHROPIC_API_KEY` (no extra server) that catches
 paraphrases the regex misses ("break down Tuesday's ride") for a fraction of a cent, cost-logged like any

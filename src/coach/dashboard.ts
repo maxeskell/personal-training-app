@@ -12,6 +12,7 @@ import type { MetricOverrides } from "../state/metricOverrides.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone, type Headline } from "../insights/headline.js";
 import { assembleSession, listRecentSessions, type SessionRef, type SessionDetail } from "./session.js";
+import { sessionPlanSignal } from "./reviewBridge.js";
 import { config } from "../config.js";
 import type { Profile } from "../profile/schema.js";
 import { weekday, upcomingPlanned, asOfLabel, type WeekWeather } from "../weather/assess.js";
@@ -458,6 +459,19 @@ function renderLastSession(
       feedback = `<div class="k">🔍 No raw .FIT for this session and no automatic way to fetch it (Garmin off, an old garmin_mcp build, or no archived activity id). Export it from Garmin Connect → activity → ⚙ → Export Original into data/fit-streams/ and it'll be analysed on the next sync.</div>`;
       break;
   }
+  // Review → plan bridge: a DETERMINISTIC read of how this session landed (computed here, not by the LLM)
+  // that, when it crosses a conservative threshold, flags a change to the days ahead and offers a one-click
+  // gated draft. The flag itself is free (no LLM); the draft is on-demand (/session-adjust re-computes the
+  // signal server-side, then runs the same propose→confirm proposer as "This week"). Hidden in share view
+  // and when there's no key to draft with — the flag without an actionable button would just nag.
+  const signal = !share && hasApiKey ? sessionPlanSignal(d) : null;
+  const bridge = signal
+    ? `<div class="sessadjust" data-date="${escapeHtml(d.date)}" data-sport="${escapeHtml(d.sport)}"${d.durationMin != null ? ` data-dur="${d.durationMin}"` : ""} style="margin-top:12px;padding:10px;border:1px solid #eee;border-radius:8px;background:#fafafa">
+        <div style="font-size:13px;color:#444;margin-bottom:8px">🧭 <b>${escapeHtml(signal.headline)}</b> <span class="muted">${escapeHtml(signal.reasons.join("; "))}</span></div>
+        <button class="actbtn" onclick="sessionAdjust(this)">⚙ Adjust the days ahead</button>
+        <div class="item-proposals"></div>
+      </div>`
+    : "";
   // Multi-session days (a brick, or a triathlete's swim/ride/run) silently collapsed to the longest
   // activity before — say which session this card is about, and offer the others to dive into.
   const multiNote =
@@ -472,6 +486,7 @@ function renderLastSession(
     ${planLine}
     ${multiNote}
     ${feedback}
+    ${bridge}
     ${switcher}
   </div>`;
 }
@@ -1326,6 +1341,20 @@ async function actItem(btn){
     if(!j.proposals||!j.proposals.length){box.innerHTML='<div class="setup-action">'+esc(j.notes||'No automatic edit fits this — make the change in AI Endurance, then ↻ Sync.')+'</div>';btn.disabled=false;return;}
     box.innerHTML=j.proposals.map(proposalHtml).join('');
   }catch(e){box.innerHTML='<div class="k">Error: '+esc(''+e)+'</div>';btn.disabled=false;}
+}
+// Review → plan bridge: draft a gated plan change from how the LAST session landed. The server re-computes
+// the deterministic signal from the session (the client sends only which session, never the trigger text),
+// then runs the same propose→confirm proposer as "This week" — so the proposals render with the same
+// Apply / Dismiss buttons.
+async function sessionAdjust(btn){
+  var box=btn.closest('.sessadjust');var pbox=box.querySelector('.item-proposals');
+  var body={date:box.getAttribute('data-date'),sport:box.getAttribute('data-sport'),durationMin:Number(box.getAttribute('data-dur'))||void 0};
+  btn.disabled=true;pbox.innerHTML='<div class="k">Drafting a plan change from this session…</div>';
+  try{var r=await fetch('/session-adjust',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+    var j=await r.json();
+    if(!j.proposals||!j.proposals.length){pbox.innerHTML='<div class="k">'+esc(j.notes||'No automatic edit fits — make the change in AI Endurance, then ↻ Sync.')+'</div>';btn.disabled=false;return;}
+    pbox.innerHTML=j.proposals.map(proposalHtml).join('');
+  }catch(e){pbox.innerHTML='<div class="k">Error: '+esc(''+e)+'</div>';btn.disabled=false;}
 }
 async function confirmProposal(btn){var box=btn.closest('.proposal');var id=box.getAttribute('data-id');var s=box.querySelector('.reacted');
   var card=btn.closest('.insight');var cardKey=card?card.getAttribute('data-key'):null;s.textContent='Applying…';
