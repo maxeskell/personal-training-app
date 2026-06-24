@@ -14,7 +14,6 @@ import { coachHeadline, tsbBand, rampBand, type Tone, type Headline } from "../i
 import { assembleSession, listRecentSessions, type SessionRef, type SessionDetail } from "./session.js";
 import { config } from "../config.js";
 import type { Profile } from "../profile/schema.js";
-import { summarizeCost, type CostRecord } from "../llm/costLog.js";
 import { weekday, upcomingPlanned, asOfLabel, type WeekWeather } from "../weather/assess.js";
 import type { WaterTempCard } from "../weather/waterTemp.js";
 import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
@@ -104,8 +103,6 @@ export interface DashboardInput {
     bodyBatteryChange?: number;
     deepSleepSec?: number;
   }>;
-  /** LLM cost-log records — drives the API-cost card. */
-  costRecords?: CostRecord[];
   /** Archived .FIT thermal summaries — carry the Garmin activity id the stream auto-download needs. */
   fitSummaries?: FitSummary[];
   /** Whether the server can fetch a missing raw .FIT on demand (Garmin enabled). */
@@ -618,7 +615,6 @@ function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx, share 
   </div>${fuelJs}`;
 }
 
-/** API-cost card: windowed token spend + a monthly projection + the top flows. */
 /** Zones + FTP/threshold markers, grouped per discipline (swim / bike / run) for clear separation. */
 function renderZones(today: AthleteState): string {
   const z = today.zones.value;
@@ -1002,7 +998,7 @@ function shareRaceNames(today: AthleteState, profile?: Profile): string[] {
   return names.filter(Boolean);
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, costRecords, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, seasonReport, seasonProse, career, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, seasonReport, seasonProse, career, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Fuelling — week ahead (deterministic, no LLM on render): per-session pre/during/after from the

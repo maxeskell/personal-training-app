@@ -33,6 +33,25 @@ test("WriteGate.propose() logs a proposal but fires NO write", async () => {
   assert.equal((await log.all()).at(-1)?.status, "proposed");
 });
 
+test("WriteGate.propose() persists `basis` so the confirm surface can cite why (Spec 6 §3)", async () => {
+  const log = await freshLog();
+  const { WriteGate } = await import("../src/guardrails/writeGate.js");
+  const aie = fakeAie();
+  const gate = new WriteGate(aie as never, log);
+  const basis = ["acute:chronic 1.7 HIGH", "33 d to A-race", "taper target TSB −5…+5"];
+  await gate.propose({ tool: "skipWorkout", args: { workoutId: "1" }, rationale: "r", tradeoff: "t", human: "Skip X", basis });
+  // It survives to the persisted record (a fresh process reads it back from the log at confirm time).
+  assert.deepEqual((await log.all()).at(-1)?.basis, basis);
+});
+
+test("WriteGate.propose() omits `basis` entirely when there are no signals (no empty array noise)", async () => {
+  const log = await freshLog();
+  const { WriteGate } = await import("../src/guardrails/writeGate.js");
+  const gate = new WriteGate(fakeAie() as never, log);
+  await gate.propose({ tool: "skipWorkout", args: { workoutId: "1" }, rationale: "r", tradeoff: "t", basis: [] });
+  assert.equal("basis" in ((await log.all()).at(-1) ?? {}), false, "an empty basis is not persisted");
+});
+
 test("WriteGate: propose → confirm fires the write exactly once and marks it executed", async () => {
   const log = await freshLog();
   const { WriteGate } = await import("../src/guardrails/writeGate.js");

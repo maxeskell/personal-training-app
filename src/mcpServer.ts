@@ -153,6 +153,7 @@ export function formatDecisions(all: DecisionRecord[], filter: "all" | "pending"
       ...pending.flatMap((r) => [
         `  [${r.id}] ${r.summary}`,
         ...(r.tradeoff ? [`      trade-off: ${r.tradeoff}`] : []),
+        ...(r.basis?.length ? [`      because: ${r.basis.join("; ")}`] : []),
         `      → confirm id=${r.id}  |  decline id=${r.id}`,
       ]),
     ].join("\n");
@@ -163,6 +164,7 @@ export function formatDecisions(all: DecisionRecord[], filter: "all" | "pending"
       `  ${r.timestamp.slice(0, 16)}  [${r.id}] ${r.kind}/${r.status}`,
       `      ${r.summary}`,
       ...(r.tradeoff ? [`      trade-off: ${r.tradeoff}`] : []),
+      ...(r.basis?.length ? [`      because: ${r.basis.join("; ")}`] : []),
       ...(r.retro ? [`      retro: ${r.retro}`] : []),
     ]),
   ].join("\n");
@@ -795,7 +797,7 @@ function registerWriteTools(server: McpServer): void {
       const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
       const lines = ["Proposed adjustments (nothing changed yet):", ""];
       for (const p of valid) {
-        const proposal = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human });
+        const proposal = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human, basis: p.basis });
         lines.push(`  [${proposal.id}] ${p.human}`, `      ${p.summary} — trade-off: ${p.tradeoff}`);
         if (p.basis.length) lines.push(`      because: ${p.basis.join("; ")}`);
       }

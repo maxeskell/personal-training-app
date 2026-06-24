@@ -17,12 +17,13 @@ test("formatDecisions: pending shows only still-proposed plan-adjusts with confi
   const recs: DecisionRecord[] = [
     { id: "a", timestamp: "2026-06-14T10:00:00Z", kind: "plan-adjust", summary: "Shift long run", tradeoff: "less Z2", status: "proposed" },
     { id: "a", timestamp: "2026-06-14T12:00:00Z", kind: "plan-adjust", summary: "Shift long run", status: "executed" }, // later status wins → not pending
-    { id: "b", timestamp: "2026-06-14T11:00:00Z", kind: "plan-adjust", summary: "Cap Alderford", tradeoff: "no race sharpening", status: "proposed" },
+    { id: "b", timestamp: "2026-06-14T11:00:00Z", kind: "plan-adjust", summary: "Cap Alderford", tradeoff: "no race sharpening", basis: ["acute:chronic 1.6 HIGH", "8 d to A-race"], status: "proposed" },
     { id: "c", timestamp: "2026-06-14T09:00:00Z", kind: "readiness", summary: "green", status: "note" },
   ];
   const pending = formatDecisions(recs, "pending");
   assert.match(pending, /Pending proposals \(1\)/); // only b
   assert.match(pending, /\[b\] Cap Alderford/);
+  assert.match(pending, /because: acute:chronic 1.6 HIGH; 8 d to A-race/); // the cited signals reach the confirm surface
   assert.match(pending, /confirm id=b/);
   assert.doesNotMatch(pending, /\[a\]/); // a was executed
   assert.doesNotMatch(pending, /\[c\]/); // c is a readiness note, not a proposal

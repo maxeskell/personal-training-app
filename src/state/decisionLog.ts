@@ -30,6 +30,13 @@ export interface DecisionRecord {
   tradeoff?: string;
   /** For plan-adjust proposals: the gated write that would fire on acceptance. */
   write?: { tool: string; args: Record<string, unknown> };
+  /**
+   * For plan-adjust proposals: the specific signals the change rests on (acute:chronic, days-to-A-race,
+   * taper target, …). Persisted with the proposal so the confirm surfaces — `decisions pending` (CLI) and
+   * the `decisions`/`confirm` MCP tools — can cite *why* the change is proposed, not just *what* it does
+   * (Spec 6 §3). Populated by the proposer (planAdjust); absent on non-plan-adjust records.
+   */
+  basis?: string[];
   status: DecisionStatus;
   /** For insight-feedback: the stable key of the finding being reacted to. */
   insightKey?: string;
