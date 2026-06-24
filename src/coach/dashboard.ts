@@ -1144,6 +1144,13 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
   const perfZones = [collapse(renderZones(today)), collapse(renderScores(today))].filter((s) => s.trim()).join("\n");
   const perfRace = [raceCard, collapse(renderRacePredictions(today)), insights ? collapse(renderSplits(insights, share)) : ""].filter((s) => s.trim()).join("\n");
 
+  // Plan tab body. Every piece is best-effort (weather can fail to fetch, the season fold degrades to
+  // nothing without a plan), so when ALL of them are absent — e.g. a render right after a restart, before
+  // the weather/season data has loaded — fall back to a friendly note instead of a blank tab. (Moving the
+  // always-present load recap to Performance is what made an empty Plan possible; this keeps it honest.)
+  const seasonFold = seasonReport ? `<hr class="section-rule"><div class="section-rule-label">Season arc</div>${renderSeasonInner(seasonReport, share, seasonProse, true)}` : "";
+  const planBody = [weatherHtml, fuelCard, renderWeeklyProse(seasonProse), seasonFold].filter((s) => s.trim()).join("\n");
+
   return `${pageHead(`Endurance Coach — ${today.date}`)}<body>
 <header class="site-head"><div class="wrap">
   <div class="brand"><h1>Endurance Coach</h1>
@@ -1186,12 +1193,7 @@ ${decideCount > 0 ? `<a class="card nav-link" data-tab="decide" href="#decide" s
 
 <section id="tab-plan" class="tab">
 <p class="tab-intro">Looking forward — this week's sessions, weather and fuelling, then the season ahead.</p>
-${weatherHtml}
-
-${fuelCard}
-
-${renderWeeklyProse(seasonProse)}
-${seasonReport ? `<hr class="section-rule"><div class="section-rule-label">Season arc</div>${renderSeasonInner(seasonReport, share, seasonProse, true)}` : ""}
+${planBody || `<div class="card"><div class="muted">This week's sessions, weather and the season arc appear here once your training data has synced.${share ? "" : " Pull the latest with <b>🔄 Sync latest data</b> at the top, or give it a moment if the dashboard just restarted."}</div></div>`}
 </section>
 
 <section id="tab-decide" class="tab">

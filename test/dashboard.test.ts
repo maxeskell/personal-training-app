@@ -638,6 +638,17 @@ test("Decide reads in two halves: Decisions (advice + This week) above Housekeep
   assert.ok(decide.indexOf("Set up &amp; improve") > iHousekeeping, "Set up & improve sits in the Housekeeping half");
 });
 
+test("Plan tab never goes blank: with no weather/fuel/season it shows a sync hint, not an empty tab", () => {
+  // The degrade-don't-crash case the load-card move exposed: a render before weather/season have loaded.
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  const html = renderDashboard({ window: [s], decisions: [] });
+  const plan = html.slice(html.indexOf('id="tab-plan"'), html.indexOf('id="tab-decide"'));
+  assert.match(plan, /appear here once your training data has synced/, "an empty Plan shows the sync hint, not nothing");
+  // It really had no cards to show — the hint is a genuine fallback, not shown alongside content.
+  assert.doesNotMatch(plan, /Week ahead — plan vs weather/);
+  assert.doesNotMatch(plan, /section-rule-label">Season arc/);
+});
+
 test("Performance groups its cards into labelled sections, with the race cards under 'Race readiness'", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
   const html = renderDashboard({ window: [s], decisions: [] });
