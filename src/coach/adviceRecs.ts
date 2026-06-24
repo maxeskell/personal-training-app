@@ -305,6 +305,6 @@ export function renderCoachRecs(
     )
     .join("");
   return `<div class="card"><h2>Coach's recommendations</h2>
-  <div class="k" style="margin-bottom:6px">Action points distilled from your latest <b>readiness</b>, <b>deep-dive</b> and <b>ask</b> write-ups, grouped by where they came from — react to shape what the coach surfaces next: 👍 lifts that family · 👎 down-ranks it · 💤 snooze ~2 weeks · 🚫 ignore for good. Each is recorded by key, so you can also <code>retrospect</code> on how it held up.</div>
+  <div class="k" style="margin-bottom:6px">Action points distilled from your latest <b>readiness</b>, <b>deep-dive</b> and <b>ask</b> write-ups, grouped by where they came from. Reacting shapes what the coach surfaces next; each is recorded by key, so you can <code>retrospect</code> on how it held up.</div>
   <div class="setup">${groupsHtml}</div></div>`;
 }

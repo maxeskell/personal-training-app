@@ -722,9 +722,27 @@ const setupListHtml = (its: SetupItem[], reactions?: Map<string, InsightReaction
  * stays gone ~2wk — a calm hub, not a nag. The group headings only appear when more than one section is
  * present. Omitted in share/screenshot mode and whenever there's nothing outstanding.
  */
-export function renderSetupImprove(profile: Profile | undefined, share = false, opts: SetupOptions = {}): string {
+/**
+ * Optional view controls so the Decide tab can render the setup hub split across its two halves: the
+ * "This week" coaching cues sit with the advice, while "Finish setup" + "Worth considering" sit in the
+ * housekeeping half. Omitted → the original single all-groups card (callers/tests that pass no view).
+ */
+export interface SetupView {
+  /** Render only these groups (default: all three). */
+  only?: SetupGroup[];
+  /** Card heading (default "Set up & improve"). */
+  heading?: string;
+  /** The card's muted lead line (trusted HTML; default explains the full hub). The shared 👍/👎/💤/🚫
+   *  legend is hoisted to the Decide tab intro, so a per-card lead keeps only its own specific twist. */
+  intro?: string;
+}
+
+const DEFAULT_SETUP_INTRO = `What to do next — all actioned right here. <b>This week</b> cards are your call: 👍 Agree / 👎 Disagree / 💤 Snooze on fuelling, gear and recovery; a training change has <b>Make this change</b> (applies it in AI Endurance after you confirm the exact edit, or hands you the precise steps) — once applied it shows <b>✓ applied</b> and stops asking. <b>Finish setup</b> tasks open for exactly how to do them, and each carries <b>✓ Done</b> (mark it complete — an AI-Endurance gap is also written back to your profile so it stays gone), <b>💤 Snooze</b> (hide ~2 weeks) and <b>🚫 Ignore</b> (don't show again). A gap you've already filled in AI Endurance clears itself on the next sync.`;
+
+export function renderSetupImprove(profile: Profile | undefined, share = false, opts: SetupOptions = {}, view: SetupView = {}): string {
   if (share) return "";
-  const items = buildSetupItems(profile, opts);
+  const all = buildSetupItems(profile, opts);
+  const items = view.only ? all.filter((it) => view.only!.includes(it.group)) : all;
   if (!items.length) return "";
   const groups: SetupGroup[] = ["finish_setup", "this_week", "worth_considering"];
   const present = groups.filter((g) => items.some((it) => it.group === g));
@@ -734,7 +752,7 @@ export function renderSetupImprove(profile: Profile | undefined, share = false, 
     present.length <= 1
       ? setupListHtml(items, reactions, appliedKeys)
       : present.map((g) => `<h3 class="setup-group">${GROUP_HEADING[g]}</h3>${setupListHtml(items.filter((it) => it.group === g), reactions, appliedKeys)}`).join("");
-  return `<div class="card"><h2>Set up &amp; improve</h2>
-  <div class="k" style="margin-bottom:6px">What to do next — all actioned right here. <b>This week</b> cards are your call: 👍 Agree / 👎 Disagree / 💤 Snooze on fuelling, gear and recovery; a training change has <b>Make this change</b> (applies it in AI Endurance after you confirm the exact edit, or hands you the precise steps) — once applied it shows <b>✓ applied</b> and stops asking. <b>Finish setup</b> tasks open for exactly how to do them, and each carries <b>✓ Done</b> (mark it complete — an AI-Endurance gap is also written back to your profile so it stays gone), <b>💤 Snooze</b> (hide ~2 weeks) and <b>🚫 Ignore</b> (don't show again). A gap you've already filled in AI Endurance clears itself on the next sync.</div>
+  return `<div class="card"><h2>${escapeHtml(view.heading ?? "Set up & improve")}</h2>
+  <div class="k" style="margin-bottom:6px">${view.intro ?? DEFAULT_SETUP_INTRO}</div>
   ${body}</div>`;
 }

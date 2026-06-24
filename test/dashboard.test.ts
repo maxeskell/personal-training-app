@@ -603,6 +603,41 @@ test("renderSetupImprove: renders the card, tags routes + the three task actions
   assert.match(nasty, /&lt;script&gt;/);
 });
 
+test("renderSetupImprove view: renders only the named groups, with a custom heading (the Decide-tab split)", () => {
+  const profile = { schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile;
+  const today = new Date().toISOString().slice(0, 10);
+  const weeklyReview = { date: today, actions: ["Add a Z2 ride midweek"] };
+  // This-week only → the custom heading + the weekly action, and NOT the finish-setup gap.
+  const wk = renderSetupImprove(profile, false, { questions: [], weeklyReview }, { only: ["this_week"], heading: "This week" });
+  assert.match(wk, /<h2>This week<\/h2>/);
+  assert.match(wk, /Add a Z2 ride midweek/);
+  assert.doesNotMatch(wk, /Set your swim CSS/);
+  // Finish-setup only → the default heading + the gap, and NOT the weekly action.
+  const fs = renderSetupImprove(profile, false, { questions: [], weeklyReview }, { only: ["finish_setup"], heading: "Set up & improve" });
+  assert.match(fs, /Set up &amp; improve/);
+  assert.match(fs, /Set your swim CSS/);
+  assert.doesNotMatch(fs, /Add a Z2 ride midweek/);
+});
+
+test("Decide reads in two halves: Decisions (advice + This week) above Housekeeping (data changes + setup)", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  const ins = buildInsights(s, undefined, {});
+  ins.topFindings = [{ family: "Durability", title: "Run durability slipping", severity: "watch", detail: "d", evidence: "e", confidence: 0.7, key: "dur" } as Finding];
+  const profile = { schema_version: 1, identity: {}, ai_endurance_todo: { swim_css: "not_set" } } as Profile;
+  const today = new Date().toISOString().slice(0, 10);
+  const weeklyReview = { date: today, actions: ["Add a Z2 ride midweek"] };
+  const html = renderDashboard({ window: [s], decisions: [], insights: ins, profile, weeklyReview });
+  const decide = html.slice(html.indexOf('id="tab-decide"'), html.indexOf('id="tab-performance"'));
+  const iDecisions = decide.indexOf('section-rule-label">Decisions');
+  const iHousekeeping = decide.indexOf('section-rule-label">Housekeeping');
+  assert.ok(iDecisions > -1 && iHousekeeping > iDecisions, "Decisions half is labelled and comes before Housekeeping");
+  // Advice + the lifted This-week card sit in the Decisions half; the setup hub sits in Housekeeping.
+  assert.ok(decide.indexOf("Top insights — your call") < iHousekeeping, "Top insights is in the Decisions half");
+  const iThisWeek = decide.indexOf("<h2>This week</h2>");
+  assert.ok(iThisWeek > iDecisions && iThisWeek < iHousekeeping, "This week is lifted into the Decisions half");
+  assert.ok(decide.indexOf("Set up &amp; improve") > iHousekeeping, "Set up & improve sits in the Housekeeping half");
+});
+
 test("buildSetupItems: stable keys + a dismissed (snoozed) key is dropped, freeing its slot", () => {
   const profile = {
     schema_version: 1,
