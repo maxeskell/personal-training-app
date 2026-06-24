@@ -98,7 +98,9 @@ tr.total td{border-top:2px solid #e7d9c6;border-bottom:0;font-weight:600}
 .acts .ignore:hover{background:#f3f3f3}.reacted{font-size:11px;color:#1a8a3a;margin-left:4px}
 .acts .agree.on{background:#e6f5ea;border-color:#1a8a3a;font-weight:600}.acts .disagree.on{background:#fdeaea;border-color:#c0392b;font-weight:600}
 .insight[data-reaction-state="applied"]{opacity:.65}
-.newbadge{background:#1558d6;color:#fff;font-size:9px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:9px;margin-right:6px;vertical-align:middle}
+.newbadge{background:#1558d6;color:#fff;font-size:10px;font-weight:700;letter-spacing:.04em;padding:1px 6px;border-radius:9px;margin-right:6px;vertical-align:middle}
+.is-new{box-shadow:inset 3px 0 0 #1558d6}
+.decide-new-rollup{display:inline-block;background:#eaf1ff;border:1px solid #cfe0ff;color:#1558d6;font-weight:600;font-size:13px;padding:4px 10px;border-radius:8px;margin-bottom:8px}
 .age{font-size:11px;color:#bbb;margin-top:4px}
 .route{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.02em;color:#6b5b45;background:#f4f1ea;border:1px solid #e7d9c6;border-radius:9px;padding:1px 7px;margin-left:4px;white-space:nowrap}
 .cat{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;border-radius:9px;padding:1px 7px;margin-right:6px;vertical-align:middle;white-space:nowrap}

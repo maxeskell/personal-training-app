@@ -70,15 +70,15 @@ test("adversarial finding/goal text can't break handlers or inject markup (Spec 
   for (const [i, sc] of scripts.entries()) assert.doesNotThrow(() => new Function(sc), `script ${i}`);
 });
 
-test("insights box: a saved like is highlighted + reversible, snooze is separate, NEW/age flag freshness", () => {
+test("insights box: a saved like is highlighted + reversible, snooze is separate, NEW flags what you haven't actioned", () => {
   const s = emptyState("2026-06-08", new Date().toISOString());
   const ins = buildInsights(s, undefined, {});
   ins.topFindings = [
     { family: "Durability", title: "Run durability slipping", severity: "watch", detail: "d", evidence: "e", confidence: 0.7, key: "dur" } as Finding,
     { family: "Load & form", title: "TSB negative", severity: "watch", detail: "d", evidence: "e", confidence: 0.7, key: "tsb" } as Finding,
   ];
-  const reactions = new Map<string, InsightReaction>([["dur", "agree"]]); // liked
-  const firstSeen = new Map<string, string>([["dur", new Date(Date.now() - 6 * 86_400_000).toISOString()]]); // tsb absent → brand new
+  const reactions = new Map<string, InsightReaction>([["dur", "agree"]]); // liked → actioned
+  const firstSeen = new Map<string, string>([["dur", new Date(Date.now() - 6 * 86_400_000).toISOString()]]);
   const html = renderDashboard({ window: [s], decisions: [], insights: ins, reactions, firstSeen });
 
   // Liked → the Like button carries the 'on' state and the saved label; dislike stays available (not hidden).
@@ -88,10 +88,16 @@ test("insights box: a saved like is highlighted + reversible, snooze is separate
   // Snooze is a separate hide action.
   assert.match(html, /💤 Snooze/);
   assert.match(html, /data-reaction="snooze"/);
-  // dur is 6 days old → an age line, no NEW; tsb has no first-seen → a NEW badge, and the header counts it.
+  // The first-seen line stays as informational age context (NOT the newness signal any more).
   assert.match(html, /first seen .* · 6d/);
-  assert.match(html, /class="newbadge">NEW</);
-  assert.match(html, /1 new/);
+  // Newness is "until you action it": the un-reacted tsb is NEW (badge + is-new bar); the liked dur is not.
+  assert.match(html, /class="insight sev-watch is-new" data-key="tsb"[^>]*>\s*<div>[^<]*<span class="badge"[^>]*>watch<\/span><span class="newbadge">NEW</);
+  assert.match(html, /class="insight sev-watch" data-key="dur"/); // liked → no is-new, no NEW pill
+  assert.doesNotMatch(html, /data-key="dur"[^>]*>\s*<div>[^<]*<span class="badge"[^>]*>watch<\/span><span class="newbadge">/);
+  // Exactly one of the two is un-actioned → the box header + the Decide roll-up say so, and the teaser counts it.
+  assert.match(html, /1 not yet actioned/);
+  assert.match(html, /▲ 1 not yet actioned/);
+  assert.match(html, /<span style="color:#1558d6">1 new<\/span>/);
   // The page still parses (the rewritten feedback() handler included).
   for (const [i, sc] of [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].entries()) assert.doesNotThrow(() => new Function(sc[1]), `script ${i}`);
 });
@@ -587,8 +593,9 @@ test("renderSetupImprove: renders the card, tags routes + the three task actions
   assert.match(html, /in AI Endurance/);
   assert.match(html, /discuss with coach/);
   // Each item is an expandable <details> carrying its stable key, the three distinct actions (each click
-  // stops the dropdown toggling), and a self-serve proposed action in the body.
-  assert.match(html, /<details class="setup-item" data-key="setup:aie:swim_css"/);
+  // stops the dropdown toggling), and a self-serve proposed action in the body. A fresh (un-reacted) task
+  // is flagged "new until you action it" — the is-new class + NEW pill.
+  assert.match(html, /<details class="setup-item is-new" data-key="setup:aie:swim_css"[^>]*><summary><span class="newbadge">NEW<\/span>/);
   assert.match(html, /class="su-act su-done"[^>]*onclick="event\.stopPropagation\(\);completeSetup\(this\)"/);
   assert.match(html, /class="su-act su-snooze"[^>]*onclick="event\.stopPropagation\(\);dismissSetup\(this\)"/);
   assert.match(html, /class="su-act su-ignore"[^>]*onclick="event\.stopPropagation\(\);ignoreSetup\(this\)"/);
@@ -1034,6 +1041,42 @@ test("Data changes card: surfaces an auto-detected metric change with agree/disa
   assert.doesNotMatch(pinned, /250 W → <b>262 W/); // the change is suppressed while pinned
   // No card when nothing changed.
   assert.doesNotMatch(renderDashboard({ window: [mk(todayIso(), 250)], decisions: [] }), /Data changes — your call/);
+});
+
+test("Data changes: an un-actioned change is flagged NEW; agreeing clears it; a pinned override row is never flagged", () => {
+  const mk = (date: string, ftp: number) => {
+    const s = emptyState(date, new Date().toISOString());
+    s.thresholds = { value: { bikeFtpW: ftp }, source: "garmin" };
+    return s;
+  };
+  const window = [mk("2026-06-13", 250), mk(todayIso(), 262)];
+  // Un-reacted → the change row carries the is-new bar + a NEW pill before its label, and the roll-up counts it.
+  const fresh = renderDashboard({ window, decisions: [] });
+  assert.match(fresh, /class="insight is-new" data-key="change:bikeFtpW:262"/);
+  assert.match(fresh, /data-key="change:bikeFtpW:262"[^>]*>\s*<div><span class="newbadge">NEW<\/span><b>Bike FTP<\/b>/);
+  assert.match(fresh, /▲ 1 not yet actioned/);
+  // Agreeing (a recorded reaction) clears the flag — the row stays shown ("👍 agreed") but no longer NEW.
+  const agreed = renderDashboard({ window, decisions: [], reactions: new Map([["change:bikeFtpW:262", "agree"]]) });
+  assert.match(agreed, /class="insight" data-key="change:bikeFtpW:262"/);
+  assert.doesNotMatch(agreed, /data-key="change:bikeFtpW:262"[^>]*>\s*<div><span class="newbadge">/);
+  assert.doesNotMatch(agreed, /not yet actioned/);
+  // A pinned override row is, by definition, already actioned — it must never carry the is-new bar or pill.
+  const pinned = renderDashboard({ window, decisions: [], metricOverrides: { bikeFtpW: { when: 262, use: 250, ts: "2026-06-14T00:00:00Z" } } });
+  assert.match(pinned, /📌 <b>Bike FTP<\/b>: using <b>250 W<\/b>/);
+  assert.doesNotMatch(pinned, /is-new[^>]*data-metric="bikeFtpW"/);
+  assert.doesNotMatch(pinned, /<div class="insight" data-metric="bikeFtpW">\s*<div>📌[^<]*<span class="newbadge">/);
+});
+
+test("Load & trends: durability shows BOTH run and ride, so a bike-durability headline has its numbers on a table", () => {
+  const s = emptyState(todayIso(), new Date().toISOString());
+  const ins = buildInsights(s, undefined, {});
+  ins.durability = {
+    run: { recent: -3.1, prior: -2.8, deltaPct: null, n: 7 },
+    ride: { recent: -5.8, prior: -3.5, deltaPct: null, n: 8 },
+  };
+  const html = renderDashboard({ window: [s], decisions: [], insights: ins });
+  assert.match(html, /<td>Run durability<\/td><td class="num">-3.1<\/td>/);
+  assert.match(html, /<td>Ride durability<\/td><td class="num">-5.8<\/td><td class="muted" colspan="2">was -3.5/);
 });
 
 test("Data changes card: surfaces an AIE-vs-Garmin disagreement side by side with a one-tap source pick", () => {

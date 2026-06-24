@@ -6,7 +6,7 @@ import { categorize, isPlanEdit, CATEGORY_LABEL, type ActionCategory } from "./w
 import type { Profile } from "../profile/schema.js";
 import { PROFILE_QUESTIONS, WAYS_TO_ANSWER, type ProfileQuestion } from "../profile/questions.js";
 import type { InsightReaction } from "../state/decisionLog.js";
-import { escapeHtml, asOf, ageDaysFrom } from "./dashboardHelpers.js";
+import { escapeHtml, asOf, ageDaysFrom, isDecideItemNew, newBadge } from "./dashboardHelpers.js";
 
 /**
  * The "Set up & improve" subsystem (issue #112): the dashboard's deterministic, LLM-free action hub.
@@ -624,8 +624,9 @@ function reactableCardHtml(it: SetupItem, reactions?: Map<string, InsightReactio
   const why = it.why ? `<div class="age">${escapeHtml(it.why)}</div>` : "";
   const detail = it.action ? `<div class="ev">${escapeHtml(it.action)}</div>` : "";
   const familyAttr = it.family ? ` data-family="${escapeHtml(it.family)}"` : "";
-  return `<div class="insight" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-reaction-state="${state}"${familyAttr}>
-    <div>${categoryChip(it.category)}<b>${escapeHtml(it.label)}</b></div>
+  const isNew = isDecideItemNew(it.key, reactions);
+  return `<div class="insight${isNew ? " is-new" : ""}" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-reaction-state="${state}"${familyAttr}>
+    <div>${categoryChip(it.category)}${newBadge(it.key, reactions)}<b>${escapeHtml(it.label)}</b></div>
     ${detail}${why}
     <div class="acts">
       <button class="agree${on("like")}" data-reaction="like" onclick="feedback(this)">👍 Agree</button>
@@ -657,8 +658,11 @@ function applyableCardHtml(it: SetupItem, reactions?: Map<string, InsightReactio
       <button class="ignore" title="Ignore this advice — don't show it again" onclick="ignoreCard(this)">🚫 Ignore</button>
       <span class="reacted"></span>
     </div>`;
-  return `<div class="insight" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-rec="${escapeHtml(it.rec ?? it.label)}" data-reaction-state="${applied ? "applied" : ""}">
-    <div>${categoryChip(it.category)}<b>${escapeHtml(it.label)}</b></div>
+  // "New" until you've actioned it — applied counts as actioned (it shows ✓ applied), so only an
+  // un-applied, un-reacted card is flagged.
+  const isNew = !applied && isDecideItemNew(it.key, reactions);
+  return `<div class="insight${isNew ? " is-new" : ""}" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-rec="${escapeHtml(it.rec ?? it.label)}" data-reaction-state="${applied ? "applied" : ""}">
+    <div>${categoryChip(it.category)}${isNew ? newBadge(it.key, reactions) : ""}<b>${escapeHtml(it.label)}</b></div>
     ${hint}${why}
     <div class="item-proposals"></div>
     ${acts}
@@ -674,7 +678,10 @@ function applyableCardHtml(it: SetupItem, reactions?: Map<string, InsightReactio
  * gap the server also writes it `resolved` into the profile); **💤 Snooze** hides it ~2 weeks then it can
  * resurface; **🚫 Ignore** drops the advice for good.
  */
-function setupTaskHtml(it: SetupItem): string {
+function setupTaskHtml(it: SetupItem, reactions?: Map<string, InsightReaction>): string {
+  // A finish-setup task only renders while it's outstanding (done/snooze/ignore all hide it), so a shown
+  // task is by definition un-actioned — flag it NEW until you deal with it.
+  const isNew = isDecideItemNew(it.key, reactions);
   const note = it.why ? ` — <span class="muted">${escapeHtml(it.why)}</span>` : "";
   const body = it.action ? `<div class="setup-action">${escapeHtml(it.action)}</div>` : "";
   const links = it.links?.length ? `<div class="setup-links">${it.links.map(setupLinkHtml).join("")}</div>` : "";
@@ -688,7 +695,7 @@ function setupTaskHtml(it: SetupItem): string {
     `<button class="su-act su-snooze" title="Not now — hide this for ~2 weeks" onclick="event.stopPropagation();dismissSetup(this)">💤 Snooze</button>` +
     `<button class="su-act su-ignore" title="Ignore this advice — don't show it again" onclick="event.stopPropagation();ignoreSetup(this)">🚫 Ignore</button>` +
     `</span>`;
-  return `<details class="setup-item" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><summary><strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> ${acts}</summary>${body}${links}</details>`;
+  return `<details class="setup-item${isNew ? " is-new" : ""}" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><summary>${newBadge(it.key, reactions)}<strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> ${acts}</summary>${body}${links}</details>`;
 }
 
 /** One safe anchor in a setup item's dropdown. Only renders `/`-relative (in-app) or http(s) hrefs — an
@@ -705,7 +712,7 @@ function setupLinkHtml(l: SetupLink): string {
 function setupItemHtml(it: SetupItem, reactions?: Map<string, InsightReaction>, appliedKeys?: Set<string>): string {
   if (it.applyable) return applyableCardHtml(it, reactions, appliedKeys);
   if (it.reactable) return reactableCardHtml(it, reactions);
-  return setupTaskHtml(it);
+  return setupTaskHtml(it, reactions);
 }
 
 const setupListHtml = (its: SetupItem[], reactions?: Map<string, InsightReaction>, appliedKeys?: Set<string>): string =>

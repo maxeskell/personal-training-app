@@ -11,6 +11,21 @@ export { escapeHtml };
 
 export const TONE_COLOR: Record<Tone, string> = { good: "#1a8a3a", neutral: "#777", warn: "#c98a00", bad: "#c0392b" };
 
+/**
+ * A Decide-inbox item is "new" until you've done something with it (👍/👎/💤/✓/📌). We key newness off the
+ * reaction map the cards already carry: a RENDERED item with no reaction is one you haven't triaged — the
+ * snoozed/dismissed/done items are filtered out before render, so a present-but-reacted key means like /
+ * dislike / pin (you dealt with it). Untyped on the value so callers needn't import the reaction enum. Pure.
+ */
+export function isDecideItemNew(key: string, reactions?: ReadonlyMap<string, unknown>): boolean {
+  return !reactions?.has(key);
+}
+
+/** The "NEW" pill for an un-actioned Decide item (empty string once it's been reacted to). Pure. */
+export function newBadge(key: string, reactions?: ReadonlyMap<string, unknown>): string {
+  return isDecideItemNew(key, reactions) ? `<span class="newbadge">NEW</span>` : "";
+}
+
 export function daysTo(fromIso: string, toIso: string): number {
   const a = new Date(`${fromIso}T00:00:00Z`).getTime();
   const b = new Date(`${String(toIso).slice(0, 10)}T00:00:00Z`).getTime();
