@@ -659,7 +659,19 @@ test("Performance groups its cards into labelled sections, with the race cards u
   assert.ok(iRace > iForm, "Race readiness comes after Form & load");
   // The last-7-days load recap sits in Form & load; the Race calendar sits under Race readiness.
   assert.ok(perf.indexOf("Last 7 days — load by sport") < iRace, "the load recap is in the Form & load group");
-  assert.ok(perf.indexOf("<h2>Race</h2>") > iRace, "the Race table sits under Race readiness");
+  assert.ok(perf.indexOf("<h2>Races</h2>") > iRace, "the Races card sits under Race readiness");
+});
+
+test("the Races card merges the calendar + Garmin distance predictions into one card (no standalone 'Estimated race times')", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.racePredictions = { value: { date: "2026-06-01", predictions: [{ label: "10 km", timeSeconds: 2400 }, { label: "Half", timeSeconds: 5400 }] }, source: "garmin" } as never;
+  const html = renderDashboard({ window: [s], decisions: [] });
+  const perf = html.slice(html.indexOf('id="tab-performance"'));
+  // One "Races" card holds both the calendar and the predictions; the old standalone card heading is gone.
+  assert.equal((perf.match(/<h2>Races<\/h2>/g) || []).length, 1, "a single Races card");
+  assert.ok(!perf.includes("<h2>Estimated race times</h2>"), "no standalone Estimated race times card");
+  assert.match(perf, /Estimated race times/, "predictions fold in as a sub-section");
+  assert.match(perf, /10 km/, "a predicted distance renders inside the Races card");
 });
 
 test("buildSetupItems: stable keys + a dismissed (snoozed) key is dropped, freeing its slot", () => {
@@ -1092,6 +1104,22 @@ test("Today card shows each readiness signal once: Acute:chronic + limiter live 
   assert.match(html, /Recovery limiter: ess/); // stated once, with context, in the drivers line
   assert.equal((html.match(/Acute:chronic/g) || []).length, 1, "ACWR shown once (drivers), not also a chip");
   assert.ok(!/<b>ess<\/b>/.test(html), "no standalone limiter chip duplicating the drivers line");
+});
+
+test("Today header shows HRV and Sleep once — a coloured number tile, not also a chip", () => {
+  const s = emptyState("2026-06-08", new Date().toISOString());
+  s.sleep = { value: { score: 82, hours: 7.6 }, source: "garmin" } as never;
+  s.hrvOvernight = { value: 41, source: "garmin" } as never;
+  s.hrvStatus = { value: { status: "BALANCED" }, source: "garmin" } as never;
+  const ins = buildInsights(s, undefined, {});
+  const html = renderDashboard({ window: [s], decisions: [], insights: ins });
+  const today = html.slice(html.indexOf('id="tab-today"'), html.indexOf('id="tab-plan"'));
+  // Each appears once — in its number tile, not also as a chip pill (chips render <span class="k">LABEL</span>).
+  assert.ok(!today.includes('<span class="k">Sleep</span>'), "no separate Sleep chip");
+  assert.ok(!today.includes('<span class="k">HRV</span>'), "no separate HRV chip");
+  // The Sleep tile carries the score with the hours as a sub; the HRV tile value is coloured by status.
+  assert.match(today, /<div class="k">Sleep<\/div><div class="v"[^>]*>82<\/div><div class="k">7\.6h<\/div>/);
+  assert.match(today, /<div class="k">HRV \(ms\)<\/div><div class="v" style="color:[^"]+">41<\/div>/);
 });
 
 test("buildSetupItems: a gain already in the Top-insights box is dropped from This week (no cross-card repeat)", () => {

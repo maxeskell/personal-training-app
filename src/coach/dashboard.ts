@@ -767,19 +767,6 @@ function renderScores(today: AthleteState): string {
   </div>`;
 }
 
-/** Estimated race times across standard distances (Garmin race predictor). */
-function renderRacePredictions(today: AthleteState): string {
-  const rp = today.racePredictions.value;
-  if (!rp || !rp.predictions.length) return "";
-  const rows = rp.predictions
-    .map((p) => `<tr><td>${escapeHtml(p.label)}</td><td class="num">${hms(p.timeSeconds)}</td></tr>`)
-    .join("");
-  return `<div class="card"><h2>Estimated race times</h2>
-    <table><tr class="k"><td>Distance</td><td>Predicted</td></tr>${rows}</table>
-    <div class="k" style="margin-top:8px">Garmin race predictor${rp.date ? ` (as of ${escapeHtml(rp.date)})` : ""} — MODEL estimate; watch the trend, and see "Estimated race splits" below for race-day pacing.</div>
-  </div>`;
-}
-
 /** Estimated race splits dependent on training: a finish-time RANGE + per-segment pacing. */
 /** Split a caveat string into sentences, keeping terminators. Splits on a period followed by
  *  whitespace, so a decimal like "1.9%" (no following space) stays one token. */
@@ -915,9 +902,14 @@ function renderHeader(today: AthleteState, hl: Headline | null, decisions: Decis
   const hrvInDrivers = showDrivers && !!hrvStatus && hrvStatus.toUpperCase() !== "BALANCED";
   const stress = latestGar?.avgStressLevel;
   const recharge = latestGar?.bodyBatteryChange;
+  // Sleep and HRV used to show TWICE in this card — as a status chip and again as a bottom number tile.
+  // Each now appears once: its number in the tile, coloured by status (chips below are only the flags that
+  // have no tile of their own). Tones reuse the old chip thresholds.
+  const sleepScore = today.sleep.value?.score ?? null;
+  const sleepHours = today.sleep.value?.hours ?? null;
+  const sleepColor = sleepScore == null ? "" : TONE_COLOR[sleepScore >= 70 ? "good" : sleepScore >= 50 ? "warn" : "bad"];
+  const hrvColor = hrvStatus ? TONE_COLOR[/balanced/i.test(hrvStatus) ? "good" : "warn"] : "";
   const chips = [
-    today.sleep.value?.score != null ? chip("Sleep", `${today.sleep.value.score}`, today.sleep.value.score >= 70 ? "good" : today.sleep.value.score >= 50 ? "warn" : "bad") : "",
-    hrvStatus && !hrvInDrivers ? chip("HRV", hrvStatus, /balanced/i.test(hrvStatus) ? "good" : "warn") : "",
     ts?.acwrStatus && !acwrInDrivers ? chip("Acute:chronic", `${ts.loadRatio ?? "?"} ${ts.acwrStatus}`, ts.acwrStatus.toUpperCase() === "HIGH" ? "bad" : "good") : "",
     stress != null ? chip("Day stress", `${Math.round(stress)}`, stress >= 50 ? "warn" : "good") : "",
     recharge != null ? chip("Overnight recharge", `+${Math.round(recharge)}`, recharge >= 40 ? "good" : "warn") : "",
@@ -932,12 +924,12 @@ function renderHeader(today: AthleteState, hl: Headline | null, decisions: Decis
     ${hl?.action ? `<div style="background:${color};color:#fff;border-radius:8px;padding:10px 12px;font-size:14px;margin:6px 0 8px">➡️ ${escapeHtml(redact(hl.action))}</div>
       <button class="actbtn" onclick="actPlan()">⚙ Turn this into a plan change</button><div id="proposals"></div>` : ""}
     ${hl && hl.drivers.length ? `<div class="k" style="margin-bottom:10px">${hl.drivers.map((d) => escapeHtml(redact(d))).join(" · ")}</div>` : ""}
-    <div style="margin:6px 0 12px">${chips}</div>
+    ${chips ? `<div style="margin:6px 0 12px">${chips}</div>` : ""}
     ${narrative ? `<details><summary style="cursor:pointer;font-size:13px;color:#888">Readiness detail</summary><p style="font-size:14px;color:#444;margin:8px 0">${escapeHtml(redact(narrative))}</p></details>` : ""}
     <div class="grid" style="margin-top:6px">
-      <div><div class="k">HRV (ms)</div><div class="v">${fmt(today.hrvOvernight.value)}</div></div>
+      <div><div class="k">HRV (ms)</div><div class="v"${hrvColor ? ` style="color:${hrvColor}"` : ""}>${fmt(today.hrvOvernight.value)}</div>${hrvStatus && !hrvInDrivers ? `<div class="k">${escapeHtml(hrvStatus)}</div>` : ""}</div>
       <div><div class="k">Resting HR</div><div class="v">${fmt(today.restingHr.value)}</div></div>
-      <div><div class="k">Sleep (h)</div><div class="v">${fmt(today.sleep.value?.hours, 1)}</div></div>
+      <div><div class="k">Sleep</div><div class="v"${sleepColor ? ` style="color:${sleepColor}"` : ""}>${sleepScore ?? "—"}</div>${sleepHours != null ? `<div class="k">${sleepHours.toFixed(1)}h</div>` : ""}</div>
       <div><div class="k">Cardio rec.</div><div class="v">${fmt(r?.cardioRecovery)}</div></div>
     </div>
   </div>`;
@@ -1137,12 +1129,22 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
   ${trendRows ? `<table>${trendRows}</table>` : '<div class="muted">Backfill the Garmin daily archive to populate trends (npm run backfill).</div>'}
   <div class="k" style="margin-top:8px">From the backfilled Garmin daily history.</div>
 </div>`);
-  const raceCard = `<div class="card"><h2>Race</h2>
-  <table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>
+  // One "Races" card: your race calendar first, with the standard-distance Garmin predictions folded in
+  // as a sub-section (the old standalone "Estimated race times" card). Per-race day pacing stays in the
+  // "Estimated race splits" card below — it's race-specific and large enough to keep separate.
+  const rp = today.racePredictions.value;
+  const racePredInner = rp && rp.predictions.length
+    ? `<div class="disch" style="margin-top:16px">Estimated race times</div>
+    <table><tr class="k"><td>Distance</td><td>Predicted</td></tr>${rp.predictions.map((p) => `<tr><td>${escapeHtml(p.label)}</td><td class="num">${hms(p.timeSeconds)}</td></tr>`).join("")}</table>
+    <div class="k" style="margin-top:8px">Garmin race predictor${rp.date ? ` (as of ${escapeHtml(rp.date)})` : ""} — MODEL estimate; watch the trend, and see "Estimated race splits" below for race-day pacing.</div>`
+    : "";
+  const racesCard = `<div class="card"><h2>Races</h2>
+  ${racePredInner ? `<div class="disch">Your calendar</div>` : ""}<table><tr class="k"><td>Event</td><td>Date</td><td>Countdown</td><td>Priority</td></tr>${raceRows || '<tr><td colspan="4" class="muted">no race goals</td></tr>'}</table>
+  ${racePredInner}
 </div>`;
   const perfFormLoad = [insights ? collapse(renderSignals(insights)) : "", trendsCard, collapse(loadCard)].filter((s) => s.trim()).join("\n");
   const perfZones = [collapse(renderZones(today)), collapse(renderScores(today))].filter((s) => s.trim()).join("\n");
-  const perfRace = [raceCard, collapse(renderRacePredictions(today)), insights ? collapse(renderSplits(insights, share)) : ""].filter((s) => s.trim()).join("\n");
+  const perfRace = [racesCard, insights ? collapse(renderSplits(insights, share)) : ""].filter((s) => s.trim()).join("\n");
 
   // Plan tab body. Every piece is best-effort (weather can fail to fetch, the season fold degrades to
   // nothing without a plan), so when ALL of them are absent — e.g. a render right after a restart, before
