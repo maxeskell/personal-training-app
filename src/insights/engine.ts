@@ -346,42 +346,48 @@ function formAndIntensityFindings(
 }
 
 function efficiencyDurabilityFindings(
-  efRun: ReturnType<typeof efTrend>,
-  durRun: ReturnType<typeof durabilityTrend>,
+  sport: "Run" | "Ride",
+  efT: ReturnType<typeof efTrend>,
+  durT: ReturnType<typeof durabilityTrend>,
   hasThermal: boolean,
 ): Finding[] {
   const out: Finding[] = [];
+  // Discipline-aware labels so this serves run AND bike from one detector. Bike EF (power÷HR off a power
+  // meter) is if anything a cleaner aerobic-decoupling read than run power, so it's worth surfacing too.
+  const label = sport === "Run" ? "Run" : "Bike"; // matches the dashboard's discipline naming (🚴 Bike)
+  const noun = sport === "Run" ? "runs" : "rides";
+  const longNoun = sport === "Run" ? "long runs" : "long rides";
   // 3. Efficiency / durability trends (good news is worth saying). Heat confounds EF, so an EF-slipping
   // call without per-activity .FIT temperature must say a hot spell can't be ruled out.
-  if (efRun.deltaPct != null && efRun.n >= 6) {
-    const slipping = efRun.deltaPct < 0;
-    const heatCaveat = slipping && !hasThermal ? " No per-activity temperature on these runs, so a hot spell can't be ruled out as the cause — confirm against pace-at-HR before reading it as lost fitness." : "";
+  if (efT.deltaPct != null && efT.n >= 6) {
+    const slipping = efT.deltaPct < 0;
+    const heatCaveat = slipping && !hasThermal ? ` No per-activity temperature on these ${noun}, so a hot spell can't be ruled out as the cause — confirm against pace-at-HR before reading it as lost fitness.` : "";
     out.push({
       family: "Aerobic efficiency",
-      title: slipping ? "Run efficiency slipping" : "Run efficiency improving",
-      severity: efRun.deltaPct < -5 ? "watch" : "info",
-      detail: `Run EF (power÷HR) ${slipping ? "down" : "up"} ${Math.abs(efRun.deltaPct)}% recent vs prior — ${slipping ? "worth watching alongside fatigue/heat" : "the aerobic work is paying off"}.${heatCaveat}`,
-      evidence: `EF ${efRun.recent} vs ${efRun.prior} (steady runs ≥40min) [derived]`,
+      title: slipping ? `${label} efficiency slipping` : `${label} efficiency improving`,
+      severity: efT.deltaPct < -5 ? "watch" : "info",
+      detail: `${label} EF (power÷HR) ${slipping ? "down" : "up"} ${Math.abs(efT.deltaPct)}% recent vs prior — ${slipping ? "worth watching alongside fatigue/heat" : "the aerobic work is paying off"}.${heatCaveat}`,
+      evidence: `EF ${efT.recent} vs ${efT.prior} (steady ${noun} ≥40min) [derived]`,
     });
   }
   // Durability is a DECAY-style index (negative = late decay; closer to 0 = more durable): recent > prior == improving.
-  if (durRun.recent != null && durRun.prior != null && durRun.n >= 6) {
-    const change = +(durRun.recent - durRun.prior).toFixed(1);
+  if (durT.recent != null && durT.prior != null && durT.n >= 6) {
+    const change = +(durT.recent - durT.prior).toFixed(1);
     if (change <= -2) {
       out.push({
         family: "Durability",
-        title: "Run durability slipping",
+        title: `${label} durability slipping`,
         severity: "watch",
-        detail: `DFA-α1 run durability shows more late-session decay than before (${durRun.prior} → ${durRun.recent}) — fatigue resistance is slipping late in long runs, so worth watching.`,
-        evidence: `durability index ${durRun.recent} vs ${durRun.prior} (closer to 0 = more durable) [ai-endurance]`,
+        detail: `DFA-α1 ${label.toLowerCase()} durability shows more late-session decay than before (${durT.prior} → ${durT.recent}) — fatigue resistance is slipping late in ${longNoun}, so worth watching.`,
+        evidence: `durability index ${durT.recent} vs ${durT.prior} (closer to 0 = more durable) [ai-endurance]`,
       });
     } else if (change >= 2) {
       out.push({
         family: "Durability",
-        title: "Run durability improving",
+        title: `${label} durability improving`,
         severity: "info",
-        detail: `Less late-session decay than before (${durRun.prior} → ${durRun.recent}) — fatigue resistance trending up.`,
-        evidence: `durability index ${durRun.recent} vs ${durRun.prior} (closer to 0 = more durable) [ai-endurance]`,
+        detail: `Less late-session ${label.toLowerCase()} decay than before (${durT.prior} → ${durT.recent}) — fatigue resistance trending up.`,
+        evidence: `durability index ${durT.recent} vs ${durT.prior} (closer to 0 = more durable) [ai-endurance]`,
       });
     }
   }
@@ -557,7 +563,11 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   const hasThermal = [...sessionDecays, ...(archive?.fitSummaries ?? [])].some(
     (r) => typeof (r as { avgTempC?: unknown }).avgTempC === "number",
   );
-  findings.push(...efficiencyDurabilityFindings(ef.run, durability.run, hasThermal));
+  findings.push(...efficiencyDurabilityFindings("Run", ef.run, durability.run, hasThermal));
+  // Bike EF + durability are computed the same way but were never surfaced — for a triathlete with a power
+  // meter the bike trend is often the most actionable. Both fire only on a real trend (n≥6), so they stay
+  // silent when bike data is thin (degrade-don't-crash).
+  findings.push(...efficiencyDurabilityFindings("Ride", ef.ride, durability.ride, hasThermal));
 
   // 3b/3c. Anomalies + a strong n=1 correlation. 4. Prediction vs goal for the next race.
   findings.push(...anomalyCorrelationFindings(anomalies, correlations));
