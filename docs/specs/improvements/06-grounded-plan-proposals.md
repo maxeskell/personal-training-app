@@ -60,3 +60,42 @@ single structured LLM call grounded in: the **surfaced findings** + a small load
 ## Risks
 - Longer prompt = more cost/injection surface — mitigated by Spec 2 delimiting + the cached system prompt.
 - Don't over-restructure: keep the "smallest change that helps" instruction; richer context must inform, not encourage sweeping rewrites.
+
+## Addendum (2026-06-24) — review → plan bridge: a third proposer entry point
+
+The proposer now has three entry points, all routing through the same `draftGatedProposals` → `proposeAdjustments`
+→ `validateProposals` → `WriteGate.propose` path (so Spec 2's validated-args + readable-confirmation guarantees and
+this spec's grounded context apply unchanged):
+1. `/act` — turn the surfaced **alerts** into a plan change.
+2. `/act-item` — turn **one "This week" recommendation** into a plan change.
+3. **`/session-adjust` (new)** — turn **how the last session executed** into a plan change.
+
+This closes the review→plan loop (Insight Engine spec's "you only suggest; plan writes happen elsewhere"): the
+session deep-feedback already *suggests* in prose, but nothing drafted a gated edit from it.
+
+**Deterministic trigger, LLM only drafts.** `coach/reviewBridge.ts` `sessionPlanSignal(detail)` is a **pure**
+function over the assembled `SessionDetail` (no LLM, fully unit-tested) that fires only on clearly directional,
+conservative signals so a false flag — which becomes a declined proposal, nudging the proposer conservative —
+stays rare:
+- **aerobic-fade** — `decay.decouplingPct > 10` on a `durationMin ≥ 60` effort (decoupling is invalid on short /
+  interval efforts; >10 % is the textbook "base lacking" band);
+- **deep-fatigue** — `tsbOnDay ≤ −25` (a productive build sits ~−10..−20; below that, protect the recovery that follows).
+Deep-fatigue outranks aerobic-fade so the card never shows two competing asks. Only the resulting **minimal edit**
+is drafted by the LLM, against a real upcoming `workoutId`; the deterministic facts ride along as `basis`.
+
+**Spoof-safe.** The dashboard flag is rendered from `sessionPlanSignal` server-side; the `/session-adjust` route
+**re-computes the signal from the assembled session** and ignores any client-supplied trigger text (the browser
+sends only `{date, sport, durationMin}`). No signal → `notes`, never a write.
+
+**Surface.** The Last-session card shows the deterministic flag inline (free) with a **➡️ Adjust the days ahead**
+button; the drafted proposals render with the existing `proposalHtml` Apply / Dismiss UI. Hidden in share view and
+when there's no API key (a flag with no actionable draft would just nag).
+
+**Why this is the differentiator.** AI Endurance / Humango adapt off readiness *scores*; neither is documented to
+draft a plan change from how a session *actually executed*. This is the cheapest high-confidence win on top of the
+already-built review engine, and needs no plan-authoring or Garmin-write surface.
+
+### Addendum test plan
+- `test/reviewBridge.test.ts`: aerobic-fade fires only above threshold **and** over the steady-minimum duration;
+  deep-fatigue fires at/below the TSB threshold; deep-fatigue outranks aerobic-fade; null TSB / no decay / unremarkable
+  session → no signal; `buildSessionAdjustRequest` carries the suggestion, the deterministic basis, and the targeting rule.

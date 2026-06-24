@@ -36,6 +36,7 @@ import { runSessionFeedback, assembleSession } from "./coach/session.js";
 import { loadSessionDecays, fitStreamsDir } from "./insights/fit.js";
 import { syncFitSummaries, downloadFitStream, hasStreamDownloadTool } from "./archive/fitSync.js";
 import { proposeAdjustments, validateProposals, buildProposerContext, writeContextFor } from "./coach/planAdjust.js";
+import { sessionPlanSignal, buildSessionAdjustRequest } from "./coach/reviewBridge.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { alertFindings } from "./insights/metrics.js";
 import { getForecast, refreshForecast } from "./weather/store.js";
@@ -566,6 +567,29 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         "`notes` to say — in plain English — exactly how to make it yourself in AI Endurance or Garmin:\n- " +
         recommendation;
       return json(await draftGatedProposals(li, request, sourceKey));
+    }
+
+    // Review → plan bridge — draft a gated plan change from how the LAST session executed. The
+    // deterministic trigger is recomputed HERE from the assembled session (never trusting client text), then
+    // fed to the same propose→confirm proposer as /act-item. No signal → notes; no key → notes. Writes
+    // nothing — confirming a returned proposal is still the only path to a write.
+    if (url.pathname === "/session-adjust" && req.method === "POST") {
+      const json = (b: object) => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(b));
+      if (!CoachLLM.hasApiKey()) return json({ proposals: [], notes: "ANTHROPIC_API_KEY isn't set on the server." });
+      const body = JSON.parse((await readBody(req)) || "{}") as { date?: unknown; sport?: unknown; durationMin?: unknown };
+      const date = typeof body.date === "string" ? body.date.slice(0, 10) : undefined;
+      const sport = parseSport(body.sport);
+      const durationMin = Number.isFinite(Number(body.durationMin)) ? Number(body.durationMin) : undefined;
+      const li = await latestInsights();
+      if (!li) return json({ proposals: [], notes: "No data assembled yet — hit Sync first." });
+      const decays = loadSessionDecays();
+      const fitSummaries = await new ArchiveStore().loadFitSummaries();
+      const detail = assembleSession(li.state, li.insights, { date, sport, durationMin, decays, fitSummaries });
+      if (!detail) return json({ proposals: [], notes: "No matching session found to adjust from." });
+      const signal = sessionPlanSignal(detail);
+      if (!signal) return json({ proposals: [], notes: "This session doesn't flag a plan change." });
+      const request = buildSessionAdjustRequest(detail, signal);
+      return json(await draftGatedProposals(li, request, `session:${detail.date}:${detail.sport}`));
     }
 
     // Confirm a proposal — the ONLY path that WRITES to AI Endurance (gated; two-step from /act).
