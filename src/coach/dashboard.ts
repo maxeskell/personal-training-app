@@ -32,6 +32,8 @@ import {
   linkifyEscaped,
   ageDaysFrom,
   asOf,
+  isDecideItemNew,
+  newBadge,
   SOURCE_LABEL,
   hms,
   clockMin,
@@ -215,10 +217,11 @@ function renderSignals(ins: InsightReport): string {
       ? ""
       : `<tr><td>${label}</td><td class="num">${t.recent}</td><td class="num">${t.deltaPct == null ? "—" : (t.deltaPct >= 0 ? "+" : "") + t.deltaPct + "%"}</td><td class="muted">${t.n} pts</td></tr>`;
   // Durability is a negative-based decay index — a % change is meaningless, so show recent vs prior absolute.
-  const durabilityRow = (t: { recent: number | null; prior: number | null; n: number }) =>
+  // Both sports get a row (run + ride), so a headline like "Bike durability slipping" has its numbers on a table.
+  const durabilityRow = (label: string, t: { recent: number | null; prior: number | null; n: number }) =>
     t.recent == null
       ? ""
-      : `<tr><td>Run durability</td><td class="num">${t.recent}</td><td class="muted" colspan="2">${t.prior != null ? `was ${t.prior} · ` : ""}closer to 0 = more durable</td></tr>`;
+      : `<tr><td>${label} durability</td><td class="num">${t.recent}</td><td class="muted" colspan="2">${t.prior != null ? `was ${t.prior} · ` : ""}closer to 0 = more durable</td></tr>`;
 
   return `<div class="card"><h2>Load &amp; trends</h2>
     <div class="grid">
@@ -230,7 +233,8 @@ function renderSignals(ins: InsightReport): string {
     <table style="margin-top:12px"><tr class="k"><td>Trend (recent vs prior)</td><td>Now</td><td>Δ</td><td></td></tr>
       ${trend("Run efficiency (EF)", ins.ef.run)}
       ${trend("Ride efficiency (EF)", ins.ef.ride)}
-      ${durabilityRow(ins.durability.run)}
+      ${durabilityRow("Run", ins.durability.run)}
+      ${durabilityRow("Ride", ins.durability.ride)}
       ${trend("Run aerobic threshold (HR)", ins.threshold.run)}
     </table>
     <details style="margin-top:10px"><summary style="cursor:pointer;color:#888;font-size:12px">Methods &amp; n=1 analytics — how these are computed</summary>
@@ -262,28 +266,27 @@ function ageDays(firstSeenIso: string | undefined, now: number): number | null {
   return Math.floor((now - new Date(firstSeenIso).getTime()) / 86_400_000);
 }
 
-/** "first seen" line + a NEW badge for findings ≤1 day old (or first surfaced this very render). */
-function ageLabel(firstSeenIso: string | undefined, now: number): { badge: string; line: string } {
+/** The informational "first seen …" age line for an insight (the NEW pill is now reaction-based, not age). */
+function ageLabel(firstSeenIso: string | undefined, now: number): string {
   const days = ageDays(firstSeenIso, now);
-  const isNew = days == null || days < 1;
-  const badge = isNew ? `<span class="newbadge">NEW</span>` : "";
   // firstSeenIso is null only for a finding the log hasn't recorded yet (i.e. brand new this render).
   const line = !firstSeenIso
     ? `first seen just now`
     : `first seen ${escapeHtml(firstSeenIso.slice(0, 10))} · ${days === 0 ? "today" : `${days}d`}`;
-  return { badge, line: `${line} · (age since logging began)` };
+  return `${line} · (age since logging began)`;
 }
 
 /**
  * Top-5 insights box. Each finding shows its SAVED like/dislike (👍/👎 toggle, click again to clear) plus a
- * Snooze that hides it for ~2 weeks; dislike stays visible (just down-ranked). A NEW badge + "first seen"
- * line flag freshness so a new signal isn't missed. Posts to /insight-feedback.
+ * Snooze that hides it for ~2 weeks; dislike stays visible (just down-ranked). A NEW badge + left bar flag
+ * the ones you haven't actioned yet (cleared the moment you react); a "first seen" line keeps the age as
+ * context. Posts to /insight-feedback.
  */
 function renderInsightsBox(ins: InsightReport, reactions?: Map<string, InsightReaction>, firstSeen?: Map<string, string>, leadKey?: string, redact: (s: string) => string = (s) => s): string {
   const sevColor = (s: string) => (s === "flag" ? "#c0392b" : s === "watch" ? "#c98a00" : "#1a8a3a");
   const now = Date.now();
   const top = ins.topFindings.slice(0, 5);
-  const newCount = top.filter((f) => (ageDays(firstSeen?.get(findingKey(f)), now) ?? 0) < 1).length;
+  const newCount = top.filter((f) => isDecideItemNew(findingKey(f), reactions)).length;
   if (!top.length) return `<div class="card"><h2>Top insights</h2><div class="muted">No strong signals right now — nothing worth your attention today.</div></div>`;
   // The lead finding is already the "Today" headline + action above, so here we keep it reactable but
   // drop its recommendation line (no verbatim repeat) and mark it as the call shown up top.
@@ -296,12 +299,14 @@ function renderInsightsBox(ins: InsightReport, reactions?: Map<string, InsightRe
       const saved = reactions?.get(key); // "agree" | "disagree" (snoozed items are suppressed, never here)
       const state = saved === "agree" ? "like" : saved === "disagree" ? "dislike" : "";
       const on = (which: string) => (state === which ? " on" : "");
-      const { badge, line } = ageLabel(firstSeen?.get(key), now);
+      const isNew = isDecideItemNew(key, reactions);
+      const line = ageLabel(firstSeen?.get(key), now);
       // Share view: scrub real race names from the title (shown AND in the data-summary reaction payload),
       // detail, recommendation and evidence — findings like "Birmingham: behind target" carry the name.
       const title = redact(f.title);
-      return `<div class="insight sev-${f.severity}" data-key="${escapeHtml(key)}" data-summary="${escapeHtml(title)}" data-reaction-state="${state}">
-        <div><span class="badge" style="background:${sevColor(f.severity)}">${f.severity}</span>${badge}
+      // The lead card carries a stable id so the "see the data →" link under the Today headline can scroll to it.
+      return `<div${isLead ? ` id="lead-insight"` : ""} class="insight sev-${f.severity}${isNew ? " is-new" : ""}" data-key="${escapeHtml(key)}" data-summary="${escapeHtml(title)}" data-reaction-state="${state}">
+        <div><span class="badge" style="background:${sevColor(f.severity)}">${f.severity}</span>${newBadge(key, reactions)}
           <b style="${f.severity === "flag" ? "font-size:15px" : ""}">${escapeHtml(title)}</b> <span class="muted">· ${conf}% conf · ${escapeHtml(f.family)}${isLead ? ` · today's call ↑` : ""}</span></div>
         <div class="fdetail">${escapeHtml(redact(f.detail))}</div>
         ${f.recommendation && !isLead ? `<div class="ev">→ ${escapeHtml(redact(f.recommendation))}</div>` : ""}
@@ -316,7 +321,7 @@ function renderInsightsBox(ins: InsightReport, reactions?: Map<string, InsightRe
       </div>`;
     })
     .join("");
-  const newNote = newCount ? ` · <b>${newCount} new</b>` : " · nothing new";
+  const newNote = newCount ? ` · <b>${newCount} not yet actioned</b>` : " · all actioned";
   return `<div class="card insights"><h2>Top insights — your call</h2>
     <div class="k" style="margin-bottom:8px">Ranked by signal strength${newNote}.${headlineInTop ? " Today's headline call is the one marked ↑." : ""} A dislike stays visible, just down-ranked.</div>
     ${rows}
@@ -713,8 +718,9 @@ function renderDataChanges(window: AthleteState[], reactions?: Map<string, Insig
       const saved = reactions?.get(c.key);
       const state = saved === "agree" ? "like" : saved === "disagree" ? "dislike" : "";
       const on = (which: string) => (state === which ? " on" : "");
-      return `<div class="insight" data-key="${escapeHtml(c.key)}" data-summary="${escapeHtml(`${c.label}: ${c.from} → ${c.to}`)}" data-reaction-state="${state}" data-metric="${escapeHtml(c.metric)}" data-when="${c.toValue}" data-use="${c.fromValue}">
-        <div><b>${escapeHtml(c.label)}</b>: ${escapeHtml(c.from)} → <b>${escapeHtml(c.to)}</b> <span class="muted">· ${escapeHtml(SOURCE_LABEL[c.source] ?? c.source)} · ${asOf(c.ageDays)}</span></div>
+      const isNew = isDecideItemNew(c.key, reactions); // pinned metrics are already filtered out above
+      return `<div class="insight${isNew ? " is-new" : ""}" data-key="${escapeHtml(c.key)}" data-summary="${escapeHtml(`${c.label}: ${c.from} → ${c.to}`)}" data-reaction-state="${state}" data-metric="${escapeHtml(c.metric)}" data-when="${c.toValue}" data-use="${c.fromValue}">
+        <div>${newBadge(c.key, reactions)}<b>${escapeHtml(c.label)}</b>: ${escapeHtml(c.from)} → <b>${escapeHtml(c.to)}</b> <span class="muted">· ${escapeHtml(SOURCE_LABEL[c.source] ?? c.source)} · ${asOf(c.ageDays)}</span></div>
         <div class="acts">
           <button class="agree${on("like")}" data-reaction="like" onclick="feedback(this)">👍 Agree</button>
           <button class="disagree${on("dislike")}" onclick="pinOverride(this)">👎 Disagree — keep ${escapeHtml(c.from)}</button>
@@ -892,7 +898,7 @@ function renderHealthBanner(risk: HealthRiskAssessment | null): string {
  * The "Today" decision header (#1) — leads with one synthesised call + the single action, corroborating
  * drivers, an always-visible health strip (#8), the LLM readiness narrative, and the key metrics.
  */
-function renderHeader(today: AthleteState, hl: Headline | null, decisions: DecisionRecord[], gar: DashboardInput["garminDays"], redact: (s: string) => string = (s) => s): string {
+function renderHeader(today: AthleteState, hl: Headline | null, decisions: DecisionRecord[], gar: DashboardInput["garminDays"], redact: (s: string) => string = (s) => s, leadKey?: string): string {
   const lastReadiness = [...decisions].reverse().find((d) => d.kind === "readiness");
   const verdictWord = lastReadiness?.summary.split(":")[0]?.trim().toLowerCase();
   const sev = hl?.severity ?? (verdictWord === "green" || verdictWord === "amber" || verdictWord === "red" ? verdictWord : "green");
@@ -932,6 +938,7 @@ function renderHeader(today: AthleteState, hl: Headline | null, decisions: Decis
     <div class="verdict"><span class="dot" style="background:${color}"></span>
       <span class="big" style="color:${color}">${escapeHtml(sev)}</span></div>
     ${hl ? `<p style="font-size:16px;color:#222;margin:10px 0 6px;font-weight:500">${escapeHtml(redact(hl.line))}</p>` : ""}
+    ${hl && leadKey ? `<a href="#decide" onclick="seeData()" style="display:inline-block;font-size:13px;color:#1558d6;text-decoration:none;margin:0 0 8px">see the data →</a>` : ""}
     ${hl?.action ? `<div style="background:${color};color:#fff;border-radius:8px;padding:10px 12px;font-size:14px;margin:6px 0 8px">➡️ ${escapeHtml(redact(hl.action))}</div>
       <button class="actbtn" onclick="actPlan()">⚙ Turn this into a plan change</button><div id="proposals"></div>` : ""}
     ${hl && hl.drivers.length ? `<div class="k" style="margin-bottom:10px">${hl.drivers.map((d) => escapeHtml(redact(d))).join(" · ")}</div>` : ""}
@@ -1112,6 +1119,15 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
       (coachRecs?.length ?? 0) +
       detectMetricChanges(window, {}).filter((c) => !suppressed?.has(c.key) && !(c.metric in (metricOverrides ?? {}))).slice(0, 5).length +
       buildSetupItems(profile, setupOpts).length;
+  // Of those, how many you HAVEN'T actioned yet — the same five sources, each filtered to its un-reacted
+  // items (and, for an applyable training card, not already applied). Drives the "▲ N not yet actioned"
+  // roll-up + the teaser suffix, so newness is visible at a glance and shrinks as you triage.
+  const decideNewCount = share
+    ? 0
+    : (insights ? insights.topFindings.slice(0, 5).filter((f) => isDecideItemNew(findingKey(f), reactions)).length : 0) +
+      (coachRecs ?? []).filter((r) => isDecideItemNew(r.key, reactions)).length +
+      detectMetricChanges(window, {}).filter((c) => !suppressed?.has(c.key) && !(c.metric in (metricOverrides ?? {}))).slice(0, 5).filter((c) => isDecideItemNew(c.key, reactions)).length +
+      buildSetupItems(profile, setupOpts).filter((it) => isDecideItemNew(it.key, reactions) && !setupOpts.appliedKeys.has(it.key)).length;
 
   // Decide tab as two halves so it reads "act on advice → housekeeping". The shared 👍/👎/💤/🚫 legend is
   // hoisted to the tab intro (below), so each card keeps only its own specific twist. The "This week"
@@ -1198,10 +1214,10 @@ ${share ? `<div class="card sharebanner" style="background:#eef4ff;border:1px so
 <section id="tab-today" class="tab on">
 
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
-${insights ? renderHeader(today, hl, decisions, garminDays, redact) : ""}
+${insights ? renderHeader(today, hl, decisions, garminDays, redact, leadKey) : ""}
 
 ${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks, setupHealth?.hasApiKey, share, redact)}
-${decideCount > 0 ? `<a class="card nav-link" data-tab="decide" href="#decide" style="display:block;text-decoration:none;color:#c8642d;font-weight:600">📥 ${decideCount} ${decideCount === 1 ? "item" : "items"} waiting on your call →</a>` : ""}
+${decideCount > 0 ? `<a class="card nav-link" data-tab="decide" href="#decide" style="display:block;text-decoration:none;color:#c8642d;font-weight:600">📥 ${decideCount} ${decideCount === 1 ? "item" : "items"} waiting on your call${decideNewCount > 0 ? ` · <span style="color:#1558d6">${decideNewCount} new</span>` : ""} →</a>` : ""}
 </section>
 
 <section id="tab-plan" class="tab">
@@ -1210,7 +1226,8 @@ ${planBody || `<div class="card"><div class="muted">This week's sessions, weathe
 </section>
 
 <section id="tab-decide" class="tab">
-<p class="tab-intro">Everything waiting on your call — <b>one inbox</b>, in two halves: <b>decisions</b> to act on, then <b>housekeeping</b> (numbers to confirm, setup to finish). React on any card: 👍 Agree · 👎 Disagree · 💤 Snooze (~2 weeks) · 🚫 Ignore. A training change offers a gated <b>Make this change / Apply</b> instead of a plain agree; when AI Endurance and Garmin disagree on a number, ⚖️ picks which to use.</p>
+<p class="tab-intro">Everything waiting on your call — <b>one inbox</b>, in two halves: <b>decisions</b> to act on, then <b>housekeeping</b> (numbers to confirm, setup to finish). React on any card: 👍 Agree · 👎 Disagree · 💤 Snooze (~2 weeks) · 🚫 Ignore. A training change offers a gated <b>Make this change / Apply</b> instead of a plain agree; when AI Endurance and Garmin disagree on a number, ⚖️ picks which to use. Items you haven't actioned yet carry a <span class="newbadge">NEW</span> until you react.</p>
+${decideNewCount > 0 ? `<div class="decide-new-rollup">▲ ${decideNewCount} not yet actioned</div>` : ""}
 ${decisionsHalf ? `<div class="section-rule-label">Decisions</div>${decisionsHalf}` : ""}
 ${housekeepingHalf ? `<hr class="section-rule"><div class="section-rule-label">Housekeeping</div>${housekeepingHalf}` : ""}
 <script>
@@ -1263,7 +1280,14 @@ function setReactionState(box,state){
   box.setAttribute('data-reaction-state',state);
   var like=box.querySelector('.agree');var dislike=box.querySelector('.disagree');
   like.classList.toggle('on',state==='like');dislike.classList.toggle('on',state==='dislike');
+  // "New until you action it": reacting clears the NEW flag at once; clearing the reaction restores it.
+  var actioned=state==='like'||state==='dislike';
+  box.classList.toggle('is-new',!actioned);
+  var nb=box.querySelector('.newbadge');if(nb)nb.style.display=actioned?'none':'';
 }
+// "see the data →" under the Today headline: the href switches to the Decide tab (hashchange handler), then
+// we scroll its backing insight card into view. Best-effort — if there's no lead card, it just opens the tab.
+function seeData(){setTimeout(function(){var el=document.getElementById('lead-insight');if(el)el.scrollIntoView({block:'center'});},80);}
 async function feedback(btn){
   var box=btn.closest('.insight');var want=btn.getAttribute('data-reaction'); // like|dislike|snooze
   var cur=box.getAttribute('data-reaction-state')||'';

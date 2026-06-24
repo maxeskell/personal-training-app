@@ -527,7 +527,8 @@ the URL hash — `/#plan`, `/#decide`, …), and with JavaScript off — or in P
 stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and **🔄 Sync** sit in the header.
 
 - **Today** — the daily operational view: your readiness verdict + the day's action, the last session, and a
-  *"📥 N waiting on your call →"* teaser into Decide.
+  *"📥 N waiting on your call · N new →"* teaser into Decide. The day's headline call carries a **see the data →**
+  link that opens Decide and scrolls to the insight card backing it.
 - **Plan** — the forward-looking view: this week's sessions vs weather and fuelling, the coach's **this-week
   review**, then the **Season arc** folded in (last-7-days load moved to Performance, where the backward-looking
   numbers live).
@@ -535,9 +536,12 @@ stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and 
   recommendations, this week's coaching cues) then **housekeeping** (numbers to confirm, setup to finish) —
   all sharing the same **👍 Agree / 👎 Disagree / 🚫 Ignore** (💤 Snooze) controls, hoisted to one legend at
   the top, with a gated **Make this change / Apply to AI Endurance** on items that write back, so a real plan
-  change never hides behind a plain thumbs-up.
-- **Performance** — your numbers in four labelled groups: **Form & load** (the load model, multi-week trends,
-  last-7-days load by sport), **Zones & capacity** (zones & thresholds, Garmin scores), **Race readiness**
+  change never hides behind a plain thumbs-up. Anything you **haven't actioned yet** carries a blue **NEW**
+  badge + left bar (and a *"▲ N not yet actioned"* roll-up at the top); the flag clears the moment you react,
+  so your eye goes straight to what still needs you.
+- **Performance** — your numbers in four labelled groups: **Form & load** (the load model, multi-week trends
+  and the **recent-vs-prior** efficiency + **run *and* ride durability** rows, last-7-days load by sport),
+  **Zones & capacity** (zones & thresholds, Garmin scores), **Race readiness**
   (your race calendar, estimated times + race-day splits), then **Career & PBs** folded in.
 
 The standalone `/career` and `/season` pages still exist (identical content, the same shared nav) for

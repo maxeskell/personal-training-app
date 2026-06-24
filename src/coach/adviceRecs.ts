@@ -1,7 +1,7 @@
 import type { Finding } from "../insights/metrics.js";
 import type { SurfacedFinding, InsightSnapshot } from "../state/insightLog.js";
 import type { InsightReaction } from "../state/decisionLog.js";
-import { escapeHtml } from "./dashboardHelpers.js";
+import { escapeHtml, isDecideItemNew, newBadge } from "./dashboardHelpers.js";
 
 /**
  * Make the LLM prose flows' advice individually reactable (item 4-iii). The readiness verdict and the
@@ -247,8 +247,9 @@ function adviceCardHtml(
         [...new Set(absorbed.map(mergedFromPhrase))].join(" and "),
       )} — shown once.</div>`
     : "";
-  return `<div class="insight" data-key="${escapeHtml(f.key)}" data-summary="${escapeHtml(f.title)}" data-reaction-state="${state}"${familyAttr}>
-    <div><b>${escapeHtml(f.title)}</b></div>${mergedNote}
+  const isNew = isDecideItemNew(f.key, reactions);
+  return `<div class="insight${isNew ? " is-new" : ""}" data-key="${escapeHtml(f.key)}" data-summary="${escapeHtml(f.title)}" data-reaction-state="${state}"${familyAttr}>
+    <div>${newBadge(f.key, reactions)}<b>${escapeHtml(f.title)}</b></div>${mergedNote}
     <div class="acts">
       <button class="agree${on("like")}" data-reaction="like" onclick="feedback(this)">👍 Agree</button>
       <button class="disagree${on("dislike")}" data-reaction="dislike" onclick="feedback(this)">👎 Disagree</button>
