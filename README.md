@@ -175,7 +175,10 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
   already in Top insights* + the action items from your last weekly review) and **Worth considering**
   (items from your last research digest — each one says **what the research found**, names its **source**,
   links to **read the full digest** in-app, and gives the **one concrete command** to fold it into the
-  coach's priors). **Everything in "This week" is actioned right on the card —
+  coach's priors). On the **Decide** tab these three split across its two halves: **This week** sits up with
+  the *decisions* (the live coaching cues) while **Finish setup** + **Worth considering** stay under **Set up
+  & improve** in the *housekeeping* half — under one shared 👍/👎/💤/🚫 legend hoisted to the tab intro.
+  **Everything in "This week" is actioned right on the card —
   it never points you at a saved report.** Each advice item leads with the plain-English action (the tech
   detail sits muted underneath) and carries a category chip (*Training / Fuelling / Gear / Recovery*):
   - a **fuelling, gear or recovery** change gets **👍 Agree / 👎 Disagree / 💤 Snooze** (reversible) plus
@@ -517,10 +520,11 @@ stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and 
 - **Plan** — the forward-looking view: this week's sessions vs weather and fuelling, the coach's **this-week
   review**, then the **Season arc** folded in (last-7-days load moved to Performance, where the backward-looking
   numbers live).
-- **Decide** — one unified **inbox** for everything that needs your call (top insights, coach's
-  recommendations, data changes, the Set-up & improve hub), all sharing the same **👍 Agree / 👎 Disagree /
-  🚫 Ignore** (💤 Snooze) controls — with a gated **Apply to AI Endurance** on items that write back, so a real
-  plan change never hides behind a plain thumbs-up.
+- **Decide** — one unified **inbox** in two halves: **decisions** to act on (top insights, the coach's
+  recommendations, this week's coaching cues) then **housekeeping** (numbers to confirm, setup to finish) —
+  all sharing the same **👍 Agree / 👎 Disagree / 🚫 Ignore** (💤 Snooze) controls, hoisted to one legend at
+  the top, with a gated **Make this change / Apply to AI Endurance** on items that write back, so a real plan
+  change never hides behind a plain thumbs-up.
 - **Performance** — your numbers: current form & load, multi-week trends, **last-7-days load by sport**, zones,
   Garmin scores, race readiness, then **Career & PBs** folded in.
 

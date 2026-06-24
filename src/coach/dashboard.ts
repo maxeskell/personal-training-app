@@ -320,7 +320,7 @@ function renderInsightsBox(ins: InsightReport, reactions?: Map<string, InsightRe
     .join("");
   const newNote = newCount ? ` · <b>${newCount} new</b>` : " · nothing new";
   return `<div class="card insights"><h2>Top insights — your call</h2>
-    <div class="k" style="margin-bottom:8px">Ranked by signal strength${newNote}.${headlineInTop ? " Today's headline call is the one marked ↑." : ""} Like/dislike is saved and reversible (dislike stays visible, just down-ranked); Snooze hides it for ~2 weeks.</div>
+    <div class="k" style="margin-bottom:8px">Ranked by signal strength${newNote}.${headlineInTop ? " Today's headline call is the one marked ↑." : ""} A dislike stays visible, just down-ranked.</div>
     ${rows}
   </div>`;
 }
@@ -738,7 +738,7 @@ function renderDataChanges(window: AthleteState[], reactions?: Map<string, Insig
     .join("");
   if (!changeRows && !conflictRows && !overrideRows) return "";
   return `<div class="card insights"><h2>Data changes — your call</h2>
-    <div class="k" style="margin-bottom:8px">AI Endurance / Garmin auto-update these numbers (and sometimes disagree). 👍 accept · 👎 keep your own · ⚖️ pick a source when they differ · 💤 hide. Pins hold until you un-pin or a new value appears. Zones follow from these thresholds.</div>
+    <div class="k" style="margin-bottom:8px">AI Endurance / Garmin auto-update these numbers (and sometimes disagree). Pins hold until you un-pin or a new value appears; zones follow from these thresholds.</div>
     ${changeRows}${conflictRows}${overrideRows}
   </div>`;
 }
@@ -1110,6 +1110,26 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
       detectMetricChanges(window, {}).filter((c) => !suppressed?.has(c.key) && !(c.metric in (metricOverrides ?? {}))).slice(0, 5).length +
       buildSetupItems(profile, setupOpts).length;
 
+  // Decide tab as two halves so it reads "act on advice → housekeeping". The shared 👍/👎/💤/🚫 legend is
+  // hoisted to the tab intro (below), so each card keeps only its own specific twist. The "This week"
+  // coaching cues are lifted out of the setup hub to sit with the advice; "Finish setup" + "Worth
+  // considering" stay in the housekeeping half alongside the (collapsed) data-change confirmations.
+  const insightsBox = insights ? renderInsightsBox(insights, reactions, firstSeen, leadKey, redact) : "";
+  const coachRecsHtml = renderCoachRecs(coachRecs ?? [], reactions, share, coachRecsMerged);
+  const thisWeekHtml = renderSetupImprove(profile, share, setupOpts, {
+    only: ["this_week"],
+    heading: "This week",
+    intro: `This week's coaching cues — your call. A training change offers a gated <b>Make this change</b> (it applies in AI Endurance after you confirm the exact edit, then shows <b>✓ applied</b> and stops asking); the rest take 👍/👎/💤.`,
+  });
+  const dataChangesHtml = collapse(renderDataChanges(window, reactions, suppressed, metricOverrides));
+  const setupHousekeepingHtml = renderSetupImprove(profile, share, setupOpts, {
+    only: ["finish_setup", "worth_considering"],
+    heading: "Set up & improve",
+    intro: `Loose ends and ideas. <b>Finish setup</b> tasks open for exactly how to do them and carry ✓ Done / 💤 Snooze / 🚫 Ignore — a gap you fill in AI Endurance clears itself on the next sync. <b>Worth considering</b> is read-only research.`,
+  });
+  const decisionsHalf = [insightsBox, coachRecsHtml, thisWeekHtml].filter((s) => s.trim()).join("\n");
+  const housekeepingHalf = [dataChangesHtml, setupHousekeepingHtml].filter((s) => s.trim()).join("\n");
+
   return `${pageHead(`Endurance Coach — ${today.date}`)}<body>
 <header class="site-head"><div class="wrap">
   <div class="brand"><h1>Endurance Coach</h1>
@@ -1161,9 +1181,9 @@ ${seasonReport ? `<hr class="section-rule"><div class="section-rule-label">Seaso
 </section>
 
 <section id="tab-decide" class="tab">
-<p class="tab-intro">Everything waiting on your call — one inbox. 👍 Agree / 👎 Disagree / 🚫 Ignore (💤 Snooze hides for ~2 weeks). Items you action in AI Endurance show a gated <b>Apply</b> instead of a plain agree.</p>
-${insights ? renderInsightsBox(insights, reactions, firstSeen, leadKey, redact) : ""}
-${collapse(renderDataChanges(window, reactions, suppressed, metricOverrides))}
+<p class="tab-intro">Everything waiting on your call — <b>one inbox</b>, in two halves: <b>decisions</b> to act on, then <b>housekeeping</b> (numbers to confirm, setup to finish). React on any card: 👍 Agree · 👎 Disagree · 💤 Snooze (~2 weeks) · 🚫 Ignore. A training change offers a gated <b>Make this change / Apply</b> instead of a plain agree; when AI Endurance and Garmin disagree on a number, ⚖️ picks which to use.</p>
+${decisionsHalf ? `<div class="section-rule-label">Decisions</div>${decisionsHalf}` : ""}
+${housekeepingHalf ? `<hr class="section-rule"><div class="section-rule-label">Housekeeping</div>${housekeepingHalf}` : ""}
 <script>
 function mdToHtml(md){
   var h=esc(String(md));
@@ -1319,9 +1339,6 @@ async function confirmWaterTemp(btn){var box=btn.closest('.watertemp');var s=box
   try{var r=await fetch('/set-water-temp',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tempC:v})});var j=await r.json();
     s.textContent=j.ok?('✓ confirmed ~'+j.waterTempC+'°C — reload to refresh the swim verdict'):'failed: '+esc(j.error||'');}catch(e){s.textContent='error';}}
 </script>
-
-${renderCoachRecs(coachRecs ?? [], reactions, share, coachRecsMerged)}
-${renderSetupImprove(profile, share, setupOpts)}
 </section>
 
 <section id="tab-performance" class="tab">
