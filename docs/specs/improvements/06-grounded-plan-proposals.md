@@ -1,6 +1,6 @@
 # Spec 6 — Grounded plan proposals (use the full picture + goals + research)
 
-**Status:** ✅ landed on `main` (reconciled 2026-06-22) · **Priority:** P1 (feature; do after Spec 2) · **Size:** M–L · **Owner:** TBD
+**Status:** ✅ landed on `main` (reconciled 2026-06-22; §3 read-back gap closed 2026-06-24) · **Priority:** P1 (feature; do after Spec 2) · **Size:** M–L · **Owner:** TBD
 
 ## Problem
 "Turn this into a plan change" reads as *"design my plan from all my data, my goals, and the research."* Today it's a
@@ -38,6 +38,10 @@ single structured LLM call grounded in: the **surfaced findings** + a small load
    shared `raceContext(state)` derived from `getRaceGoalEvent` (+ a guard for stale/empty).
 3. **Cited rationale**: extend the proposal schema with `basis: string[]` (the signals/prior ids the change rests on);
    surface them in the confirmation ("because: acute:chronic 1.7 HIGH; 33 d to A-race; taper target TSB −5…+5").
+   *(2026-06-24) Closed the read-back half: `basis` was shown at propose time but dropped at the gate, so it
+   was gone by confirm time. It now persists on `Proposal`/`DecisionRecord` and renders on the read-back
+   confirm surfaces — `decisions pending` + the decision log (CLI) and the `decisions` MCP tool — so the
+   "because:" line survives across processes (the cross-process confirm path), satisfying criterion 3 below.*
 4. **(v2, flagged) research lookup**: a curated retrieval over `knowledge/` (and optionally web, behind `COACH_RESEARCH=1`)
    that attaches 1–2 citations; treated as untrusted data per Spec 2's injection hygiene.
 5. Depends on **Spec 2** (validated args + readable confirmation) so richer/longer proposals can't widen the unsafe surface.

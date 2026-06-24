@@ -25,7 +25,7 @@ import { renderDashboard } from "./coach/dashboard.js";
 import { latestWeeklyReview, latestResearchDigest, latestSeasonNarrative, latestWeeklyReviewProse } from "./coach/setupSources.js";
 import { loadSessionFeedbacks, saveSessionFeedback } from "./coach/sessionFeedbackStore.js";
 import { loadMetricOverrides } from "./state/metricOverrides.js";
-import { buildDemoWindow, buildDemoGarminDays, demoCostRecords, demoProfile } from "./demo/sampleData.js";
+import { buildDemoWindow, buildDemoGarminDays, demoProfile } from "./demo/sampleData.js";
 import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact, cmdActivityArchiveImport, cmdActivityArchiveBackfill, cmdActivityArchiveHeal } from "./cli/dataCommands.js";
 import { buildInsights } from "./insights/engine.js";
 import { alertFindings, loadModel } from "./insights/metrics.js";
@@ -651,7 +651,6 @@ async function cmdDashboard(): Promise<void> {
     decisions,
     insights,
     garminDays: archive?.garminDays,
-    costRecords: await readCostRecords(),
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,
     weather,
@@ -725,7 +724,6 @@ async function cmdDemo(): Promise<void> {
     decisions: [],
     insights,
     garminDays,
-    costRecords: demoCostRecords(today),
     canFetchFit: false,
     profile: demoProfile,
     weeklyReview: { date: today, actions: ["Cut one grey-zone ride", "Move the long run off your GI-trough day"] },
@@ -791,6 +789,7 @@ async function cmdDecisions(): Promise<void> {
     for (const r of pending) {
       console.log(`  [${r.id}] ${r.summary}`);
       if (r.tradeoff) console.log(`      trade-off: ${r.tradeoff}`);
+      if (r.basis?.length) console.log(`      because: ${r.basis.join("; ")}`);
       console.log(`      → npm run confirm -- ${r.id}   |   npm run decline -- ${r.id}`);
     }
     return;
@@ -801,6 +800,7 @@ async function cmdDecisions(): Promise<void> {
     console.log(`  ${r.timestamp.slice(0, 16)}  [${r.id}] ${r.kind}/${r.status}`);
     console.log(`      ${r.summary}`);
     if (r.tradeoff) console.log(`      trade-off: ${r.tradeoff}`);
+    if (r.basis?.length) console.log(`      because: ${r.basis.join("; ")}`);
     if (r.retro) console.log(`      retro: ${r.retro}`);
   }
   if (all.length > 500) console.log(`\n(log is large — consider archiving data/decisions/log.jsonl)`);
@@ -860,7 +860,7 @@ async function cmdPropose(): Promise<void> {
   const gate = new WriteGate(new AieClient(), new DecisionLog()); // not connected — propose() never calls the API
   console.log("\nProposed adjustments (nothing changed yet):\n");
   for (const p of valid) {
-    const proposal = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human });
+    const proposal = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human, basis: p.basis });
     console.log(`  [${proposal.id}] ${p.human}`);
     console.log(`      ${p.summary} — trade-off: ${p.tradeoff}`);
     if (p.basis.length) console.log(`      because: ${p.basis.join("; ")}`);
@@ -910,7 +910,7 @@ async function cmdAct(): Promise<void> {
   const gate = new WriteGate(new AieClient(), new DecisionLog()); // propose() never calls the API
   console.log("\nProposed (nothing changed — gated):\n");
   for (const p of valid) {
-    const proposal = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human });
+    const proposal = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human, basis: p.basis });
     console.log(`  [${proposal.id}] ${p.human}`);
     console.log(`      ${p.summary} — trade-off: ${p.tradeoff}`);
     if (p.basis.length) console.log(`      because: ${p.basis.join("; ")}`);

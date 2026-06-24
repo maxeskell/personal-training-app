@@ -20,6 +20,7 @@ export interface Proposal {
   tradeoff: string;
   human?: string; // validated, human-readable description of the exact change being confirmed
   sourceKey?: string; // the "This week" card key this was drafted from, so the card can mark itself applied
+  basis?: string[]; // the specific signals this change rests on — persisted so the confirm surface can cite "why" (Spec 6 §3)
 }
 
 const WRITE_SET = new Set<string>(AIE_WRITE_TOOLS);
@@ -55,6 +56,7 @@ export class WriteGate {
       write: { tool: p.tool, args: p.args },
       status: "proposed",
       ...(p.sourceKey ? { sourceKey: p.sourceKey } : {}),
+      ...(p.basis && p.basis.length ? { basis: p.basis } : {}),
     };
     await this.log.append(record);
     return proposal;

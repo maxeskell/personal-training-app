@@ -34,7 +34,6 @@ import { loadSystemPrompt } from "./coach/persona.js";
 import { loadProfileSafe } from "./profile/load.js";
 import { runSessionFeedback, assembleSession } from "./coach/session.js";
 import { loadSessionDecays, fitStreamsDir } from "./insights/fit.js";
-import { readCostRecords } from "./llm/costLog.js";
 import { syncFitSummaries, downloadFitStream, hasStreamDownloadTool } from "./archive/fitSync.js";
 import { proposeAdjustments, validateProposals, buildProposerContext, writeContextFor } from "./coach/planAdjust.js";
 import { WriteGate } from "./guardrails/writeGate.js";
@@ -180,7 +179,6 @@ async function renderLatest(share = false): Promise<string> {
     firstSeen,
     share,
     garminDays: archive?.garminDays,
-    costRecords: await readCostRecords(),
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,
     weather,
@@ -301,7 +299,7 @@ async function draftGatedProposals(li: LatestInsights, request: string, sourceKe
   for (const p of valid) {
     // sourceKey ties the gated write back to its "This week" card, so the card marks itself ✓ applied
     // once the write executes — from the authoritative log, not the click.
-    const pr = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human, sourceKey });
+    const pr = await gate.propose({ tool: p.tool as never, args: p.args, rationale: p.summary, tradeoff: p.tradeoff, human: p.human, sourceKey, basis: p.basis });
     proposals.push({ id: pr.id, human: p.human, summary: p.summary, tradeoff: p.tradeoff, basis: p.basis });
   }
   const notes = [result.notes, rejected.length ? `Not applied: ${rejected.join("; ")}` : ""].filter(Boolean).join(" ");

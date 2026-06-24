@@ -1206,10 +1206,7 @@ test("with no weather forecast, fuelling falls back to the standalone next-sessi
 
 test("API cost is no longer shown on the dashboard (decluttered — it lives in `npm run cost` / the MCP cost tool)", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
-  const costRecords = [
-    { ts: new Date().toISOString(), operation: "ask", model: "claude-opus-4-8", input: 100, output: 200, cacheWrite: 0, cacheRead: 0, costUsd: 0.05, schemaVersion: 1 },
-    { ts: new Date().toISOString(), operation: "weekly", model: "claude-opus-4-8", input: 100, output: 800, cacheWrite: 0, cacheRead: 0, costUsd: 0.2, schemaVersion: 1 },
-  ];
-  // Even with records present, the dashboard no longer renders a cost card (density pass).
-  assert.ok(!renderDashboard({ window: [s], decisions: [], costRecords }).includes("API cost"));
+  // The cost card and its whole data path (the `costRecords` input) were removed — cost lives in
+  // `npm run cost` / the MCP `cost` tool. The dashboard never renders a cost card.
+  assert.ok(!renderDashboard({ window: [s], decisions: [] }).includes("API cost"));
 });

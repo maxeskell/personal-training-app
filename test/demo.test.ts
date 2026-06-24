@@ -1,10 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildDemoWindow, buildDemoGarminDays, demoCostRecords } from "../src/demo/sampleData.js";
+import { buildDemoWindow, buildDemoGarminDays } from "../src/demo/sampleData.js";
 import { renderDashboard } from "../src/coach/dashboard.js";
 import { buildInsights } from "../src/insights/engine.js";
 import { assessHealthRisk } from "../src/guardrails/wellbeing.js";
-import { summarizeCost } from "../src/llm/costLog.js";
 
 /**
  * The demo mode must let a no-account user see the coach working, so its sample window has to be valid
@@ -90,16 +89,7 @@ test("buildDemoGarminDays: a 42-day series ending today with the Trends-card fie
   assert.ok(days.every((d) => d.hrvMs != null && d.restingHr != null && d.sleepScore != null && d.avgStressLevel != null && d.deepSleepSec != null));
 });
 
-test("demoCostRecords: lands in the API-cost card's 7- and 30-day windows", () => {
-  const recs = demoCostRecords(new Date().toISOString().slice(0, 10));
-  const w7 = summarizeCost(recs, 7).total;
-  const w30 = summarizeCost(recs, 30).total;
-  assert.ok(w7.costUsd > 0, "some spend in the last 7 days");
-  assert.ok(w30.costUsd >= w7.costUsd, "30-day spend includes the 7-day window");
-  assert.ok(summarizeCost(recs, 30).byOperation.length >= 3, "a few distinct flows for the breakdown line");
-});
-
-test("the enriched demo renders the load, trends, Garmin-scores and cost cards", () => {
+test("the enriched demo renders the load, trends and Garmin-scores cards", () => {
   const today = "2026-06-14";
   const w = buildDemoWindow(today, 42);
   const insights = buildInsights(w[w.length - 1], undefined, { history: w });
@@ -108,7 +98,6 @@ test("the enriched demo renders the load, trends, Garmin-scores and cost cards",
     decisions: [],
     insights,
     garminDays: buildDemoGarminDays(today),
-    costRecords: demoCostRecords(new Date().toISOString().slice(0, 10)),
     canFetchFit: false,
   });
   assert.match(html, /Load &amp; trends/);
