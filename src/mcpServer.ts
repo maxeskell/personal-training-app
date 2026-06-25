@@ -706,7 +706,7 @@ function registerProfileWriteTool(server: McpServer): void {
   server.tool(
     "update_profile",
     "Write to your athlete profile (profile.local.yaml) — the STABLE context: identity, biomechanics, health/medication, availability, equipment, fuelling, race targets. Pass `patch`: a partial profile object (same shape as `get_profile` / profile.example.yaml) holding ONLY the fields to set; it is deep-merged onto your current profile (nested objects merged, arrays/scalars replaced), validated, then written. NO live numbers — FTP, weight, paces, swim CSS, HRV and training load are rejected (they come live from AI Endurance/Garmin). Call `get_profile` first to see the current shape.",
-    { patch: z.record(z.any()).describe("Partial profile object: the fields to set/update. Nested objects are merged; arrays and scalars replace.") },
+    { patch: z.record(z.string(), z.any()).describe("Partial profile object: the fields to set/update. Nested objects are merged; arrays and scalars replace.") },
     async ({ patch }) => {
       try {
         const { path, changed } = await updateLocalProfile(patch);
