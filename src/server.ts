@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { networkInterfaces } from "node:os";
 import { pathToFileURL } from "node:url";
-import { loadDashboardToken, isAuthorized, hostAllowed, COOKIE, timingSafeEqualStr } from "./serverAuth.js";
+import { loadDashboardToken, isAuthorized, hostAllowed, parseAllowedHosts, COOKIE, timingSafeEqualStr } from "./serverAuth.js";
 import { AieClient } from "./mcp/aieClient.js";
 import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
@@ -70,7 +70,10 @@ function lanIps(): string[] {
   }
   return out;
 }
-const ALLOWED_HOSTS = LAN ? lanIps() : [];
+// Stable hosts configured via COACH_ALLOWED_HOSTS (e.g. a Tailscale IP / MagicDNS name) so a phone can
+// reach the dashboard from anywhere by one address that never changes. Merged alongside the live LAN IPs.
+const EXTRA_HOSTS = parseAllowedHosts(process.env.COACH_ALLOWED_HOSTS);
+const ALLOWED_HOSTS = [...(LAN ? lanIps() : []), ...EXTRA_HOSTS];
 
 function lanUrls(): string[] {
   const out: string[] = [`http://localhost:${PORT}`];
@@ -80,6 +83,7 @@ function lanUrls(): string[] {
       if (i.family === "IPv4" && !i.internal) out.push(`http://${i.address}:${PORT}`);
     }
   }
+  for (const h of EXTRA_HOSTS) out.push(`http://${h}:${PORT}`); // configured stable remote hosts
   return out;
 }
 

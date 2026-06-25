@@ -514,12 +514,23 @@ projection (the dashboard stays decluttered — cost lives in `npm run cost` / t
 
   (Predicted times are MODEL estimates — the plan is a target, not a guarantee.)
 
-## Online dashboard (view it on your phone over Wi-Fi)
+## Online dashboard (view it on your phone)
 
 A small local web server serves the live dashboard. **It is bound to `localhost` by default** and every
 route (incl. the AI Endurance write path) requires a per-install **pairing token** — the server exposes
 writes + LLM spend, so it is not left open. To reach it from your **phone on the same Wi-Fi**, set
 `COACH_LAN=1`. Credentials never leave the Mac.
+
+Opening the printed `…/pair?token=…` link once drops a cookie that lasts a year, so afterwards you just
+bookmark the bare URL (or add it to your Home Screen) — no token to re-enter.
+
+**Reaching it from anywhere (not just home Wi-Fi).** A LAN IP only works on the same network and can
+change when your router reassigns it. For a *stable* address that also works on cellular, put the Mac and
+the phone on a private [Tailscale](https://tailscale.com) network (free) and pin the Mac's Tailscale
+address in **`COACH_ALLOWED_HOSTS`** (with `COACH_LAN=1`) — e.g. `COACH_ALLOWED_HOSTS=100.x.y.z` or its
+MagicDNS name. Because it's a configured static host, the URL keeps working even after a reboot that
+starts the dashboard before Tailscale connects (when the live LAN-IP list would miss it). The Tailscale
+`100.x` address is private to your devices — the token still gates every route.
 
 **The layout — four tabs, one page.** A persistent top nav splits the dashboard into four sections. It's
 still **one self-contained HTML page**: the tabs switch in-browser with no round-trip (deep-link to one with
