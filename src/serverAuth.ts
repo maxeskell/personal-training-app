@@ -110,4 +110,22 @@ export function hostAllowed(hostHeader: string | undefined, allowed: string[] = 
   return set.has(host.toLowerCase());
 }
 
+/**
+ * Extra Host values always permitted, parsed from COACH_ALLOWED_HOSTS (comma/space separated). This is
+ * how a *stable* remote name reaches the dashboard — e.g. a Tailscale IP / MagicDNS name so a phone can
+ * open it from anywhere. Unlike the live LAN IPs (recomputed from the interfaces at startup, so a reboot
+ * that races the dashboard ahead of Tailscale can drop them), a configured host is a static string that
+ * always matches — it works even if Tailscale connects after the server boots. Each entry is lower-cased
+ * with any scheme + port stripped, so "https://Foo.ts.net:3000" and "foo.ts.net" both match the Host check.
+ */
+export function parseAllowedHosts(env: string | undefined): string[] {
+  if (!env) return [];
+  return env
+    .split(/[\s,]+/)
+    .map((h) => h.trim().toLowerCase().replace(/^https?:\/\//, ""))
+    .filter(Boolean)
+    .map((h) => (h.startsWith("[") ? h.slice(0, h.indexOf("]") + 1) : h.split(":")[0])) // strip port (IPv6-safe)
+    .filter(Boolean);
+}
+
 export const COOKIE = (token: string): string => `coach_auth=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=31536000`;

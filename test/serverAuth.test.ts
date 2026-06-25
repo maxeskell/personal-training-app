@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseCookies, presentedToken, isAuthorized, timingSafeEqualStr, hostAllowed } from "../src/serverAuth.js";
+import { parseCookies, presentedToken, isAuthorized, timingSafeEqualStr, hostAllowed, parseAllowedHosts } from "../src/serverAuth.js";
 
 test("parseCookies + presentedToken", () => {
   assert.deepEqual(parseCookies("a=1; coach_auth=tok; b=2"), { a: "1", coach_auth: "tok", b: "2" });
@@ -27,6 +27,22 @@ test("hostAllowed defeats DNS-rebinding", () => {
   assert.equal(hostAllowed("192.168.1.139:3000"), false); // LAN ip not allowed by default
   assert.equal(hostAllowed("192.168.1.139:3000", ["192.168.1.139"]), true); // allowed in LAN mode
   assert.equal(hostAllowed(undefined), false);
+});
+
+test("parseAllowedHosts normalizes COACH_ALLOWED_HOSTS", () => {
+  assert.deepEqual(parseAllowedHosts(undefined), []);
+  assert.deepEqual(parseAllowedHosts(""), []);
+  assert.deepEqual(parseAllowedHosts("foo.ts.net"), ["foo.ts.net"]);
+  assert.deepEqual(parseAllowedHosts("Foo.TS.net:3000"), ["foo.ts.net"]); // lower-cased, port stripped
+  assert.deepEqual(parseAllowedHosts("https://foo.ts.net:3000"), ["foo.ts.net"]); // pasted URL tolerated
+  assert.deepEqual(parseAllowedHosts("100.118.222.61, foo.ts.net"), ["100.118.222.61", "foo.ts.net"]);
+});
+
+test("a configured stable host reaches the dashboard", () => {
+  const extra = parseAllowedHosts("100.118.222.61,maxs-macbook-neo.tail58512a.ts.net");
+  assert.equal(hostAllowed("100.118.222.61:3000", extra), true);
+  assert.equal(hostAllowed("maxs-macbook-neo.tail58512a.ts.net:3000", extra), true);
+  assert.equal(hostAllowed("attacker.com:3000", extra), false); // still rejects everything else
 });
 
 test("server gates routes by token + host (integration)", async () => {
