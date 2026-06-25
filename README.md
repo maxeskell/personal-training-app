@@ -803,6 +803,22 @@ npm run health-remote   # probe the live connector through its public tunnel (se
 "are my creds + the upstream OK?". `health-remote` runs the path **Cowork** uses (tunnel → server →
 AIE), so it answers "is the connector reachable from outside?". Together they pinpoint which hop broke.
 
+### Staying current (dependencies + integrations)
+
+```bash
+npm run check:updates           # one report: dependency drift (npm outdated) + integration health (doctor)
+npm run check:updates:install   # run it weekly (macOS launchd; default Mon 09:00) — alerts if anything's behind
+npm run check:updates:uninstall # stop the weekly check
+```
+
+`check:updates` only **reports** — it never upgrades anything. The split that keeps upgrades safe: take
+**patch/minor** bumps freely behind the `npm run ship` gate (`typecheck` + `test`); give each **major**
+(zod, TypeScript, the Anthropic SDK across a breaking line) its **own branch** with a typecheck/test pass,
+since those can change behaviour (e.g. zod 4 removed single-arg `z.record`; dotenv 17 added a load-time
+banner suppressed with `quiet: true`). For Claude/model currency, the `/claude-api` skill is the source of
+truth — run `/claude-api migrate` when a new model ships rather than hand-editing call sites; `CLAUDE.md`
+already requires reading it before touching any Claude code.
+
 Secrets stay local and out of git: AI Endurance OAuth tokens live in `~/.endurance-coach` (0700),
 Garmin tokens in `~/.garminconnect`, your `ANTHROPIC_API_KEY` in `.env`. `data/`, `reports/`, `*.log`,
 and token dirs are gitignored; token-shaped strings are redacted from logs and notifications.

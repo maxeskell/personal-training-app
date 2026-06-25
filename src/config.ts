@@ -4,7 +4,9 @@ import { join, isAbsolute } from "node:path";
 import { config as loadEnv } from "dotenv";
 import { parse as parseYaml } from "yaml";
 
-loadEnv();
+// `quiet: true` suppresses dotenv 17's load-time banner — it would otherwise print to stdout at import
+// time and corrupt the MCP server's JSON-RPC stdio stream (config.ts is imported by mcpServer.ts).
+loadEnv({ quiet: true });
 
 /**
  * Resolve the athlete's IANA timezone for "today" calculations. Precedence: an explicit COACH_TZ wins;

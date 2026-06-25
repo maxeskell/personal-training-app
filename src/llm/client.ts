@@ -96,7 +96,7 @@ export class CoachLLM {
         output_config: {
           effort: this.effort,
           format: { type: "json_schema", schema: safeSchema },
-        } as never, // SDK types for output_config.effort+format are still settling; shape is correct per API.
+        },
         system: [
           { type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } },
         ],
@@ -140,10 +140,10 @@ export class CoachLLM {
           model: this.model,
           max_tokens: 8000,
           thinking: { type: "adaptive" },
-          output_config: { effort: this.effort } as never,
+          output_config: { effort: this.effort },
           system: [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }],
           // Server-side web search (current 2026-02 tool — adds dynamic result filtering on Opus 4.8). Capped to bound cost.
-          tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxSearches } as never],
+          tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxSearches }],
           messages: [{ role: "user", content: userContent }],
         },
         { signal },
@@ -171,7 +171,7 @@ export class CoachLLM {
           model: this.model,
           max_tokens: 12000,
           thinking: { type: "adaptive" },
-          output_config: { effort: this.effort } as never,
+          output_config: { effort: this.effort },
           system: [
             { type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } },
           ],

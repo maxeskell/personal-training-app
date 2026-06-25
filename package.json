@@ -83,24 +83,27 @@
     "backfill:uninstall": "bash scripts/uninstall-backfill.sh",
     "update": "bash scripts/autoupdate.sh",
     "autoupdate:install": "bash scripts/install-autoupdate.sh",
-    "autoupdate:uninstall": "bash scripts/uninstall-autoupdate.sh"
+    "autoupdate:uninstall": "bash scripts/uninstall-autoupdate.sh",
+    "check:updates": "bash scripts/check-updates.sh",
+    "check:updates:install": "bash scripts/install-update-check.sh",
+    "check:updates:uninstall": "bash scripts/uninstall-update-check.sh"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.102.0",
+    "@anthropic-ai/sdk": "^0.106.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
-    "dotenv": "^16.4.5",
+    "dotenv": "^17.4.2",
     "express": "^5.1.0",
     "express-rate-limit": "^8.0.0",
-    "open": "^10.1.0",
+    "open": "^11.0.0",
     "proper-lockfile": "^4.1.2",
     "yaml": "^2.9.0",
-    "zod": "^3.23.8"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.0.1",
     "@types/proper-lockfile": "^4.1.4",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "typescript": "^6.0.3"
   }
 }

@@ -25,7 +25,9 @@ export const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday",
 const weekday = z.enum(WEEKDAYS);
 
 /** Free-form map/list: type-checked as a container but its contents are left open (rich real data). */
-const looseMap = z.record(z.unknown());
+// zod 4 requires an explicit key type — z.record(valueType) single-arg was removed. String keys preserve
+// the prior "arbitrary keys" behaviour.
+const looseMap = z.record(z.string(), z.unknown());
 const looseList = z.array(z.unknown());
 
 export const RaceSchema = z
