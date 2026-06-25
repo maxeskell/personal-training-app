@@ -35,9 +35,13 @@ const RICH: unknown = {
     leg_length_difference: { present: true, shorter_side: "right", run_correction_mm: 6, run_correction_status: "in_use" },
     mobility: { hip_flexion_deg: { right: 85, left: 80 }, internal_rotation_deg: { right: 7, left: 15 } },
     cleat: { cue: "pull left ankle in" },
+    rehab: ["hip-stability work for knee tracking", "warm up the shoulder before every swim"],
   },
   health: {
-    strength_sessions_per_week: "2-3",
+    strength_sessions_per_week: "3-4",
+    conditions: [
+      { name: "rotator cuff", status: "recovering", swim_impact: "none", symptoms: "no pain but uncomfortable", management: ["physio/gym 3-4×/wk", "warm up before swim"] },
+    ],
     medication: { name: "example-drug", dose_day: "sunday", gi_trough_days: ["tuesday", "wednesday", "thursday"], implications: ["fuel to train"] },
   },
   availability: { weekly_hours: "11-12", weekday_minutes_per_day: 90, rest_day: "monday", fixed_sessions: { sunday: "long ride" } },
@@ -193,6 +197,10 @@ test("renderProfileContext surfaces the dose-cycle and never leaks a live number
   assert.match(block, /ATHLETE PROFILE/);
   assert.match(block, /GI trough/i);
   assert.match(block, /Race targets/);
+  // Health conditions + the rehab/strength cadence surface as standing reminders (not just in get_profile).
+  assert.match(block, /Health conditions: rotator cuff \(recovering\)/);
+  assert.match(block, /Strength \/ rehab cadence: 3-4 sessions\/week/);
+  assert.match(block, /Rehab \/ prehab focuses:.*warm up the shoulder before every swim/);
   // Bike race weight (grams in the profile) renders in kg, flagged for combining with the live weight.
   assert.match(block, /Bike race weight.*road 8\.2kg/);
   assert.doesNotMatch(block, /\bftp\b/i); // no live numbers leak into the prompt block
@@ -215,9 +223,14 @@ test("renderProfileContext withholds medical context when exposeMedical=false (t
   const gated = renderProfileContext(validateProfile(RICH), "2026-06-17", false);
   assert.doesNotMatch(gated, /Medication/, "no medication line when medical is withheld");
   assert.doesNotMatch(gated, /GI trough/i, "no dose-cycle when medical is withheld");
-  // Non-medical coaching context still flows through.
+  // Health conditions are medical — withheld when gated.
+  assert.doesNotMatch(gated, /Health conditions/, "no conditions line when medical is withheld");
+  assert.doesNotMatch(gated, /rotator cuff/, "the condition name isn't leaked when medical is withheld");
+  // Non-medical coaching context still flows through — including the rehab/prehab cues (warm-ups, focuses),
+  // which live under biomechanics so they reach every surface even when the medical block is withheld.
   assert.match(gated, /Race targets/);
   assert.match(gated, /Biomechanics/);
+  assert.match(gated, /Rehab \/ prehab focuses:.*warm up the shoulder before every swim/);
 
   // Bloods are medical too — dropped when withheld, present when allowed.
   assert.match(renderProfileContext(validateProfile(WITH_BLOODS), "2026-06-21", true), /Bloods/);

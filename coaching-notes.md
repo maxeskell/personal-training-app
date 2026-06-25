@@ -21,6 +21,16 @@
       (and `sweat_sodium_mg_per_l` if known); the fuelling plan then uses your number instead of the MODEL.
 
 ## Decisions / things we've talked through
+- **2026-06-25 — Right shoulder (rotator cuff) — standing rehab reminders.** No pain, but still
+  uncomfortable. Agreed standing context (now in `profile.local.yaml`: `health.conditions` +
+  `biomechanics.rehab`, and `strength_sessions_per_week` bumped to 3-4):
+  - **Physio/gym rehab 3-4×/week** — keep it in the weekly routine, don't let it lapse on busy/travel weeks.
+  - **Warm the shoulder up before every swim** — band external rotations + scapular activation before
+    the first hard set (open-water Saturdays included).
+  - **Discomfort during rehab is expected; a *return of sharp or recurring pain* is the stop signal** —
+    back off and reassess with the physio rather than pushing through.
+  - Swim impact currently none — keep it that way; don't ramp overhead/pull volume while it's still
+    uncomfortable, and flag if freestyle volume starts to aggravate it.
 - **2026-06-23 — 70.3 Outlaw fuelling.** Agreed the framework (coaching guidance, not athlete data):
   ~70–90 g/h, bias the bike and ease on the run, multi-transportable carb above ~60 g/h, eat to a clock,
   nothing new on race day, gut-train the rate up in long sessions. Exact grams to be worked out live once

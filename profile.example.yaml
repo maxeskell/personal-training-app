@@ -37,10 +37,22 @@ biomechanics:
     hip_flexion_deg: { right: , left: }
     internal_rotation_deg: { right: , left: }
     hamstrings:             # low | normal
-  rehab: []                 # list of ongoing rehab/strength focuses
+  rehab: []                 # ongoing rehab/prehab focuses, free text — these surface to the coach as standing
+                            # reminders (e.g. "hip-stability work for knee tracking", "warm up the shoulder
+                            # before every swim"). NOT medical, so they're shown on every coaching surface.
 
 health:
-  conditions: []            # list of { name, status, swim_impact }
+  # Ongoing conditions/niggles. Each is { name, status, swim_impact } plus optional free-text
+  # `symptoms` and a `management` list of cues — the coach surfaces these as standing reminders
+  # (medical, so withheld on the remote/Cowork surface). swim_impact is shown only when not "none".
+  conditions: []
+  #   - name: rotator cuff (right shoulder)
+  #     status: recovering          # recovering | managing | resolved | flaring
+  #     swim_impact: none           # none | describe how it affects swimming
+  #     symptoms: "no pain, but still uncomfortable"
+  #     management:
+  #       - physio/gym rehab 3-4×/week
+  #       - warm up the shoulder before every swim
   strength_sessions_per_week:
   sleep:                    # free text
   medication:

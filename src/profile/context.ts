@@ -61,6 +61,41 @@ function medicationLines(p: Profile, today: string): string[] {
   return out;
 }
 
+/**
+ * Health conditions + strength/rehab cadence — the standing "remember this" context (e.g. a recovering
+ * rotator cuff, "do strength 3-4×/week"). Medical, so it's gated behind exposeMedical like medication and
+ * bloods. Each condition renders name (status) — symptoms — manage: cues; swim_impact only when it isn't
+ * "none". The actionable rehab/prehab cues (warm-ups, focuses) live under biomechanics (see `rehabLine`),
+ * so they still surface on a remote surface where this medical line is withheld.
+ */
+function healthLines(p: Profile): string[] {
+  const h = obj(p.health);
+  if (!h) return [];
+  const out: string[] = [];
+  const conditions = (arr(h.conditions) ?? [])
+    .map(obj)
+    .filter((c): c is Record<string, unknown> => Boolean(c && str(c.name)));
+  if (conditions.length) {
+    const items = conditions.map((c) => {
+      const status = str(c.status);
+      const swim = str(c.swim_impact);
+      const mgmt = (arr(c.management) ?? []).map((m) => str(m)).filter(Boolean) as string[];
+      return [
+        status ? `${str(c.name)} (${status})` : str(c.name),
+        str(c.symptoms),
+        swim && swim !== "none" ? `swim impact: ${swim}` : null,
+        mgmt.length ? `manage: ${mgmt.join(", ")}` : null,
+      ]
+        .filter(Boolean)
+        .join(" — ");
+    });
+    out.push(`- Health conditions: ${items.join("; ")}.`);
+  }
+  const strength = h.strength_sessions_per_week;
+  if (str(strength) || num(strength) != null) out.push(`- Strength / rehab cadence: ${strength} sessions/week.`);
+  return out;
+}
+
 /** Whole months from `fromDate` to `today` (both YYYY-MM-DD), or null on a bad/future date. */
 function monthsBetween(fromDate: string, today: string): number | null {
   const a = new Date(`${fromDate}T00:00:00Z`);
@@ -124,6 +159,18 @@ function biomechanicsLine(p: Profile): string | null {
   const cleat = obj(b.cleat);
   if (cleat && str(cleat.cue)) parts.push(`cleat cue: ${str(cleat.cue)}`);
   return parts.length ? `- Biomechanics: ${parts.join("; ")}.` : null;
+}
+
+/**
+ * Ongoing rehab / prehab focuses (hip-stability work, shoulder rehab, "warm up before swims"). Lives
+ * under biomechanics — NOT medical — so these standing cues surface on every coaching surface, including
+ * the remote one where the medical `healthLines` block is withheld. Strings only; non-strings are skipped.
+ */
+function rehabLine(p: Profile): string | null {
+  const b = obj(p.biomechanics);
+  if (!b) return null;
+  const items = (arr(b.rehab) ?? []).map((r) => str(r)).filter(Boolean) as string[];
+  return items.length ? `- Rehab / prehab focuses: ${items.join("; ")}.` : null;
 }
 
 function availabilityLine(p: Profile): string | null {
@@ -200,8 +247,10 @@ export function renderProfileContext(profile: Profile, today: string, exposeMedi
   const lines = [
     identityLine(profile, today),
     ...(exposeMedical ? medicationLines(profile, today) : []),
+    ...(exposeMedical ? healthLines(profile) : []),
     ...(exposeMedical ? bloodsLines(profile, today) : []),
     biomechanicsLine(profile),
+    rehabLine(profile),
     availabilityLine(profile),
     bikeWeightLine(profile),
     fuellingLine(profile),
