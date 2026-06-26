@@ -135,6 +135,31 @@ test("assembleSession: joins .FIT biomechanics and archive thermal summary by da
   assert.match(ctx, /Aerobic decoupling 7/);
 });
 
+test("buildSessionContext: power line follows the session sport — running power is not labelled bike power", () => {
+  // Regression: a Run carries running power (NP/VI computed from the run's power channel). The label used
+  // to be a blanket "Bike power", which made the model flag a phantom run/ride mix-up. It must say "Run power".
+  const runDecay: SessionDecay = { activityId: "r1", date: "2026-06-09", sport: "running", startTimeS: null, durationMin: 60, cadenceDropPct: -3, gctRisePct: 4, voRisePct: 2, hrDriftPct: 6, decouplingPct: 8, avgTempC: null, avgPowerW: 285, avgHr: 133, avgVerticalRatioPct: null, avgStepLengthMm: null, avgGctBalancePct: null, avgLrBalancePct: null, normalizedPowerW: 317 };
+  const ctx = buildSessionContext(assembleSession(stateWithRuns(), undefined, { decays: [runDecay] })!, stateWithRuns(), undefined);
+  assert.match(ctx, /Run power: normalized power 317W \(avg 285W → variability index 1\.11\)/);
+  assert.ok(!/Bike power/.test(ctx), "a run never says bike power");
+});
+
+test("buildSessionContext: a ride still labels its power 'Bike power'", () => {
+  const rideDecay: SessionDecay = { activityId: "c1", date: "2026-06-09", sport: "cycling", startTimeS: null, durationMin: 120, cadenceDropPct: null, gctRisePct: null, voRisePct: null, hrDriftPct: null, decouplingPct: null, avgTempC: 22, avgPowerW: 200, avgHr: 140, avgVerticalRatioPct: null, avgStepLengthMm: null, avgGctBalancePct: null, avgLrBalancePct: null, normalizedPowerW: 222 };
+  const ctx = buildSessionContext(assembleSession(stateMultiSport(), undefined, { sport: "Ride", decays: [rideDecay] })!, stateMultiSport(), undefined);
+  assert.match(ctx, /Bike power: normalized power 222W/);
+});
+
+test("buildSessionContext: a missing session temperature reads as a device gap, not a data-pipeline gap", () => {
+  const noTemp: SessionDecay = { activityId: "r2", date: "2026-06-09", sport: "running", startTimeS: null, durationMin: 60, cadenceDropPct: -3, gctRisePct: 4, voRisePct: 2, hrDriftPct: 6, decouplingPct: 8, avgTempC: null, avgPowerW: 285, avgHr: 133, avgVerticalRatioPct: null, avgStepLengthMm: null, avgGctBalancePct: null, avgLrBalancePct: null, normalizedPowerW: 317 };
+  const ctx = buildSessionContext(assembleSession(stateWithRuns(), undefined, { decays: [noTemp] })!, stateWithRuns(), undefined);
+  assert.match(ctx, /Session mean temperature: not recorded by the device/);
+  assert.ok(!/Session mean temperature —°C/.test(ctx), "no bare em-dash that reads as a sync failure");
+  // Present temperature still renders as a number.
+  const withTemp = { ...noTemp, avgTempC: 24 };
+  assert.match(buildSessionContext(assembleSession(stateWithRuns(), undefined, { decays: [withTemp] })!, stateWithRuns(), undefined), /Session mean temperature 24\.0°C/);
+});
+
 test("buildSessionContext: states plainly when no .FIT stream is present (never fabricates)", () => {
   const d = assembleSession(stateWithRuns(), undefined)!;
   const ctx = buildSessionContext(d, stateWithRuns(), undefined);
