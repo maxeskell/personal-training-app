@@ -240,7 +240,12 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
       `IN-SESSION BIOMECHANICS [.FIT stream — derived]:`,
       `- Aerobic decoupling ${fmt(dy.decouplingPct, 1)}% (>5% = aerobic fade in the second half)`,
       `- Cadence drop ${fmt(dy.cadenceDropPct, 1)}%, GCT rise ${fmt(dy.gctRisePct, 1)}%, vertical-osc rise ${fmt(dy.voRisePct, 1)}%, HR drift ${fmt(dy.hrDriftPct, 1)}% (late vs early quartile)`,
-      `- Session mean temperature ${fmt(dy.avgTempC, 1)}°C`,
+      // avgTempC is null when the device recorded no per-second temperature samples (many run profiles
+      // don't log the thermal channel). Say so explicitly — a bare "—°C" reads as a sync/pipeline gap and
+      // invites the model to flag missing data, when it's simply a sensor the watch didn't engage.
+      dy.avgTempC != null
+        ? `- Session mean temperature ${fmt(dy.avgTempC, 1)}°C`
+        : `- Session mean temperature: not recorded by the device this session (no thermal channel in the .FIT) — not a data gap to flag`,
     );
     // Run economy/dynamics (chest-strap) — only when the device recorded them; omitted, never faked, otherwise.
     if (dy.avgVerticalRatioPct != null || dy.avgStepLengthMm != null || dy.avgGctBalancePct != null) {
@@ -248,14 +253,17 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
         `- Run dynamics: vertical ratio ${fmt(dy.avgVerticalRatioPct, 1)}% (lower = more economical), step length ${fmt(dy.avgStepLengthMm)}mm, GCT L/R balance ${fmt(dy.avgGctBalancePct, 1)}% (50% = even)`,
       );
     }
-    // Bike power detail (NP + L/R balance from power meter / Rally pedals). L/R is decoded to the left
-    // share (50% = even); a value outside 0–100 can only be a sensor/encoding artifact, so we say so
-    // rather than feed the model an impossible number to (over-)interpret.
+    // Power detail (NP + L/R balance). NP/VI are computed from whatever power channel the device logged —
+    // running power on a run, bike power on a ride — so the label follows the session sport, never a blanket
+    // "bike". Mislabelling running power as bike power made the model flag the session as a possible
+    // run/ride mix-up; it isn't one. L/R is decoded to the left share (50% = even); a value outside 0–100
+    // can only be a sensor/encoding artifact, so we say so rather than feed the model an impossible number.
     if (dy.normalizedPowerW != null || dy.avgLrBalancePct != null) {
+      const powerLabel = d.sport === "Ride" ? "Bike power" : d.sport === "Run" ? "Run power" : "Power";
       const npNote = dy.normalizedPowerW != null && dy.avgPowerW != null ? ` (avg ${fmt(dy.avgPowerW)}W → variability index ${(dy.normalizedPowerW / dy.avgPowerW).toFixed(2)})` : "";
       const lr = dy.avgLrBalancePct;
       const lrNote = lr == null ? "" : lr < 0 || lr > 100 ? `, L/R balance ${fmt(lr, 1)}% — outside 0–100, a sensor/encoding artifact, not assessable` : `, L/R balance ${fmt(lr, 1)}% (50% = even)`;
-      lines.push(`- Bike power: normalized power ${fmt(dy.normalizedPowerW)}W${npNote}${lrNote}`);
+      lines.push(`- ${powerLabel}: normalized power ${fmt(dy.normalizedPowerW)}W${npNote}${lrNote}`);
     }
   } else {
     lines.push("", `IN-SESSION BIOMECHANICS: no raw .FIT stream for this session — cadence/GCT/decoupling unavailable. Sync/fit-sync auto-downloads these when the Garmin download tool is available; the fallback is a per-second .FIT exported from Garmin Connect into data/fit-streams/.`);
