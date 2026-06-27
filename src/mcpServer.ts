@@ -457,20 +457,23 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
 
   server.tool(
     "react_to_insight",
-    "Record your reaction to a surfaced insight — the same like/dislike/snooze the dashboard offers, so it persists and shapes future surfacing (parity with the website; no AI Endurance write). `key` comes from the `insights` tool (key=…). like/dislike are saved, visible, REVERSIBLE opinions (dislike just down-ranks, stays visible); snooze hides it ~2 weeks; clear removes a prior opinion. Local decision-log write only.",
+    "Record your reaction to a surfaced insight or `agenda` item — the same like/dislike/snooze the dashboard offers, so it persists and shapes future surfacing (parity with the website; no AI Endurance write). `key` comes from the `insights` or `agenda` tool (key=…). like/dislike are saved, visible, REVERSIBLE opinions (dislike just down-ranks, stays visible); snooze hides it ~2 weeks; clear removes a prior opinion. Pass `note` to record the WHY from discussing it with the athlete — it's stamped as a coach discussion and the dashboard card then shows 'discussed with coach · <date> · <outcome> — <note>'. Local decision-log write only.",
     {
-      key: z.string().min(1).describe("Finding key from the `insights` tool output (the key=… field)."),
+      key: z.string().min(1).describe("Finding/agenda key (the key=… field)."),
       reaction: z.enum(["like", "dislike", "snooze", "clear"]),
       summary: z.string().optional().describe("The finding's title, for the audit log (optional)."),
       family: z.string().optional().describe("The finding's family — only needed when reacting to a setup:* card key the insight log doesn't carry, so the engagement model can weight it."),
+      note: z.string().optional().describe("One line on WHY — the call you and the athlete reached. Marks this a coach discussion and surfaces on the dashboard card."),
     },
-    async ({ key, reaction, summary, family }) => {
+    async ({ key, reaction, summary, family, note }) => {
       const mapped = reactionFromLabel(reaction);
       if (!mapped) return fail(`Unknown reaction: ${reaction}`);
-      await new DecisionLog().recordInsightFeedback(key, mapped, summary ?? key, family);
-      const note =
+      // Every react_to_insight call IS a coach-surface action → stamp via:"coach" so the dashboard can show
+      // it was discussed (not a bare click); the optional note carries the why.
+      await new DecisionLog().recordInsightFeedback(key, mapped, summary ?? key, family, note, "coach");
+      const msg =
         reaction === "snooze" ? "hidden ~2 weeks" : reaction === "clear" ? "opinion cleared" : `saved (${reaction === "dislike" ? "stays visible, down-ranked" : "reversible"})`;
-      return ok(`Recorded ${reaction} on "${key}" — ${note}.`);
+      return ok(`Recorded ${reaction} on "${key}"${note ? ` — discussed: "${note}"` : ""} — ${msg}.`);
     },
   );
 
