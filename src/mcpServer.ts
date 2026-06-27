@@ -12,10 +12,15 @@ import { loadActivityFits } from "./insights/fit.js";
 import { formatSplits, formatCss, computeCss, detectCssEffortsFromLaps, parseClock } from "./insights/sessionSplits.js";
 import { reportStreamsDir, ingestFitFile, formatStreamsReport, formatIngest } from "./archive/fitIngest.js";
 import { diagnoseFtp, formatFtpDiagnosis } from "./insights/ftpSource.js";
-import { richActivities } from "./insights/metrics.js";
+import { richActivities, findingKey } from "./insights/metrics.js";
 import { StateStore } from "./state/store.js";
 import { buildInsights } from "./insights/engine.js";
-import { DecisionLog, suppressedInsightKeys, reactionFromLabel, type DecisionRecord } from "./state/decisionLog.js";
+import { DecisionLog, suppressedInsightKeys, executedSourceKeys, reactionFromLabel, type DecisionRecord } from "./state/decisionLog.js";
+import { buildSetupItems } from "./coach/setupCard.js";
+import { latestAdviceFindings } from "./coach/adviceRecs.js";
+import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
+import { loadVenue, latestReading } from "./state/venue.js";
+import { buildAgenda, formatAgendaText } from "./coach/agenda.js";
 import { InsightLog } from "./state/insightLog.js";
 import { analyseListening, formatListening } from "./coach/listening.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
@@ -373,6 +378,49 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
         "",
         "(react with `react_to_insight`: key=… + like / dislike / snooze / clear — like/dislike persist & are reversible; snooze hides ~2wk)",
       ].join("\n"));
+    },
+  );
+
+  server.tool(
+    "agenda",
+    "Walk the SAME items the dashboard shows on its 'This week' and 'Set up & improve' cards: coach recommendations (latest readiness/deep-dive), timely cues, finish-setup gaps, 'discuss with coach' open items and races — each with its stable key + current reaction. Use-when: 'walk me through this week' / going through the dashboard with the athlete. Deterministic — NO LLM cost. Record each outcome against its key with `react_to_insight`; a training-change cue applies via the gated propose→confirm flow.",
+    {},
+    async () => {
+      const { state, window } = await buildTodayState();
+      const profile = (await loadProfile()).profile;
+      if (!profile) return fail("No profile found — nothing to set up or discuss.");
+      const log = new DecisionLog();
+      const decisions = await log.all();
+      const reactionState = await log.insightReactions();
+      const suppressed = suppressedInsightKeys(reactionState);
+      const reactions = new Map([...reactionState].map(([k, v]) => [k, v.reaction] as const));
+      const appliedKeys = executedSourceKeys(decisions);
+
+      // Mirror the dashboard's assembly so the coach sees exactly the athlete's cards (no drift).
+      const engagement = await loadEngagementContext(window);
+      const insights = state.raw ? buildInsights(state, await loadArchive(), { suppressed, history: window, engagement }) : undefined;
+      const surfacedInsightKeys = new Set<string>(insights ? insights.topFindings.slice(0, 5).map((f) => findingKey(f)) : []);
+      const lead = insights?.topFindings.find((f) => f.severity === "flag") ?? insights?.topFindings.find((f) => f.severity === "watch");
+      if (lead) surfacedInsightKeys.add(findingKey(lead));
+      const coachRecs = latestAdviceFindings(await new InsightLog().all(), suppressed);
+
+      const setupItems = buildSetupItems(profile, {
+        suppressed,
+        reactions,
+        appliedKeys,
+        insights,
+        surfacedInsightKeys,
+        weeklyReview: await latestWeeklyReview(),
+        researchDigest: await latestResearchDigest(),
+        setupHealth: {
+          hasApiKey: CoachLLM.hasApiKey(),
+          waterTempSet: latestReading(await loadVenue())?.tempC != null,
+          lastSyncAgeHours: (Date.now() - new Date(state.assembledAt).getTime()) / 3_600_000,
+        },
+        liveThresholds: state.thresholds.value ?? undefined,
+      });
+
+      return ok(formatAgendaText(buildAgenda(setupItems, coachRecs, reactions, appliedKeys)));
     },
   );
 

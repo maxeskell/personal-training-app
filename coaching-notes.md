@@ -35,12 +35,18 @@
       fuelled sessions. Both the chat and the dashboard card read it (same engine). Max's profile set to
       `{ride: even, run: liquid}`. This is the template for "Channel A" (structured fact → profile →
       recompute → both surfaces).
-- [ ] **Phase 2+ — close the coach↔dashboard decision loop ("Channel B").** Let the Claude coach walk the
+- [~] **Phase 2+ — close the coach↔dashboard decision loop ("Channel B").** Let the Claude coach walk the
       dashboard's "This week" cues + "discuss with coach" items and write back the agreed/not-agreed
-      outcome so the card reflects it. Needs: (a) an MCP read tool that enumerates the exact dashboard
-      items + their stable keys; (b) extend `react_to_insight` to carry an outcome + one-line note;
-      (c) a scoped render of that outcome on the card; (d) stable ids for `open_items` (today text-keyed,
-      so a reword orphans the outcome). One store (`data/decisions/log.jsonl`), gated writes unchanged.
+      outcome so the card reflects it. One store (`data/decisions/log.jsonl`), gated writes unchanged.
+      - [x] (a) **`agenda` MCP read tool — SHIPPED.** Enumerates the exact dashboard items (coach recs +
+        this-week cues + finish-setup + open items + races) with stable keys + current reaction, built on
+        the same `buildSetupItems`/`latestAdviceFindings` the dashboard uses. `src/coach/agenda.ts`.
+      - [ ] (b) extend `react_to_insight` to carry an outcome + one-line note (the "discussed & agreed, here's
+        why" record), keyed by the card key.
+      - [ ] (c) scoped render of that outcome on the dashboard card ("✓ discussed with coach · date · agreed").
+      - [ ] (d) stable ids for `open_items` — CONFIRMED a real problem: the live agenda showed keys are the
+        whole sentence normalised (`setup:open:book medichecks ultimate performance…`), so a reword orphans
+        the outcome. Give each open_item an explicit short id (back-compat with plain strings).
 
 ## Decisions / things we've talked through
 - **2026-06-27 — Brick fuelling rehearsal + standing solid/liquid preference.** Mon 29 Jun brick
