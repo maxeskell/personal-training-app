@@ -213,4 +213,10 @@ ai_endurance_todo:
 
 # Running list of free-text unresolved actions (e.g. "shim bike cleat after Birmingham"). These also
 # surface on the "Set up & improve" card, tagged "discuss with coach"; clear an item once it's done.
+# Each entry is EITHER a plain string OR `{ id: <short-slug>, text: <the action> }`. Giving an item a
+# short stable `id` keeps your decision-log key (`setup:open:<id>`) fixed, so when you discuss it with the
+# coach and agree/snooze it, that outcome survives even if you later reword the text. Bare strings work
+# too (their key is derived from the text, so it shifts if you reword).
 open_items: []
+#   - shim bike cleat after Birmingham                       # plain string — fine for one-offs
+#   - { id: book-bloods, text: "Book the Medichecks panel" }  # stable id — survives rewording

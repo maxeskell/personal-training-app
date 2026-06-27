@@ -508,7 +508,7 @@ test("buildSetupItems: drops race_targets, tags + routes each source, dedupes an
       race_targets: "set the target_time for each race", // non-actionable → must be dropped
       legacy: "resolved", // resolved → dropped
     },
-    open_items: ["Shim the bike cleat after Birmingham", "  ", 42 as unknown as string],
+    open_items: ["Shim the bike cleat after Birmingham", "  ", 42 as unknown as string, { id: "book-bloods", text: "Book the Medichecks panel" }],
     fuelling: { carb_target_g_per_hour: { long: 80 } }, // filled → its question is NOT surfaced
     // availability.rest_day is absent → its question IS surfaced
   } as Profile;
@@ -526,8 +526,11 @@ test("buildSetupItems: drops race_targets, tags + routes each source, dedupes an
   assert.ok(aie.every((i) => i.route === "in AI Endurance"));
 
   const open = items.filter((i) => i.source === "open_item");
-  assert.deepEqual(open.map((i) => i.label), ["Shim the bike cleat after Birmingham"], "blank/non-string open items are skipped");
+  assert.deepEqual(open.map((i) => i.label), ["Shim the bike cleat after Birmingham", "Book the Medichecks panel"], "blank/non-string open items skipped; string + {id,text} kept");
   assert.equal(open[0].route, "discuss with coach");
+  // A plain string keys off its normalised text; an {id,text} entry keys off the STABLE id (survives rewording).
+  assert.equal(open[0].key, "setup:open:shim the bike cleat after birmingham");
+  assert.equal(open[1].key, "setup:open:book-bloods", "explicit id → stable key");
 
   const q = items.filter((i) => i.source === "profile_question");
   assert.deepEqual(q.map((i) => i.label), ["Answer: Which weekday is your rest day?"], "only the UNFILLED question surfaces");

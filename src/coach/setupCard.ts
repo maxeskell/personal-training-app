@@ -388,6 +388,27 @@ function dedupeKey(label: string): string {
 }
 
 /**
+ * An open item is EITHER a plain string OR `{ id, text }`. With an explicit `id` the decision-log key is
+ * `setup:open:<id>` — STABLE across rewording, so a discussion outcome (agreed/snoozed, recorded against
+ * the key) survives an edit to the text. A bare string falls back to a key derived from its normalised
+ * text (back-compat), which drifts if reworded. Returns null for blank/malformed entries (degrade, skip).
+ */
+export function parseOpenItem(raw: unknown): { id: string; text: string } | null {
+  if (typeof raw === "string") {
+    const text = raw.trim();
+    return text ? { id: dedupeKey(text), text } : null;
+  }
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    const text = typeof o.text === "string" ? o.text.trim() : "";
+    if (!text) return null;
+    const id = typeof o.id === "string" && o.id.trim() ? o.id.trim() : dedupeKey(text);
+    return { id, text };
+  }
+  return null;
+}
+
+/**
  * The unmissable training-setup topics that get restated under different wording (an `ai_endurance_todo`
  * gap AND a hand-written `open_item` describing the same gap). Verbatim dedupe misses them because the
  * copy differs ("Set your swim CSS" vs "Swim CSS not set in AI Endurance: …"), so within Finish-setup we
@@ -479,9 +500,9 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
   }
   // 2) Free-text open items (a running list of unresolved actions) → raise them with the coach.
   for (const raw of profile.open_items ?? []) {
-    const text = typeof raw === "string" ? raw.trim() : "";
-    if (!text) continue;
-    items.push({ key: setupKey("open_item", dedupeKey(text)), label: text, why: "", source: "open_item", group: "finish_setup", route: "discuss with coach", action: OPEN_ITEM_ACTION, priority: SETUP_PRIORITY.open_item });
+    const parsed = parseOpenItem(raw);
+    if (!parsed) continue;
+    items.push({ key: setupKey("open_item", parsed.id), label: parsed.text, why: "", source: "open_item", group: "finish_setup", route: "discuss with coach", action: OPEN_ITEM_ACTION, priority: SETUP_PRIORITY.open_item });
   }
   // 3) Unfilled optional profile questions → fill them in (or tell Claude via update_profile).
   for (const q of questions) {
