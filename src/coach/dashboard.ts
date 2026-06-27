@@ -8,6 +8,7 @@ import type { SurfacedFinding } from "../state/insightLog.js";
 import { renderCoachRecs } from "./adviceRecs.js";
 import { findingKey } from "../insights/metrics.js";
 import { detectMetricChanges, detectSourceConflicts, formatMetricValue, metricLabel } from "./metricChanges.js";
+import { buildBriefSnapshot, diffBriefSnapshots, type BriefSnapshot, type BriefChange } from "./dailyBrief.js";
 import type { MetricOverrides } from "../state/metricOverrides.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone, type Headline } from "../insights/headline.js";
@@ -187,6 +188,12 @@ export interface DashboardInput {
    * the tab shows current form only. The standalone /career page renders the same content via {@link renderCareerInner}.
    */
   career?: CareerHistory | null;
+  /**
+   * Yesterday's (most recent prior-day) brief snapshot — drives the daily brief's "since yesterday" diff.
+   * Loaded + persisted in the IO layer (server/CLI); omitted on the one-off file render, where the brief
+   * degrades to today-at-a-glance with no diff.
+   */
+  priorBrief?: BriefSnapshot | null;
 }
 
 const SEV_COLOR: Record<string, string> = { red: "#c0392b", amber: "#c98a00", green: "#1a8a3a", flag: "#c0392b", watch: "#c98a00", info: "#1a8a3a" };
@@ -898,6 +905,99 @@ function renderHealthBanner(risk: HealthRiskAssessment | null): string {
  * The "Today" decision header (#1) — leads with one synthesised call + the single action, corroborating
  * drivers, an always-visible health strip (#8), the LLM readiness narrative, and the key metrics.
  */
+const BRIEF_DOT: Record<BriefChange["tone"], string> = { up: "#1a8a3a", down: "#c98a00", neutral: "#777" };
+
+/** The first meaningful sentence of a stored session readout — the bold "Verdict" line, else the first prose line. */
+function sessionFeedbackOneLine(rec: SessionFeedbackRecord): string | null {
+  const lines = rec.markdown.split("\n").map((l) => l.trim());
+  const bold = lines.find((l) => /^\*\*.+\*\*/.test(l));
+  const pick = bold ?? lines.find((l) => l && !l.startsWith("#") && !l.startsWith("-"));
+  if (!pick) return null;
+  return pick.replace(/\*\*/g, "").replace(/^[-*]\s*/, "").trim() || null;
+}
+
+/**
+ * The daily brief — the orientation card at the top of the Today tab. Deterministic (no LLM): it ROUTES
+ * over the engine's existing pieces rather than restating them. Leads with the since-yesterday diff (the
+ * one genuinely new signal), then today's session(s) at a glance (sport · weather · fuelling, with a
+ * pointer to Plan for the detail), then yesterday in one line. Stays short when nothing moved.
+ *
+ * It deliberately does NOT repeat the big green/amber/red verdict — the header sits right below and owns
+ * that. The brief tells you what changed and which cards to look at; the header tells you the call.
+ */
+function renderDailyBrief(args: {
+  today: AthleteState;
+  window: AthleteState[];
+  insights?: InsightReport;
+  decisions: DecisionRecord[];
+  priorBrief: BriefSnapshot | null;
+  weather?: WeekWeather;
+  fuelByKey: Map<string, FuelPlan>;
+  sessionFeedbacks?: SessionFeedbackRecord[];
+  redact: (s: string) => string;
+  now: number;
+}): string {
+  const { today, window, insights, decisions, priorBrief, weather, fuelByKey, sessionFeedbacks, redact, now } = args;
+
+  // Since-yesterday diff — pure, built from the same pieces the cards below use.
+  const curr = buildBriefSnapshot({ window, insights, decisions, now });
+  const metricChanges = detectMetricChanges(window, { now });
+  const insightTitle = (key: string) => insights?.topFindings.find((f) => findingKey(f) === key)?.title;
+  const changes = diffBriefSnapshots(priorBrief, curr, { metricChanges, insightTitle }).slice(0, 6);
+
+  // "Since yesterday" vs "Since {date}" — honest about a skipped day.
+  const sinceLabel = priorBrief
+    ? daysTo(priorBrief.date, today.date) === 1
+      ? "Since yesterday"
+      : `Since ${escapeHtml(priorBrief.date)}`
+    : null;
+  const sinceBlock = !sinceLabel
+    ? "" // first day — nothing to diff against
+    : changes.length
+      ? `<div class="k" style="margin-bottom:4px">${sinceLabel}</div>
+        <ul style="list-style:none;padding:0;margin:0 0 12px">${changes
+          .map(
+            (c) =>
+              `<li style="font-size:14px;margin:4px 0"><span class="dot" style="background:${BRIEF_DOT[c.tone]};display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px"></span>${escapeHtml(redact(c.text))} <a href="#${c.target}" data-tab="${c.target}" style="color:#1558d6;text-decoration:none;font-size:12px">→</a></li>`,
+          )
+          .join("")}</ul>`
+      : `<div class="k" style="margin-bottom:12px">${sinceLabel} — nothing's changed.</div>`;
+
+  // Today's session(s) at a glance: sport · duration · weather verdict · fuelling one-liner.
+  const WX: Record<string, string> = { good: "🟢", marginal: "🟡", poor: "🔴", indoor: "🏠" };
+  const todays = (today.plannedSessions.value ?? []).filter((p) => p.date.slice(0, 10) === today.date);
+  const todayRows = todays.map((p) => {
+    const sport = p.sport ?? "Session";
+    const dur = p.durationMin ? ` · ${Math.round(p.durationMin)} min` : "";
+    const wx = weather?.sessions.find((s) => s.date.slice(0, 10) === today.date && s.sport === sport);
+    const wxBit = wx ? ` · ${WX[wx.verdict] ?? ""} ${escapeHtml(wx.verdict)}` : "";
+    // A tight indicator, not the standalone card's full summary (which would just repeat the session line).
+    const fuel = fuelByKey.get(fuelLogKey(today.date, sport));
+    const fuelBit = fuel ? (fuel.needed ? ` · ⛽ fuel plan` : ` · 💧 water's fine`) : "";
+    return `<li style="font-size:14px;margin:4px 0"><b>${escapeHtml(redact(p.title ?? sport))}</b>${escapeHtml(dur)}${wxBit}${fuelBit}</li>`;
+  });
+  const todayBlock = todays.length
+    ? `<div class="k" style="margin-bottom:4px">Today <a href="#plan" data-tab="plan" style="color:#1558d6;text-decoration:none;font-size:12px">see Plan →</a></div>
+      <ul style="list-style:none;padding:0;margin:0 0 12px">${todayRows.join("")}</ul>`
+    : `<div class="k" style="margin-bottom:12px">Today — nothing planned (rest day).</div>`;
+
+  // Yesterday in one line — the verdict from the latest stored session readout; the full card is below.
+  const latestFeedback = [...(sessionFeedbacks ?? [])].sort((a, b) => a.date.localeCompare(b.date)).pop();
+  const ydLine = latestFeedback ? sessionFeedbackOneLine(latestFeedback) : null;
+  const yesterdayBlock = ydLine
+    ? `<div class="k" style="margin-bottom:4px">Last session — ${escapeHtml(latestFeedback!.date.slice(5))} ${escapeHtml(latestFeedback!.sport)}</div>
+      <div style="font-size:14px;color:#444;margin-bottom:2px">${escapeHtml(redact(ydLine))}</div>`
+    : "";
+
+  // Short-when-nothing: a rest day with no changes still shows a calm one-card brief, never a wall.
+  return `<div class="card" style="border-top:4px solid #c8642d">
+    <h2>Daily brief — ${escapeHtml(today.date.slice(5))}</h2>
+    ${sinceBlock}
+    ${todayBlock}
+    ${yesterdayBlock}
+  </div>`;
+}
+
 function renderHeader(today: AthleteState, hl: Headline | null, decisions: DecisionRecord[], gar: DashboardInput["garminDays"], redact: (s: string) => string = (s) => s, leadKey?: string): string {
   const lastReadiness = [...decisions].reverse().find((d) => d.kind === "readiness");
   const verdictWord = lastReadiness?.summary.split(":")[0]?.trim().toLowerCase();
@@ -1020,7 +1120,7 @@ function shareRaceNames(today: AthleteState, profile?: Profile): string[] {
   return names.filter(Boolean);
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, seasonReport, seasonProse, career, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, seasonReport, seasonProse, career, priorBrief, now, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Fuelling — week ahead (deterministic, no LLM on render): per-session pre/during/after from the
@@ -1213,6 +1313,7 @@ function autoSync(min){ sync('Data is '+min+' min old — auto-refreshing:'); }
 ${share ? `<div class="card sharebanner" style="background:#eef4ff;border:1px solid #cfe0ff;color:#244">🔒 <b>Share view</b> — real race names, exact dates and your location/weather are hidden, the analysis is intact. <a href="?">Exit share view</a></div>` : ""}
 <section id="tab-today" class="tab on">
 
+${config.dailyBrief.enabled ? renderDailyBrief({ today, window, insights, decisions, priorBrief: priorBrief ?? null, weather, fuelByKey, sessionFeedbacks, redact, now: now ?? Date.now() }) : ""}
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
 ${insights ? renderHeader(today, hl, decisions, garminDays, redact, leadKey) : ""}
 

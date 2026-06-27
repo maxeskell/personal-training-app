@@ -22,6 +22,8 @@ import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { writeReport, listReports } from "./coach/reports.js";
 import { seasonNudgeDue } from "./coach/seasonNudge.js";
 import { renderDashboard } from "./coach/dashboard.js";
+import { buildBriefSnapshot, type BriefSnapshot } from "./coach/dailyBrief.js";
+import { loadPriorBrief, persistBriefIfAbsent } from "./coach/briefStore.js";
 import { latestWeeklyReview, latestResearchDigest, latestSeasonNarrative, latestWeeklyReviewProse } from "./coach/setupSources.js";
 import { loadSessionFeedbacks, saveSessionFeedback } from "./coach/sessionFeedbackStore.js";
 import { loadMetricOverrides } from "./state/metricOverrides.js";
@@ -646,10 +648,17 @@ async function cmdDashboard(): Promise<void> {
   } catch {
     /* the Plan tab degrades to the week-ahead view */
   }
+  // Daily brief: same load-prior + persist-today as the server, so the file render shows the diff too.
+  let priorBrief: BriefSnapshot | null = null;
+  if (config.dailyBrief.enabled) {
+    priorBrief = await loadPriorBrief(state.date);
+    await persistBriefIfAbsent(buildBriefSnapshot({ window, insights, decisions, now: Date.now() }));
+  }
   const html = renderDashboard({
     window,
     decisions,
     insights,
+    priorBrief,
     garminDays: archive?.garminDays,
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,

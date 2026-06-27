@@ -239,6 +239,15 @@ export const config = {
   autoSyncMinutes: Number(process.env.COACH_AUTOSYNC_MIN ?? 30),
 
   /**
+   * Daily brief — the deterministic orientation card at the top of the dashboard's Today tab: a
+   * since-yesterday diff + today's session(s) at a glance + yesterday in a line. No LLM (a view over the
+   * engine). On by default; set COACH_DAILY_BRIEF=false to hide it.
+   */
+  dailyBrief: {
+    enabled: process.env.COACH_DAILY_BRIEF !== "false",
+  },
+
+  /**
    * Read-only `/career` page (race history + lifetime bests vs current + power curve). The data is a
    * HISTORICAL multi-year archive (TrainingPeaks/intervals.icu + raw .FIT files), not live coaching state,
    * so it lives in a gitignored file built by `scripts/build-career-history.ts`. Path is relative to the repo root

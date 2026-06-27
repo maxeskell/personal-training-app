@@ -542,9 +542,19 @@ still **one self-contained HTML page**: the tabs switch in-browser with no round
 the URL hash — `/#plan`, `/#decide`, …), and with JavaScript off — or in Print → Save-as-PDF — every tab just
 stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and **🔄 Sync** sit in the header.
 
-- **Today** — the daily operational view: your readiness verdict + the day's action, the last session, and a
-  *"📥 N waiting on your call · N new →"* teaser into Decide. The day's headline call carries a **see the data →**
-  link that opens Decide and scrolls to the insight card backing it.
+- **Today** — the daily operational view, led by a **Daily brief** card: a deterministic *"what changed
+  since yesterday"* diff (a readiness move, an auto-detected FTP/threshold change, a watcher that just
+  spoke up — each a one-line pointer into the card that owns the detail), then **today's session(s) at a
+  glance** (sport · weather verdict · fuelling, with a *see Plan →*), then **yesterday in one line** (the
+  last session's verdict). It makes **no LLM call** — a *view* over the same engine the cards below use, so
+  it never disagrees with them — and stays short when nothing moved (a rest day with no changes is two
+  lines, not a wall). It routes rather than restates: the big green/amber/red **verdict** still lives in
+  the readiness header right below. The since-yesterday diff is powered by a tiny per-day snapshot under
+  `data/brief/` (gitignored), captured once a day so the next morning has a reference point; on the first
+  day there's nothing to diff, so the brief just shows today-at-a-glance. Toggle with `COACH_DAILY_BRIEF`.
+  Below the brief: the readiness verdict + the day's action, the last session, and a *"📥 N waiting on your
+  call · N new →"* teaser into Decide. The day's headline call carries a **see the data →** link that opens
+  Decide and scrolls to the insight card backing it.
 - **Plan** — the forward-looking view: this week's sessions vs weather and fuelling, the coach's **this-week
   review**, then the **Season arc** folded in (last-7-days load moved to Performance, where the backward-looking
   numbers live).
