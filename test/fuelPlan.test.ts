@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planFuel, carbTargetGPerHour, inferIntensity, buildWeekFuelPlans, loadFuelPrefs } from "../src/coach/fuelPlan.js";
+import { planFuel, carbTargetGPerHour, inferIntensity, buildWeekFuelPlans, loadFuelPrefs, resolveSolidLiquidSplit, parseSolidLiquidSplit } from "../src/coach/fuelPlan.js";
 import { loadInventory } from "../src/coach/fuelInventory.js";
 import type { Profile } from "../src/profile/schema.js";
 import type { PlannedSession } from "../src/state/types.js";
@@ -143,6 +143,7 @@ test("loadFuelPrefs reads the learned preferences + the athlete's stated carb ta
     sweatRateMlPerHour: undefined,
     sweatSodiumMgPerL: undefined,
     notes: undefined,
+    solidLiquidSplit: undefined,
   });
 });
 
@@ -170,4 +171,84 @@ test("a measured sweat rate + sweat sodium states the actual sodium loss to repl
   // Without the sodium figure, no mg/hr claim is invented.
   const noSodium = planFuel({ sport: "Ride", durationMin: 120, title: "Endurance", inventory: inv, prefs: { sweatRateMlPerHour: 800 } });
   assert.doesNotMatch(noSodium.during!.lines.join(" "), /mg sodium\/hr/);
+});
+
+// ---- Solid / liquid balance preference ------------------------------------------------------------
+// inv (top of file) stocks one sippable carb (Gel, 22 g) and one solid (Flapjack, 65 g). With no
+// preference the plan prefers the sippable (proven above). These tests cover the explicit split.
+
+test("an 'even' split alternates a solid and a liquid feed, ~half the rate from each", () => {
+  const plan = planFuel({ sport: "Ride", durationMin: 180, title: "Long ride", inventory: inv, prefs: { carbTargetGPerHour: 80, solidLiquidSplit: { ride: "even" } } });
+  const during = plan.during!.lines.join(" ");
+  assert.match(during, /alternate solid \+ liquid for ≈ 80 g carb\/hr \(~half from each\)/);
+  assert.match(during, /Flapjack Co Flapjack \(65 g carb\).*\(solid\)/, "the solid channel is the bar");
+  assert.match(during, /Gel \(22 g carb\).*\(liquid\)/, "the liquid channel is the gel");
+  assert.match(plan.assumptions.join(" "), /even solid\/liquid balance \(your preference\)/);
+});
+
+test("an 'even' split avoids a big single-hit item per channel, picking one with a sensible cadence", () => {
+  // Each channel carries only half the rate, so a 90 g item would feed once every ~135 min (lumpy). The
+  // picker should prefer the smaller item that lands a feed near ~30 min, not the biggest in the channel.
+  const big = loadInventory({ schema_version: 1, identity: {}, fuelling: { products: [
+    { name: "Jumbo Gel", category: "gel", carbs_g: 90 },
+    { name: "Small Gel", category: "gel", carbs_g: 20 },
+    { name: "Big Flapjack", category: "bar", carbs_g: 90 },
+    { name: "Small Bar", category: "bar", carbs_g: 30 },
+  ] } } as unknown as Profile);
+  const plan = planFuel({ sport: "Ride", durationMin: 180, title: "Long ride", inventory: big, prefs: { carbTargetGPerHour: 80, solidLiquidSplit: { default: "even" } } });
+  const during = plan.during!.lines.join(" ");
+  assert.match(during, /Small Gel \(20 g carb\) every ~30 min \(liquid\)/, "liquid channel: the ~30 min item, not the 90 g jumbo");
+  assert.match(during, /Small Bar \(30 g carb\) every ~45 min \(solid\)/, "solid channel: the well-cadenced bar, not the 90 g flapjack");
+  assert.doesNotMatch(during, /Jumbo|Big Flapjack/, "the big single-hit items are not used for a half-rate channel");
+});
+
+test("a 'solid' split picks the bar over the (smaller) sippable gel the default would prefer", () => {
+  const solid = planFuel({ sport: "Ride", durationMin: 180, title: "Long ride", inventory: inv, prefs: { carbTargetGPerHour: 80, solidLiquidSplit: { default: "solid" } } });
+  assert.match(solid.during!.lines.join(" "), /Flapjack Co Flapjack \(65 g carb\) every/, "solid channel chosen");
+  assert.doesNotMatch(solid.during!.lines.join(" "), /alternate/, "single channel, not alternating");
+  // Default (no split) prefers the sippable gel — the contrast that proves the preference bit.
+  const def = planFuel({ sport: "Ride", durationMin: 180, title: "Long ride", inventory: inv, prefs: { carbTargetGPerHour: 80 } });
+  assert.match(def.during!.lines.join(" "), /Gel \(22 g carb\) every/, "default still prefers the sippable");
+});
+
+test("split is resolved PER SPORT — even on the bike, liquid-only on the run", () => {
+  const prefs = { carbTargetGPerHour: 70, solidLiquidSplit: { ride: "even" as const, run: "liquid" as const } };
+  const ride = planFuel({ sport: "Ride", durationMin: 180, title: "Long ride", inventory: inv, prefs });
+  assert.match(ride.during!.lines.join(" "), /alternate solid \+ liquid/, "bike alternates");
+  const run = planFuel({ sport: "Run", durationMin: 90, title: "Long run", inventory: inv, prefs });
+  const runDuring = run.during!.lines.join(" ");
+  assert.doesNotMatch(runDuring, /alternate/, "run does NOT alternate");
+  assert.doesNotMatch(runDuring, /Flapjack/, "run avoids the solid");
+  assert.match(runDuring, /Gel \(22 g carb\) every/, "run is liquid/gel only");
+});
+
+test("the free-text fuelling note is echoed on a fuelled session (and not on a quiet one)", () => {
+  const note = "gels sit badly running — prefer drink";
+  const loud = planFuel({ sport: "Ride", durationMin: 180, title: "Long ride", inventory: inv, prefs: { carbTargetGPerHour: 80, notes: note } });
+  assert.match(loud.during!.lines.join(" "), new RegExp(`Your note: ${note.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+  const quiet = planFuel({ sport: "Run", durationMin: 40, title: "Easy run", inventory: inv, prefs: { notes: note } });
+  assert.equal(quiet.during, null, "no during section, so no note pasted onto a water's-fine session");
+});
+
+test("resolveSolidLiquidSplit: exact sport wins, bike↔ride alias, then default", () => {
+  assert.equal(resolveSolidLiquidSplit({ ride: "even" }, "Bike"), "even", "bike resolves the ride key");
+  assert.equal(resolveSolidLiquidSplit({ bike: "solid" }, "Ride"), "solid", "ride resolves the bike key");
+  assert.equal(resolveSolidLiquidSplit({ run: "liquid", default: "even" }, "Run"), "liquid", "exact sport beats default");
+  assert.equal(resolveSolidLiquidSplit({ default: "liquid" }, "Swim"), "liquid", "falls back to default");
+  assert.equal(resolveSolidLiquidSplit(undefined, "Ride"), undefined, "nothing set → undefined");
+  assert.equal(resolveSolidLiquidSplit({ ride: "even" }, "Run"), undefined, "no run key, no default → undefined");
+});
+
+test("parseSolidLiquidSplit: bare string, per-sport map, synonyms, and junk", () => {
+  assert.deepEqual(parseSolidLiquidSplit("even"), { default: "even" }, "bare string → default");
+  assert.deepEqual(parseSolidLiquidSplit({ Ride: "liquid_only", Run: "balanced" }), { ride: "liquid", run: "even" }, "synonyms + lowercased keys");
+  assert.deepEqual(parseSolidLiquidSplit({ ride: "solids", run: "purple" }), { ride: "solid" }, "unrecognised value dropped");
+  assert.equal(parseSolidLiquidSplit("purple"), undefined, "junk string → undefined");
+  assert.equal(parseSolidLiquidSplit({}), undefined, "empty map → undefined");
+  assert.equal(parseSolidLiquidSplit(undefined), undefined, "absent → undefined");
+});
+
+test("loadFuelPrefs reads solid_liquid_split (string or map)", () => {
+  assert.deepEqual(loadFuelPrefs({ preferences: { solid_liquid_split: "even" } }).solidLiquidSplit, { default: "even" });
+  assert.deepEqual(loadFuelPrefs({ preferences: { solid_liquid_split: { ride: "even", run: "liquid only" } } }).solidLiquidSplit, { ride: "even", run: "liquid" });
 });
