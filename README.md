@@ -400,7 +400,12 @@ carb meal (~1–2 g/kg) · During — From H+20: OTE gel (40 g carb) every ~30 m
 ml/hr + an electrolyte tab · After — recovery`), or a single "water's fine" line when nothing's needed.
 The during section is **one whole item per feed**, with the interval set to hit the rate (60 × item-carbs ÷
 target) — so a 40 g gel at 80 g/hr is one every ~30 min, never a confusing "2×" or a fraction (you can't
-half a gel). It prefers a **sippable** item (gel/drink/chew — easier on the gut) at the largest size. The
+half a gel). By default it prefers a **sippable** item (gel/drink/chew — easier on the gut) at the largest
+size, but you can set a **solid/liquid balance** in `fuelling.preferences.solid_liquid_split` —
+`liquid` | `even` | `solid`, as one value or **per sport** (e.g. `{ ride: even, run: liquid }` for "real
+food on the bike, liquid-only on the run"); `even` alternates a solid and a liquid feed at ~half the rate
+each. A free-text `notes` line (e.g. "gels sit badly running — prefer drink") is echoed on fuelled
+sessions. The
 rate uses **your own `fuelling.carb_target_g_per_hour`** (capped by your learned ceiling) over any generic
 range. It
 auto-picks your **caffeine-free** electrolyte for an evening session, scales fluid/sodium up in heat; daily

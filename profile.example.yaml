@@ -166,6 +166,12 @@ fuelling:
   preferences:
     carb_ceiling_g_per_hour:   # your gut-trained per-hour cap — the plan never exceeds it, e.g. 90
     caffeine_cutoff_hour:      # local hour after which to avoid caffeine (steers to caffeine-free), e.g. 16
+    solid_liquid_split:        # how to split during-session carb between solid food and liquid/gel.
+                               # One of: liquid (sippable only — easiest on a slowed gut) | even (~half each,
+                               # alternating a solid and a liquid feed) | solid (food-led). Bare value applies
+                               # to all sports, OR a per-sport map. e.g. { ride: even, run: liquid }
+    # notes:                   # one free-text line echoed on fuelled sessions, e.g. "gels sit badly running —
+                               # prefer drink". (Lives under `preferences:` here, or at the top-level `notes:`.)
     sweat_rate_ml_per_hour:    # measured fluid loss per hour — REPLACES the generic ml/hr MODEL in fuelling. Weigh
                                # (near-naked, towel-dry) before/after a ~60 min steady session and note any fluid drunk:
                                # (pre_kg - post_kg + drunk_litres) / hours * 1000. e.g. 800

@@ -26,6 +26,12 @@ import {
  * and says real food covers it.
  */
 
+/** How the during-session carbohydrate should be split between solid food and liquid/gel carb.
+ *  - "liquid": sippable only (drink mix / gel / chew) — the default lean on a slowed (e.g. GLP-1) gut.
+ *  - "solid":  food-led (bars / real food) where the athlete tolerates and prefers chewing.
+ *  - "even":   roughly half from each — alternate a solid and a liquid feed to hit the rate. */
+export type SolidLiquidSplit = "liquid" | "even" | "solid";
+
 export interface FuelPrefs {
   /** Learned per-hour carb tolerance cap (g/h) — the gut-trained ceiling; the plan never exceeds it. */
   carbCeilingGPerHour?: number;
@@ -42,6 +48,24 @@ export interface FuelPrefs {
   sweatSodiumMgPerL?: number;
   /** Free-text the athlete/learning-loop wants echoed (e.g. "gels sit badly running — prefer drink"). */
   notes?: string;
+  /** Preferred solid/liquid carb balance, optionally per sport. Keys are lowercased sport names
+   *  ("ride"/"bike", "run", "swim") plus an optional "default". Resolved by the session's sport, falling
+   *  back to "default". Absent → today's behaviour (sippable-first). Lets the athlete say "even split on
+   *  the bike, liquid only on the run" once and have BOTH the chat and the dashboard card honour it. */
+  solidLiquidSplit?: Record<string, SolidLiquidSplit>;
+}
+
+/** Resolve the solid/liquid split for a session's sport: an exact sport key wins, then bike↔ride aliasing,
+ *  then "default". Returns undefined when nothing's set (caller keeps the sippable-first default). */
+export function resolveSolidLiquidSplit(
+  split: Record<string, SolidLiquidSplit> | undefined,
+  sport: string | undefined,
+): SolidLiquidSplit | undefined {
+  if (!split) return undefined;
+  const key = (sport ?? "").toLowerCase();
+  const aliases = key === "bike" ? ["bike", "ride"] : key === "ride" ? ["ride", "bike"] : [key];
+  for (const a of aliases) if (split[a]) return split[a];
+  return split.default;
 }
 
 export interface FuelPlanInput {
@@ -151,6 +175,35 @@ function isLateForCaffeine(startHour: number | null | undefined, cutoff: number 
   return startHour >= cutoff;
 }
 
+/** Feed interval (min, rounded to 5, floor 10) for ONE whole `itemCarbs`-gram item delivered at `rateGPerHour`.
+ *  A 40 g gel at 80 g/hr → one every 30 min (60 × 40 / 80). */
+function feedIntervalMin(itemCarbs: number, rateGPerHour: number): number {
+  return Math.max(10, Math.round((60 * itemCarbs) / rateGPerHour / 5) * 5);
+}
+
+const SIPPABLE_CATEGORIES = new Set<string>(["drink_mix", "gel", "chew"]);
+const SOLID_CATEGORIES = new Set<string>(["bar", "real_food"]);
+
+/** A sensible feed cadence (min) for one channel of an 'even' split. */
+const IDEAL_EVEN_FEED_MIN = 30;
+
+/** For an 'even' split each channel carries only HALF the rate, so the single-channel "take the largest
+ *  item" rule misfires — a 90 g gel at 40 g/hr is one every ~135 min, lumpy and sparse. Instead pick the
+ *  item whose whole-item cadence at `halfRate` sits closest to ~IDEAL_EVEN_FEED_MIN; ties break to the
+ *  larger item (`pool` is biggest-carb first, so the first match already wins a tie). */
+function pickEvenChannel(pool: FuelProduct[], halfRate: number): FuelProduct | undefined {
+  let best: FuelProduct | undefined;
+  let bestScore = Infinity;
+  for (const p of pool) {
+    const score = Math.abs(feedIntervalMin(p.carbsG ?? 0, halfRate) - IDEAL_EVEN_FEED_MIN);
+    if (score < bestScore) {
+      best = p;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
 /**
  * Build the plan for one session. Pure. Returns `needed:false` (with a "water's fine" summary) when no
  * section clears its threshold — that quiet path is the point of the feature.
@@ -176,22 +229,43 @@ export function planFuel(input: FuelPlanInput): FuelPlan {
   const duringLines: string[] = [];
   if (carbTarget > 0) {
     // Grouped, timeline-style: ONE WHOLE item per feed at a steady cadence — never "2× …" or a half-item
-    // (you can't take half a gel). Prefer a sippable item (gel/drink/chew — easier on the gut) and take the
-    // LARGEST so feeds are whole and well-spaced; set the INTERVAL to hit the rate (60 × itemCarbs / target).
-    // A 40 g gel at 80 g/hr → one every 30 min.
+    // (you can't take half a gel). The interval is set to hit the rate (60 × itemCarbs / target): a 40 g gel
+    // at 80 g/hr → one every 30 min.
     const startMin = intensity === "hard" && dur < 90 ? 0 : 20; // let the pre-fuel settle on an endurance day
     const pool = carbCandidates(inv).filter((p) => !(lateCaffeine && (p.caffeineMg ?? 0) > 0));
-    const SIPPABLE = new Set<string>(["drink_mix", "gel", "chew"]);
-    const sippable = pool.filter((p) => SIPPABLE.has(p.category));
-    const primary = (sippable.length ? sippable : pool)[0]; // carbCandidates is sorted biggest-carb first
-    const itemCarbs = primary?.carbsG ?? 0;
-    if (primary && itemCarbs > 0) {
-      const intervalMin = Math.max(10, Math.round((60 * itemCarbs) / carbTarget / 5) * 5);
-      duringLines.push(`From H+${startMin}: ${fmtCarbProduct(primary, 1)} every ~${intervalMin} min — ≈ ${carbTarget} g carb/hr.`);
-    } else {
+    const sippable = pool.filter((p) => SIPPABLE_CATEGORIES.has(p.category));
+    const solids = pool.filter((p) => SOLID_CATEGORIES.has(p.category));
+    // The athlete's stated solid/liquid balance for THIS sport (e.g. even on the bike, liquid on the run).
+    const split = resolveSolidLiquidSplit(input.prefs?.solidLiquidSplit, sport);
+
+    // Echo any free-text fuelling preference once on a fuelled session, before the picks it qualifies.
+    if (input.prefs?.notes) duringLines.push(`Your note: ${input.prefs.notes}`);
+
+    const feed = (p: FuelProduct, rate: number) => `${fmtCarbProduct(p, 1)} every ~${feedIntervalMin(p.carbsG ?? 0, rate)} min`;
+
+    if (split === "even" && sippable.length && solids.length) {
+      // Two channels, ~half the rate each — alternate a solid and a liquid feed. Easier on a slowed gut than
+      // all-solid, but keeps real food in the mix where the athlete wants it (and on the bike, not the run).
+      const half = carbTarget / 2;
+      const solid = pickEvenChannel(solids, half)!;
+      const liquid = pickEvenChannel(sippable, half)!;
       duringLines.push(
-        `From H+${startMin}: ≈ ${carbTarget} g carb/hr — no dedicated carb fuel logged; a flapjack/banana/real food covers it, ideally a carb drink-mix or gels.`,
+        `From H+${startMin}: alternate solid + liquid for ≈ ${carbTarget} g carb/hr (~half from each) — ${feed(solid, half)} (solid) and ${feed(liquid, half)} (liquid).`,
       );
+    } else {
+      // Single channel. Honour an explicit solid/liquid lean when that channel is stocked; otherwise (and for
+      // the no-preference default) prefer a sippable item — liquid is easier on the gut and can't be halved.
+      const preferred =
+        split === "solid" && solids.length ? solids : split === "liquid" && sippable.length ? sippable : sippable.length ? sippable : pool;
+      const primary = preferred[0]; // carbCandidates is sorted biggest-carb first
+      const itemCarbs = primary?.carbsG ?? 0;
+      if (primary && itemCarbs > 0) {
+        duringLines.push(`From H+${startMin}: ${feed(primary, carbTarget)} — ≈ ${carbTarget} g carb/hr.`);
+      } else {
+        duringLines.push(
+          `From H+${startMin}: ≈ ${carbTarget} g carb/hr — no dedicated carb fuel logged; a flapjack/banana/real food covers it, ideally a carb drink-mix or gels.`,
+        );
+      }
     }
   }
   // Fluid + sodium: meaningful past ~60 min, or sooner in heat.
@@ -274,6 +348,8 @@ export function planFuel(input: FuelPlanInput): FuelPlan {
   } else if (carbTarget > 0 && ceiling != null) {
     assumptions.push(`carb/hr capped at your learned ${ceiling} g/h ceiling`);
   }
+  const splitForSport = resolveSolidLiquidSplit(input.prefs?.solidLiquidSplit, sport);
+  if (carbTarget > 0 && splitForSport) assumptions.push(`${splitForSport} solid/liquid balance (your preference)`);
   if (input.weightKg) assumptions.push(`per-kg amounts use ${input.weightKg} kg`);
   if (input.tempC != null) assumptions.push(`forecast ~${Math.round(input.tempC)}°C`);
   if (input.prefs?.sweatRateMlPerHour) assumptions.push(`fluid from your measured sweat rate (${input.prefs.sweatRateMlPerHour} ml/hr)`);
@@ -363,5 +439,34 @@ export function loadFuelPrefs(fuelling: unknown): FuelPrefs {
     sweatRateMlPerHour: numOf(prefs.sweat_rate_ml_per_hour),
     sweatSodiumMgPerL: numOf(prefs.sweat_sodium_mg_per_l),
     notes: typeof prefs.notes === "string" ? prefs.notes : typeof o.notes === "string" ? o.notes : undefined,
+    solidLiquidSplit: parseSolidLiquidSplit(prefs.solid_liquid_split),
   };
+}
+
+/** Normalise one free-text split value to a SolidLiquidSplit (forgiving of synonyms), or undefined. */
+function normSplitValue(v: unknown): SolidLiquidSplit | undefined {
+  if (typeof v !== "string") return undefined;
+  const t = v.toLowerCase().trim();
+  if (/^(liquid|liquid.?only|all.?liquid|sippable|drink)/.test(t)) return "liquid";
+  if (/^(even|balanced|mixed|both|50.?50|half)/.test(t)) return "even";
+  if (/^(solid|solids|food|chew)/.test(t)) return "solid";
+  return undefined;
+}
+
+/** Parse `fuelling.preferences.solid_liquid_split`: a bare string ("even") → {default}, or a per-sport map
+ *  ({ ride: even, run: liquid }). Sport keys are lowercased; unrecognised values are dropped. */
+export function parseSolidLiquidSplit(raw: unknown): Record<string, SolidLiquidSplit> | undefined {
+  if (typeof raw === "string") {
+    const v = normSplitValue(raw);
+    return v ? { default: v } : undefined;
+  }
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const out: Record<string, SolidLiquidSplit> = {};
+    for (const [k, val] of Object.entries(raw as Record<string, unknown>)) {
+      const v = normSplitValue(val);
+      if (v) out[k.toLowerCase().trim()] = v;
+    }
+    return Object.keys(out).length ? out : undefined;
+  }
+  return undefined;
 }
