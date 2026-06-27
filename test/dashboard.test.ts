@@ -20,7 +20,7 @@ import type { ProfileQuestion } from "../src/profile/questions.js";
 import type { InsightReport } from "../src/insights/engine.js";
 import type { Finding } from "../src/insights/metrics.js";
 import type { Profile } from "../src/profile/schema.js";
-import type { InsightReaction, DecisionRecord } from "../src/state/decisionLog.js";
+import type { InsightReaction, DecisionRecord, CoachDiscussion } from "../src/state/decisionLog.js";
 import type { SeasonArcReport } from "../src/coach/seasonArc.js";
 
 const NASTY = `O'Brien "5x3'" \\ </script><b>x</b>`; // apostrophe, quote, backslash, tag, </script>
@@ -535,6 +535,19 @@ test("buildSetupItems: drops race_targets, tags + routes each source, dedupes an
   const q = items.filter((i) => i.source === "profile_question");
   assert.deepEqual(q.map((i) => i.label), ["Answer: Which weekday is your rest day?"], "only the UNFILLED question surfaces");
   assert.equal(q[0].route, "edit profile");
+});
+
+test("renderSetupImprove: a coach discussion shows 'discussed with coach' on the item (escaped note)", () => {
+  const profile = { schema_version: 1, identity: {}, open_items: [{ id: "book-bloods", text: "Book the Medichecks panel" }] } as Profile;
+  const discussions = new Map<string, CoachDiscussion>([
+    ["setup:open:book-bloods", { reaction: "agree", timestamp: "2026-06-27T09:00:00Z", note: "agreed — book before the next block <go>" }],
+  ]);
+  const html = renderSetupImprove(profile, false, { questions: [], discussions });
+  assert.match(html, /Book the Medichecks panel/);
+  assert.match(html, /discussed with coach · 27 Jun · agreed/, "the discussion annotation renders on the card");
+  assert.match(html, /book before the next block &lt;go&gt;/, "the note is HTML-escaped");
+  // Without a discussion map, no annotation.
+  assert.doesNotMatch(renderSetupImprove(profile, false, { questions: [] }), /discussed with coach/);
 });
 
 test("buildSetupItems: dedupes across sources (first/higher-value wins) and caps at ~5", () => {

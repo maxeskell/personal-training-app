@@ -15,7 +15,7 @@ import { diagnoseFtp, formatFtpDiagnosis } from "./insights/ftpSource.js";
 import { richActivities, findingKey } from "./insights/metrics.js";
 import { StateStore } from "./state/store.js";
 import { buildInsights } from "./insights/engine.js";
-import { DecisionLog, suppressedInsightKeys, executedSourceKeys, reactionFromLabel, type DecisionRecord } from "./state/decisionLog.js";
+import { DecisionLog, suppressedInsightKeys, executedSourceKeys, latestCoachDiscussions, reactionFromLabel, type DecisionRecord } from "./state/decisionLog.js";
 import { buildSetupItems } from "./coach/setupCard.js";
 import { latestAdviceFindings } from "./coach/adviceRecs.js";
 import { latestWeeklyReview, latestResearchDigest } from "./coach/setupSources.js";
@@ -395,6 +395,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
       const suppressed = suppressedInsightKeys(reactionState);
       const reactions = new Map([...reactionState].map(([k, v]) => [k, v.reaction] as const));
       const appliedKeys = executedSourceKeys(decisions);
+      const discussions = latestCoachDiscussions(decisions);
 
       // Mirror the dashboard's assembly so the coach sees exactly the athlete's cards (no drift).
       const engagement = await loadEngagementContext(window);
@@ -420,7 +421,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
         liveThresholds: state.thresholds.value ?? undefined,
       });
 
-      return ok(formatAgendaText(buildAgenda(setupItems, coachRecs, reactions, appliedKeys)));
+      return ok(formatAgendaText(buildAgenda(setupItems, coachRecs, reactions, appliedKeys, discussions)));
     },
   );
 

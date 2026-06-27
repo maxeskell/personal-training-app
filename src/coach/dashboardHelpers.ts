@@ -175,6 +175,31 @@ export function fmtWhen(iso: string, withTime: boolean): string {
   return withTime ? `${date}, ${p2(d.getHours())}:${p2(d.getMinutes())}` : date;
 }
 
+/** Outcome word shown on the "discussed with coach" line, per stored reaction. */
+const DISCUSSION_OUTCOME: Record<string, string> = {
+  agree: "agreed",
+  disagree: "disagreed",
+  ignore: "snoozed",
+  done: "done",
+  dismiss: "ignored",
+  applied: "applied",
+};
+
+/**
+ * One-line "discussed with coach" annotation for a card whose latest reaction was recorded in a coaching
+ * chat (Claude Code) rather than a bare dashboard click — so a discussion held off-screen shows up on the
+ * display surface. Escaped; returns "" when there's no discussion. `d` is a CoachDiscussion (reaction +
+ * timestamp + optional note); typed loosely here so cards needn't import the decision-log type.
+ */
+export function discussedLineHtml(d: { reaction: string; timestamp: string; note?: string } | undefined): string {
+  if (!d) return "";
+  const dt = new Date(d.timestamp);
+  const when = Number.isNaN(dt.getTime()) ? "" : `${dt.getDate()} ${MO[dt.getMonth()]}`;
+  const outcome = DISCUSSION_OUTCOME[d.reaction] ?? escapeHtml(d.reaction);
+  const note = d.note ? ` — ${escapeHtml(d.note)}` : "";
+  return `<div class="coach-discussed" style="margin:4px 0;font-size:12px;color:#1a8a3a">✓ discussed with coach${when ? ` · ${when}` : ""} · ${outcome}${note}</div>`;
+}
+
 /** Human "time since": "2d 3h ago" / "3h 41m ago" / "4m ago" / "just now". `suffix` lets callers reword. */
 export function fmtSince(ms: number, suffix = " ago"): string {
   if (ms < 0) return "in the future";

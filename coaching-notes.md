@@ -35,18 +35,18 @@
       fuelled sessions. Both the chat and the dashboard card read it (same engine). Max's profile set to
       `{ride: even, run: liquid}`. This is the template for "Channel A" (structured fact → profile →
       recompute → both surfaces).
-- [~] **Phase 2+ — close the coach↔dashboard decision loop ("Channel B").** Let the Claude coach walk the
-      dashboard's "This week" cues + "discuss with coach" items and write back the agreed/not-agreed
-      outcome so the card reflects it. One store (`data/decisions/log.jsonl`), gated writes unchanged.
-      - [x] (a) **`agenda` MCP read tool — SHIPPED.** Enumerates the exact dashboard items (coach recs +
-        this-week cues + finish-setup + open items + races) with stable keys + current reaction, built on
-        the same `buildSetupItems`/`latestAdviceFindings` the dashboard uses. `src/coach/agenda.ts`.
-      - [ ] (b) extend `react_to_insight` to carry an outcome + one-line note (the "discussed & agreed, here's
-        why" record), keyed by the card key.
-      - [ ] (c) scoped render of that outcome on the dashboard card ("✓ discussed with coach · date · agreed").
-      - [ ] (d) stable ids for `open_items` — CONFIRMED a real problem: the live agenda showed keys are the
-        whole sentence normalised (`setup:open:book medichecks ultimate performance…`), so a reword orphans
-        the outcome. Give each open_item an explicit short id (back-compat with plain strings).
+- [x] **Phase 2 — coach↔dashboard decision loop ("Channel B") — SHIPPED.** The Claude coach walks the
+      dashboard's cues + "discuss with coach" items (`agenda`), reaches a call with the athlete, records it,
+      and the card reflects "✓ discussed with coach". One store (`data/decisions/log.jsonl`), gated writes
+      unchanged. Pieces:
+      - [x] (a) `agenda` MCP read tool — enumerates the exact dashboard items with stable keys (`src/coach/agenda.ts`).
+      - [x] (b) `react_to_insight` carries a one-line `note` + stamps `via:"coach"`; `latestCoachDiscussions`
+        extractor returns the latest coach outcome per key (`src/state/decisionLog.ts`).
+      - [x] (c) scoped render: `discussedLineHtml` shows "✓ discussed with coach · date · outcome — note" on
+        the reactable / applyable / task cards + coach recs (threaded via a `discussions` map, additive).
+      - [x] (d) stable ids for `open_items` (string OR `{id,text}`); Max's profile migrated to ids.
+      - Refine ideas (later): on the card, surface the discussed line in the open-item SUMMARY (currently in
+        the `<details>` body); optional auto-fade of an agreed item after a cool-off (today it stays annotated).
 
 ## Decisions / things we've talked through
 - **2026-06-27 — Brick fuelling rehearsal + standing solid/liquid preference.** Mon 29 Jun brick
