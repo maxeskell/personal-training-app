@@ -1,14 +1,42 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { latestInsightReactions, suppressedInsightKeys, reactionFromLabel, executedSourceKeys, type DecisionRecord, type DecisionStatus } from "../src/state/decisionLog.js";
+import { latestInsightReactions, latestCoachDiscussions, suppressedInsightKeys, reactionFromLabel, executedSourceKeys, type DecisionRecord, type DecisionStatus } from "../src/state/decisionLog.js";
 
 function fb(key: string, status: DecisionStatus, ts: string): DecisionRecord {
   return { id: `${key}-${ts}`, timestamp: ts, kind: "insight-feedback", summary: key, insightKey: key, status };
 }
 
+function coachFb(key: string, status: DecisionStatus, ts: string, note?: string): DecisionRecord {
+  return { id: `${key}-${ts}`, timestamp: ts, kind: "insight-feedback", summary: key, insightKey: key, status, via: "coach", note };
+}
+
 function pa(id: string, status: DecisionStatus, ts: string, sourceKey?: string): DecisionRecord {
   return { id, timestamp: ts, kind: "plan-adjust", summary: id, status, ...(sourceKey ? { sourceKey } : {}) };
 }
+
+test("latestCoachDiscussions: surfaces a coach discussion (outcome + note), skips bare clicks", () => {
+  const d = latestCoachDiscussions([
+    coachFb("cue", "accepted", "2026-06-10T00:00:00Z", "agreed — bank the easy hours, HRV's fine"),
+    fb("clicked", "accepted", "2026-06-10T00:00:00Z"), // a dashboard click (no via) → not a discussion
+  ]);
+  assert.equal(d.size, 1);
+  assert.equal(d.get("cue")?.reaction, "agree");
+  assert.equal(d.get("cue")?.note, "agreed — bank the easy hours, HRV's fine");
+  assert.equal(d.has("clicked"), false, "a non-coach record is not a discussion");
+});
+
+test("latestCoachDiscussions: a later dashboard click or clear supersedes the discussion (latest-wins)", () => {
+  const superseded = latestCoachDiscussions([
+    coachFb("k", "accepted", "2026-06-10T00:00:00Z", "agreed in chat"),
+    fb("k", "declined", "2026-06-11T00:00:00Z"), // later dashboard 👎 → no longer a coach discussion
+  ]);
+  assert.equal(superseded.has("k"), false, "the newer non-coach record wins");
+  const cleared = latestCoachDiscussions([
+    coachFb("k", "accepted", "2026-06-10T00:00:00Z", "agreed"),
+    coachFb("k", "cleared", "2026-06-12T00:00:00Z"),
+  ]);
+  assert.equal(cleared.has("k"), false, "a later clear drops it");
+});
 
 test("suppressedInsightKeys: only snooze (deferred) hides — like/dislike stay visible", () => {
   const reactions = latestInsightReactions([

@@ -1,5 +1,5 @@
 import type { AthleteState, ActualActivity, PlannedSession, ZoneSet, DisciplineThresholds } from "../state/types.js";
-import type { DecisionRecord, InsightReaction } from "../state/decisionLog.js";
+import type { DecisionRecord, InsightReaction, CoachDiscussion } from "../state/decisionLog.js";
 import { executedSourceKeys } from "../state/decisionLog.js";
 import type { FitSummary } from "../archive/store.js";
 import { findSessionFeedback, type SessionFeedbackRecord } from "./sessionFeedbackStore.js";
@@ -95,6 +95,8 @@ export interface DashboardInput {
   insights?: InsightReport;
   /** Saved like/dislike per finding key (latest wins) — renders the buttons in their persisted state. */
   reactions?: Map<string, InsightReaction>;
+  /** Per-key coach DISCUSSION outcomes (recorded via Claude Code) — renders "discussed with coach" on cards. */
+  discussions?: Map<string, CoachDiscussion>;
   /** First time each finding key was surfaced (insight-history log) — drives the age line + NEW badge. */
   firstSeen?: Map<string, string>;
   /** Backfilled Garmin daily series — drives the multi-week Trends + health strip (not the 1-day state store). */
@@ -1145,7 +1147,7 @@ function shareRaceNames(today: AthleteState, profile?: Profile): string[] {
   return names.filter(Boolean);
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, firstSeen, garminDays, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, seasonReport, seasonProse, career, priorBrief, now, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, discussions, firstSeen, garminDays, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, seasonReport, seasonProse, career, priorBrief, now, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Fuelling — week ahead (deterministic, no LLM on render): per-session pre/during/after from the
@@ -1255,7 +1257,7 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
 
 
   // The "Set up & improve" options, built once so the Decide-tab card and the nav/teaser count agree.
-  const setupOpts = { suppressed, reactions, appliedKeys: executedSourceKeys(decisions), insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined };
+  const setupOpts = { suppressed, reactions, discussions, appliedKeys: executedSourceKeys(decisions), insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined };
   // Decide-inbox count for the nav badge + the Today teaser: top insights shown (≤5) + coach recs +
   // data changes + setup items — the same sources the Decide tab renders, summed. Zero in share view,
   // where those interactive surfaces are hidden.
@@ -1280,7 +1282,7 @@ export function renderDashboard({ window, decisions, insights, reactions, firstS
   // coaching cues are lifted out of the setup hub to sit with the advice; "Finish setup" + "Worth
   // considering" stay in the housekeeping half alongside the (collapsed) data-change confirmations.
   const insightsBox = insights ? renderInsightsBox(insights, reactions, firstSeen, leadKey, redact) : "";
-  const coachRecsHtml = renderCoachRecs(coachRecs ?? [], reactions, share, coachRecsMerged);
+  const coachRecsHtml = renderCoachRecs(coachRecs ?? [], reactions, share, coachRecsMerged, discussions);
   const thisWeekHtml = renderSetupImprove(profile, share, setupOpts, {
     only: ["this_week"],
     heading: "This week",

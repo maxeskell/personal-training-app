@@ -1,6 +1,6 @@
 import type { SetupItem, SetupGroup } from "./setupCard.js";
 import type { SurfacedFinding } from "../state/insightLog.js";
-import type { InsightReaction } from "../state/decisionLog.js";
+import type { InsightReaction, CoachDiscussion } from "../state/decisionLog.js";
 
 /**
  * The coaching AGENDA — the exact items the dashboard surfaces on its "This week" and "Set up & improve"
@@ -38,6 +38,10 @@ export interface AgendaItem {
   reactable?: boolean;
   /** Finding family (for a marginal-gain / coach-rec card) — carried so a reaction weights by family. */
   family?: string;
+  /** This item's latest reaction was recorded as a coach DISCUSSION (via Claude Code), not a bare click. */
+  discussed?: boolean;
+  /** The one-line note captured when the item was discussed with the athlete (the why behind the call). */
+  note?: string;
 }
 
 export interface Agenda {
@@ -69,10 +73,12 @@ export function buildAgenda(
   coachRecs: SurfacedFinding[],
   reactions: Map<string, InsightReaction>,
   appliedKeys: Set<string>,
+  discussions?: Map<string, CoachDiscussion>,
 ): Agenda {
   const items: AgendaItem[] = [];
 
   for (const rec of coachRecs) {
+    const d = discussions?.get(rec.key);
     items.push({
       key: rec.key,
       group: "coach_rec",
@@ -80,14 +86,17 @@ export function buildAgenda(
       why: rec.detail,
       action: rec.recommendation ?? "",
       source: "advice",
-      reaction: reactions.get(rec.key),
+      reaction: reactions.get(rec.key) ?? d?.reaction,
       applied: appliedKeys.has(rec.key),
       reactable: true,
       family: rec.family,
+      discussed: d != null,
+      note: d?.note,
     });
   }
 
   for (const it of setupItems) {
+    const d = discussions?.get(it.key);
     items.push({
       key: it.key,
       group: it.group,
@@ -95,11 +104,13 @@ export function buildAgenda(
       why: it.why,
       action: it.action,
       source: it.source,
-      reaction: reactions.get(it.key),
+      reaction: reactions.get(it.key) ?? d?.reaction,
       applied: appliedKeys.has(it.key),
       applyable: it.applyable,
       reactable: it.reactable,
       family: it.family,
+      discussed: d != null,
+      note: d?.note,
     });
   }
 
@@ -110,23 +121,16 @@ export function buildAgenda(
   return { items, openCount: items.filter(isOpen).length };
 }
 
+/** Emoji chip label (a bare dashboard reaction) and the plain outcome word (a coach discussion) per reaction. */
+const REACTION_CHIP: Record<string, string> = { agree: "👍 agreed", disagree: "👎 disagreed", ignore: "💤 snoozed", done: "✓ done", dismiss: "🚫 ignored" };
+const REACTION_WORD: Record<string, string> = { agree: "agreed", disagree: "disagreed", ignore: "snoozed", done: "done", dismiss: "ignored" };
+
 /** One-line human label for an item's current state. */
 function stateLabel(it: AgendaItem): string {
   if (it.applied) return "✓ applied to AI Endurance";
-  switch (it.reaction) {
-    case "agree":
-      return "👍 agreed";
-    case "disagree":
-      return "👎 disagreed";
-    case "ignore":
-      return "💤 snoozed";
-    case "done":
-      return "✓ done";
-    case "dismiss":
-      return "🚫 ignored";
-    default:
-      return "— open (not yet discussed)";
-  }
+  if (!it.reaction || !(it.reaction in REACTION_WORD)) return "— open (not yet discussed)";
+  // A call reached WITH the coach (in chat) reads as a discussion; a bare dashboard click keeps its chip.
+  return it.discussed ? `✓ discussed with coach — ${REACTION_WORD[it.reaction]}` : REACTION_CHIP[it.reaction];
 }
 
 /**
@@ -147,6 +151,7 @@ export function formatAgendaText(agenda: Agenda): string {
       const flags = [it.applyable ? "gated plan-change available" : "", it.reactable ? "reactable" : ""].filter(Boolean).join(", ");
       out.push(
         `- [${stateLabel(it)}] ${it.label}  (key=${it.key}${flags ? ` · ${flags}` : ""})`,
+        it.note ? `    note: ${it.note}` : "",
         it.why ? `    why: ${it.why}` : "",
         it.action ? `    how: ${it.action}` : "",
       );

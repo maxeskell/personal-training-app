@@ -71,6 +71,19 @@ test("formatAgendaText shows keys, state labels and headings for a walk-through"
   assert.match(text, /gated plan-change available/, "an applyable cue is flagged");
 });
 
+test("buildAgenda + formatAgendaText surface a coach discussion (outcome + note)", () => {
+  const discussions = new Map([
+    ["setup:tune:cadence-drift", { reaction: "agree" as InsightReaction, timestamp: "2026-06-27T09:00:00Z", note: "agreed — hold cadence on the long ride" }],
+  ]);
+  const agenda = buildAgenda(items, [rec], new Map(), new Set(), discussions);
+  const it = agenda.items.find((i) => i.key === "setup:tune:cadence-drift")!;
+  assert.equal(it.discussed, true);
+  assert.equal(it.note, "agreed — hold cadence on the long ride");
+  const text = formatAgendaText(agenda);
+  assert.match(text, /✓ discussed with coach — agreed.*Tighten cadence/s);
+  assert.match(text, /note: agreed — hold cadence on the long ride/);
+});
+
 test("formatAgendaText handles an empty agenda", () => {
   assert.match(formatAgendaText(buildAgenda([], [], new Map(), new Set())), /Nothing on the agenda/);
 });

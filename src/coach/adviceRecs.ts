@@ -1,7 +1,7 @@
 import type { Finding } from "../insights/metrics.js";
 import type { SurfacedFinding, InsightSnapshot } from "../state/insightLog.js";
-import type { InsightReaction } from "../state/decisionLog.js";
-import { escapeHtml, isDecideItemNew, newBadge } from "./dashboardHelpers.js";
+import type { InsightReaction, CoachDiscussion } from "../state/decisionLog.js";
+import { escapeHtml, isDecideItemNew, newBadge, discussedLineHtml } from "./dashboardHelpers.js";
 
 /**
  * Make the LLM prose flows' advice individually reactable (item 4-iii). The readiness verdict and the
@@ -235,6 +235,7 @@ function adviceCardHtml(
   f: SurfacedFinding,
   reactions?: Map<string, InsightReaction>,
   merged?: ReadonlyMap<string, SurfacedFinding[]>,
+  discussions?: Map<string, CoachDiscussion>,
 ): string {
   const saved = reactions?.get(f.key);
   const state = saved === "agree" ? "like" : saved === "disagree" ? "dislike" : "";
@@ -247,9 +248,10 @@ function adviceCardHtml(
         [...new Set(absorbed.map(mergedFromPhrase))].join(" and "),
       )} — shown once.</div>`
     : "";
+  const discussed = discussedLineHtml(discussions?.get(f.key));
   const isNew = isDecideItemNew(f.key, reactions);
   return `<div class="insight${isNew ? " is-new" : ""}" data-key="${escapeHtml(f.key)}" data-summary="${escapeHtml(f.title)}" data-reaction-state="${state}"${familyAttr}>
-    <div>${newBadge(f.key, reactions)}<b>${escapeHtml(f.title)}</b></div>${mergedNote}
+    <div>${newBadge(f.key, reactions)}<b>${escapeHtml(f.title)}</b></div>${mergedNote}${discussed}
     <div class="acts">
       <button class="agree${on("like")}" data-reaction="like" onclick="feedback(this)">👍 Agree</button>
       <button class="disagree${on("dislike")}" data-reaction="dislike" onclick="feedback(this)">👎 Disagree</button>
@@ -295,13 +297,14 @@ export function renderCoachRecs(
   reactions?: Map<string, InsightReaction>,
   share = false,
   merged?: ReadonlyMap<string, SurfacedFinding[]>,
+  discussions?: Map<string, CoachDiscussion>,
 ): string {
   if (share || !recs.length) return "";
   const groupsHtml = groupAdviceBySource(recs)
     .map(
       (g) =>
         `${g.heading ? `<div class="setup-group">${escapeHtml(g.heading)}</div>` : ""}${g.items
-          .map((f) => adviceCardHtml(f, reactions, merged))
+          .map((f) => adviceCardHtml(f, reactions, merged, discussions))
           .join("")}`,
     )
     .join("");

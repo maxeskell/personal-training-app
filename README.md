@@ -196,6 +196,16 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
     a change you make **directly in AI Endurance**, outside the coach — that card lingers until it ages out
     or you Snooze/Ignore it; the coach never gets to guess a recommendation "done" and hide real advice.)
 
+  **Discuss any of these with the coach, and the dashboard shows it.** The dashboard is display-only, but
+  the coaching happens in **Claude Code on the Mac** — ask it to *"walk me through this week"* and the
+  **`agenda`** MCP tool surfaces the exact same cues + "discuss with coach" items you see here, each with
+  its key. When you talk one through and reach a call, the coach records it with **`react_to_insight`**
+  (passing a one-line `note`); because that's a *coaching* action it's stamped `via: "coach"`, and the card
+  then shows **"✓ discussed with coach · &lt;date&gt; · agreed — &lt;your note&gt;"**. A later dashboard
+  click supersedes it (latest-wins). So a decision reached off-screen, in conversation, is reflected back on
+  the display surface — the two surfaces stay in sync. (For a stable record, give a long-lived `open_items`
+  entry an `id` — `{ id: book-bloods, text: … }` — so the outcome survives even if you reword the text.)
+
   An `open_items` entry that just restates a setup gap (e.g. a hand-written "swim CSS not set" alongside the
   `swim_css` gap) folds into the canonical item, so each gap is listed once. **A gap the live data already
   satisfies auto-clears** — once your **swim CSS** is set in AI Endurance and synced, the "Set your swim CSS"
@@ -809,7 +819,7 @@ see and blocking for minutes (which used to surface in Cowork as a mystery timeo
 | `get_profile` | the validated athlete profile (stable context: body, kit, medical, availability, race targets) + a computed `dose_cycle` (days_since_dose, in_gi_trough). NO live numbers — those are in `get_state` | none |
 | `insights` | run the n=1 insight engine — **leads with a one-line coach headline**, then CTL/ATL/TSB & ramp, EF, durability, correlations, taper target, validated monitoring rules; each top finding annotated with its **key, age (NEW/Nd old) and your saved reaction**. Deterministic — no LLM (use `deep_dive` for a written explanation of the same metrics) | none |
 | `agenda` | walk the SAME items the dashboard's **This week** + **Set up & improve** cards show — coach recommendations, timely cues, finish-setup gaps, 'discuss with coach' open items and races — each with its **stable key + current reaction**, so the coach goes through your dashboard *with* you. Deterministic — no LLM. Record each outcome with `react_to_insight`; a training-change cue applies via the gated propose→confirm flow | none |
-| `react_to_insight` | like / dislike / snooze / clear a surfaced insight by `key` — full parity with the dashboard buttons (persists, reshapes surfacing); a local decision-log write, **available even on the read-only Cowork surface** | none |
+| `react_to_insight` | like / dislike / snooze / clear a surfaced insight or `agenda` item by `key` — full parity with the dashboard buttons (persists, reshapes surfacing). Pass a one-line `note` to record the *why* from discussing it: it's stamped `via:"coach"` and the dashboard card then shows **"✓ discussed with coach · date · &lt;note&gt;"**. A local decision-log write, **available even on the read-only Cowork surface** | none |
 | `list_reports` / `read_report` | list and read the dated markdown reports under `reports/` | none |
 | `decisions` | the decision-log audit trail (`filter=pending` for proposals awaiting a call) | none |
 | `listening` | your engagement model — insight families you act on vs dismiss, proposal accept/decline, dismissed-but-recurred findings, plan **adherence** (done vs planned, deferring to AI Endurance) and **plan changes** (added/moved/dropped, diffed from daily snapshots) | none |

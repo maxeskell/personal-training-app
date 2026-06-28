@@ -6,7 +6,7 @@ import { AieClient } from "./mcp/aieClient.js";
 import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
 import { selectDataSource } from "./sources/index.js";
-import { DecisionLog, suppressedInsightKeys, reactionFromLabel } from "./state/decisionLog.js";
+import { DecisionLog, suppressedInsightKeys, reactionFromLabel, latestCoachDiscussions } from "./state/decisionLog.js";
 import { InsightLog } from "./state/insightLog.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard, renderResearchDigestPage, aieGapKeyFromSetupKey } from "./coach/dashboard.js";
@@ -103,6 +103,7 @@ async function renderLatest(share = false): Promise<string> {
   const reactionState = await log.insightReactions();
   const suppressed = suppressedInsightKeys(reactionState);
   const reactions = new Map([...reactionState].map(([k, v]) => [k, v.reaction] as const));
+  const discussions = latestCoachDiscussions(decisions); // coach-discussion outcomes → "discussed with coach" on cards
   const archive = await loadArchive();
   const engagement = await loadEngagementContext(window); // closes the loop: feedback/adherence reshape surfacing
   const insightLog = new InsightLog();
@@ -191,6 +192,7 @@ async function renderLatest(share = false): Promise<string> {
     decisions,
     insights,
     reactions,
+    discussions,
     firstSeen,
     share,
     priorBrief,
