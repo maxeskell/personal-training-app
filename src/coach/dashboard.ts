@@ -9,7 +9,7 @@ import { renderCoachRecs } from "./adviceRecs.js";
 import { findingKey } from "../insights/metrics.js";
 import { detectMetricChanges, detectSourceConflicts, formatMetricValue, metricLabel } from "./metricChanges.js";
 import { buildBriefSnapshot, diffBriefSnapshots, type BriefSnapshot, type BriefChange } from "./dailyBrief.js";
-import { nextSessionNote, type SessionNote } from "./sessionNote.js";
+import { nextSessionNote } from "./sessionNote.js";
 import type { MetricOverrides } from "../state/metricOverrides.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone, type Headline } from "../insights/headline.js";
@@ -20,7 +20,7 @@ import type { Profile } from "../profile/schema.js";
 import { weekday, upcomingPlanned, asOfLabel, type WeekWeather } from "../weather/assess.js";
 import type { WaterTempCard } from "../weather/waterTemp.js";
 import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
-import { renderFuelCard, fuelSessionInner, renderFuelExtras, fuelScript } from "./fuelCard.js";
+import { fuelSessionInner, renderFuelExtras, fuelScript } from "./fuelCard.js";
 import { buildWeekFuelPlans, loadFuelPrefs, type FuelPlan } from "./fuelPlan.js";
 import { loadInventory, type FuelProduct } from "./fuelInventory.js";
 import { latestFuelByDateSport, fuelLogKey, type FuelLogRecord } from "./fuelLogStore.js";
@@ -585,35 +585,23 @@ function renderWaterTemp(water: WaterTempCard | undefined, share: boolean): stri
   );
 }
 
-function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx, share = false, coachNote?: SessionNote, coachNoteIdx = -1): string {
+function renderWeather(w: WeekWeather | undefined, share = false, todayDate = ""): string {
   if (!w) return "";
-  let anyFuel = false;
-  const sessions = w.sessions.length
-    ? w.sessions
-        .map((s, i) => {
-          const plan = fuel?.byKey.get(fuelLogKey(s.date.slice(0, 10), s.sport));
-          const fuelDrop =
-            plan?.needed
-              ? ((anyFuel = true),
-                `<details class="fueldrop" style="margin-top:5px"><summary style="cursor:pointer;font-size:12px;color:#c8642d;font-weight:600">⛽ Fuelling</summary><div style="margin-top:5px">${fuelSessionInner(plan, fuel!.logged.get(fuelLogKey(s.date.slice(0, 10), s.sport)), false, false)}</div></details>`)
-              : "";
-          // Coach's note — on the next COACHABLE session (its index resolved by the caller, so a leading
-          // gym/indoor day doesn't blank it), the coach-voice "how to execute it" line (a MODEL, intensity
-          // inferred from the title), with the basis behind a "why" disclosure.
-          const note =
-            i === coachNoteIdx && coachNote
-              ? `<div class="ev" style="color:#2563eb;margin-top:5px">📋 <b>Coach:</b> ${escapeHtml(coachNote.note)} <span class="muted">— MODEL</span>${coachNote.basis.length ? `<details style="margin-top:2px"><summary style="cursor:pointer;font-size:11px;color:#888">why</summary><div class="k" style="margin-top:2px">${escapeHtml(coachNote.basis.join(" · "))}</div></details>` : ""}</div>`
-              : "";
-          return `<div class="finding${s.done ? " done" : ""}">
+  // FUTURE training only — today's sessions (with their full coach/fuel/weather advice) live on the Today
+  // tab now; the Plan tab is the forward-looking weather view. No fuelling or coach note here by design.
+  const future = w.sessions.filter((s) => s.date.slice(0, 10) > todayDate);
+  const sessions = future.length
+    ? future
+        .map(
+          (s) => `<div class="finding">
       <div><span class="badge" style="background:${VERDICT_COLOR[s.verdict] ?? "#777"}">${escapeHtml(s.verdict)}</span>
-        <b>${escapeHtml(weekday(s.date))} · ${SPORT_EMOJI[s.sport] ?? ""} ${escapeHtml(s.sport)}</b>${s.title ? ` <span class="muted">· ${escapeHtml(s.title)}</span>` : ""}${s.done ? ` <span class="donetag">✓ done</span>` : ""}</div>
+        <b>${escapeHtml(weekday(s.date))} · ${SPORT_EMOJI[s.sport] ?? ""} ${escapeHtml(s.sport)}</b>${s.title ? ` <span class="muted">· ${escapeHtml(s.title)}</span>` : ""}</div>
       <div class="fdetail">${escapeHtml(s.reason)}</div>
       ${s.suggestion ? `<div class="ev">→ ${escapeHtml(s.suggestion)}</div>` : ""}
-      ${fuelDrop}${note}
-    </div>`;
-        })
+    </div>`,
+        )
         .join("")
-    : `<div class="k" style="margin-bottom:6px">No outdoor sessions in the visible plan window — day outlook below.</div>`;
+    : `<div class="k" style="margin-bottom:6px">No upcoming outdoor sessions in the plan window — day outlook below.</div>`;
   const rows = w.days
     .map(
       (d) => `<tr>
@@ -635,21 +623,16 @@ function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx, share 
   // Both timestamps are load-bearing: a deleted/edited workout keeps showing until the NEXT Sync,
   // so the card must say how fresh its plan snapshot is.
   const planNote = w.planAsOf ? `Plan as of ${stamp(w.planAsOf)} · ` : "";
-  // Fuelling folded in: the per-row dropdowns above + the shared extras (daily stack + review) and the
-  // handler script, emitted once, only when at least one session actually surfaced a plan.
-  const fuelExtras = fuel && anyFuel ? renderFuelExtras(fuel.inventory, fuel.hasApiKey, false) : "";
-  const fuelJs = fuel && anyFuel ? fuelScript(false) : "";
   // Open-water temp: confirm/correct loop driven by the forecaster (a stale reading is drifted on air temp
   // and shown as a MODEL estimate to confirm). Saving writes data/venue.json (read live → no restart).
   const water = w.water ?? (w.waterTempC != null ? { tempC: w.waterTempC, asOf: w.waterTempAsOf, estimated: false, stale: false, ageDays: 0 } : undefined);
   const waterTemp = renderWaterTemp(water, share);
   return `<div class="card"><h2>Week ahead — plan vs weather</h2>
     ${sessions}
-    ${fuelExtras}
     <table style="margin-top:8px"><tr class="k"><td>Day</td><td>Sky</td><td>°C</td><td>Rain</td><td>Gusts km/h</td><td>Roads</td><td>Ride window</td></tr>${rows}</table>
     <div class="k" style="margin-top:8px">${planNote}Open-Meteo forecast as of ${stamp(w.fetchedAt)} — Sync re-pulls both. "Roads" and ride windows are a MODEL drying estimate from rain, temperature, sun and wind — eyeball the tarmac before committing.</div>
     ${waterTemp}
-  </div>${fuelJs}`;
+  </div>`;
 }
 
 /** Zones + FTP/threshold markers, grouped per discipline (swim / bike / run) for clear separation. */
@@ -946,13 +929,14 @@ function renderTodayCard(args: {
   garminDays: DashboardInput["garminDays"];
   priorBrief: BriefSnapshot | null;
   weather?: WeekWeather;
-  fuelByKey: Map<string, FuelPlan>;
+  fuel: WeatherFuelCtx;
   sessionFeedbacks?: SessionFeedbackRecord[];
   redact: (s: string) => string;
+  share?: boolean;
   now: number;
   briefEnabled: boolean;
 }): string {
-  const { today, window, insights, hl, leadKey, decisions, garminDays: gar, priorBrief, weather, fuelByKey, sessionFeedbacks, redact, now, briefEnabled } = args;
+  const { today, window, insights, hl, leadKey, decisions, garminDays: gar, priorBrief, weather, fuel, sessionFeedbacks, redact, share, now, briefEnabled } = args;
 
   // ── Readiness core (the former standalone header) — rendered only when there are insights to back it ──
   const lastReadiness = [...decisions].reverse().find((d) => d.kind === "readiness");
@@ -1037,23 +1021,52 @@ function renderTodayCard(args: {
             .join("")}</ul>`
         : `<div class="k" style="margin-bottom:12px">${sinceLabel} — nothing's changed.</div>`;
 
-    // Today's session(s) at a glance: sport · duration · weather verdict · fuelling indicator.
-    const WX: Record<string, string> = { good: "🟢", marginal: "🟡", poor: "🔴", indoor: "🏠" };
+    // Today's session(s) IN FULL — the first thing you should see: for each session still to do, its
+    // weather verdict + reason, the coach's how-to-execute note, and the full fuelling plan. When every
+    // session for the day is already logged, collapse to a simple "done for today" line (the Last-session
+    // readout below carries the detail). This is what makes Today the operational view.
+    const acts = today.actualActivities.value ?? [];
+    const sessionDoneToday = (sport: string) => acts.some((a) => a.date.slice(0, 10) === today.date && a.sport === sport);
     const todays = (today.plannedSessions.value ?? []).filter((p) => p.date.slice(0, 10) === today.date);
-    const todayRows = todays.map((p) => {
-      const sport = p.sport ?? "Session";
-      const dur = p.durationMin ? ` · ${Math.round(p.durationMin)} min` : "";
-      const wx = weather?.sessions.find((s) => s.date.slice(0, 10) === today.date && s.sport === sport);
-      const wxBit = wx ? ` · ${WX[wx.verdict] ?? ""} ${escapeHtml(wx.verdict)}` : "";
-      // A tight indicator, not the standalone card's full summary (which would just repeat the session line).
-      const fuel = fuelByKey.get(fuelLogKey(today.date, sport));
-      const fuelBit = fuel ? (fuel.needed ? ` · ⛽ fuel plan` : ` · 💧 water's fine`) : "";
-      return `<li style="font-size:14px;margin:4px 0"><b>${escapeHtml(redact(p.title ?? sport))}</b>${escapeHtml(dur)}${wxBit}${fuelBit}</li>`;
-    });
-    todayBlock = todays.length
-      ? `<div class="k" style="margin-bottom:4px">Today <a href="#plan" data-tab="plan" style="color:#1558d6;text-decoration:none;font-size:12px">see Plan →</a></div>
-      <ul style="list-style:none;padding:0;margin:0 0 12px">${todayRows.join("")}</ul>`
-      : `<div class="k" style="margin-bottom:12px">Today — nothing planned (rest day).</div>`;
+    const allDone = todays.length > 0 && todays.every((p) => sessionDoneToday(p.sport ?? ""));
+    let anyTodayFuel = false;
+    if (todays.length === 0) {
+      todayBlock = `<div class="k" style="margin-bottom:12px">Today — nothing planned (rest day).</div>`;
+    } else if (allDone) {
+      todayBlock = `<div style="background:#eef7ee;border:1px solid #cfe8cf;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:14px;color:#1a6b2f">✓ <b>You're done for today</b> — ${todays.length} session${todays.length > 1 ? "s" : ""} complete. Your last session's full readout is below.</div>`;
+    } else {
+      const sessionBlocks = todays.map((p) => {
+        const sport = p.sport ?? "Session";
+        const dur = p.durationMin ? ` · ${Math.round(p.durationMin)} min` : "";
+        const wx = weather?.sessions.find((s) => s.date.slice(0, 10) === today.date && s.sport === sport);
+        const title = `<b>${escapeHtml(redact(p.title ?? sport))}</b>${escapeHtml(dur)}`;
+        if (sessionDoneToday(sport)) {
+          return `<div class="finding done" style="margin-bottom:8px"><div>${title} <span class="donetag">✓ done</span></div></div>`;
+        }
+        const verdictBadge = wx ? ` <span class="badge" style="background:${VERDICT_COLOR[wx.verdict] ?? "#777"}">${escapeHtml(wx.verdict)}</span>` : "";
+        const wxReason = wx?.reason ? `<div class="fdetail">${escapeHtml(wx.reason)}</div>` : "";
+        const note = nextSessionNote(p, insights, today);
+        const noteLine = note
+          ? `<div class="ev" style="color:#2563eb;margin-top:4px">📋 <b>Coach:</b> ${escapeHtml(redact(note.note))} <span class="muted">— MODEL</span>${note.basis.length ? `<details style="margin-top:2px"><summary style="cursor:pointer;font-size:11px;color:#888">why</summary><div class="k" style="margin-top:2px">${escapeHtml(note.basis.join(" · "))}</div></details>` : ""}</div>`
+          : "";
+        const plan = fuel.byKey.get(fuelLogKey(today.date, sport));
+        let fuelLine = "";
+        if (plan) {
+          anyTodayFuel = anyTodayFuel || plan.needed;
+          fuelLine = `<div style="margin-top:5px">${fuelSessionInner(plan, fuel.logged.get(fuelLogKey(today.date, sport)), !!share, false)}</div>`;
+        }
+        return `<div class="finding" style="margin-bottom:8px">
+      <div>${title}${verdictBadge}</div>
+      ${wxReason}
+      ${noteLine}
+      ${fuelLine}
+    </div>`;
+      });
+      // The fuelling feedback buttons need their handler + the shared extras (daily stack / review) — these
+      // used to ride on the weather card; emit them once here now that fuelling lives on Today.
+      const fuelExtras = anyTodayFuel ? renderFuelExtras(fuel.inventory, fuel.hasApiKey, !!share) + fuelScript(!!share) : "";
+      todayBlock = `<div class="k" style="margin-bottom:6px">Today — your session${todays.length > 1 ? "s" : ""}</div>${sessionBlocks.join("")}${fuelExtras}`;
+    }
 
     // Yesterday in one line — the verdict from the latest stored session readout; the full card is below.
     const latestFeedback = [...(sessionFeedbacks ?? [])].sort((a, b) => a.date.localeCompare(b.date)).pop();
@@ -1067,12 +1080,13 @@ function renderTodayCard(args: {
   // No insights AND the brief off → nothing to show; render no card rather than an empty shell.
   if (!insights && !briefEnabled) return "";
 
-  // Order: the call → what to do → what changed → today's session → supporting signals → detail → yesterday.
+  // Order: the call + action → TODAY'S SESSIONS IN FULL (the first thing you act on) → what changed since
+  // yesterday → supporting signals → readiness detail → last session.
   return `<div class="card" style="border-top:4px solid ${insights ? color : "#c8642d"}">
     <h2>Today — ${escapeHtml(today.date.slice(5))}</h2>
     ${verdictBlock}
-    ${sinceBlock}
     ${todayBlock}
+    ${sinceBlock}
     ${driversChips}
     ${tilesBlock}
     ${narrativeBlock}
@@ -1165,35 +1179,12 @@ export function renderDashboard({ window, decisions, insights, reactions, discus
   });
   const fuelByKey = new Map<string, FuelPlan>(fuelPlans.map((p) => [fuelLogKey(p.date ?? "", p.sport), p]));
   const loggedFuel = latestFuelByDateSport(fuelLog ?? []);
-  // Fold per-session fuelling into the Week-ahead card when it's shown; otherwise the standalone
-  // "next session" card is the fallback (so fuelling never disappears when the forecast is unavailable).
+  // The Plan tab's Week-ahead card is now future-only weather (no fuelling, no coach note — those moved to
+  // the Today tab, per session, where you act on them). Fuelling never disappears: it's computed here and
+  // surfaced on the Today card regardless of the forecast.
   const showWeather = !share && !!weather;
-  const weatherCarriesFuel = showWeather && fuelInventory.length > 0 && fuelPlans.some((p) => p.needed);
-  // Coach's note on the next COACHABLE session — deterministic "how to execute it" line (intensity
-  // inferred from the title, modulated by today's readiness/form). We scan the not-done sessions in order
-  // and attach to the FIRST that yields a note, so a leading gym/indoor day (Strength/Other → no note)
-  // doesn't blank it for the week. The resolved index is threaded into renderWeather as the single source
-  // of truth for which row the note lands on. Absent when there's no forecast/coachable session.
-  let nextCoachNote: SessionNote | undefined;
-  let coachNoteIdx = -1;
-  if (showWeather && weather) {
-    const plannedAhead = upcomingPlanned(window, today.date, 7).sessions;
-    for (let i = 0; i < weather.sessions.length; i++) {
-      const sv = weather.sessions[i];
-      if (sv.done) continue;
-      const planned = plannedAhead.find((p) => p.date.slice(0, 10) === sv.date.slice(0, 10) && p.sport === sv.sport);
-      const note = planned ? nextSessionNote(planned, insights, today) : null;
-      if (note) {
-        nextCoachNote = note;
-        coachNoteIdx = i;
-        break;
-      }
-    }
-  }
-  const weatherHtml = showWeather
-    ? renderWeather(weather, weatherCarriesFuel ? { byKey: fuelByKey, logged: loggedFuel, inventory: fuelInventory, hasApiKey: setupHealth?.hasApiKey } : undefined, share, nextCoachNote, coachNoteIdx)
-    : "";
-  const fuelCard = weatherCarriesFuel ? "" : renderFuelCard({ plans: fuelPlans, inventory: fuelInventory, fuelLog, share, hasApiKey: setupHealth?.hasApiKey });
+  const todayFuelCtx: WeatherFuelCtx = { byKey: fuelByKey, logged: loggedFuel, inventory: fuelInventory, hasApiKey: setupHealth?.hasApiKey };
+  const weatherHtml = showWeather ? renderWeather(weather, share, today.date) : "";
 
   // Share view scrubs real race names out of every free-text card — not just the structured race cards.
   // The deep session feedback, an insight title ("Birmingham: behind target"), the headline and the
@@ -1328,7 +1319,7 @@ export function renderDashboard({ window, decisions, insights, reactions, discus
   // the weather/season data has loaded — fall back to a friendly note instead of a blank tab. (Moving the
   // always-present load recap to Performance is what made an empty Plan possible; this keeps it honest.)
   const seasonFold = seasonReport ? `<hr class="section-rule"><div class="section-rule-label">Season arc</div>${renderSeasonInner(seasonReport, share, seasonProse, true)}` : "";
-  const planBody = [weatherHtml, fuelCard, renderWeeklyProse(seasonProse), seasonFold].filter((s) => s.trim()).join("\n");
+  const planBody = [weatherHtml, renderWeeklyProse(seasonProse), seasonFold].filter((s) => s.trim()).join("\n");
 
   return `${pageHead(`Endurance Coach — ${today.date}`)}<body>
 <header class="site-head"><div class="wrap">
@@ -1364,7 +1355,7 @@ ${share ? `<div class="card sharebanner" style="background:#eef4ff;border:1px so
 <section id="tab-today" class="tab on">
 
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
-${renderTodayCard({ today, window, insights, hl, leadKey, decisions, garminDays, priorBrief: priorBrief ?? null, weather, fuelByKey, sessionFeedbacks, redact, now: now ?? Date.now(), briefEnabled: config.dailyBrief.enabled })}
+${renderTodayCard({ today, window, insights, hl, leadKey, decisions, garminDays, priorBrief: priorBrief ?? null, weather, fuel: todayFuelCtx, sessionFeedbacks, redact, share, now: now ?? Date.now(), briefEnabled: config.dailyBrief.enabled })}
 
 ${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks, setupHealth?.hasApiKey, share, redact)}
 ${decideCount > 0 ? `<a class="card nav-link" data-tab="decide" href="#decide" style="display:block;text-decoration:none;color:#c8642d;font-weight:600">📥 ${decideCount} ${decideCount === 1 ? "item" : "items"} waiting on your call${decideNewCount > 0 ? ` · <span style="color:#1558d6">${decideNewCount} new</span>` : ""} →</a>` : ""}

@@ -264,7 +264,7 @@ test("dashboard renders the week-ahead card escaped, scripts stay valid", () => 
   }
 });
 
-test("week-ahead card greys out and tags only the sessions already done", () => {
+test("week-ahead weather card is FUTURE-only and fuel/coach-free (today + done live on the Today tab)", () => {
   const s = emptyState("2026-06-08", new Date().toISOString());
   const plan: PlannedSession[] = [
     { date: "2026-06-09", sport: "Ride", title: "Endurance ride" },
@@ -274,9 +274,12 @@ test("week-ahead card greys out and tags only the sessions already done", () => 
   const fc = mkForecast([mkDay("2026-06-08"), mkDay("2026-06-09"), mkDay("2026-06-10")]);
   const w = assessWeek(plan, fc, OPTS, actuals);
   const html = renderDashboard({ window: [s], decisions: [], weather: w });
-  assert.match(html, /class="finding done"/, "the done ride gets the greyed class");
-  assert.match(html, /✓ done/, "and a visible done tag");
-  assert.equal((html.match(/class="finding done"/g) ?? []).length, 1, "only the matched session is greyed");
+  assert.match(html, /Endurance ride/, "future sessions are shown");
+  assert.match(html, /Easy run/);
+  // The Plan-tab weather card no longer greys/tags done sessions (that moved to the Today card), and
+  // carries no fuelling. It's the forward-looking weather view only.
+  assert.doesNotMatch(html, /class="finding done"/, "no done greying on the future-only weather card");
+  assert.doesNotMatch(html, /⛽ Fuelling/, "the weather card carries no fuelling now");
 });
 
 test("dashboard omits the card cleanly when no forecast is available", () => {

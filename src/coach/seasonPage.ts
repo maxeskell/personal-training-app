@@ -1,7 +1,7 @@
 import { escapeHtml } from "../util/html.js";
 import { pageShell } from "./shell.js";
-import { mdLite, ageDaysFrom } from "./dashboardHelpers.js";
-import type { SeasonArcReport, Lever } from "./seasonArc.js";
+import { mdProse, ageDaysFrom } from "./dashboardHelpers.js";
+import type { SeasonArcReport, Lever, CtlPoint } from "./seasonArc.js";
 import type { YearStat } from "./careerHistory.js";
 
 /** A persisted coach-prose report surfaced read-only on this page (markdown + its YYYY-MM-DD date). */
@@ -60,6 +60,51 @@ function trajectoryBars(traj: YearStat[], peakYear: number | undefined, curYear:
 }
 
 /**
+ * CTL-over-time as an SVG: your actual chronic-load curve (solid blue) against the phase target (dashed
+ * orange) with the current point marked and the gap drawn between them — "where you are vs where the plan
+ * wants you", visually. Pure. Returns "" with fewer than 2 points (the caller keeps the numeric grid).
+ * Honest: the target line only appears when a numeric phase target exists; otherwise it's just your curve.
+ */
+function ctlGraph(series: CtlPoint[] | undefined, ctlTarget?: number): string {
+  const pts = (series ?? []).filter((p) => typeof p.v === "number" && Number.isFinite(p.v));
+  if (pts.length < 2) return "";
+  const W = 320, H = 120, L = 6, R = 50, T = 10, B = 8;
+  const vals = pts.map((p) => p.v);
+  let lo = Math.min(...vals);
+  let hi = Math.max(...vals);
+  if (ctlTarget != null) {
+    lo = Math.min(lo, ctlTarget);
+    hi = Math.max(hi, ctlTarget);
+  }
+  const pad = (hi - lo || 1) * 0.15;
+  lo -= pad;
+  hi += pad;
+  const sp = hi - lo || 1;
+  const x = (i: number) => L + (i / (pts.length - 1)) * (W - L - R);
+  const y = (v: number) => T + (1 - (v - lo) / sp) * (H - T - B);
+  const linePts = pts.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  const baseY = (H - B).toFixed(1);
+  const areaPts = `${L},${baseY} ${linePts} ${x(pts.length - 1).toFixed(1)},${baseY}`;
+  const nowV = pts[pts.length - 1].v;
+  const nowX = x(pts.length - 1);
+  const nowY = y(nowV);
+  const tgtY = ctlTarget != null ? y(ctlTarget) : null;
+  const targetEls =
+    tgtY != null
+      ? `<line x1="${L}" y1="${tgtY.toFixed(1)}" x2="${(W - R).toFixed(1)}" y2="${tgtY.toFixed(1)}" stroke="#c98a00" stroke-width="1.5" stroke-dasharray="5 3"/>
+      <line x1="${nowX.toFixed(1)}" y1="${nowY.toFixed(1)}" x2="${nowX.toFixed(1)}" y2="${tgtY.toFixed(1)}" stroke="#9a8f78" stroke-width="1" stroke-dasharray="2 2"/>
+      <text x="${(W - R + 4).toFixed(1)}" y="${tgtY.toFixed(1)}" dy="3.5" font-size="10" fill="#c98a00">target ${Math.round(ctlTarget!)}</text>`
+      : "";
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:520px;height:auto;display:block;margin:4px 0 2px">
+    <polygon points="${areaPts}" fill="#1558d6" opacity="0.07"/>
+    ${targetEls}
+    <polyline points="${linePts}" fill="none" stroke="#1558d6" stroke-width="2"/>
+    <circle cx="${nowX.toFixed(1)}" cy="${nowY.toFixed(1)}" r="3.5" fill="#1558d6"/>
+    <text x="${(W - R + 4).toFixed(1)}" y="${nowY.toFixed(1)}" dy="3.5" font-size="10" fill="#1558d6">now ${Math.round(nowV)}</text>
+  </svg>`;
+}
+
+/**
  * One read-only coach-prose card (season narrative or weekly review). The markdown is pre-processed by
  * `prep` (strip H1 / the dashboard-duplicated "## Next week" section), then mdLite-rendered (escape-first,
  * so injected markup can't break out). Shows an honest "Updated {date}" stamp, with a subtle stale hint +
@@ -74,7 +119,7 @@ function proseCard(
   collapsed = false,
 ): string {
   if (!prose) return "";
-  const body = mdLite(prep(prose.markdown).trim());
+  const body = mdProse(prep(prose.markdown).trim());
   if (!body.trim()) return "";
   const age = ageDaysFrom(prose.date, Date.now());
   const stale = age != null && age > STALE_DAYS
@@ -152,15 +197,17 @@ export function renderSeasonInner(report: SeasonArcReport, share = false, prose?
 
   const trendCls = r.ctlTrend ? `trend-${r.ctlTrend}` : "";
   const trendArrow = r.ctlTrend === "rising" ? "↗ rising" : r.ctlTrend === "falling" ? "↘ falling" : r.ctlTrend === "flat" ? "→ flat" : "—";
+  const graph = ctlGraph(r.ctlSeries, r.ctlTarget);
   const ctl = r.ctlNow != null || r.ctlTarget != null
-    ? `<div class="card"><h2>Chronic load (CTL) — the year-over-year lever</h2>
-        <div class="grid">
+    ? `<div class="card"><h2>Chronic load (CTL) — where you are vs where the plan wants you</h2>
+        ${graph}
+        <div class="grid"${graph ? ' style="margin-top:6px"' : ""}>
           <div><div class="k">Now</div><div class="big">${r.ctlNow != null ? Math.round(r.ctlNow) : "—"}</div></div>
           <div><div class="k">Trend</div><div class="v ${trendCls}">${trendArrow}</div></div>
           <div><div class="k">Phase target</div><div class="v">${r.ctlTarget != null ? r.ctlTarget : "—"}</div></div>
           <div><div class="k">Gap</div><div class="v">${r.ctlGap != null ? (r.ctlGap >= 0 ? `+${r.ctlGap}` : r.ctlGap) : "—"}</div></div>
         </div>
-        <div class="sub" style="margin:8px 0 0">CTL is the platform's training-load MODEL. The multi-season game is raising it patiently and defending it — not spiking any single block.</div></div>`
+        <div class="sub" style="margin:8px 0 0">${graph ? "Blue = your CTL over recent weeks; dashed orange = the phase target, with the gap between them. " : ""}CTL is the platform's training-load MODEL — the multi-season game is raising it patiently and defending it, not spiking any single block.</div></div>`
     : "";
 
   const curYear = Number((r.currentYear?.year ?? new Date().getFullYear()));
@@ -184,7 +231,8 @@ export function renderSeasonInner(report: SeasonArcReport, share = false, prose?
     : "";
 
   // Reads top-down by narrowing focus: this week (lifted to the Plan tab on the dashboard) → the anchor
-  // (where you're headed + the phase you're in, with its focus) → the load story (CTL now vs target, then
-  // the long arc) → the deep strategic read (collapsed) → the structural levers and multi-season risks.
-  return `<div class="season-inner"><h1>Season arc</h1><div class="sub">Your plan, your numbers — the multi-season view.</div>${planless}${weeklyCard}${horizon}${phase}${focus}${ctl}${traj}${narrativeCard}${levers}${flags}</div>`;
+  // (where you're headed + the phase you're in, with its focus) → the CTL gap-to-target graph → the
+  // structural levers + multi-season risks → the deep strategic read (collapsed) → and finally the long
+  // arc of annual hours at the very bottom (the slowest-moving context).
+  return `<div class="season-inner"><h1>Season arc</h1><div class="sub">Your plan, your numbers — the multi-season view.</div>${planless}${weeklyCard}${horizon}${phase}${focus}${ctl}${levers}${flags}${narrativeCard}${traj}</div>`;
 }

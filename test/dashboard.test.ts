@@ -1252,33 +1252,61 @@ test("race splits: caveats every race repeats are hoisted into one shared note, 
   assert.match(html, /~4\.7%/);
 });
 
-test("fuelling folds into the Week-ahead card as a per-session ⛽ dropdown; standalone card suppressed", () => {
-  const s = emptyState("2026-06-20", new Date().toISOString());
+test("today's session carries its full fuelling on the Today card; the weather card stays fuel-free", () => {
+  const today = "2026-06-22";
+  const s = emptyState(today, new Date().toISOString());
   s.weightKg = { value: 72, source: "garmin" };
-  s.plannedSessions = { value: [{ date: "2026-06-22", sport: "Ride", durationMin: 180, title: "Long ride" }], source: "ai-endurance" };
+  s.plannedSessions = { value: [{ date: today, sport: "Ride", durationMin: 180, title: "Long ride" }], source: "ai-endurance" };
   const profile = { schema_version: 1, identity: {}, fuelling: { products: [{ name: "Flapjack", category: "bar", carbs_g: 65 }, { name: "Tab", category: "electrolyte" }] } } as unknown as Profile;
   const weather = {
-    fetchedAt: "2026-06-20T06:00:00Z",
-    days: [{ date: "2026-06-22", label: "cloudy", tempMinC: 12, tempMaxC: 18, precipSumMm: 0, precipProbMaxPct: 10, gustMaxKmh: 15, roads: "dry all day" }],
-    sessions: [{ date: "2026-06-22", sport: "Ride", title: "Long ride", verdict: "good" as const, reason: "dry + low wind" }],
+    fetchedAt: today + "T06:00:00Z",
+    days: [{ date: "2026-06-23", label: "cloudy", tempMinC: 12, tempMaxC: 18, precipSumMm: 0, precipProbMaxPct: 10, gustMaxKmh: 15, roads: "dry all day" }],
+    sessions: [{ date: "2026-06-23", sport: "Ride", title: "Long ride", verdict: "good" as const, reason: "dry + low wind" }],
   };
   const html = renderDashboard({ window: [s], decisions: [], profile, weather, setupHealth: { hasApiKey: true } });
+  // Fuelling for TODAY's session now lives on the Today card, not the weather card.
+  assert.match(html, /data-date="2026-06-22"/, "today's fuelling rendered on the Today card");
   assert.match(html, /Week ahead — plan vs weather/);
-  assert.match(html, /⛽ Fuelling/, "per-session fuelling dropdown rendered in the weather card");
-  assert.match(html, /data-date="2026-06-22"/);
-  assert.doesNotMatch(html, /Fuelling — next session/, "standalone fallback card is suppressed when weather carries the fuelling");
-  // Scripts still parse (the fuel handlers are emitted by the weather card here).
+  assert.doesNotMatch(html, /⛽ Fuelling/, "the future-only weather card no longer carries a fuelling dropdown");
+  assert.doesNotMatch(html, /Fuelling — next session/, "the standalone fallback card was removed");
   const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].map((m) => m[1]);
   for (const [i, sc] of scripts.entries()) assert.doesNotThrow(() => new Function(sc), `script ${i} must parse`);
 });
 
-test("with no weather forecast, fuelling falls back to the standalone next-session card", () => {
-  const s = emptyState("2026-06-20", new Date().toISOString());
-  s.plannedSessions = { value: [{ date: "2026-06-22", sport: "Ride", durationMin: 180, title: "Long ride" }], source: "ai-endurance" };
+test("with no weather forecast, today's fuelling still shows on the Today card (no standalone fallback)", () => {
+  const today = "2026-06-22";
+  const s = emptyState(today, new Date().toISOString());
+  s.plannedSessions = { value: [{ date: today, sport: "Ride", durationMin: 180, title: "Long ride" }], source: "ai-endurance" };
   const profile = { schema_version: 1, identity: {}, fuelling: { products: [{ name: "Flapjack", category: "bar", carbs_g: 65 }] } } as unknown as Profile;
   const html = renderDashboard({ window: [s], decisions: [], profile });
-  assert.match(html, /Fuelling — next session/, "fallback card shows when there is no weather card");
-  assert.doesNotMatch(html, /⛽ Fuelling/, "no weather dropdown without a forecast");
+  assert.match(html, /data-date="2026-06-22"/, "today's fuelling shows on the Today card even without a forecast");
+  assert.doesNotMatch(html, /Fuelling — next session/, "the standalone fallback card was removed");
+});
+
+test("Today card shows each session in full (weather + coach note + fuelling); all-done → a simple done state", () => {
+  const today = "2026-06-22";
+  const profile = { schema_version: 1, identity: {}, fuelling: { products: [{ name: "Gel", category: "gel", carbs_g: 40 }, { name: "Tab", category: "electrolyte" }] } } as unknown as Profile;
+  const weather = {
+    fetchedAt: today + "T06:00:00Z",
+    days: [{ date: today, label: "cloudy", tempMinC: 12, tempMaxC: 18, precipSumMm: 0, precipProbMaxPct: 10, gustMaxKmh: 15, roads: "dry all day" }],
+    sessions: [{ date: today, sport: "Ride", title: "Threshold 2x20", verdict: "good" as const, reason: "dry roads" }],
+  };
+  // Not done → full per-session detail: the coach note, the fuelling, and the weather reason inline.
+  const s1 = emptyState(today, new Date().toISOString());
+  s1.weightKg = { value: 72, source: "garmin" };
+  s1.plannedSessions = { value: [{ date: today, sport: "Ride", durationMin: 90, title: "Threshold 2x20" }], source: "ai-endurance" };
+  const h1 = renderDashboard({ window: [s1], decisions: [], profile, weather, setupHealth: { hasApiKey: true } });
+  assert.match(h1, /📋 <b>Coach:/, "coach note on today's session");
+  assert.match(h1, /data-date="2026-06-22"/, "fuelling on today's session");
+  assert.match(h1, /dry roads/, "weather reason shown inline on the Today card");
+
+  // All of today's sessions logged → the simple "done for today" state, no per-session advice.
+  const s2 = emptyState(today, new Date().toISOString());
+  s2.plannedSessions = { value: [{ date: today, sport: "Ride", durationMin: 90, title: "Threshold 2x20" }], source: "ai-endurance" };
+  s2.actualActivities = { value: [{ date: today, sport: "Ride" }], source: "ai-endurance" };
+  const h2 = renderDashboard({ window: [s2], decisions: [], profile, weather, setupHealth: { hasApiKey: true } });
+  assert.match(h2, /You're done for today/, "the done state shows when every session is logged");
+  assert.doesNotMatch(h2, /📋 <b>Coach:/, "no per-session coaching once the day is done");
 });
 
 test("API cost is no longer shown on the dashboard (decluttered — it lives in `npm run cost` / the MCP cost tool)", () => {
