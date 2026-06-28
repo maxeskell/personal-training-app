@@ -39,29 +39,62 @@ export function adhAttribution(adh: Record<string, { actualH: number; prescribed
   return `broadly on prescription (${totalA.toFixed(1)}h of ${totalP.toFixed(1)}h)`;
 }
 
-/** Build the computed weekly summary (load by sport, adherence, trends) for the model. */
-export function summarizeWeek(window: AthleteState[]): string {
+/**
+ * The deterministic week aggregates — load by sport + zone-adherence — pulled out of {@link summarizeWeek}
+ * so the (LLM-free) weekly-brief snapshot and the (LLM) review prose read from ONE source of truth. Pure:
+ * the same 7-day window in → the same numbers out, whether they become a snapshot to diff or a prose line.
+ * Insertion order matches activity order (and {@link summarizeWeek}'s prose), so neither drifts from the other.
+ */
+export interface WeeklyAggregates {
+  /** Completed activity load by sport over the trailing 7 days. */
+  bySport: Record<string, { n: number; min: number; km: number }>;
+  /** Plan-progress adherence per zone, with the % of prescribed pre-computed (null when nothing prescribed). */
+  adherence: Record<string, { actualH: number; prescribedH: number; pct: number | null }>;
+}
+
+export function weeklyAggregates(window: AthleteState[]): WeeklyAggregates {
   const today = window[window.length - 1];
   const acts = recentActivities(today, today.date, 7);
 
-  const bySport = new Map<string, { n: number; min: number; km: number }>();
+  const bySport: Record<string, { n: number; min: number; km: number }> = {};
   for (const a of acts) {
-    const e = bySport.get(a.sport) ?? { n: 0, min: 0, km: 0 };
+    const e = bySport[a.sport] ?? { n: 0, min: 0, km: 0 };
     e.n += 1;
     e.min += a.durationMin ?? 0;
     e.km += a.distanceKm ?? 0;
-    bySport.set(a.sport, e);
+    bySport[a.sport] = e;
   }
-  const loadLines = [...bySport.entries()].map(
+
+  const adhRaw = today.adherenceByZone.value;
+  const adherence: Record<string, { actualH: number; prescribedH: number; pct: number | null }> = {};
+  if (adhRaw) {
+    for (const [z, v] of Object.entries(adhRaw)) {
+      adherence[z] = {
+        actualH: v.actualH,
+        prescribedH: v.prescribedH,
+        pct: v.prescribedH > 0 ? Math.round((v.actualH / v.prescribedH) * 100) : null,
+      };
+    }
+  }
+
+  return { bySport, adherence };
+}
+
+/** Build the computed weekly summary (load by sport, adherence, trends) for the model. */
+export function summarizeWeek(window: AthleteState[]): string {
+  const today = window[window.length - 1];
+  const agg = weeklyAggregates(window);
+
+  const loadLines = Object.entries(agg.bySport).map(
     ([sport, e]) => `  - ${sport}: ${e.n} sessions, ${Math.round(e.min)} min, ${e.km.toFixed(1)} km`,
   );
 
   const adh = today.adherenceByZone.value;
   const adhLines = adh
-    ? Object.entries(adh).map(([z, v]) => {
-        const pct = v.prescribedH > 0 ? Math.round((v.actualH / v.prescribedH) * 100) : null;
-        return `  - ${z}: actual ${v.actualH.toFixed(2)}h vs prescribed ${v.prescribedH.toFixed(2)}h${pct != null ? ` (${pct}% of prescribed)` : ""}`;
-      })
+    ? Object.entries(agg.adherence).map(
+        ([z, v]) =>
+          `  - ${z}: actual ${v.actualH.toFixed(2)}h vs prescribed ${v.prescribedH.toFixed(2)}h${v.pct != null ? ` (${v.pct}% of prescribed)` : ""}`,
+      )
     : ["  - unavailable"];
   // Deterministic attribution hint: was an easy-volume shortfall caused by MISSED sessions (everything
   // under) or by training the easy time TOO HARD (easy under while tempo/hard ran at/over prescribed)? The

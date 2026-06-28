@@ -24,6 +24,9 @@ import { seasonNudgeDue } from "./coach/seasonNudge.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { buildBriefSnapshot, type BriefSnapshot } from "./coach/dailyBrief.js";
 import { loadPriorBrief, persistBriefIfAbsent } from "./coach/briefStore.js";
+import { buildWeeklySnapshot, diffWeeklySnapshots, isSunday } from "./coach/weeklyBrief.js";
+import { persistWeeklyBriefIfAbsent, loadRecentWeeklyBriefs } from "./coach/weeklyBriefStore.js";
+import { draftWeeklyProposals, weeklyProposer } from "./coach/weeklyProposals.js";
 import { latestWeeklyReview, latestResearchDigest, latestSeasonNarrative, latestWeeklyReviewProse } from "./coach/setupSources.js";
 import { loadSessionFeedbacks, saveSessionFeedback } from "./coach/sessionFeedbackStore.js";
 import { loadMetricOverrides } from "./state/metricOverrides.js";
@@ -418,6 +421,9 @@ async function cmdPing(): Promise<void> {
     await notify(`Readiness: ${verdict.verdict.toUpperCase()}`, note);
     await recordPingSuccess(state.date); // heartbeat for the doctor check
     await maybeSeasonNudge(state).catch(() => {}); // quarterly season-review nudge (best-effort)
+    // Sunday cadence: the weekly brief rides the ping (one scheduled actor) — review + snapshot + gated
+    // next-week proposals, frozen together. Best-effort: a brief failure must not break the readiness ping.
+    if (isSunday(state.date)) await runWeeklyBrief().catch((e) => console.warn(`[weekly-brief] skipped: ${e instanceof Error ? e.message : e}`));
     console.log(`\n(report written; desktop notification sent if on macOS)`);
   } catch (err) {
     // PROD-2: an unattended failure is otherwise invisible — the athlete just gets no readiness and no
@@ -654,11 +660,16 @@ async function cmdDashboard(): Promise<void> {
     priorBrief = await loadPriorBrief(state.date);
     await persistBriefIfAbsent(buildBriefSnapshot({ window, insights, decisions, now: Date.now() }));
   }
+  // Weekly brief: read-only here — the two latest frozen snapshots → the week-over-week delta (the Sunday
+  // job is the only writer). Null until two weeks exist; the Plan tab then shows the "building history" note.
+  const recentWeekly = await loadRecentWeeklyBriefs(2);
+  const weeklyDelta = diffWeeklySnapshots(recentWeekly[0] ?? null, recentWeekly[1] ?? null);
   const html = renderDashboard({
     window,
     decisions,
     insights,
     priorBrief,
+    weeklyDelta,
     garminDays: archive?.garminDays,
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,
@@ -815,7 +826,9 @@ async function cmdDecisions(): Promise<void> {
   if (all.length > 500) console.log(`\n(log is large — consider archiving data/decisions/log.jsonl)`);
 }
 
-/** `weekly` — planned vs actual, load by sport, adherence, trends, next-week focus. */
+/** `weekly` — planned vs actual, load by sport, adherence, trends, next-week focus. Prose-only (tuning):
+ *  the snapshot + gated next-week proposals are the SUNDAY brief's job (`runWeeklyBrief`), so a mid-week
+ *  re-run to tune the prose never freezes a partial-week baseline or queues changes. */
 async function cmdWeekly(): Promise<void> {
   if (!requireLLM()) process.exit(1);
   const { window } = await buildTodayState();
@@ -824,6 +837,46 @@ async function cmdWeekly(): Promise<void> {
   console.log("\n" + markdown + "\n");
   const path = await writeReport("weekly-review", todayIso(), markdown);
   console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
+}
+
+/**
+ * The Sunday weekly brief: generate + persist the weekly review, freeze the week's snapshot (for the
+ * week-over-week delta), and draft ≤3 gated next-week proposals — all in one process, so "what the review
+ * analysed" and "what the delta diffs" are identical. Runs as a Sunday branch of the morning ping (and
+ * on-demand via `npm run weekly:brief`); idempotent (snapshot write-if-absent, per-bullet proposal skip).
+ */
+async function runWeeklyBrief(): Promise<void> {
+  if (!requireLLM()) return; // best-effort inside the ping; never break the morning readiness
+  const { state, window } = await buildTodayState();
+  const reviewDate = state.date; // one source for the report date + the snapshot's week (matches cmdDashboard)
+  const engagement = await loadEngagementContext(window);
+
+  // 1. The cohesive weekly review (same generator + report name as `npm run weekly`).
+  const llm = new CoachLLM(await loadSystemPrompt(), "weekly");
+  const { markdown, cacheRead, costUsd } = await runWeeklyReview(llm, window, engagement);
+  await writeReport("weekly-review", reviewDate, markdown);
+
+  // 2. Freeze this week's snapshot for the delta (write-if-absent, keyed by this week's Monday).
+  const insights = state.raw ? buildInsights(state, await loadArchive(), { history: window, engagement }) : undefined;
+  await persistWeeklyBriefIfAbsent(buildWeeklySnapshot({ window, insights, now: Date.now() }));
+
+  // 3. Draft the gated next-week proposals (the only generative step beyond the review).
+  let proposalNote = "";
+  if (insights) {
+    const proposerLlm = new CoachLLM(await loadSystemPrompt(), "weekly-brief", "high");
+    const propose = weeklyProposer({ state, insights, engagement, llm: proposerLlm });
+    const gate = new WriteGate(new AieClient(), new DecisionLog());
+    const existing = await new DecisionLog().all();
+    const res = await draftWeeklyProposals({ reviewMarkdown: markdown, reviewDate, existing, propose, gate });
+    proposalNote = ` ${res.drafted} next-week proposal(s) queued${res.skipped ? `, ${res.skipped} already present` : ""};`;
+  }
+  console.log(`(weekly brief → reports/${reviewDate}-weekly-review.md;${proposalNote} ${costNote(costUsd, cacheRead)})`);
+}
+
+/** `weekly:brief` — run the full Sunday brief on demand (review + snapshot + gated proposals). */
+async function cmdWeeklyBrief(): Promise<void> {
+  if (!requireLLM()) process.exit(1);
+  await runWeeklyBrief();
 }
 
 /** `race [name]` — event-specific prep, calibrated to time-to-race. */
@@ -1094,6 +1147,7 @@ const commands: Record<string, () => Promise<void>> = {
   readiness: cmdReadiness,
   ping: cmdPing,
   weekly: cmdWeekly,
+  "weekly:brief": cmdWeeklyBrief,
   race: cmdRace,
   propose: cmdPropose,
   confirm: cmdConfirm,
