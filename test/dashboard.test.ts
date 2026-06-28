@@ -15,6 +15,7 @@ import { emptyState } from "../src/state/types.js";
 import { todayIso } from "../src/util/today.js";
 import { buildInsights } from "../src/insights/engine.js";
 import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, aieGapKeyFromSetupKey, parseResearchItems, parseActionBullets, mdLite, commonTrailingSentences, sessionFeedbackCardState, renderResearchDigestPage, clockHM } from "../src/coach/dashboard.js";
+import { parseOpenItem } from "../src/coach/setupCard.js";
 import { redactRaceNames } from "../src/coach/dashboardHelpers.js";
 import type { ProfileQuestion } from "../src/profile/questions.js";
 import type { InsightReport } from "../src/insights/engine.js";
@@ -535,6 +536,23 @@ test("buildSetupItems: drops race_targets, tags + routes each source, dedupes an
   const q = items.filter((i) => i.source === "profile_question");
   assert.deepEqual(q.map((i) => i.label), ["Answer: Which weekday is your rest day?"], "only the UNFILLED question surfaces");
   assert.equal(q[0].route, "edit profile");
+});
+
+test("parseOpenItem: string vs {id,text} vs malformed — the stable-id fallback is the whole point", () => {
+  // Plain string → id derived from normalised text (back-compat; drifts on reword).
+  assert.deepEqual(parseOpenItem("Shim the cleat"), { id: "shim the cleat", text: "Shim the cleat" });
+  assert.equal(parseOpenItem("   "), null, "blank string → skipped");
+  // {id,text} → id preserved VERBATIM (stable across rewording — the feature).
+  assert.deepEqual(parseOpenItem({ id: "book-bloods", text: "Book the panel" }), { id: "book-bloods", text: "Book the panel" });
+  // Object with no/blank/non-string id → falls back to the text-derived id (never keys off whitespace).
+  assert.equal(parseOpenItem({ text: "Book the panel" })?.id, "book the panel", "missing id → dedupeKey fallback");
+  assert.equal(parseOpenItem({ id: "   ", text: "Book the panel" })?.id, "book the panel", "blank id → fallback");
+  assert.equal(parseOpenItem({ id: 5 as unknown as string, text: "Book the panel" })?.id, "book the panel", "non-string id → fallback");
+  // Malformed → null (degrade, don't crash): blank-text object, array, null, number.
+  assert.equal(parseOpenItem({ text: "   " }), null, "object with blank text → null");
+  assert.equal(parseOpenItem([] as unknown), null, "array → null");
+  assert.equal(parseOpenItem(null), null, "null → null");
+  assert.equal(parseOpenItem(42 as unknown), null, "number → null");
 });
 
 test("renderSetupImprove: a coach discussion shows 'discussed with coach' on the item (escaped note)", () => {
