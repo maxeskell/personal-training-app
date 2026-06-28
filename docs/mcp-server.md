@@ -284,7 +284,10 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
 - **`knowledge`** *(read)* — knowledge-layer freshness (last-verified + stale flag) and digests awaiting
   review. Approving is a deliberate CLI action, never the agent's.
 - **`session_feedback`** `{ date?, force? }` — deep feedback on one session. Needs the raw `.FIT` for
-  biomechanics; `force=true` gives summary-only feedback.
+  biomechanics; `force=true` gives summary-only feedback. For swims it reports **pace + stroke efficiency**
+  (distance-per-stroke), tags **open-water vs pool** from the `.FIT` `sub_sport`, and computes the
+  cadence/HR/decoupling drifts over **active swimming only** (rests between reps excluded) — so an
+  open-water interval set isn't mis-read as a late "cadence collapse".
 
 ### Gated writes — the only path that mutates AI Endurance
 - **`propose_adjustment`** `{ request }` — turn a request (e.g. *"move my long run off race week"*)

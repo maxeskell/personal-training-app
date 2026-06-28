@@ -64,3 +64,64 @@ test("analyseSession: normalized power needs enough power data, else null", () =
   assert.equal(d.normalizedPowerW, null);
   assert.equal(d.avgPowerW, null);
 });
+
+/**
+ * Open-water swims: the cadence/HR/decoupling drifts must be computed over ACTIVE swimming only — a long
+ * float/rest between reps used to land in the late quartile and read as a giant "cadence drop". Plus pace
+ * + distance-per-stroke (the efficiency measure) are derived from the GPS stream so the analysis can say
+ * whether the athlete sped up/slowed and whether efficiency held — not just cadence.
+ */
+function swimSamples(specs: Array<{ n: number; speed?: number; cadence: number; hr: number }>): Array<Record<string, number>> {
+  const out: Array<Record<string, number>> = [];
+  let t = 1000;
+  for (const sp of specs) for (let i = 0; i < sp.n; i++) out.push({ t: t++, cadence: sp.cadence, hr: sp.hr, ...(sp.speed != null ? { speed: sp.speed } : {}) });
+  return out;
+}
+
+test("analyseSession (swim): a long final float is excluded — no fake cadence/HR collapse", () => {
+  // 60 s active swimming, then a 60 s float (cadence 0, drifting slow). Whole-stream, the last quartile is
+  // all float → cadence "drops" ~100%; gated to active swimming it's ~0. That gate is the artifact fix.
+  const d = analyseSession({
+    sport: "Swim",
+    subSport: 18,
+    date: "2026-06-28",
+    samples: swimSamples([{ n: 60, speed: 0.7, cadence: 30, hr: 150 }, { n: 60, speed: 0.05, cadence: 0, hr: 120 }]),
+  })!;
+  assert.ok(d.swim);
+  assert.equal(d.swim!.openWater, true, "sub_sport 18 → open water");
+  assert.equal(d.swim!.paceSecPer100m, 143, "100 / 0.7 m/s ≈ 143 s/100m, from active swimming only");
+  assert.equal(d.swim!.distPerStrokeM, 1.4, "0.7 m/s × 60 / 30 spm = 1.4 m/stroke");
+  assert.equal(d.cadenceDropPct, 0, "the final float is excluded, so cadence does not 'collapse'");
+  assert.equal(d.hrDriftPct, 0, "HR drift is over active swimming, not the cooldown float");
+});
+
+test("analyseSession (swim): pace + efficiency drift answer 'sped up/slowed' and 'efficiency held'", () => {
+  // First half faster but choppier (1.4 m/stroke); second half slower but longer-stroked (1.5 m/stroke).
+  const d = analyseSession({
+    sport: "Swim",
+    subSport: 18,
+    date: "2026-06-28",
+    samples: swimSamples([{ n: 60, speed: 0.7, cadence: 30, hr: 140 }, { n: 60, speed: 0.6, cadence: 24, hr: 145 }]),
+  })!;
+  assert.equal(d.swim!.paceSecPer100m, 154, "avg 0.65 m/s → 154 s/100m");
+  assert.equal(d.swim!.paceDriftPct, 14.3, "slowed first→second half → positive");
+  assert.equal(d.swim!.distPerStrokeM, 1.45, "mean of 1.4 and 1.5");
+  assert.equal(d.swim!.dpsDriftPct, 7.1, "more distance per stroke late → efficiency improved → positive");
+});
+
+test("analyseSession (swim): a pool swim with no GPS speed → pace/efficiency null, never fabricated", () => {
+  const d = analyseSession({
+    sport: "Swim",
+    subSport: 17,
+    date: "2026-06-28",
+    samples: swimSamples([{ n: 120, cadence: 30, hr: 150 }]), // stroking, but no GPS speed channel
+  })!;
+  assert.equal(d.swim!.openWater, false, "sub_sport 17 → pool");
+  assert.equal(d.swim!.paceSecPer100m, null, "no GPS speed → pace can't be derived (use per-length splits)");
+  assert.equal(d.swim!.distPerStrokeM, null, "distance-per-stroke needs speed → null, not faked");
+});
+
+test("analyseSession: a run carries no swim block", () => {
+  const d = analyseSession({ sport: "Run", date: "2026-06-19", samples: samples(120, { power: 200 }) })!;
+  assert.equal(d.swim, null);
+});

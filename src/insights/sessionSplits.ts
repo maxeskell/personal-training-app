@@ -14,7 +14,7 @@
  * the AI Endurance app themselves. Never fabricates — an effort it can't find is reported missing.
  */
 
-import type { FitActivity, FitLap, FitLength } from "./fitParser.js";
+import { isOpenWater, SUB_SPORT_LAP_SWIMMING, type FitActivity, type FitLap, type FitLength } from "./fitParser.js";
 
 export interface IntervalSplit {
   index: number;
@@ -217,7 +217,8 @@ export function formatSplits(fit: FitActivity): string[] {
   const splits = fit.laps.length ? lapSplits(fit) : isSwim ? lengthSplits(fit) : [];
   if (!splits.length) return [`No lap/length structure in this ${fit.sportName} .FIT (continuous effort, or the device recorded no laps).`];
   const unit = isSwim ? "/100m" : "/km";
-  const lines = [`Per-interval splits (${fit.laps.length ? "laps" : "lengths"}) — ${fit.sportName}:`];
+  const water = isSwim ? (isOpenWater(fit) ? " (open water)" : fit.subSport === SUB_SPORT_LAP_SWIMMING ? " (pool)" : "") : "";
+  const lines = [`Per-interval splits (${fit.laps.length ? "laps" : "lengths"}) — ${fit.sportName}${water}:`];
   for (const s of splits) {
     const pace = isSwim ? s.paceSecPer100m : s.paceSecPerKm;
     const parts = [

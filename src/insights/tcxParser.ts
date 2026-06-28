@@ -93,6 +93,7 @@ export function parseTcx(buf: Buffer): FitActivity | null {
   return {
     sport: sport.num,
     sportName: sport.name,
+    subSport: null, // TCX carries no sub_sport
     samples: [],
     laps,
     lengths: [],

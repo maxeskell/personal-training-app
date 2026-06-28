@@ -45,6 +45,7 @@ interface Sample {
 interface StreamFile {
   activityId?: string;
   sport?: string;
+  subSport?: number | null; // FIT sub_sport (e.g. 18 = open_water) — lets a swim be analysed correctly
   date?: string;
   samples?: Sample[];
 }
@@ -72,6 +73,21 @@ export interface SessionDecay {
   avgGctBalancePct: number | null; // run stance-time L/R balance (50% = even)
   avgLrBalancePct: number | null; // bike left/right power balance (50% = even)
   normalizedPowerW: number | null; // bike NP (30s-rolling 4th-power mean) — pacing/variability vs avg power
+  // Swim-only (null for run/bike). For a swim the cadence/HR/decoupling drifts above are computed over
+  // ACTIVE swimming samples only — rests/floats between reps are excluded, so they reflect the swim, not
+  // the pauses (the old whole-stream basis read a long rest as a huge "cadence drop"/decoupling).
+  swim: SwimAnalysis | null;
+}
+
+/** Swim pace + stroke-efficiency derived from the GPS/cadence stream (open-water swims; pool has no GPS). */
+export interface SwimAnalysis {
+  openWater: boolean | null; // device sub_sport tag: true=open water, false=pool, null=untagged
+  paceSecPer100m: number | null; // average over active swimming (rests excluded)
+  /** First-half vs second-half pace change, %: +ve = slowed (positive split), −ve = sped up (negative split). */
+  paceDriftPct: number | null;
+  distPerStrokeM: number | null; // average distance-per-stroke (m) — the efficiency measure, not just cadence
+  /** First-half vs second-half distance-per-stroke change, %: +ve = efficiency improved, −ve = form unravelled. */
+  dpsDriftPct: number | null;
 }
 
 function quartileMeans(vals: Maybe[]): { first: number | null; last: number | null } {
@@ -99,13 +115,61 @@ function halfDecoupling(s: Sample[]): number | null {
   return first != null && second != null && first !== 0 ? +(((first - second) / first) * 100).toFixed(1) : null;
 }
 
+/**
+ * A swim sample counts as ACTIVE (vs resting/floating/sighting) when the athlete is stroking or moving at
+ * a genuine swim speed. Open-water reps cruise ~0.6–0.8 m/s; rests/sighting drop below ~0.1 m/s, so a
+ * 0.3 m/s floor cleanly separates the two. Using this to gate the drift maths is what stops a long float
+ * between reps from reading as a giant late "cadence drop" / decoupling.
+ */
+const SWIM_ACTIVE_MIN_SPEED_MS = 0.3;
+function isSwimActive(x: Sample): boolean {
+  return (x.cadence != null && x.cadence > 0) || (x.speed != null && x.speed > SWIM_ACTIVE_MIN_SPEED_MS);
+}
+
+/** First-half vs second-half mean of a series (split by order), as a signed % of the first half. */
+function halfDriftPct(vals: number[], sign: 1 | -1): number | null {
+  if (vals.length < 8) return null;
+  const mid = Math.floor(vals.length / 2);
+  const a = mean(vals.slice(0, mid));
+  const b = mean(vals.slice(mid));
+  return a != null && b != null && a !== 0 ? +((((b - a) / a) * 100) * sign).toFixed(1) : null;
+}
+
+/**
+ * Swim pace + stroke efficiency from the per-second stream, over ACTIVE swimming only. Pace comes from GPS
+ * speed (present on open-water swims; a pool swim logs no GPS, so pace is null here and the per-length
+ * splits are the source instead). Distance-per-stroke = speed ÷ stroke-rate — the efficiency measure that
+ * separates "swam slower" from "stroke fell apart", which raw cadence alone can't.
+ */
+function analyseSwim(s: Sample[], subSport: number | null | undefined): SwimAnalysis {
+  const active = s.filter(isSwimActive);
+  const speeds = active.map((x) => x.speed).filter((v): v is number => v != null && v > 0);
+  const avgSpeed = mean(speeds);
+  const dps = active
+    .map((x) => (x.speed != null && x.speed > 0 && x.cadence != null && x.cadence > 0 ? (x.speed * 60) / x.cadence : null))
+    .filter((v): v is number => v != null && v > 0 && v < 5); // cap drops GPS spikes (no human swims >5 m/stroke)
+  const avgDps = dps.length >= 8 ? mean(dps) : null;
+  return {
+    openWater: subSport === 18 ? true : subSport === 17 ? false : null,
+    paceSecPer100m: avgSpeed != null && avgSpeed > 0 && speeds.length >= 8 ? Math.round(100 / avgSpeed) : null,
+    // Pace drift from speed: slowing (speed down 2nd half) should read +ve, so flip the speed sign.
+    paceDriftPct: halfDriftPct(speeds, -1),
+    distPerStrokeM: avgDps != null ? +avgDps.toFixed(2) : null,
+    dpsDriftPct: halfDriftPct(dps, 1), // more distance-per-stroke late = +ve = efficiency improved
+  };
+}
+
 export function analyseSession(f: StreamFile): SessionDecay | null {
   const s = f.samples ?? [];
   if (s.length < 60) return null;
-  const cad = quartileMeans(s.map((x) => x.cadence ?? null));
+  const isSwim = /swim/i.test(String(f.sport ?? ""));
+  // For a swim, the cadence/HR/decoupling drifts must ignore rests/floats between reps (otherwise a long
+  // float reads as a huge late drop). Gate those maths to active swimming; run/bike use the whole stream.
+  const drift = isSwim ? s.filter(isSwimActive) : s;
+  const cad = quartileMeans(drift.map((x) => x.cadence ?? null));
   const gct = quartileMeans(s.map((x) => x.gct ?? null));
   const vo = quartileMeans(s.map((x) => x.vo ?? null));
-  const hr = quartileMeans(s.map((x) => x.hr ?? null));
+  const hr = quartileMeans(drift.map((x) => x.hr ?? null));
   const temps = s.map((x) => x.temperature).filter((t): t is number => typeof t === "number");
   const ts = s.map((x) => x.t).filter((t): t is number => typeof t === "number");
   const durationMin = ts.length >= 2 ? +(((ts[ts.length - 1] - ts[0]) / 60) || s.length / 60).toFixed(0) : +(s.length / 60).toFixed(0);
@@ -119,7 +183,7 @@ export function analyseSession(f: StreamFile): SessionDecay | null {
     gctRisePct: deltaPct(gct.first, gct.last),
     voRisePct: deltaPct(vo.first, vo.last),
     hrDriftPct: deltaPct(hr.first, hr.last),
-    decouplingPct: halfDecoupling(s),
+    decouplingPct: halfDecoupling(drift),
     avgTempC: temps.length ? +mean(temps)!.toFixed(1) : null,
     avgPowerW: avgOf(s.map((x) => x.power)),
     avgHr: avgOf(s.map((x) => x.hr)),
@@ -128,6 +192,7 @@ export function analyseSession(f: StreamFile): SessionDecay | null {
     avgGctBalancePct: avgOf(s.map((x) => x.gctBalance)),
     avgLrBalancePct: avgOf(s.map((x) => (x.lrBalance == null ? undefined : decodeLrBalanceLeftPct(x.lrBalance)))),
     normalizedPowerW: normalizedPower(s.map((x) => x.power)),
+    swim: isSwim ? analyseSwim(s, f.subSport) : null,
   };
 }
 
@@ -165,6 +230,7 @@ function fitToStreamFile(act: FitActivity, name: string): StreamFile {
   return {
     activityId: name.replace(/\.(fit|FIT)$/, ""),
     sport: act.sportName,
+    subSport: act.subSport,
     date,
     samples: act.samples.map((s) => ({
       t: s.t,
