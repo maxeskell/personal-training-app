@@ -25,6 +25,8 @@ import { loadInventory } from "./coach/fuelInventory.js";
 import { runFuelReview } from "./coach/fuelReview.js";
 import { loadMetricOverrides, setMetricOverride, clearMetricOverride } from "./state/metricOverrides.js";
 import { TRACKED_METRICS } from "./coach/metricChanges.js";
+import { buildBriefSnapshot, type BriefSnapshot } from "./coach/dailyBrief.js";
+import { loadPriorBrief, persistBriefIfAbsent } from "./coach/briefStore.js";
 import { backfillSessionFeedback } from "./coach/autoSessionFeedback.js";
 import { buildInsights } from "./insights/engine.js";
 import { loadArchive } from "./coach/orchestrator.js";
@@ -177,6 +179,14 @@ async function renderLatest(share = false): Promise<string> {
   } catch {
     /* the Plan tab degrades to the week-ahead view */
   }
+  // Daily brief: capture today's snapshot once (write-if-absent) so tomorrow has a diff reference, and
+  // load the most recent prior day to diff against. Best-effort — a store failure leaves the brief
+  // without its since-yesterday block, never an error.
+  let priorBrief: BriefSnapshot | null = null;
+  if (config.dailyBrief.enabled) {
+    priorBrief = await loadPriorBrief(latest.date);
+    await persistBriefIfAbsent(buildBriefSnapshot({ window, insights, decisions, now: Date.now() }));
+  }
   return renderDashboard({
     window,
     decisions,
@@ -185,6 +195,7 @@ async function renderLatest(share = false): Promise<string> {
     discussions,
     firstSeen,
     share,
+    priorBrief,
     garminDays: archive?.garminDays,
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,

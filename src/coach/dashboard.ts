@@ -8,6 +8,8 @@ import type { SurfacedFinding } from "../state/insightLog.js";
 import { renderCoachRecs } from "./adviceRecs.js";
 import { findingKey } from "../insights/metrics.js";
 import { detectMetricChanges, detectSourceConflicts, formatMetricValue, metricLabel } from "./metricChanges.js";
+import { buildBriefSnapshot, diffBriefSnapshots, type BriefSnapshot, type BriefChange } from "./dailyBrief.js";
+import { nextSessionNote, type SessionNote } from "./sessionNote.js";
 import type { MetricOverrides } from "../state/metricOverrides.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone, type Headline } from "../insights/headline.js";
@@ -189,6 +191,12 @@ export interface DashboardInput {
    * the tab shows current form only. The standalone /career page renders the same content via {@link renderCareerInner}.
    */
   career?: CareerHistory | null;
+  /**
+   * Yesterday's (most recent prior-day) brief snapshot — drives the daily brief's "since yesterday" diff.
+   * Loaded + persisted in the IO layer (server/CLI); omitted on the one-off file render, where the brief
+   * degrades to today-at-a-glance with no diff.
+   */
+  priorBrief?: BriefSnapshot | null;
 }
 
 const SEV_COLOR: Record<string, string> = { red: "#c0392b", amber: "#c98a00", green: "#1a8a3a", flag: "#c0392b", watch: "#c98a00", info: "#1a8a3a" };
@@ -577,24 +585,31 @@ function renderWaterTemp(water: WaterTempCard | undefined, share: boolean): stri
   );
 }
 
-function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx, share = false): string {
+function renderWeather(w: WeekWeather | undefined, fuel?: WeatherFuelCtx, share = false, coachNote?: SessionNote, coachNoteIdx = -1): string {
   if (!w) return "";
   let anyFuel = false;
   const sessions = w.sessions.length
     ? w.sessions
-        .map((s) => {
+        .map((s, i) => {
           const plan = fuel?.byKey.get(fuelLogKey(s.date.slice(0, 10), s.sport));
           const fuelDrop =
             plan?.needed
               ? ((anyFuel = true),
                 `<details class="fueldrop" style="margin-top:5px"><summary style="cursor:pointer;font-size:12px;color:#c8642d;font-weight:600">⛽ Fuelling</summary><div style="margin-top:5px">${fuelSessionInner(plan, fuel!.logged.get(fuelLogKey(s.date.slice(0, 10), s.sport)), false, false)}</div></details>`)
               : "";
+          // Coach's note — on the next COACHABLE session (its index resolved by the caller, so a leading
+          // gym/indoor day doesn't blank it), the coach-voice "how to execute it" line (a MODEL, intensity
+          // inferred from the title), with the basis behind a "why" disclosure.
+          const note =
+            i === coachNoteIdx && coachNote
+              ? `<div class="ev" style="color:#2563eb;margin-top:5px">📋 <b>Coach:</b> ${escapeHtml(coachNote.note)} <span class="muted">— MODEL</span>${coachNote.basis.length ? `<details style="margin-top:2px"><summary style="cursor:pointer;font-size:11px;color:#888">why</summary><div class="k" style="margin-top:2px">${escapeHtml(coachNote.basis.join(" · "))}</div></details>` : ""}</div>`
+              : "";
           return `<div class="finding${s.done ? " done" : ""}">
       <div><span class="badge" style="background:${VERDICT_COLOR[s.verdict] ?? "#777"}">${escapeHtml(s.verdict)}</span>
         <b>${escapeHtml(weekday(s.date))} · ${SPORT_EMOJI[s.sport] ?? ""} ${escapeHtml(s.sport)}</b>${s.title ? ` <span class="muted">· ${escapeHtml(s.title)}</span>` : ""}${s.done ? ` <span class="donetag">✓ done</span>` : ""}</div>
       <div class="fdetail">${escapeHtml(s.reason)}</div>
       ${s.suggestion ? `<div class="ev">→ ${escapeHtml(s.suggestion)}</div>` : ""}
-      ${fuelDrop}
+      ${fuelDrop}${note}
     </div>`;
         })
         .join("")
@@ -896,11 +911,50 @@ function renderHealthBanner(risk: HealthRiskAssessment | null): string {
   </div>`;
 }
 
+const BRIEF_DOT: Record<BriefChange["tone"], string> = { up: "#1a8a3a", down: "#c98a00", neutral: "#777" };
+
+/** The first meaningful sentence of a stored session readout — the bold "Verdict" line, else the first prose line. */
+function sessionFeedbackOneLine(rec: SessionFeedbackRecord): string | null {
+  const lines = rec.markdown.split("\n").map((l) => l.trim());
+  const bold = lines.find((l) => /^\*\*.+\*\*/.test(l));
+  const pick = bold ?? lines.find((l) => l && !l.startsWith("#") && !l.startsWith("-"));
+  if (!pick) return null;
+  return pick.replace(/\*\*/g, "").replace(/^[-*]\s*/, "").trim() || null;
+}
+
 /**
- * The "Today" decision header (#1) — leads with one synthesised call + the single action, corroborating
- * drivers, an always-visible health strip (#8), the LLM readiness narrative, and the key metrics.
+ * The unified "Today" card (#1) — the single coaching card at the top of the Today tab. It OWNS the
+ * readiness call (verdict + the single action + drivers + health strip + the LLM narrative + key-metric
+ * tiles) AND the daily-brief layer (since-yesterday diff, today's session(s) at a glance, yesterday in one
+ * line). The readiness header and the brief used to be two stacked cards saying overlapping things; they
+ * are merged here so Today reads as one coach, not a dashboard.
+ *
+ * Deterministic (no LLM): every part is a VIEW over pieces the engine already computed — the verdict from
+ * the readiness write-up, the diff from the daily snapshots, the session glance from the plan/weather/fuel
+ * — so it never disagrees with the cards below it. The readiness sub-blocks render only when `insights`/`hl`
+ * exist (no baseless green verdict); the brief sections only when `briefEnabled`; each sub-part is
+ * independently conditional, so a missing piece drops out (degrade-don't-crash). Stays short when nothing
+ * moved. With no insights AND the brief off, it renders nothing rather than an empty shell.
  */
-function renderHeader(today: AthleteState, hl: Headline | null, decisions: DecisionRecord[], gar: DashboardInput["garminDays"], redact: (s: string) => string = (s) => s, leadKey?: string): string {
+function renderTodayCard(args: {
+  today: AthleteState;
+  window: AthleteState[];
+  insights?: InsightReport;
+  hl: Headline | null;
+  leadKey?: string;
+  decisions: DecisionRecord[];
+  garminDays: DashboardInput["garminDays"];
+  priorBrief: BriefSnapshot | null;
+  weather?: WeekWeather;
+  fuelByKey: Map<string, FuelPlan>;
+  sessionFeedbacks?: SessionFeedbackRecord[];
+  redact: (s: string) => string;
+  now: number;
+  briefEnabled: boolean;
+}): string {
+  const { today, window, insights, hl, leadKey, decisions, garminDays: gar, priorBrief, weather, fuelByKey, sessionFeedbacks, redact, now, briefEnabled } = args;
+
+  // ── Readiness core (the former standalone header) — rendered only when there are insights to back it ──
   const lastReadiness = [...decisions].reverse().find((d) => d.kind === "readiness");
   const verdictWord = lastReadiness?.summary.split(":")[0]?.trim().toLowerCase();
   const sev = hl?.severity ?? (verdictWord === "green" || verdictWord === "amber" || verdictWord === "red" ? verdictWord : "green");
@@ -909,10 +963,8 @@ function renderHeader(today: AthleteState, hl: Headline | null, decisions: Decis
   const r = today.recovery.value;
   const ts = today.trainingStatus.value;
   const latestGar = gar && gar.length ? gar[gar.length - 1] : undefined;
-
-  // Health strip — always visible so "quiet" is distinguishable from "not computed". Signals the drivers
-  // line already states (Acute:chronic, recovery limiter, an off-baseline HRV status) are dropped here so
-  // the same fact isn't shown twice in one card; the drivers line keeps them with their interpretive band.
+  // Drivers-vs-chip/tile de-dup: a signal stated in the drivers line is dropped from its chip/tile so the
+  // same fact isn't shown twice in one card.
   const showDrivers = !!hl && hl.drivers.length > 0;
   const limiter = r?.limiterToday ?? null;
   const hrvStatus = today.hrvStatus.value?.status;
@@ -921,9 +973,8 @@ function renderHeader(today: AthleteState, hl: Headline | null, decisions: Decis
   const hrvInDrivers = showDrivers && !!hrvStatus && hrvStatus.toUpperCase() !== "BALANCED";
   const stress = latestGar?.avgStressLevel;
   const recharge = latestGar?.bodyBatteryChange;
-  // Sleep and HRV used to show TWICE in this card — as a status chip and again as a bottom number tile.
-  // Each now appears once: its number in the tile, coloured by status (chips below are only the flags that
-  // have no tile of their own). Tones reuse the old chip thresholds.
+  // Sleep/HRV appear ONCE — their number in the tile, coloured by status; chips are reserved for flags
+  // with no tile of their own.
   const sleepScore = today.sleep.value?.score ?? null;
   const sleepHours = today.sleep.value?.hours ?? null;
   const sleepColor = sleepScore == null ? "" : TONE_COLOR[sleepScore >= 70 ? "good" : sleepScore >= 50 ? "warn" : "bad"];
@@ -935,23 +986,97 @@ function renderHeader(today: AthleteState, hl: Headline | null, decisions: Decis
     limiter && !limiterInDrivers ? chip("Limiter", String(limiter), "warn") : "",
   ].filter(Boolean).join("");
 
-  return `<div class="card" style="border-top:4px solid ${color}">
-    <h2>Today — ${today.date.slice(5)}</h2>
-    <div class="verdict"><span class="dot" style="background:${color}"></span>
+  const verdictBlock = insights
+    ? `<div class="verdict"><span class="dot" style="background:${color}"></span>
       <span class="big" style="color:${color}">${escapeHtml(sev)}</span></div>
     ${hl ? `<p style="font-size:16px;color:#222;margin:10px 0 6px;font-weight:500">${escapeHtml(redact(hl.line))}</p>` : ""}
     ${hl && leadKey ? `<a href="#decide" onclick="seeData()" style="display:inline-block;font-size:13px;color:#1558d6;text-decoration:none;margin:0 0 8px">see the data →</a>` : ""}
     ${hl?.action ? `<div style="background:${color};color:#fff;border-radius:8px;padding:10px 12px;font-size:14px;margin:6px 0 8px">➡️ ${escapeHtml(redact(hl.action))}</div>
-      <button class="actbtn" onclick="actPlan()">⚙ Turn this into a plan change</button><div id="proposals"></div>` : ""}
-    ${hl && hl.drivers.length ? `<div class="k" style="margin-bottom:10px">${hl.drivers.map((d) => escapeHtml(redact(d))).join(" · ")}</div>` : ""}
-    ${chips ? `<div style="margin:6px 0 12px">${chips}</div>` : ""}
-    ${narrative ? `<details><summary style="cursor:pointer;font-size:13px;color:#888">Readiness detail</summary><p style="font-size:14px;color:#444;margin:8px 0">${escapeHtml(redact(narrative))}</p></details>` : ""}
-    <div class="grid" style="margin-top:6px">
+      <button class="actbtn" onclick="actPlan()">⚙ Turn this into a plan change</button><div id="proposals"></div>` : ""}`
+    : "";
+  const driversChips = insights
+    ? `${hl && hl.drivers.length ? `<div class="k" style="margin-bottom:10px">${hl.drivers.map((d) => escapeHtml(redact(d))).join(" · ")}</div>` : ""}
+    ${chips ? `<div style="margin:6px 0 12px">${chips}</div>` : ""}`
+    : "";
+  const tilesBlock = insights
+    ? `<div class="grid" style="margin-top:6px">
       <div><div class="k">HRV (ms)</div><div class="v"${hrvColor ? ` style="color:${hrvColor}"` : ""}>${fmt(today.hrvOvernight.value)}</div>${hrvStatus && !hrvInDrivers ? `<div class="k">${escapeHtml(hrvStatus)}</div>` : ""}</div>
       <div><div class="k">Resting HR</div><div class="v">${fmt(today.restingHr.value)}</div></div>
       <div><div class="k">Sleep</div><div class="v"${sleepColor ? ` style="color:${sleepColor}"` : ""}>${sleepScore ?? "—"}</div>${sleepHours != null ? `<div class="k">${sleepHours.toFixed(1)}h</div>` : ""}</div>
       <div><div class="k">Cardio rec.</div><div class="v">${fmt(r?.cardioRecovery)}</div></div>
-    </div>
+    </div>`
+    : "";
+  const narrativeBlock = insights && narrative
+    ? `<details><summary style="cursor:pointer;font-size:13px;color:#888">Readiness detail</summary><p style="font-size:14px;color:#444;margin:8px 0">${escapeHtml(redact(narrative))}</p></details>`
+    : "";
+
+  // ── Brief layer (since yesterday · today at a glance · yesterday in a line) — gated by briefEnabled ──
+  let sinceBlock = "";
+  let todayBlock = "";
+  let yesterdayBlock = "";
+  if (briefEnabled) {
+    // Since-yesterday diff — pure, built from the same pieces the cards below use.
+    const curr = buildBriefSnapshot({ window, insights, decisions, now });
+    const metricChanges = detectMetricChanges(window, { now });
+    const insightTitle = (key: string) => insights?.topFindings.find((f) => findingKey(f) === key)?.title;
+    const changes = diffBriefSnapshots(priorBrief, curr, { metricChanges, insightTitle }).slice(0, 6);
+    const sinceLabel = priorBrief
+      ? daysTo(priorBrief.date, today.date) === 1
+        ? "Since yesterday"
+        : `Since ${escapeHtml(priorBrief.date)}`
+      : null;
+    sinceBlock = !sinceLabel
+      ? "" // first day — nothing to diff against
+      : changes.length
+        ? `<div class="k" style="margin-bottom:4px">${sinceLabel}</div>
+        <ul style="list-style:none;padding:0;margin:0 0 12px">${changes
+            .map(
+              (c) =>
+                `<li style="font-size:14px;margin:4px 0"><span class="dot" style="background:${BRIEF_DOT[c.tone]};display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px"></span>${escapeHtml(redact(c.text))} <a href="#${c.target}" data-tab="${c.target}" style="color:#1558d6;text-decoration:none;font-size:12px">→</a></li>`,
+            )
+            .join("")}</ul>`
+        : `<div class="k" style="margin-bottom:12px">${sinceLabel} — nothing's changed.</div>`;
+
+    // Today's session(s) at a glance: sport · duration · weather verdict · fuelling indicator.
+    const WX: Record<string, string> = { good: "🟢", marginal: "🟡", poor: "🔴", indoor: "🏠" };
+    const todays = (today.plannedSessions.value ?? []).filter((p) => p.date.slice(0, 10) === today.date);
+    const todayRows = todays.map((p) => {
+      const sport = p.sport ?? "Session";
+      const dur = p.durationMin ? ` · ${Math.round(p.durationMin)} min` : "";
+      const wx = weather?.sessions.find((s) => s.date.slice(0, 10) === today.date && s.sport === sport);
+      const wxBit = wx ? ` · ${WX[wx.verdict] ?? ""} ${escapeHtml(wx.verdict)}` : "";
+      // A tight indicator, not the standalone card's full summary (which would just repeat the session line).
+      const fuel = fuelByKey.get(fuelLogKey(today.date, sport));
+      const fuelBit = fuel ? (fuel.needed ? ` · ⛽ fuel plan` : ` · 💧 water's fine`) : "";
+      return `<li style="font-size:14px;margin:4px 0"><b>${escapeHtml(redact(p.title ?? sport))}</b>${escapeHtml(dur)}${wxBit}${fuelBit}</li>`;
+    });
+    todayBlock = todays.length
+      ? `<div class="k" style="margin-bottom:4px">Today <a href="#plan" data-tab="plan" style="color:#1558d6;text-decoration:none;font-size:12px">see Plan →</a></div>
+      <ul style="list-style:none;padding:0;margin:0 0 12px">${todayRows.join("")}</ul>`
+      : `<div class="k" style="margin-bottom:12px">Today — nothing planned (rest day).</div>`;
+
+    // Yesterday in one line — the verdict from the latest stored session readout; the full card is below.
+    const latestFeedback = [...(sessionFeedbacks ?? [])].sort((a, b) => a.date.localeCompare(b.date)).pop();
+    const ydLine = latestFeedback ? sessionFeedbackOneLine(latestFeedback) : null;
+    yesterdayBlock = ydLine
+      ? `<div class="k" style="margin-bottom:4px">Last session — ${escapeHtml(latestFeedback!.date.slice(5))} ${escapeHtml(latestFeedback!.sport)}</div>
+      <div style="font-size:14px;color:#444;margin-bottom:2px">${escapeHtml(redact(ydLine))}</div>`
+      : "";
+  }
+
+  // No insights AND the brief off → nothing to show; render no card rather than an empty shell.
+  if (!insights && !briefEnabled) return "";
+
+  // Order: the call → what to do → what changed → today's session → supporting signals → detail → yesterday.
+  return `<div class="card" style="border-top:4px solid ${insights ? color : "#c8642d"}">
+    <h2>Today — ${escapeHtml(today.date.slice(5))}</h2>
+    ${verdictBlock}
+    ${sinceBlock}
+    ${todayBlock}
+    ${driversChips}
+    ${tilesBlock}
+    ${narrativeBlock}
+    ${yesterdayBlock}
   </div>`;
 }
 
@@ -1022,7 +1147,7 @@ function shareRaceNames(today: AthleteState, profile?: Profile): string[] {
   return names.filter(Boolean);
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, discussions, firstSeen, garminDays, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, seasonReport, seasonProse, career, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, discussions, firstSeen, garminDays, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, seasonReport, seasonProse, career, priorBrief, now, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Fuelling — week ahead (deterministic, no LLM on render): per-session pre/during/after from the
@@ -1044,8 +1169,29 @@ export function renderDashboard({ window, decisions, insights, reactions, discus
   // "next session" card is the fallback (so fuelling never disappears when the forecast is unavailable).
   const showWeather = !share && !!weather;
   const weatherCarriesFuel = showWeather && fuelInventory.length > 0 && fuelPlans.some((p) => p.needed);
+  // Coach's note on the next COACHABLE session — deterministic "how to execute it" line (intensity
+  // inferred from the title, modulated by today's readiness/form). We scan the not-done sessions in order
+  // and attach to the FIRST that yields a note, so a leading gym/indoor day (Strength/Other → no note)
+  // doesn't blank it for the week. The resolved index is threaded into renderWeather as the single source
+  // of truth for which row the note lands on. Absent when there's no forecast/coachable session.
+  let nextCoachNote: SessionNote | undefined;
+  let coachNoteIdx = -1;
+  if (showWeather && weather) {
+    const plannedAhead = upcomingPlanned(window, today.date, 7).sessions;
+    for (let i = 0; i < weather.sessions.length; i++) {
+      const sv = weather.sessions[i];
+      if (sv.done) continue;
+      const planned = plannedAhead.find((p) => p.date.slice(0, 10) === sv.date.slice(0, 10) && p.sport === sv.sport);
+      const note = planned ? nextSessionNote(planned, insights, today) : null;
+      if (note) {
+        nextCoachNote = note;
+        coachNoteIdx = i;
+        break;
+      }
+    }
+  }
   const weatherHtml = showWeather
-    ? renderWeather(weather, weatherCarriesFuel ? { byKey: fuelByKey, logged: loggedFuel, inventory: fuelInventory, hasApiKey: setupHealth?.hasApiKey } : undefined, share)
+    ? renderWeather(weather, weatherCarriesFuel ? { byKey: fuelByKey, logged: loggedFuel, inventory: fuelInventory, hasApiKey: setupHealth?.hasApiKey } : undefined, share, nextCoachNote, coachNoteIdx)
     : "";
   const fuelCard = weatherCarriesFuel ? "" : renderFuelCard({ plans: fuelPlans, inventory: fuelInventory, fuelLog, share, hasApiKey: setupHealth?.hasApiKey });
 
@@ -1142,7 +1288,9 @@ export function renderDashboard({ window, decisions, insights, reactions, discus
     heading: "This week",
     intro: `This week's coaching cues — your call. A training change offers a gated <b>Make this change</b> (it applies in AI Endurance after you confirm the exact edit, then shows <b>✓ applied</b> and stops asking); the rest take 👍/👎/💤.`,
   });
-  const dataChangesHtml = collapse(renderDataChanges(window, reactions, suppressed, metricOverrides));
+  // Expanded (not behind a disclosure): an auto-detected FTP/threshold change is a real decision, not
+  // housekeeping to hide — surface it open so it isn't missed.
+  const dataChangesHtml = renderDataChanges(window, reactions, suppressed, metricOverrides);
   const setupHousekeepingHtml = renderSetupImprove(profile, share, setupOpts, {
     only: ["finish_setup", "worth_considering"],
     heading: "Set up & improve",
@@ -1216,7 +1364,7 @@ ${share ? `<div class="card sharebanner" style="background:#eef4ff;border:1px so
 <section id="tab-today" class="tab on">
 
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
-${insights ? renderHeader(today, hl, decisions, garminDays, redact, leadKey) : ""}
+${renderTodayCard({ today, window, insights, hl, leadKey, decisions, garminDays, priorBrief: priorBrief ?? null, weather, fuelByKey, sessionFeedbacks, redact, now: now ?? Date.now(), briefEnabled: config.dailyBrief.enabled })}
 
 ${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks, setupHealth?.hasApiKey, share, redact)}
 ${decideCount > 0 ? `<a class="card nav-link" data-tab="decide" href="#decide" style="display:block;text-decoration:none;color:#c8642d;font-weight:600">📥 ${decideCount} ${decideCount === 1 ? "item" : "items"} waiting on your call${decideNewCount > 0 ? ` · <span style="color:#1558d6">${decideNewCount} new</span>` : ""} →</a>` : ""}

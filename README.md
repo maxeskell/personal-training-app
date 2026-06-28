@@ -552,19 +552,36 @@ still **one self-contained HTML page**: the tabs switch in-browser with no round
 the URL hash — `/#plan`, `/#decide`, …), and with JavaScript off — or in Print → Save-as-PDF — every tab just
 stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and **🔄 Sync** sit in the header.
 
-- **Today** — the daily operational view: your readiness verdict + the day's action, the last session, and a
-  *"📥 N waiting on your call · N new →"* teaser into Decide. The day's headline call carries a **see the data →**
-  link that opens Decide and scrolls to the insight card backing it.
+- **Today** — the daily operational view as a **single coaching card**. The readiness verdict and the
+  daily brief used to be two stacked cards saying overlapping things; they're now **merged into one**, so
+  Today reads as one coach, not a dashboard. The card leads with the green/amber/red **verdict + the day's
+  action** (the gated *"Turn this into a plan change"* still lives here), then a deterministic *"what
+  changed since yesterday"* diff (a readiness move, an auto-detected FTP/threshold change, a watcher that
+  just spoke up — each a one-line pointer into the card that owns the detail), then **today's session(s) at
+  a glance** (sport · weather verdict · fuelling, with a *see Plan →*), then the corroborating drivers +
+  health-metric tiles, the readiness narrative, and **yesterday in one line**. It makes **no LLM call** — a
+  *view* over the same engine the cards below use, so it never disagrees with them — and stays short when
+  nothing moved (a rest day with no changes is a couple of lines, not a wall). The since-yesterday diff is
+  powered by a tiny per-day snapshot under `data/brief/` (gitignored), captured once a day so the next
+  morning has a reference point; on the first day there's nothing to diff, so it just shows
+  today-at-a-glance. `COACH_DAILY_BRIEF=false` drops the brief sections, leaving the plain readiness card.
+  Below it: the last session, and a *"📥 N waiting on your call · N new →"* teaser into Decide.
 - **Plan** — the forward-looking view: this week's sessions vs weather and fuelling, the coach's **this-week
   review**, then the **Season arc** folded in (last-7-days load moved to Performance, where the backward-looking
-  numbers live).
+  numbers live). The **next still-to-do session** carries a deterministic **coach's note** — a coach-voice
+  *how to execute it* line (*"settle into a controlled, comfortably-hard effort"*, *"truly easy — this is
+  recovery"*), modulated by today's readiness/form so a hard session on deep fatigue says to cut the reps or
+  move it. It's a **MODEL** (intensity is inferred from the session title — AI Endurance exposes no workout
+  structure — with the basis behind a *why* disclosure), makes no LLM call, and only ever eases effort *down*,
+  never up.
 - **Decide** — one unified **inbox** in two halves: **decisions** to act on (top insights, the coach's
   recommendations, this week's coaching cues) then **housekeeping** (numbers to confirm, setup to finish) —
   all sharing the same **👍 Agree / 👎 Disagree / 🚫 Ignore** (💤 Snooze) controls, hoisted to one legend at
   the top, with a gated **Make this change / Apply to AI Endurance** on items that write back, so a real plan
-  change never hides behind a plain thumbs-up. Anything you **haven't actioned yet** carries a blue **NEW**
-  badge + left bar (and a *"▲ N not yet actioned"* roll-up at the top); the flag clears the moment you react,
-  so your eye goes straight to what still needs you.
+  change never hides behind a plain thumbs-up. The **Data changes** card (an auto-detected FTP/threshold move
+  is a real decision, not housekeeping to hide) renders **expanded**, not behind a disclosure. Anything you
+  **haven't actioned yet** carries a blue **NEW** badge + left bar (and a *"▲ N not yet actioned"* roll-up at
+  the top); the flag clears the moment you react, so your eye goes straight to what still needs you.
 - **Performance** — your numbers in four labelled groups: **Form & load** (the load model, multi-week trends
   and the **recent-vs-prior** efficiency + **run *and* ride durability** rows, last-7-days load by sport),
   **Zones & capacity** (zones & thresholds, Garmin scores), **Race readiness**
