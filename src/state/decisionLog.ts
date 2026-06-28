@@ -48,6 +48,18 @@ export interface DecisionRecord {
    * from the insight log) and for non-family cards (weekly/research/finish-setup tasks).
    */
   family?: string;
+  /**
+   * For insight-feedback: a one-line note the coach captured when discussing this item with the athlete
+   * (the *why* behind the call — "agreed: bank the easy hours, HRV's fine"). Rendered on the dashboard
+   * card so a discussion held in Claude Code shows up on the display surface. Absent for a bare click.
+   */
+  note?: string;
+  /**
+   * For insight-feedback: where the reaction came from — "coach" (a discussion via Claude Code's
+   * `react_to_insight`) vs "dashboard" (a chip click). Drives the "discussed with coach" annotation; a
+   * later dashboard click (via absent / "dashboard") supersedes it, latest-wins. Absent on old records.
+   */
+  via?: "coach" | "dashboard";
   /** Optional retrospective note on how the call held up. */
   retro?: string;
   /**
@@ -127,8 +139,18 @@ export class DecisionLog {
   }
 
   /** Record a reaction to a surfaced insight or setup card. `family` is set only for family-bearing
-   *  cards (This-week marginal gains), so the engagement model can attribute the reaction (see DecisionRecord.family). */
-  async recordInsightFeedback(insightKey: string, reaction: InsightReaction, summary: string, family?: string): Promise<void> {
+   *  cards (This-week marginal gains), so the engagement model can attribute the reaction (see DecisionRecord.family).
+   *  `note`/`via` are set when the coach records a DISCUSSION (via Claude Code) — the one-line why + its
+   *  source — so the dashboard can show "discussed with coach". Both are optional trailing params, so the
+   *  existing dashboard-click callers (passing up to `family`) are untouched. */
+  async recordInsightFeedback(
+    insightKey: string,
+    reaction: InsightReaction,
+    summary: string,
+    family?: string,
+    note?: string,
+    via?: "coach" | "dashboard",
+  ): Promise<void> {
     await this.append({
       id: randomUUID(), // collision-free (was a 32-bit second-granularity hash that could collide)
       timestamp: nowIso(),
@@ -136,6 +158,8 @@ export class DecisionLog {
       summary,
       insightKey,
       family,
+      note,
+      via,
       status: REACTION_STATUS[reaction],
     });
   }
@@ -214,6 +238,32 @@ export function latestInsightReactions(
       continue;
     }
     out.set(r.insightKey, { reaction: reactionOf(r.status), timestamp: r.timestamp });
+  }
+  return out;
+}
+
+/** A discussion outcome the coach recorded against a card key (the WHAT + WHY + WHEN), for rendering. */
+export interface CoachDiscussion {
+  reaction: InsightReaction;
+  timestamp: string;
+  note?: string;
+}
+
+/**
+ * Per key, the latest coach DISCUSSION outcome — but only where the most-recent insight-feedback record
+ * for that key came `via: "coach"` and wasn't cleared. A later dashboard click (or a clear) supersedes it,
+ * so the "discussed with coach" annotation reflects the current state, not a stale one. Pure — testable.
+ */
+export function latestCoachDiscussions(records: DecisionRecord[]): Map<string, CoachDiscussion> {
+  const latest = new Map<string, DecisionRecord>();
+  for (const r of records) {
+    if (r.kind !== "insight-feedback" || !r.insightKey) continue;
+    latest.set(r.insightKey, r); // append-only log is chronological → last write wins
+  }
+  const out = new Map<string, CoachDiscussion>();
+  for (const [key, r] of latest) {
+    if (r.status === "cleared" || r.via !== "coach") continue;
+    out.set(key, { reaction: reactionOf(r.status), timestamp: r.timestamp, note: r.note });
   }
   return out;
 }

@@ -15,12 +15,13 @@ import { emptyState } from "../src/state/types.js";
 import { todayIso } from "../src/util/today.js";
 import { buildInsights } from "../src/insights/engine.js";
 import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, aieGapKeyFromSetupKey, parseResearchItems, parseActionBullets, mdLite, commonTrailingSentences, sessionFeedbackCardState, renderResearchDigestPage, clockHM } from "../src/coach/dashboard.js";
+import { parseOpenItem } from "../src/coach/setupCard.js";
 import { redactRaceNames } from "../src/coach/dashboardHelpers.js";
 import type { ProfileQuestion } from "../src/profile/questions.js";
 import type { InsightReport } from "../src/insights/engine.js";
 import type { Finding } from "../src/insights/metrics.js";
 import type { Profile } from "../src/profile/schema.js";
-import type { InsightReaction, DecisionRecord } from "../src/state/decisionLog.js";
+import type { InsightReaction, DecisionRecord, CoachDiscussion } from "../src/state/decisionLog.js";
 import type { SeasonArcReport } from "../src/coach/seasonArc.js";
 
 const NASTY = `O'Brien "5x3'" \\ </script><b>x</b>`; // apostrophe, quote, backslash, tag, </script>
@@ -508,7 +509,7 @@ test("buildSetupItems: drops race_targets, tags + routes each source, dedupes an
       race_targets: "set the target_time for each race", // non-actionable → must be dropped
       legacy: "resolved", // resolved → dropped
     },
-    open_items: ["Shim the bike cleat after Birmingham", "  ", 42 as unknown as string],
+    open_items: ["Shim the bike cleat after Birmingham", "  ", 42 as unknown as string, { id: "book-bloods", text: "Book the Medichecks panel" }],
     fuelling: { carb_target_g_per_hour: { long: 80 } }, // filled → its question is NOT surfaced
     // availability.rest_day is absent → its question IS surfaced
   } as Profile;
@@ -526,12 +527,45 @@ test("buildSetupItems: drops race_targets, tags + routes each source, dedupes an
   assert.ok(aie.every((i) => i.route === "in AI Endurance"));
 
   const open = items.filter((i) => i.source === "open_item");
-  assert.deepEqual(open.map((i) => i.label), ["Shim the bike cleat after Birmingham"], "blank/non-string open items are skipped");
+  assert.deepEqual(open.map((i) => i.label), ["Shim the bike cleat after Birmingham", "Book the Medichecks panel"], "blank/non-string open items skipped; string + {id,text} kept");
   assert.equal(open[0].route, "discuss with coach");
+  // A plain string keys off its normalised text; an {id,text} entry keys off the STABLE id (survives rewording).
+  assert.equal(open[0].key, "setup:open:shim the bike cleat after birmingham");
+  assert.equal(open[1].key, "setup:open:book-bloods", "explicit id → stable key");
 
   const q = items.filter((i) => i.source === "profile_question");
   assert.deepEqual(q.map((i) => i.label), ["Answer: Which weekday is your rest day?"], "only the UNFILLED question surfaces");
   assert.equal(q[0].route, "edit profile");
+});
+
+test("parseOpenItem: string vs {id,text} vs malformed — the stable-id fallback is the whole point", () => {
+  // Plain string → id derived from normalised text (back-compat; drifts on reword).
+  assert.deepEqual(parseOpenItem("Shim the cleat"), { id: "shim the cleat", text: "Shim the cleat" });
+  assert.equal(parseOpenItem("   "), null, "blank string → skipped");
+  // {id,text} → id preserved VERBATIM (stable across rewording — the feature).
+  assert.deepEqual(parseOpenItem({ id: "book-bloods", text: "Book the panel" }), { id: "book-bloods", text: "Book the panel" });
+  // Object with no/blank/non-string id → falls back to the text-derived id (never keys off whitespace).
+  assert.equal(parseOpenItem({ text: "Book the panel" })?.id, "book the panel", "missing id → dedupeKey fallback");
+  assert.equal(parseOpenItem({ id: "   ", text: "Book the panel" })?.id, "book the panel", "blank id → fallback");
+  assert.equal(parseOpenItem({ id: 5 as unknown as string, text: "Book the panel" })?.id, "book the panel", "non-string id → fallback");
+  // Malformed → null (degrade, don't crash): blank-text object, array, null, number.
+  assert.equal(parseOpenItem({ text: "   " }), null, "object with blank text → null");
+  assert.equal(parseOpenItem([] as unknown), null, "array → null");
+  assert.equal(parseOpenItem(null), null, "null → null");
+  assert.equal(parseOpenItem(42 as unknown), null, "number → null");
+});
+
+test("renderSetupImprove: a coach discussion shows 'discussed with coach' on the item (escaped note)", () => {
+  const profile = { schema_version: 1, identity: {}, open_items: [{ id: "book-bloods", text: "Book the Medichecks panel" }] } as Profile;
+  const discussions = new Map<string, CoachDiscussion>([
+    ["setup:open:book-bloods", { reaction: "agree", timestamp: "2026-06-27T09:00:00Z", note: "agreed — book before the next block <go>" }],
+  ]);
+  const html = renderSetupImprove(profile, false, { questions: [], discussions });
+  assert.match(html, /Book the Medichecks panel/);
+  assert.match(html, /discussed with coach · 27 Jun · agreed/, "the discussion annotation renders on the card");
+  assert.match(html, /book before the next block &lt;go&gt;/, "the note is HTML-escaped");
+  // Without a discussion map, no annotation.
+  assert.doesNotMatch(renderSetupImprove(profile, false, { questions: [] }), /discussed with coach/);
 });
 
 test("buildSetupItems: dedupes across sources (first/higher-value wins) and caps at ~5", () => {

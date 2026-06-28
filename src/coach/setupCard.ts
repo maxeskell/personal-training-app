@@ -5,8 +5,8 @@ import { selectMarginalGains } from "../insights/marginalGains.js";
 import { categorize, isPlanEdit, CATEGORY_LABEL, type ActionCategory } from "./weeklyActions.js";
 import type { Profile } from "../profile/schema.js";
 import { PROFILE_QUESTIONS, WAYS_TO_ANSWER, type ProfileQuestion } from "../profile/questions.js";
-import type { InsightReaction } from "../state/decisionLog.js";
-import { escapeHtml, asOf, ageDaysFrom, isDecideItemNew, newBadge } from "./dashboardHelpers.js";
+import type { InsightReaction, CoachDiscussion } from "../state/decisionLog.js";
+import { escapeHtml, asOf, ageDaysFrom, isDecideItemNew, newBadge, discussedLineHtml } from "./dashboardHelpers.js";
 
 /**
  * The "Set up & improve" subsystem (issue #112): the dashboard's deterministic, LLM-free action hub.
@@ -388,6 +388,27 @@ function dedupeKey(label: string): string {
 }
 
 /**
+ * An open item is EITHER a plain string OR `{ id, text }`. With an explicit `id` the decision-log key is
+ * `setup:open:<id>` — STABLE across rewording, so a discussion outcome (agreed/snoozed, recorded against
+ * the key) survives an edit to the text. A bare string falls back to a key derived from its normalised
+ * text (back-compat), which drifts if reworded. Returns null for blank/malformed entries (degrade, skip).
+ */
+export function parseOpenItem(raw: unknown): { id: string; text: string } | null {
+  if (typeof raw === "string") {
+    const text = raw.trim();
+    return text ? { id: dedupeKey(text), text } : null;
+  }
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    const text = typeof o.text === "string" ? o.text.trim() : "";
+    if (!text) return null;
+    const id = typeof o.id === "string" && o.id.trim() ? o.id.trim() : dedupeKey(text);
+    return { id, text };
+  }
+  return null;
+}
+
+/**
  * The unmissable training-setup topics that get restated under different wording (an `ai_endurance_todo`
  * gap AND a hand-written `open_item` describing the same gap). Verbatim dedupe misses them because the
  * copy differs ("Set your swim CSS" vs "Swim CSS not set in AI Endurance: …"), so within Finish-setup we
@@ -424,6 +445,9 @@ export interface SetupOptions {
   suppressed?: Set<string>;
   /** Saved agree/disagree per key — so a "your call" advice card shows its persisted reaction state. */
   reactions?: Map<string, InsightReaction>;
+  /** Per-key coach DISCUSSION outcomes (recorded via Claude Code) — renders the "discussed with coach"
+   *  annotation on the card, so a chat held off-screen shows up on the dashboard. */
+  discussions?: Map<string, CoachDiscussion>;
   /** Card keys whose drafted gated write has executed — the card shows "✓ applied" (from the write log). */
   appliedKeys?: Set<string>;
   /** Already-built insight report — its deterministic marginal-gains feed the "This week" group (no LLM). */
@@ -479,9 +503,9 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
   }
   // 2) Free-text open items (a running list of unresolved actions) → raise them with the coach.
   for (const raw of profile.open_items ?? []) {
-    const text = typeof raw === "string" ? raw.trim() : "";
-    if (!text) continue;
-    items.push({ key: setupKey("open_item", dedupeKey(text)), label: text, why: "", source: "open_item", group: "finish_setup", route: "discuss with coach", action: OPEN_ITEM_ACTION, priority: SETUP_PRIORITY.open_item });
+    const parsed = parseOpenItem(raw);
+    if (!parsed) continue;
+    items.push({ key: setupKey("open_item", parsed.id), label: parsed.text, why: "", source: "open_item", group: "finish_setup", route: "discuss with coach", action: OPEN_ITEM_ACTION, priority: SETUP_PRIORITY.open_item });
   }
   // 3) Unfilled optional profile questions → fill them in (or tell Claude via update_profile).
   for (const q of questions) {
@@ -618,16 +642,17 @@ function reactionState(key: string, reactions?: Map<string, InsightReaction>): {
  * the same logged insight-feedback machinery the Top-insights box uses (so a reaction here is read by the
  * listening model). `data-family` carries the finding family so the engagement model can weight it.
  */
-function reactableCardHtml(it: SetupItem, reactions?: Map<string, InsightReaction>): string {
+function reactableCardHtml(it: SetupItem, reactions?: Map<string, InsightReaction>, discussions?: Map<string, CoachDiscussion>): string {
   const { state, reacted } = reactionState(it.key, reactions);
   const on = (which: string) => (state === which ? " on" : "");
   const why = it.why ? `<div class="age">${escapeHtml(it.why)}</div>` : "";
   const detail = it.action ? `<div class="ev">${escapeHtml(it.action)}</div>` : "";
   const familyAttr = it.family ? ` data-family="${escapeHtml(it.family)}"` : "";
+  const discussed = discussedLineHtml(discussions?.get(it.key));
   const isNew = isDecideItemNew(it.key, reactions);
   return `<div class="insight${isNew ? " is-new" : ""}" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-reaction-state="${state}"${familyAttr}>
     <div>${categoryChip(it.category)}${newBadge(it.key, reactions)}<b>${escapeHtml(it.label)}</b></div>
-    ${detail}${why}
+    ${detail}${why}${discussed}
     <div class="acts">
       <button class="agree${on("like")}" data-reaction="like" onclick="feedback(this)">👍 Agree</button>
       <button class="disagree${on("dislike")}" data-reaction="dislike" onclick="feedback(this)">👎 Disagree</button>
@@ -643,9 +668,10 @@ function reactableCardHtml(it: SetupItem, reactions?: Map<string, InsightReactio
  * propose→confirm write to AI Endurance (you confirm the exact edit), rendered inline. When it can't be
  * tied to a scheduled session, the drafter returns the precise manual steps instead. Plus 💤 Snooze.
  */
-function applyableCardHtml(it: SetupItem, reactions?: Map<string, InsightReaction>, appliedKeys?: Set<string>): string {
+function applyableCardHtml(it: SetupItem, reactions?: Map<string, InsightReaction>, appliedKeys?: Set<string>, discussions?: Map<string, CoachDiscussion>): string {
   const why = it.why ? `<div class="age">${escapeHtml(it.why)}</div>` : "";
   const hint = it.action ? `<div class="ev">${escapeHtml(it.action)}</div>` : "";
+  const discussed = discussedLineHtml(discussions?.get(it.key));
   // Once a change drafted from this card has been confirmed (a gated write to AI Endurance), the card is
   // marked "applied" so it shows the result instead of re-offering "Make this change". Driven by the
   // executed write log (appliedKeys — robust to CLI confirms / a failed click) OR the click-time reaction.
@@ -663,7 +689,7 @@ function applyableCardHtml(it: SetupItem, reactions?: Map<string, InsightReactio
   const isNew = !applied && isDecideItemNew(it.key, reactions);
   return `<div class="insight${isNew ? " is-new" : ""}" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}" data-rec="${escapeHtml(it.rec ?? it.label)}" data-reaction-state="${applied ? "applied" : ""}">
     <div>${categoryChip(it.category)}${isNew ? newBadge(it.key, reactions) : ""}<b>${escapeHtml(it.label)}</b></div>
-    ${hint}${why}
+    ${hint}${why}${discussed}
     <div class="item-proposals"></div>
     ${acts}
   </div>`;
@@ -678,10 +704,12 @@ function applyableCardHtml(it: SetupItem, reactions?: Map<string, InsightReactio
  * gap the server also writes it `resolved` into the profile); **💤 Snooze** hides it ~2 weeks then it can
  * resurface; **🚫 Ignore** drops the advice for good.
  */
-function setupTaskHtml(it: SetupItem, reactions?: Map<string, InsightReaction>): string {
+function setupTaskHtml(it: SetupItem, reactions?: Map<string, InsightReaction>, discussions?: Map<string, CoachDiscussion>): string {
   // A finish-setup task only renders while it's outstanding (done/snooze/ignore all hide it), so a shown
-  // task is by definition un-actioned — flag it NEW until you deal with it.
-  const isNew = isDecideItemNew(it.key, reactions);
+  // task is by definition un-actioned. It can still carry a coach DISCUSSION (an agree/disagree recorded
+  // in chat doesn't hide it) — that shows the "discussed with coach" line; flag NEW only when un-discussed.
+  const discussed = discussedLineHtml(discussions?.get(it.key));
+  const isNew = !discussed && isDecideItemNew(it.key, reactions);
   const note = it.why ? ` — <span class="muted">${escapeHtml(it.why)}</span>` : "";
   const body = it.action ? `<div class="setup-action">${escapeHtml(it.action)}</div>` : "";
   const links = it.links?.length ? `<div class="setup-links">${it.links.map(setupLinkHtml).join("")}</div>` : "";
@@ -695,7 +723,7 @@ function setupTaskHtml(it: SetupItem, reactions?: Map<string, InsightReaction>):
     `<button class="su-act su-snooze" title="Not now — hide this for ~2 weeks" onclick="event.stopPropagation();dismissSetup(this)">💤 Snooze</button>` +
     `<button class="su-act su-ignore" title="Ignore this advice — don't show it again" onclick="event.stopPropagation();ignoreSetup(this)">🚫 Ignore</button>` +
     `</span>`;
-  return `<details class="setup-item${isNew ? " is-new" : ""}" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><summary>${newBadge(it.key, reactions)}<strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> ${acts}</summary>${body}${links}</details>`;
+  return `<details class="setup-item${isNew ? " is-new" : ""}" data-key="${escapeHtml(it.key)}" data-summary="${escapeHtml(it.label)}"><summary>${newBadge(it.key, reactions)}<strong>${escapeHtml(it.label)}</strong>${note} <span class="route">${escapeHtml(it.route)}</span> ${acts}</summary>${discussed}${body}${links}</details>`;
 }
 
 /** One safe anchor in a setup item's dropdown. Only renders `/`-relative (in-app) or http(s) hrefs — an
@@ -709,14 +737,14 @@ function setupLinkHtml(l: SetupLink): string {
 
 /** Dispatch a setup item to the right surface: an applyable training card, a "your call" reaction card, or
  *  the plain `<details>` task. */
-function setupItemHtml(it: SetupItem, reactions?: Map<string, InsightReaction>, appliedKeys?: Set<string>): string {
-  if (it.applyable) return applyableCardHtml(it, reactions, appliedKeys);
-  if (it.reactable) return reactableCardHtml(it, reactions);
-  return setupTaskHtml(it, reactions);
+function setupItemHtml(it: SetupItem, reactions?: Map<string, InsightReaction>, appliedKeys?: Set<string>, discussions?: Map<string, CoachDiscussion>): string {
+  if (it.applyable) return applyableCardHtml(it, reactions, appliedKeys, discussions);
+  if (it.reactable) return reactableCardHtml(it, reactions, discussions);
+  return setupTaskHtml(it, reactions, discussions);
 }
 
-const setupListHtml = (its: SetupItem[], reactions?: Map<string, InsightReaction>, appliedKeys?: Set<string>): string =>
-  `<div class="setup">${its.map((it) => setupItemHtml(it, reactions, appliedKeys)).join("")}</div>`;
+const setupListHtml = (its: SetupItem[], reactions?: Map<string, InsightReaction>, appliedKeys?: Set<string>, discussions?: Map<string, CoachDiscussion>): string =>
+  `<div class="setup">${its.map((it) => setupItemHtml(it, reactions, appliedKeys, discussions)).join("")}</div>`;
 
 /**
  * "Set up & improve" — the dashboard's deterministic, LLM-free action hub (issue #112). Three sections:
@@ -755,10 +783,11 @@ export function renderSetupImprove(profile: Profile | undefined, share = false, 
   const present = groups.filter((g) => items.some((it) => it.group === g));
   const reactions = opts.reactions;
   const appliedKeys = opts.appliedKeys;
+  const discussions = opts.discussions;
   const body =
     present.length <= 1
-      ? setupListHtml(items, reactions, appliedKeys)
-      : present.map((g) => `<h3 class="setup-group">${GROUP_HEADING[g]}</h3>${setupListHtml(items.filter((it) => it.group === g), reactions, appliedKeys)}`).join("");
+      ? setupListHtml(items, reactions, appliedKeys, discussions)
+      : present.map((g) => `<h3 class="setup-group">${GROUP_HEADING[g]}</h3>${setupListHtml(items.filter((it) => it.group === g), reactions, appliedKeys, discussions)}`).join("");
   return `<div class="card"><h2>${escapeHtml(view.heading ?? "Set up & improve")}</h2>
   <div class="k" style="margin-bottom:6px">${view.intro ?? DEFAULT_SETUP_INTRO}</div>
   ${body}</div>`;
