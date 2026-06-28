@@ -48,6 +48,7 @@ import {
 import { renderResearchDigestPage } from "./researchPage.js";
 import { pageHead, renderNav, type NavId } from "./shell.js";
 import { renderSeasonInner, renderWeeklyProse, type SeasonProse } from "./seasonPage.js";
+import { renderWeeklyBriefDelta, selectWeeklyProposals, type WeeklyDelta, type WeeklyProposalView } from "./weeklyBrief.js";
 import type { SeasonArcReport } from "./seasonArc.js";
 import { renderCareerInner } from "./careerPage.js";
 import type { CareerHistory } from "./careerHistory.js";
@@ -197,6 +198,12 @@ export interface DashboardInput {
    * degrades to today-at-a-glance with no diff.
    */
   priorBrief?: BriefSnapshot | null;
+  /**
+   * The week-over-week delta for the Sunday weekly brief (computed in the IO layer from the two most recent
+   * frozen weekly snapshots). Null when there aren't two weeks to compare yet — the Plan tab then shows a
+   * "building history" note instead of the terse delta line. Omitted on renders that don't load it.
+   */
+  weeklyDelta?: WeeklyDelta | null;
 }
 
 const SEV_COLOR: Record<string, string> = { red: "#c0392b", amber: "#c98a00", green: "#1a8a3a", flag: "#c0392b", watch: "#c98a00", info: "#1a8a3a" };
@@ -1161,7 +1168,39 @@ function shareRaceNames(today: AthleteState, profile?: Profile): string[] {
   return names.filter(Boolean);
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, discussions, firstSeen, garminDays, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, seasonReport, seasonProse, career, priorBrief, now, share }: DashboardInput): string {
+/**
+ * Server-render the Sunday brief's pre-drafted next-week proposals as Apply/Dismiss cards. Mirrors the
+ * client `proposalHtml` structure (`.proposal[data-id]` + the agree/ignore buttons), so the existing
+ * `confirmProposal`/`declineProposal` handlers drive them — a bare `.proposal` (no `.insight` parent) takes
+ * the handler's else-branch and shows "✓ applied" / "dismissed" in place. Every field is escaped. "" when
+ * there are no open proposals (the card simply doesn't appear).
+ */
+function renderNextWeekProposals(proposals: WeeklyProposalView[]): string {
+  if (!proposals.length) return "";
+  const cards = proposals
+    .map((p) => {
+      const tradeoff = p.tradeoff ? `<div class="ev">trade-off: ${escapeHtml(p.tradeoff)}</div>` : "";
+      const basis = p.basis && p.basis.length ? `<div class="ev">because: ${escapeHtml(p.basis.join("; "))}</div>` : "";
+      return (
+        `<div class="proposal" data-id="${escapeHtml(p.id)}"><b>${escapeHtml(p.summary)}</b>` +
+        `<div class="k">✓ exact change, validated against your real plan — this is what gets written</div>` +
+        tradeoff +
+        basis +
+        `<div class="ev" style="color:#bbb">drafted from this week’s review; the bold line is validated — confirming writes it to AI Endurance</div>` +
+        `<div class="acts"><button class="agree" onclick="confirmProposal(this)">✓ Apply to AI Endurance</button>` +
+        `<button class="ignore" onclick="declineProposal(this)">✕ Dismiss</button><span class="reacted"></span></div></div>`
+      );
+    })
+    .join("\n");
+  return (
+    `<div class="card"><h2>Next week’s plan changes</h2>` +
+    `<div class="k" style="margin-bottom:8px">Drafted from this week’s review — your call. Each is the exact, validated edit; <b>Apply</b> writes it to AI Endurance, <b>Dismiss</b> drops it. Nothing changes until you confirm.</div>` +
+    cards +
+    `</div>`
+  );
+}
+
+export function renderDashboard({ window, decisions, insights, reactions, discussions, firstSeen, garminDays, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, seasonReport, seasonProse, career, priorBrief, weeklyDelta, now, share }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Fuelling — week ahead (deterministic, no LLM on render): per-session pre/during/after from the
@@ -1247,8 +1286,16 @@ export function renderDashboard({ window, decisions, insights, reactions, discus
     .join("");
 
 
+  // Sunday weekly brief's gated next-week proposals (from the durable log, for the current review only):
+  // `open` render as Apply/Dismiss cards on Decide + feed the inbox count; `suppress` hides the matching
+  // informational "This week" card so the same action never shows twice. Skipped in share (no live surfaces).
+  const weeklyProp = !share && weeklyReview?.date
+    ? selectWeeklyProposals(decisions, weeklyReview.date, { now: now ?? Date.now() })
+    : { open: [] as WeeklyProposalView[], suppress: new Set<string>() };
+  const weeklyWaiting = Math.min(weeklyProp.open.length, 3);
+
   // The "Set up & improve" options, built once so the Decide-tab card and the nav/teaser count agree.
-  const setupOpts = { suppressed, reactions, discussions, appliedKeys: executedSourceKeys(decisions), insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined };
+  const setupOpts = { suppressed, reactions, discussions, appliedKeys: executedSourceKeys(decisions), insights, surfacedInsightKeys, weeklyReview, researchDigest, setupHealth, liveThresholds: today.thresholds.value ?? undefined, proposalSourceKeys: weeklyProp.suppress };
   // Decide-inbox count for the nav badge + the Today teaser: top insights shown (≤5) + coach recs +
   // data changes + setup items — the same sources the Decide tab renders, summed. Zero in share view,
   // where those interactive surfaces are hidden.
@@ -1257,7 +1304,8 @@ export function renderDashboard({ window, decisions, insights, reactions, discus
     : (insights ? Math.min(insights.topFindings.length, 5) : 0) +
       (coachRecs?.length ?? 0) +
       detectMetricChanges(window, {}).filter((c) => !suppressed?.has(c.key) && !(c.metric in (metricOverrides ?? {}))).slice(0, 5).length +
-      buildSetupItems(profile, setupOpts).length;
+      buildSetupItems(profile, setupOpts).length +
+      weeklyWaiting; // gated next-week proposals waiting on Decide (their "This week" cards are suppressed → no double count)
   // Of those, how many you HAVEN'T actioned yet — the same five sources, each filtered to its un-reacted
   // items (and, for an applyable training card, not already applied). Drives the "▲ N not yet actioned"
   // roll-up + the teaser suffix, so newness is visible at a glance and shrinks as you triage.
@@ -1266,7 +1314,8 @@ export function renderDashboard({ window, decisions, insights, reactions, discus
     : (insights ? insights.topFindings.slice(0, 5).filter((f) => isDecideItemNew(findingKey(f), reactions)).length : 0) +
       (coachRecs ?? []).filter((r) => isDecideItemNew(r.key, reactions)).length +
       detectMetricChanges(window, {}).filter((c) => !suppressed?.has(c.key) && !(c.metric in (metricOverrides ?? {}))).slice(0, 5).filter((c) => isDecideItemNew(c.key, reactions)).length +
-      buildSetupItems(profile, setupOpts).filter((it) => isDecideItemNew(it.key, reactions) && !setupOpts.appliedKeys.has(it.key)).length;
+      buildSetupItems(profile, setupOpts).filter((it) => isDecideItemNew(it.key, reactions) && !setupOpts.appliedKeys.has(it.key)).length +
+      weeklyWaiting; // a pending proposal is inherently un-actioned → counts as "new" until applied/dismissed
 
   // Decide tab as two halves so it reads "act on advice → housekeeping". The shared 👍/👎/💤/🚫 legend is
   // hoisted to the tab intro (below), so each card keeps only its own specific twist. The "This week"
@@ -1287,7 +1336,10 @@ export function renderDashboard({ window, decisions, insights, reactions, discus
     heading: "Set up & improve",
     intro: `Loose ends and ideas. <b>Finish setup</b> tasks open for exactly how to do them and carry ✓ Done / 💤 Snooze / 🚫 Ignore — a gap you fill in AI Endurance clears itself on the next sync. <b>Worth considering</b> is read-only research.`,
   });
-  const decisionsHalf = [insightsBox, coachRecsHtml, thisWeekHtml].filter((s) => s.trim()).join("\n");
+  // The Sunday brief's pre-drafted next-week changes — server-rendered from the log as Apply/Dismiss cards
+  // (the same propose→confirm path as the click-drafted ones), sitting with the rest of the advice.
+  const nextWeekProposalsHtml = renderNextWeekProposals(weeklyProp.open.slice(0, 3));
+  const decisionsHalf = [insightsBox, coachRecsHtml, nextWeekProposalsHtml, thisWeekHtml].filter((s) => s.trim()).join("\n");
   const housekeepingHalf = [dataChangesHtml, setupHousekeepingHtml].filter((s) => s.trim()).join("\n");
 
   // Performance tab, grouped into labelled sections so its nine cards read as clusters, not a flat
@@ -1319,7 +1371,23 @@ export function renderDashboard({ window, decisions, insights, reactions, discus
   // the weather/season data has loaded — fall back to a friendly note instead of a blank tab. (Moving the
   // always-present load recap to Performance is what made an empty Plan possible; this keeps it honest.)
   const seasonFold = seasonReport ? `<hr class="section-rule"><div class="section-rule-label">Season arc</div>${renderSeasonInner(seasonReport, share, seasonProse, true)}` : "";
-  const planBody = [weatherHtml, renderWeeklyProse(seasonProse), seasonFold].filter((s) => s.trim()).join("\n");
+  // Weekly brief: the terse week-over-week delta sits directly above the (retrospective) weekly review —
+  // between the week-ahead weather and the prose. A "building history" note stands in until two Sunday
+  // snapshots exist. The Plan→Decide link surfaces this brief's own queued changes (hidden in share).
+  const weeklyDeltaHtml = weeklyDelta
+    ? renderWeeklyBriefDelta(weeklyDelta)
+    : weeklyReview
+      ? `<div class="weekly-delta" style="font-size:13px;color:#999;margin:0 0 10px">This week vs last · building week-over-week history — first comparison next Sunday</div>`
+      : "";
+  const weeklyLinkHtml = weeklyWaiting > 0
+    ? `<a class="card nav-link" data-tab="decide" href="#decide" style="display:block;text-decoration:none;color:#c8642d;font-weight:600">📥 ${weeklyWaiting} next-week ${weeklyWaiting === 1 ? "change" : "changes"} waiting on your call →</a>`
+    : "";
+  // Gate the delta+link on there being OTHER plan content, so an all-absent Plan tab still hits the
+  // friendly empty-state fallback below rather than rendering a lone delta line.
+  const corePlan = [weatherHtml, renderWeeklyProse(seasonProse), seasonFold].filter((s) => s.trim());
+  const planBody = corePlan.length
+    ? [weatherHtml, weeklyDeltaHtml, weeklyLinkHtml, renderWeeklyProse(seasonProse), seasonFold].filter((s) => s.trim()).join("\n")
+    : "";
 
   return `${pageHead(`Endurance Coach — ${today.date}`)}<body>
 <header class="site-head"><div class="wrap">

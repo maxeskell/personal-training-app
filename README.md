@@ -93,7 +93,9 @@ and decisions that travels with the repo.
   can't be written into the plan. Everything still goes through the explicit propose→confirm gate.
 - **Observable unattended ping.** `ping` is idempotent per day (a re-fire won't double-notify or double-spend),
   records a success heartbeat, and **notifies you if it fails** instead of failing silently; `doctor` warns
-  if the scheduled ping hasn't succeeded in over a day.
+  if the scheduled ping hasn't succeeded in over a day. **On Sundays the ping also runs the weekly brief** —
+  one scheduled job, no separate installer — freezing the week's snapshot, the review and its gated next-week
+  proposals together (all idempotent, so a re-fire is safe).
 
 Garmin is **optional** — leave `GARMIN_ENABLED=false` and the coach runs on AI Endurance alone.
 To enable it, run the one-time `garmin-mcp-auth` (see `.env.example`) then set `GARMIN_ENABLED=true`.
@@ -573,19 +575,30 @@ stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and 
   brief sections, leaving the plain readiness card.
 - **Plan** — the forward-looking view. The **Week ahead** card is **future training only** (today's sessions,
   with their full advice, live on Today) and is **weather analysis only** — verdict + reason per session, no
-  fuelling. Then the coach's **this-week review**, written as a **cohesive coach's summary** (not a bullet
+  fuelling. Then the **Sunday weekly brief** — the strategic sibling of Today's daily brief. Above the review
+  sits a terse, deterministic **week-over-week delta** (*"This week vs last · Ride +47m · CTL +3 · TSB −8 · Z2
+  72→81%"*) diffing the just-completed week against the one before — load by sport, fitness (CTL), form (TSB)
+  and zone-adherence — computed from two **frozen Sunday snapshots** (`data/weekly-brief/`, gitignored), not a
+  half-finished current week; it shows a *"building history"* note until two weeks exist, and makes no LLM call.
+  Then the coach's **this-week review**, written as a **cohesive coach's summary** (not a bullet
   list): every claim is backed by the actual numbers (*"1.97h of 4.01h prescribed easy — 49%"*) and names the
   **cause** of any shortfall — *missed sessions* vs *trained the easy time too hard* — computed deterministically
-  and handed to the model so it cites rather than guesses. Then the **Season arc** folded in: chronic load (CTL)
+  and handed to the model so it cites rather than guesses. When the brief has queued plan changes for next week,
+  a **"N next-week changes waiting →"** link points to Decide. Then the **Season arc** folded in: chronic load (CTL)
   is now a **graph** — your curve vs the **phase target** with the **gap drawn between them** — the structural
   levers + multi-season risks, then the **full season read** (the same cohesive, evidence-backed coach voice),
   and finally the long arc of annual hours at the very bottom. The coach's-note coaching now lives per-session
   on **Today**, not here.
 - **Decide** — one unified **inbox** in two halves: **decisions** to act on (top insights, the coach's
-  recommendations, this week's coaching cues) then **housekeeping** (numbers to confirm, setup to finish) —
+  recommendations, **next week's plan changes**, this week's coaching cues) then **housekeeping** (numbers to
+  confirm, setup to finish) —
   all sharing the same **👍 Agree / 👎 Disagree / 🚫 Ignore** (💤 Snooze) controls, hoisted to one legend at
   the top, with a gated **Make this change / Apply to AI Endurance** on items that write back, so a real plan
-  change never hides behind a plain thumbs-up. The **Data changes** card (an auto-detected FTP/threshold move
+  change never hides behind a plain thumbs-up. The **Next week's plan changes** card is the Sunday brief's own
+  contribution: up to **3** of the weekly review's *## Next week* actions, **pre-drafted** through the same gated
+  proposer into ready **Apply / Dismiss** cards (the matching *This week* cue is suppressed so nothing shows
+  twice; a fuelling/recovery cue that can't bind to a real session stays a cue). Nothing writes until you
+  confirm; a **declined or expired** proposal lets its cue reappear. The **Data changes** card (an auto-detected FTP/threshold move
   is a real decision, not housekeeping to hide) renders **expanded**, not behind a disclosure. Anything you
   **haven't actioned yet** carries a blue **NEW** badge + left bar (and a *"▲ N not yet actioned"* roll-up at
   the top); the flag clears the moment you react, so your eye goes straight to what still needs you.

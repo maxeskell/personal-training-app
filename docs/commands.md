@@ -29,7 +29,8 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 | Command | What it does |
 |---|---|
 | `npm run readiness` | green/amber/red verdict with cited drivers + a wellbeing check |
-| `npm run weekly` | weekly review (load by sport, adherence, trends, next-week focus) → dated report |
+| `npm run weekly` | weekly review (load by sport, adherence, trends, next-week focus) → dated report. Prose-only — safe to re-run to tune the wording |
+| `npm run weekly:brief` | the full **Sunday brief** on demand: weekly review + a frozen weekly snapshot (for the Plan tab's week-over-week delta) + ≤3 **gated next-week proposals** on Decide. Runs automatically inside the Sunday `ping`; idempotent |
 | `npm run race` / `npm run race -- "<name>"` | race-specific prep for the next (or a named) race → report |
 | `npm run ask -- "<question>"` | free-form Q&A over your data + insights |
 | `npm run session` / `npm run session 2026-06-09` | deep feedback on one session (needs its raw `.FIT`; `--force` for summary-only) |
@@ -106,8 +107,8 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 ## Hands-free automation (macOS launchd; prints a Linux cron/systemd equivalent)
 | Command | What it does |
 |---|---|
-| `npm run ping` | unattended morning readiness: verdict + report + desktop notification |
-| `npm run schedule:install` (`-- HH MM`) | schedule the daily `ping` (e.g. `-- 6 30`); `schedule:uninstall` to remove |
+| `npm run ping` | unattended morning readiness: verdict + report + desktop notification. **On Sundays it also runs the weekly brief** (review + snapshot + gated next-week proposals), frozen together |
+| `npm run schedule:install` (`-- HH MM`) | schedule the daily `ping` (e.g. `-- 6 30`); `schedule:uninstall` to remove. The Sunday weekly brief rides this one job — no separate installer |
 | `npm run watch:install` (`-- HH MM`) | proactive daily watch (fit-sync + fire-only check); `watch:uninstall` to remove |
 | `npm run serve:install` / `serve:uninstall` | keep the dashboard server running at login |
 | `npm run autoupdate:install` / `autoupdate:uninstall` | _(legacy, off by default)_ fast-forward pull + restart on a timer — superseded by `npm run ship` |

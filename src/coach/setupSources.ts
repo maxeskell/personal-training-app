@@ -1,6 +1,7 @@
 import { listReports, readReport } from "./reports.js";
 import { listPending, readPending } from "../knowledge/store.js";
-import { parseResearchItems, parseActionBullets, type ResearchTopic } from "./dashboard.js";
+import { parseResearchItems, type ResearchTopic } from "./dashboard.js";
+import { parseActionBullets, NEXT_WEEK_HEADING_RE } from "./setupCard.js";
 
 /**
  * IO loaders for the "Set up & improve" card's time-bound groups (issue #112 Phases 2–3). These READ the
@@ -14,7 +15,7 @@ export async function latestWeeklyReview(): Promise<{ date: string; actions: str
   try {
     const r = (await listReports()).find((i) => i.name.endsWith("-weekly-review.md"));
     if (!r?.date) return undefined;
-    return { date: r.date, actions: parseActionBullets(await readReport(r.name), /next week|focus for next week/i) };
+    return { date: r.date, actions: parseActionBullets(await readReport(r.name), NEXT_WEEK_HEADING_RE) };
   } catch {
     return undefined;
   }

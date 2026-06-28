@@ -281,6 +281,17 @@ Code is deployed **locally** with `npm run ship` (see the deploy section of the 
 pull-based auto-updater runs by default. Prefer hands-free pull updates instead? `npm run autoupdate:install`
 (or `npm run service:install`, which adds it) still exists.
 
+For the **unattended morning readiness ping** (and, **on Sundays, the weekly brief** — the Plan-tab
+week-over-week delta + the gated next-week proposals), schedule the one daily job:
+
+```bash
+▶ RUN   # use the absolute path to THIS user's clone; optional `-- HH MM` sets the time (default 06:00)
+cd /Users/maxeskell/dev/personal-training-app && npm run schedule:install -- 6 30
+```
+
+The weekly brief rides this same job — there's no separate installer. Run it on demand any time with
+`cd /Users/maxeskell/dev/personal-training-app && npm run weekly:brief`.
+
 ## Step 6a — (optional) Career history (the `/career` tab)
 
 The dashboard's live state only knows the recent past. **Career & PBs** (folded into the dashboard's

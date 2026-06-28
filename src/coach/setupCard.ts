@@ -316,6 +316,14 @@ export function parseResearchItems(markdown: string, limit = 4): ResearchTopic[]
 }
 
 /**
+ * The canonical "## Next week" heading matcher — shared by the dashboard's informational cards
+ * ({@link latestWeeklyReview}) and the Sunday job's proposer so both parse the SAME bullets in the SAME
+ * order. The bullet index is the join between a gated proposal (`weekly:<date>#<i>`) and the card it
+ * suppresses, so a drift here would mis-align suppression — keep it single-sourced.
+ */
+export const NEXT_WEEK_HEADING_RE = /next week|focus for next week/i;
+
+/**
  * Extract the bullet actions under the first heading matching `headingRe` (e.g. the weekly review's
  * "## Next week" section), stripping markdown emphasis. Pure + tolerant: a missing/renamed section just
  * yields fewer (or no) items, so the caller falls back to a "revisit the review" pointer. Deduped, capped.
@@ -457,6 +465,13 @@ export interface SetupOptions {
   surfacedInsightKeys?: Set<string>;
   /** Latest persisted weekly review (date + the parsed "## Next week" action bullets); drops when stale. */
   weeklyReview?: { date: string; actions: string[] };
+  /**
+   * Bullet sourceKeys (`weekly:<reviewDate>#<i>`) that already have a LIVE gated next-week proposal — the
+   * Sunday brief pre-drafted them, so they render as Apply/Dismiss cards on Decide and their informational
+   * "This week" card is SUPPRESSED here (the same action never shows twice). The bullet index `i` is the
+   * join, so both ends must parse "## Next week" via {@link NEXT_WEEK_HEADING_RE}. Omitted → suppress nothing.
+   */
+  proposalSourceKeys?: Set<string>;
   /** Latest research digest (date + file + parsed items) for the "Worth considering" group (drops when stale). */
   researchDigest?: { date: string; file: string; items: ResearchTopic[] };
   /** Tool/integration health signals (computed in the IO layer) → operational "Finish setup" nudges. */
@@ -551,7 +566,11 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
     if (age != null && age <= WEEKLY_FRESH_DAYS) {
       // The weekly review's own "Next week" actions, each typed + given the right in-app interaction.
       // No items → nothing to show (no "revisit the report" pointer; the reasoning lives on the cards).
-      for (const a of opts.weeklyReview.actions.slice(0, GROUP_CAP.this_week)) {
+      // A bullet the Sunday brief already pre-drafted into a gated proposal is SUPPRESSED here (it shows as
+      // an Apply/Dismiss card on Decide instead) — keyed by its index `i`, the same join the proposer uses.
+      const suppressKeys = opts.proposalSourceKeys ?? new Set<string>();
+      opts.weeklyReview.actions.slice(0, GROUP_CAP.this_week).forEach((a, i) => {
+        if (suppressKeys.has(`weekly:${opts.weeklyReview!.date}#${i}`)) return;
         const category = categorize(a);
         const planEdit = isPlanEdit(a);
         items.push({
@@ -568,7 +587,7 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
           applyable: planEdit,
           rec: planEdit ? a : undefined,
         });
-      }
+      });
     }
   }
 

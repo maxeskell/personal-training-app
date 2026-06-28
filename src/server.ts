@@ -27,6 +27,8 @@ import { loadMetricOverrides, setMetricOverride, clearMetricOverride } from "./s
 import { TRACKED_METRICS } from "./coach/metricChanges.js";
 import { buildBriefSnapshot, type BriefSnapshot } from "./coach/dailyBrief.js";
 import { loadPriorBrief, persistBriefIfAbsent } from "./coach/briefStore.js";
+import { diffWeeklySnapshots } from "./coach/weeklyBrief.js";
+import { loadRecentWeeklyBriefs } from "./coach/weeklyBriefStore.js";
 import { backfillSessionFeedback } from "./coach/autoSessionFeedback.js";
 import { buildInsights } from "./insights/engine.js";
 import { loadArchive } from "./coach/orchestrator.js";
@@ -187,6 +189,10 @@ async function renderLatest(share = false): Promise<string> {
     priorBrief = await loadPriorBrief(latest.date);
     await persistBriefIfAbsent(buildBriefSnapshot({ window, insights, decisions, now: Date.now() }));
   }
+  // Weekly brief: read-only — diff the two latest frozen weekly snapshots (the Sunday job is the only
+  // writer). Null until two weeks exist; the Plan tab then shows the "building history" note.
+  const recentWeekly = await loadRecentWeeklyBriefs(2);
+  const weeklyDelta = diffWeeklySnapshots(recentWeekly[0] ?? null, recentWeekly[1] ?? null);
   return renderDashboard({
     window,
     decisions,
@@ -196,6 +202,7 @@ async function renderLatest(share = false): Promise<string> {
     firstSeen,
     share,
     priorBrief,
+    weeklyDelta,
     garminDays: archive?.garminDays,
     fitSummaries: archive?.fitSummaries,
     canFetchFit: config.garmin.enabled,
