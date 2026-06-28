@@ -51,7 +51,10 @@ autocorrelation-aware, effect-sizes-with-CIs, and every MODEL caveat attached.
     watch. No manual step.
   - **In-session biomechanics** (aerobic decoupling, cadence/GCT/vertical-osc decay) needs **raw
     per-second `.FIT` files** in `FIT_STREAMS_DIR` (default `data/fit-streams/`); the dependency-free
-    parser decodes them in-process. These now **auto-download during the dashboard Sync, the MCP `sync`
+    parser decodes them in-process. **Swims are handled specially:** the parser decodes the `.FIT`
+    `sub_sport`, so an **open-water** swim is read with **GPS pace + stroke efficiency** (distance-per-stroke),
+    and a swim's cadence/HR/decoupling drifts are computed over **active swimming only** — the rests/floats
+    between reps are excluded, so a long float isn't mistaken for a late "cadence collapse". These now **auto-download during the dashboard Sync, the MCP `sync`
     tool and `fit-sync`** (and on demand when you ask for deep session feedback) via
     `download_activity_file`. On older builds, or for activities outside the sync window, export the
     original `.FIT` from Garmin Connect (Activity → ⚙ → *Export Original*) into that folder. See

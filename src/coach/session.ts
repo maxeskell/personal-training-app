@@ -30,6 +30,12 @@ function r1(n: number | null): number | null {
 function r3(n: number | null): number | null {
   return n == null ? null : +n.toFixed(3);
 }
+/** Seconds-per-100m → m:ss clock for a swim pace. */
+function swimPaceClock(secPer100m: number): string {
+  const m = Math.floor(secPer100m / 60);
+  const s = Math.round(secPer100m % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 export interface ComparableContext {
   n: number; // prior same-sport sessions used for comparison
@@ -235,14 +241,41 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
 
   if (d.decay) {
     const dy = d.decay;
+    lines.push("", `IN-SESSION BIOMECHANICS [.FIT stream — derived]:`);
+    if (d.sport === "Swim") {
+      // Swim: pace + stroke EFFICIENCY (distance-per-stroke), and the drifts computed over ACTIVE swimming
+      // only (rests excluded). Open-water swims carry GPS speed → real pace; a pool swim logs no GPS, so
+      // pace is null here and the per-length splits are the source — say which, never fabricate.
+      const sw = dy.swim;
+      const ow = sw?.openWater === true ? "open-water" : sw?.openWater === false ? "pool" : "swim (water type not tagged in the .FIT)";
+      lines.push(`- Type: ${ow} swim`);
+      if (sw?.paceSecPer100m != null) {
+        const pd = sw.paceDriftPct;
+        const pdNote =
+          pd == null ? "" : pd > 1.5 ? ` — slowed ${pd}% first→second half (positive split)` : pd < -1.5 ? ` — sped up ${Math.abs(pd)}% first→second half (negative split)` : ` — even pace across the swim (${pd}% first→second half)`;
+        lines.push(`- Swim pace ${swimPaceClock(sw.paceSecPer100m)}/100m, active swimming only (rests/floats excluded)${pdNote}`);
+      } else {
+        lines.push(`- Swim pace: no GPS speed in the .FIT (typical of a pool swim) — read the per-length splits via the splits tool instead`);
+      }
+      if (sw?.distPerStrokeM != null) {
+        const ed = sw.dpsDriftPct;
+        const edNote =
+          ed == null ? "" : ed > 1.5 ? ` — efficiency improved ${ed}% (more distance per stroke late)` : ed < -1.5 ? ` — efficiency dropped ${Math.abs(ed)}% (stroke shortening late — form unravelling)` : ` — efficiency held (${ed}% change)`;
+        lines.push(`- Stroke efficiency ${fmt(sw.distPerStrokeM, 2)} m/stroke (distance-per-stroke — the efficiency measure, not just stroke rate)${edNote}`);
+      }
+      lines.push(
+        `- Stroke-rate fade ${fmt(dy.cadenceDropPct, 1)}%, HR drift ${fmt(dy.hrDriftPct, 1)}%, aerobic decoupling ${fmt(dy.decouplingPct, 1)}% — ALL computed over active swimming only (rests/floats excluded), so they reflect the swim, not pauses. Don't read these as whole-clock numbers.`,
+      );
+    } else {
+      lines.push(
+        `- Aerobic decoupling ${fmt(dy.decouplingPct, 1)}% (>5% = aerobic fade in the second half)`,
+        `- Cadence drop ${fmt(dy.cadenceDropPct, 1)}%, GCT rise ${fmt(dy.gctRisePct, 1)}%, vertical-osc rise ${fmt(dy.voRisePct, 1)}%, HR drift ${fmt(dy.hrDriftPct, 1)}% (late vs early quartile)`,
+      );
+    }
+    // avgTempC is null when the device recorded no per-second temperature samples (many run profiles
+    // don't log the thermal channel). Say so explicitly — a bare "—°C" reads as a sync/pipeline gap and
+    // invites the model to flag missing data, when it's simply a sensor the watch didn't engage.
     lines.push(
-      "",
-      `IN-SESSION BIOMECHANICS [.FIT stream — derived]:`,
-      `- Aerobic decoupling ${fmt(dy.decouplingPct, 1)}% (>5% = aerobic fade in the second half)`,
-      `- Cadence drop ${fmt(dy.cadenceDropPct, 1)}%, GCT rise ${fmt(dy.gctRisePct, 1)}%, vertical-osc rise ${fmt(dy.voRisePct, 1)}%, HR drift ${fmt(dy.hrDriftPct, 1)}% (late vs early quartile)`,
-      // avgTempC is null when the device recorded no per-second temperature samples (many run profiles
-      // don't log the thermal channel). Say so explicitly — a bare "—°C" reads as a sync/pipeline gap and
-      // invites the model to flag missing data, when it's simply a sensor the watch didn't engage.
       dy.avgTempC != null
         ? `- Session mean temperature ${fmt(dy.avgTempC, 1)}°C`
         : `- Session mean temperature: not recorded by the device this session (no thermal channel in the .FIT) — not a data gap to flag`,

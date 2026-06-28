@@ -144,6 +144,27 @@ test("buildSessionContext: power line follows the session sport — running powe
   assert.ok(!/Bike power/.test(ctx), "a run never says bike power");
 });
 
+test("buildSessionContext: a swim reports pace + stroke efficiency, labels open water, and flags the active-only basis", () => {
+  // The old block printed GCT/vertical-osc (meaningless for a swim) and whole-clock cadence — which read a
+  // long rest as a fake fade. The swim block must instead give pace + distance-per-stroke and say the
+  // drifts are over active swimming only, so the model never re-reads a rest as form falling apart.
+  const swimDecay = {
+    activityId: "s1", date: "2026-06-09", sport: "swimming", startTimeS: null, durationMin: 47,
+    cadenceDropPct: -2, gctRisePct: null, voRisePct: null, hrDriftPct: 3, decouplingPct: 4, avgTempC: 22.6,
+    avgPowerW: null, avgHr: 134, avgVerticalRatioPct: null, avgStepLengthMm: null, avgGctBalancePct: null,
+    avgLrBalancePct: null, normalizedPowerW: null,
+    swim: { openWater: true, paceSecPer100m: 143, paceDriftPct: 14.3, distPerStrokeM: 1.45, dpsDriftPct: 7.1 },
+  } as unknown as SessionDecay;
+  const ctx = buildSessionContext(assembleSession(stateMultiSport(), undefined, { sport: "Swim", decays: [swimDecay] })!, stateMultiSport(), undefined);
+  assert.match(ctx, /open-water swim/);
+  assert.match(ctx, /Swim pace 2:23\/100m/); // 143 s/100m
+  assert.match(ctx, /slowed 14\.3% .*positive split/);
+  assert.match(ctx, /1\.45 m\/stroke/);
+  assert.match(ctx, /efficiency improved 7\.1%/);
+  assert.match(ctx, /active swimming only/);
+  assert.ok(!/GCT rise/.test(ctx), "a swim never prints run-only GCT/vertical-oscillation lines");
+});
+
 test("buildSessionContext: a ride still labels its power 'Bike power'", () => {
   const rideDecay: SessionDecay = { activityId: "c1", date: "2026-06-09", sport: "cycling", startTimeS: null, durationMin: 120, cadenceDropPct: null, gctRisePct: null, voRisePct: null, hrDriftPct: null, decouplingPct: null, avgTempC: 22, avgPowerW: 200, avgHr: 140, avgVerticalRatioPct: null, avgStepLengthMm: null, avgGctBalancePct: null, avgLrBalancePct: null, normalizedPowerW: 222 };
   const ctx = buildSessionContext(assembleSession(stateMultiSport(), undefined, { sport: "Ride", decays: [rideDecay] })!, stateMultiSport(), undefined);

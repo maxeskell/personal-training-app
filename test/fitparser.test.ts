@@ -115,3 +115,30 @@ test("parseFit rejects non-FIT buffers; the invalid sentinel decodes to undefine
   const buf = fitFile([recordDef, recordData(1000, 0xff, 250, 90, 20)]);
   assert.equal(parseFit(buf)!.samples[0].hr, undefined);
 });
+
+test("parseFit decodes sub_sport so an open-water swim is classified (not analysed as a pool swim)", () => {
+  // session: sport=5 (swim), sub_sport=18 (open_water). The sub_sport tag is what lets the analysis use
+  // GPS pace + drop pool-length assumptions instead of treating every swim the same.
+  const sessionDef = def(1, 18, [
+    [5, 1, 0x02], // sport (enum)
+    [6, 1, 0x02], // sub_sport (enum)
+  ]);
+  const sv = Buffer.alloc(2);
+  sv.writeUInt8(5, 0); // swim
+  sv.writeUInt8(18, 1); // open_water
+  const buf = fitFile([recordDef, recordData(1000, 130, 0, 30, 22), sessionDef, data(1, sv)]);
+  const act = parseFit(buf)!;
+  assert.equal(act.sport, 5);
+  assert.equal(act.subSport, 18, "open_water sub_sport decoded from session field 6");
+
+  // A pool swim (sub_sport 17 = lap_swimming) decodes distinctly, and an untagged swim is null (not faked).
+  const poolV = Buffer.alloc(2);
+  poolV.writeUInt8(5, 0);
+  poolV.writeUInt8(17, 1);
+  assert.equal(parseFit(fitFile([recordDef, recordData(1000, 130, 0, 30, 22), sessionDef, data(1, poolV)]))!.subSport, 17);
+
+  const untaggedDef = def(1, 18, [[5, 1, 0x02]]);
+  const uv = Buffer.alloc(1);
+  uv.writeUInt8(5, 0);
+  assert.equal(parseFit(fitFile([recordDef, recordData(1000, 130, 0, 30, 22), untaggedDef, data(1, uv)]))!.subSport, null);
+});

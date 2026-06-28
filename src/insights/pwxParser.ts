@@ -88,6 +88,7 @@ export function parsePwx(buf: Buffer): FitActivity | null {
   return {
     sport: sport.num,
     sportName: sport.name,
+    subSport: null, // PWX carries no sub_sport
     samples: [],
     laps,
     lengths: [],

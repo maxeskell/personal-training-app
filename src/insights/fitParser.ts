@@ -111,6 +111,7 @@ export interface FitLength {
 export interface FitSessionSummary {
   sport: number;
   sportName: string;
+  subSport?: number; // FIT sub_sport enum (e.g. 17=lap_swimming, 18=open_water)
   startTimeS?: number;
   durationSec?: number;
   distanceKm?: number;
@@ -118,9 +119,20 @@ export interface FitSessionSummary {
   avgPower?: number;
 }
 
+// FIT sub_sport enum values we care about (swim only). The watch tags a swim as one of these so a
+// GPS open-water swim isn't analysed with pool assumptions (no walls, no per-length splits, GPS pace).
+export const SUB_SPORT_LAP_SWIMMING = 17;
+export const SUB_SPORT_OPEN_WATER = 18;
+
+/** True for a swim the device tagged as open water (GPS-paced, no pool lengths). Null sub_sport ⇒ false. */
+export function isOpenWater(fit: Pick<FitActivity, "sport" | "subSport">): boolean {
+  return fit.sport === 5 && fit.subSport === SUB_SPORT_OPEN_WATER;
+}
+
 export interface FitActivity {
   sport: number; // FIT sport enum: 1=run, 2=bike, 5=swim
   sportName: string;
+  subSport: number | null; // FIT sub_sport enum (null when the device didn't tag one)
   samples: FitSample[];
   laps: FitLap[];
   lengths: FitLength[];
@@ -221,6 +233,7 @@ function toSessionSummary(f: Record<number, number | null>): FitSessionSummary {
   return {
     sport,
     sportName: SPORT_NAMES[sport] ?? `sport-${sport}`,
+    subSport: f[6] != null ? (f[6] as number) : undefined, // session.sub_sport
     startTimeS: f[2] != null ? (f[2] as number) + FIT_EPOCH_OFFSET : undefined,
     durationSec: dur != null ? Math.round((dur as number) / 1000) : undefined,
     distanceKm: f[9] != null ? +((f[9] as number) / 100 / 1000).toFixed(2) : undefined,
@@ -243,6 +256,7 @@ export function parseFit(buf: Buffer): FitActivity | null {
   const laps: FitLap[] = [];
   const lengths: FitLength[] = [];
   let sportEnum = 0;
+  let subSportEnum: number | null = null;
   const sessionMsgs: Record<number, number | null>[] = [];
 
   try {
@@ -293,7 +307,11 @@ export function parseFit(buf: Buffer): FitActivity | null {
         else if (def.global === 18) sessionMsgs.push(rec.fields);
         else if (def.global === 19) laps.push(toLap(rec.fields));
         else if (def.global === 101) lengths.push(toLength(rec.fields));
-        else if (def.global === 12 && rec.fields[0] != null) sportEnum = rec.fields[0] as number;
+        else if (def.global === 12) {
+          // `sport` message: field 0 = sport, field 1 = sub_sport.
+          if (rec.fields[0] != null) sportEnum = rec.fields[0] as number;
+          if (rec.fields[1] != null) subSportEnum = rec.fields[1] as number;
+        }
       }
     }
   } catch {
@@ -302,12 +320,14 @@ export function parseFit(buf: Buffer): FitActivity | null {
 
   const session = sessionMsgs[sessionMsgs.length - 1] ?? {};
   if (session[5] != null) sportEnum = session[5] as number;
+  if (session[6] != null) subSportEnum = session[6] as number; // session.sub_sport (overrides the sport msg)
   const temps = samples.map((s) => s.temperature).filter((x): x is number => x != null);
   const ts = samples.map((s) => s.t).filter((x): x is number => x != null);
 
   return {
     sport: sportEnum,
     sportName: SPORT_NAMES[sportEnum] ?? `sport-${sportEnum}`,
+    subSport: subSportEnum,
     samples,
     laps,
     lengths,
