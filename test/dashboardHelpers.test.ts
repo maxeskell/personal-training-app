@@ -1,6 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isDecideItemNew, newBadge, discussedLineHtml } from "../src/coach/dashboardHelpers.js";
+import { isDecideItemNew, newBadge, discussedLineHtml, mdProse } from "../src/coach/dashboardHelpers.js";
+
+test("mdProse: each line is its own block (kills the dense one-line bullet list), escape-first", () => {
+  const html = mdProse("## Easy week\n- did 3h of 8h easy\n- **too hard** in the middle\n\nNext block.");
+  // Each source line becomes a separate block element — not collapsed onto one line.
+  assert.ok((html.match(/<div/g) ?? []).length >= 4, "a block per line + a paragraph gap");
+  assert.match(html, /Easy week/);
+  assert.match(html, /•\s*did 3h of 8h easy/, "bullets become their own • line");
+  assert.match(html, /<b>too hard<\/b>/, "inline bold rendered");
+  // Escape-first: injected markup can't break out.
+  const evil = mdProse("- <script>alert(1)</script> & <b>x");
+  assert.doesNotMatch(evil, /<script>/, "raw script tag is escaped");
+  assert.match(evil, /&lt;script&gt;/);
+});
 
 test("discussedLineHtml: renders outcome + date + escaped note; empty for no discussion", () => {
   assert.equal(discussedLineHtml(undefined), "", "no discussion → nothing");

@@ -65,6 +65,28 @@ export function mdLite(md: string): string {
 }
 
 /**
+ * Block-level markdown → HTML for the coach-prose cards (weekly review, season read). Like {@link mdLite}
+ * but each source line becomes its OWN block, so a bulleted list reads as separate lines instead of
+ * collapsing onto one (the density problem) — without depending on `white-space`/`.prose` CSS. Escape-FIRST
+ * so injected markup can't break out (dashboard convention). Pure.
+ */
+export function mdProse(md: string): string {
+  const inline = (s: string) => s.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  return escapeHtml(md)
+    .split("\n")
+    .map((raw) => {
+      const line = raw.trim();
+      if (!line) return '<div style="height:7px"></div>'; // paragraph gap
+      const head = /^#{1,3}\s+(.*)$/.exec(line);
+      if (head) return `<div style="font-weight:700;font-size:15px;margin:12px 0 5px;color:#222">${inline(head[1])}</div>`;
+      const bullet = /^[-*]\s+(.*)$/.exec(line);
+      if (bullet) return `<div style="margin:4px 0;padding-left:16px;text-indent:-16px">• ${inline(bullet[1])}</div>`;
+      return `<div style="margin:6px 0;line-height:1.55">${inline(line)}</div>`;
+    })
+    .join("");
+}
+
+/**
  * Generic race words that are NOT identifying on their own — never redacted as a standalone token, so a
  * race called "Birmingham Marathon" doesn't blank the word "marathon" everywhere else on the page. The
  * distinctive part (the city/venue) still goes.

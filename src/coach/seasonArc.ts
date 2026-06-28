@@ -50,6 +50,7 @@ export interface SeasonArcReport {
   ctlTrend?: "rising" | "flat" | "falling";
   ctlTarget?: number;
   ctlGap?: number; // ctlNow − ctlTarget (negative = below target)
+  ctlSeries?: CtlPoint[]; // the trailing CTL series, for the gap-to-target graph
   peakYear?: YearStat; // biggest-volume year — the benchmark
   currentYear?: YearStat; // this season's volume so far
   trajectory?: YearStat[]; // full year-by-year arc (for the bar view)
@@ -241,6 +242,7 @@ export function buildSeasonArc(input: SeasonArcInput): SeasonArcReport {
     ctlTrend: trend,
     ctlTarget,
     ctlGap,
+    ctlSeries: input.ctlSeries,
     peakYear,
     currentYear,
     trajectory: trajectory.length ? trajectory : undefined,

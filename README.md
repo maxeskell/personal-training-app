@@ -562,23 +562,25 @@ stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and 
   Today reads as one coach, not a dashboard. The card leads with the green/amber/red **verdict + the day's
   action** (the gated *"Turn this into a plan change"* still lives here), then a deterministic *"what
   changed since yesterday"* diff (a readiness move, an auto-detected FTP/threshold change, a watcher that
-  just spoke up — each a one-line pointer into the card that owns the detail), then **today's session(s) at
-  a glance** (sport · weather verdict · fuelling, with a *see Plan →*), then the corroborating drivers +
-  health-metric tiles, the readiness narrative, and **yesterday in one line**. It makes **no LLM call** — a
-  *view* over the same engine the cards below use, so it never disagrees with them — and stays short when
-  nothing moved (a rest day with no changes is a couple of lines, not a wall). The since-yesterday diff is
-  powered by a tiny per-day snapshot under `data/brief/` (gitignored), captured once a day so the next
-  morning has a reference point; on the first day there's nothing to diff, so it just shows
-  today-at-a-glance. `COACH_DAILY_BRIEF=false` drops the brief sections, leaving the plain readiness card.
-  Below it: the last session, and a *"📥 N waiting on your call · N new →"* teaser into Decide.
-- **Plan** — the forward-looking view: this week's sessions vs weather and fuelling, the coach's **this-week
-  review**, then the **Season arc** folded in (last-7-days load moved to Performance, where the backward-looking
-  numbers live). The **next still-to-do session** carries a deterministic **coach's note** — a coach-voice
-  *how to execute it* line (*"settle into a controlled, comfortably-hard effort"*, *"truly easy — this is
-  recovery"*), modulated by today's readiness/form so a hard session on deep fatigue says to cut the reps or
-  move it. It's a **MODEL** (intensity is inferred from the session title — AI Endurance exposes no workout
-  structure — with the basis behind a *why* disclosure), makes no LLM call, and only ever eases effort *down*,
-  never up.
+  just spoke up — each a one-line pointer into the card that owns the detail), then **today's session(s) IN
+  FULL** — for each session still to do, its weather verdict + reason, the **coach's how-to-execute note**,
+  and the **full fuelling plan** (pre/during/after), so the day's plan is the first thing you act on without
+  leaving the tab. When **every session for the day is already logged**, that collapses to a simple *"✓
+  done for today"* line and the last-session readout below carries the detail. Then the corroborating
+  drivers + health-metric tiles, the readiness narrative, and **yesterday in one line**. It makes **no LLM
+  call** — a *view* over the same engine — and stays short when nothing moved. The since-yesterday diff is
+  powered by a tiny per-day snapshot under `data/brief/` (gitignored). `COACH_DAILY_BRIEF=false` drops the
+  brief sections, leaving the plain readiness card.
+- **Plan** — the forward-looking view. The **Week ahead** card is **future training only** (today's sessions,
+  with their full advice, live on Today) and is **weather analysis only** — verdict + reason per session, no
+  fuelling. Then the coach's **this-week review**, written as a **cohesive coach's summary** (not a bullet
+  list): every claim is backed by the actual numbers (*"1.97h of 4.01h prescribed easy — 49%"*) and names the
+  **cause** of any shortfall — *missed sessions* vs *trained the easy time too hard* — computed deterministically
+  and handed to the model so it cites rather than guesses. Then the **Season arc** folded in: chronic load (CTL)
+  is now a **graph** — your curve vs the **phase target** with the **gap drawn between them** — the structural
+  levers + multi-season risks, then the **full season read** (the same cohesive, evidence-backed coach voice),
+  and finally the long arc of annual hours at the very bottom. The coach's-note coaching now lives per-session
+  on **Today**, not here.
 - **Decide** — one unified **inbox** in two halves: **decisions** to act on (top insights, the coach's
   recommendations, this week's coaching cues) then **housekeeping** (numbers to confirm, setup to finish) —
   all sharing the same **👍 Agree / 👎 Disagree / 🚫 Ignore** (💤 Snooze) controls, hoisted to one legend at
