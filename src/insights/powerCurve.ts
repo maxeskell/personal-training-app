@@ -2,9 +2,9 @@
  * Mean-maximal power (MMP) curve from raw `.FIT` power streams — the data behind the /career page's
  * "recent" (Last-90-days / Season) power lines.
  *
- * The intervals.icu power-curve export only carries the windows its labels expose, so recent windows can
- * come out empty. Since we already load your raw `.FIT`s for race splits, we can compute the recent curves
- * directly: for each standard duration, the best average power over any contiguous window of that length
+ * We compute these directly from your raw `.FIT`s (which we already load for race splits) rather than lean
+ * on any platform's pre-computed windows: for each standard duration, the best average power over any
+ * contiguous window of that length
  * (Coggan MMP), taken across every activity in the window. Samples are treated as ~1 Hz (the same MODEL
  * approximation as the Normalized-Power calc); gaps count as zero power. PURE + deterministic.
  */

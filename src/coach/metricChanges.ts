@@ -53,7 +53,7 @@ const TRACKED: Tracked[] = [
 const THRESHOLD_TRACKED = TRACKED.filter((t) => t.metric !== "vo2max");
 
 /** Stable display order for sources in a side-by-side (AIE first, Garmin last). */
-const SOURCE_ORDER: Source[] = ["ai-endurance", "intervals", "garmin", "derived", "manual"];
+const SOURCE_ORDER: Source[] = ["ai-endurance", "garmin", "derived", "manual"];
 
 /** The metrics the change-feed + overrides track (the override store validates against this). */
 export const TRACKED_METRICS: ReadonlySet<string> = new Set(TRACKED.map((t) => t.metric));

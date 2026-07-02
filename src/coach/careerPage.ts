@@ -173,11 +173,11 @@ function powerCurveSvg(pc: NonNullable<CareerHistory["powerCurve"]>): string {
 export function renderCareerInner(data: CareerHistory | null, share = false): string {
   if (!data) {
     return `<div class="career-inner"><h1>Career &amp; PBs</h1>
-      <div class="note">No career history yet. This page reads <code>data/career-history.json</code> — generate it from your TrainingPeaks / intervals.icu archive (plus your exported <code>.FIT</code> files for per-race performance &amp; splits) with <code>npm run career:build</code> (<code>scripts/build-career-history.ts</code>; see <code>SETUP.md</code> → "Career history"). The file is gitignored; <code>career-history.example.json</code> shows the shape.</div></div>`;
+      <div class="note">No career history yet. This page reads <code>data/career-history.json</code> — generate it from your TrainingPeaks archive (plus your exported <code>.FIT</code> files for per-race performance &amp; splits) with <code>npm run career:build</code> (<code>scripts/build-career-history.ts</code>; see <code>SETUP.md</code> → "Career history"). The file is gitignored; <code>career-history.example.json</code> shows the shape.</div></div>`;
   }
 
   const seasonHdr = data.seasonYear ? `Season ${data.seasonYear}` : "Season";
-  const gen = data.generatedAt ? `Built ${escapeHtml(data.generatedAt)} from your TrainingPeaks + intervals.icu archive.` : "";
+  const gen = data.generatedAt ? `Built ${escapeHtml(data.generatedAt)} from your TrainingPeaks archive + exported .FIT files.` : "";
   const shareNote = share
     ? `<div class="note">🔒 Share view — event names &amp; locations hidden, dates shown as year only. <a href="?">Exit</a></div>`
     : `<div class="sub" style="text-align:right;margin-top:-6px"><a href="?share=1" style="font-size:12px;color:#888">🔒 Share view</a></div>`;

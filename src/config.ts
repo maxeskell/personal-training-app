@@ -99,8 +99,8 @@ export const config = {
     },
   },
 
-  /** Bounded retry on transient 429/5xx for the read-only external spines (AI Endurance reads,
-   *  intervals.icu, the weather fetch). Writes are never retried. A non-numeric override falls back to 3. */
+  /** Bounded retry on transient 429/5xx for the read-only external spines (AI Endurance reads and
+   *  the weather fetch). Writes are never retried. A non-numeric override falls back to 3. */
   retry: {
     attempts: (() => {
       const n = Number(process.env.COACH_RETRY_ATTEMPTS ?? 3);
@@ -249,7 +249,7 @@ export const config = {
 
   /**
    * Read-only `/career` page (race history + lifetime bests vs current + power curve). The data is a
-   * HISTORICAL multi-year archive (TrainingPeaks/intervals.icu + raw .FIT files), not live coaching state,
+   * HISTORICAL multi-year archive (TrainingPeaks export + raw .FIT files), not live coaching state,
    * so it lives in a gitignored file built by `scripts/build-career-history.ts`. Path is relative to the repo root
    * unless absolute. A missing file just renders the page's empty state (degrade-don't-crash).
    */
@@ -333,23 +333,9 @@ export const config = {
   profilePath: process.env.COACH_PROFILE_PATH,
 
   /**
-   * intervals.icu — an alternative training-data spine (Phase 3b). A free, popular platform with an
-   * API-key'd REST API. Used only when COACH_SOURCE=intervals. Read-only here.
-   */
-  intervals: {
-    apiKey: process.env.COACH_INTERVALS_API_KEY ?? "",
-    /** Athlete id, e.g. "i123456" (or just the number — normalised). */
-    athleteId: process.env.COACH_INTERVALS_ATHLETE_ID ?? "",
-    baseUrl: (process.env.COACH_INTERVALS_URL ?? "https://intervals.icu/api/v1").replace(/\/+$/, ""),
-    /** Trailing days of activities/wellness to pull (the analysis window). */
-    windowDays: Number(process.env.COACH_INTERVALS_WINDOW_DAYS ?? 60),
-    timeoutMs: Number(process.env.COACH_INTERVALS_TIMEOUT_MS ?? 15000),
-  },
-
-  /**
    * The training-data SPINE the coach assembles from (see src/sources/). "ai-endurance" is the default
-   * and most capable; the adapter seam lets other sources (e.g. intervals.icu) be added later. An unknown
-   * value falls back to AI Endurance.
+   * and most capable; the adapter seam lets other sources be added later. An unknown value falls back to
+   * AI Endurance.
    */
   source: process.env.COACH_SOURCE ?? "ai-endurance",
 } as const;

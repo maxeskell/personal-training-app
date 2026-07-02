@@ -33,7 +33,7 @@ anything of your own.
 | | |
 |---|---|
 | **Node.js 20+** | `node --version` (from https://nodejs.org). |
-| **A data source** | the spine the coach reads your plan, races and metrics from. **AI Endurance** is the default and most capable (https://aiendurance.com, a **paid** platform); **intervals.icu** is also supported (experimental, a thinner coach) — set `COACH_SOURCE=intervals`, see [docs/data-sources.md](docs/data-sources.md). **TrainingPeaks** has no personal API, but it syncs into intervals.icu, so TP users go via the intervals source. |
+| **A data source** | the spine the coach reads your plan, races and metrics from. **AI Endurance** (https://aiendurance.com, a **paid** platform) is the spine — everything assembles from it; Garmin is an optional, degradable gap-filler. See [docs/data-sources.md](docs/data-sources.md). **TrainingPeaks / Strava** have no self-serve personal API, so they aren't live sources — the read-only `/career` page reads their *offline exports* instead. |
 | **An Anthropic API key** | only for the **AI write-ups** (readiness / weekly / race / ask / …). The **dashboard, zones and health checks run with no key.** Pay-as-you-go — typically **~$5–10/month** on a daily coaching cadence; `npm run cost` shows your actual spend. https://console.anthropic.com |
 | **Optional, all degradable** | Garmin device data, free Open-Meteo weather, a local LLM for cheap routing. Each is best-effort: if it's absent the matching card is simply omitted, never an error. |
 
@@ -636,7 +636,7 @@ your **race history** (date · event/location · your recorded performance, with
 **splits** table), your **lifetime bests vs current form** side by side (all-time / last 90 days / season,
 per sport: fastest at each distance, longest, best power), and an overlaid **power curve** — all-time (from
 your power export) vs the **Last-90-days / Season** curves computed from your recent `.FIT` rides. It reads a
-**gitignored** data file you build once from your multi-year TrainingPeaks / intervals.icu archive plus your
+**gitignored** data file you build once from your multi-year TrainingPeaks archive plus your
 exported activity files (`.FIT`/`.TCX`/`.PWX`, gzipped fine) — the dashboard's live state only knows the recent
 past, so this history lives apart (see [SETUP.md → "Career history"](./SETUP.md)). It's display-only and
 **honest by construction**: performances are *your own recorded numbers* — pulled from your raw activity
@@ -794,8 +794,8 @@ The HTTP startup banner spells out exactly what each surface exposes.
 
 **Bounded, never-hangs external calls.** Every external spine has a hard timeout and the read paths
 retry a transient rate-limit/5xx with jittered backoff (`COACH_RETRY_ATTEMPTS`, default 3, honouring
-`Retry-After`): AI Endurance per-tool calls are capped (not just connect) and read-retried, as are
-intervals.icu and the weather fetch. Each coach LLM call is bounded by `COACH_LLM_TIMEOUT_MS` (default
+`Retry-After`): AI Endurance per-tool calls are capped (not just connect) and read-retried, as is
+the weather fetch. Each coach LLM call is bounded by `COACH_LLM_TIMEOUT_MS` (default
 120s) for the interactive flows, with **3× that for the long streamed flows** (weekly/race/deep-dive
 reports and the research digest, which can legitimately run for minutes) so a real long run isn't cut
 off; the Anthropic SDK adds its own 429/5xx retries within the deadline. A write to the plan is **never**

@@ -6,9 +6,7 @@
  * for the shape, SETUP.md → "Career history" for the how-to). Run it with tsx (e.g. `npm run career:build`):
  *
  *   npm run career:build -- \
- *     --intervals /abs/path/activities.json \   # intervals.icu activities (last-90d + season bests + no-FIT race fallback)
- *     --tp        /abs/path/activities_tp.csv \  # TrainingPeaks archive (all-time bests, 2011+)
- *     --power     /abs/path/power_curve.json \   # intervals power-curve export (mean-maximal watts)
+ *     --tp        /abs/path/activities_tp.csv \  # TrainingPeaks archive (all-time bests, 2011+) — optional
  *     --races     /abs/path/career-races.json \  # YOUR curated race list (names/locations/optional result) — optional
  *     --fit-dir   /abs/path/archive \            # your activity-file archive (.fit/.tcx/.pwx, optionally .gz, nested)
  *     --season    2026 \                         # season year for the "Season" column (default: this year)
@@ -17,11 +15,12 @@
  * RACE PERFORMANCE + SPLITS come from YOUR OWN files, never the web (no official results are scraped): each
  * race is matched by date+sport to an activity file (finish time, distance, pace, avg power/HR, and a per-lap
  * or — for a triathlon — per-discipline split table; a multisport `.FIT` is split into its swim/bike/run
- * legs), falling back to the matching `--intervals`/`--tp` activity for summary numbers only when none
+ * legs), falling back to the matching `--tp` activity for summary numbers only when none
  * exists. It reads `.FIT`, `.TCX` and `.PWX` (the three formats a TrainingPeaks WorkoutFileExport ships),
  * optionally gzipped, from data/fit-streams (recent, full samples → power curve) AND `--fit-dir` (walked
  * recursively, samples dropped). Hand-authored `--races` fields always win. Re-running preserves the
- * existing file's races when no --races is given. No network.
+ * existing file's races when no --races is given. No network. The all-time / recent power curves are
+ * computed from your `.FIT` RIDE power streams.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -100,17 +99,7 @@ interface Act {
   np?: number;
 }
 
-/** A normalised activity: {date, sport, distKm, durSec, np}. From intervals JSON or the TP CSV. */
-function fromIntervals(acts: any): Act[] {
-  if (!Array.isArray(acts)) return [];
-  return acts.map((a) => ({
-    date: String(a.start_date_local ?? a.start_date ?? "").slice(0, 10),
-    sport: sportOf(a.type ?? a.sport),
-    distKm: (num(a.distance) ?? 0) / 1000,
-    durSec: num(a.moving_time) ?? num(a.elapsed_time) ?? 0,
-    np: num(a.icu_weighted_avg_watts) ?? num(a.average_watts),
-  }));
-}
+/** A normalised activity: {date, sport, distKm, durSec, np}. From the TrainingPeaks CSV. */
 function fromTp(rows: Record<string, string>[]): Act[] {
   return rows.map((r) => ({
     date: String(r.date ?? "").slice(0, 10),
@@ -160,12 +149,12 @@ function inWindow(date: string, fromDate: string): boolean {
   return date >= fromDate;
 }
 
-function buildBests(all: Act[], intervals: Act[], season: number) {
+function buildBests(all: Act[], season: number) {
   const today = new Date();
   const d90 = new Date(today.getTime() - 90 * 86400000).toISOString().slice(0, 10);
   const seasonStart = `${season}-01-01`;
-  const last90 = intervals.filter((a) => inWindow(a.date, d90));
-  const seasonActs = intervals.filter((a) => a.date >= seasonStart);
+  const last90 = all.filter((a) => inWindow(a.date, d90));
+  const seasonActs = all.filter((a) => a.date >= seasonStart);
   const cols = (fn: (x: Act[]) => any) => ({ allTime: fn(all), last90: fn(last90), season: fn(seasonActs) });
   const row = (label: string, fn: (x: Act[]) => any) => {
     const c = cols(fn);
@@ -190,65 +179,27 @@ function buildBests(all: Act[], intervals: Act[], season: number) {
 }
 const clean = (o: Record<string, any>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v));
 
-/** Sample a single intervals power-curve list-item (parallel secs[]/values[]) at the standard durations. */
-function sampleCurve(item: any): Array<{ durationSec: number; watts: number }> {
-  const secs = item?.secs,
-    vals = item?.values;
-  if (!Array.isArray(secs) || !Array.isArray(vals)) return [];
-  const out: Array<{ durationSec: number; watts: number }> = [];
-  for (const d of DURATIONS) {
-    let idx = secs.indexOf(d);
-    if (idx < 0) {
-      idx = secs.findIndex((s: number) => s >= d); // nearest at-or-above
-    }
-    const w = idx >= 0 ? vals[idx] : undefined;
-    if (Number.isFinite(w) && w > 0) out.push({ durationSec: d, watts: Math.round(w) });
-  }
-  return out;
-}
-
-function buildPower(powerJson: any, season: number) {
-  const list = powerJson?.list;
-  if (!Array.isArray(list) || !list.length) return undefined;
-  const pick = (re: RegExp) => list.find((it: any) => re.test(String(it.label ?? it.id ?? "").toLowerCase()));
-  const allItem = pick(/all|ever|4000|10y|5y/) ?? pick(/year/) ?? list[0];
-  const allTime = sampleCurve(allItem);
-  if (!allTime.length) return undefined;
-  const last90 = sampleCurve(pick(/90|6 ?w|42|month/) ?? {});
-  const seasonItem = pick(new RegExp(String(season))) ?? pick(/season|ytd/);
-  const seasonCurve = sampleCurve(seasonItem ?? {});
-  const pc: { allTime: any; last90?: any; season?: any } = { allTime };
-  if (last90.length) pc.last90 = last90;
-  if (seasonCurve.length) pc.season = seasonCurve;
-  return pc;
-}
-
 /**
- * Power curve for the /career page. All-time comes from the intervals `--power` export (or, if absent, your
- * .FIT rides). The "recent" Last-90-days + Season windows are computed from your raw .FIT RIDE power streams
- * (robust — no dependence on the export's labels), falling back to the export's windows when no .FITs cover
- * them. Returns undefined when there's no usable all-time curve.
+ * Power curve for the /career page — computed entirely from your raw .FIT RIDE power streams (mean-maximal
+ * power at each standard duration). All-time is over every ride; the "recent" Last-90-days + Season windows
+ * filter those rides by date. Returns undefined when there's no usable ride power data.
  */
-function buildPowerCurve(powerJson: any, fits: DatedFit[], season: number) {
-  const exportPc = powerJson ? buildPower(powerJson, season) : undefined;
+function buildPowerCurve(fits: DatedFit[], season: number) {
   const rides = fits
     .filter((f) => sportFamily(f.sport) === "ride")
     .map((f) => ({ date: f.date, watts: f.fit.samples.map((s) => s.power) }))
     .filter((a) => a.watts.some((w) => w != null));
+  if (!rides.length) return undefined;
   const d90 = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
   const seasonStart = `${season}-01-01`;
-  const fitLast90 = meanMaximalCurve(rides.filter((a) => a.date >= d90), DURATIONS);
-  const fitSeason = meanMaximalCurve(rides.filter((a) => a.date >= seasonStart), DURATIONS);
 
-  const allTime: CurvePoint[] | undefined =
-    exportPc?.allTime?.length ? exportPc.allTime : rides.length ? meanMaximalCurve(rides, DURATIONS) : undefined;
-  if (!allTime || !allTime.length) return undefined;
-
-  const last90 = fitLast90.length ? fitLast90 : exportPc?.last90;
-  const seasonCurve = fitSeason.length ? fitSeason : exportPc?.season;
+  const allTime: CurvePoint[] = meanMaximalCurve(rides, DURATIONS);
+  if (!allTime.length) return undefined;
+  const last90 = meanMaximalCurve(rides.filter((a) => a.date >= d90), DURATIONS);
+  const seasonCurve = meanMaximalCurve(rides.filter((a) => a.date >= seasonStart), DURATIONS);
   const pc: { allTime: CurvePoint[]; last90?: CurvePoint[]; season?: CurvePoint[] } = { allTime };
-  if (last90?.length) pc.last90 = last90;
-  if (seasonCurve?.length) pc.season = seasonCurve;
+  if (last90.length) pc.last90 = last90;
+  if (seasonCurve.length) pc.season = seasonCurve;
   return pc;
 }
 
@@ -269,9 +220,8 @@ function main() {
   const season = Number(args.season ?? new Date().getFullYear());
   const out = resolve(typeof args.out === "string" ? args.out : "data/career-history.json");
 
-  const intervals = typeof args.intervals === "string" ? fromIntervals(readJson(args.intervals)) : [];
   const tp = typeof args.tp === "string" ? fromTp(readCsv(args.tp)) : [];
-  const all = [...tp, ...intervals].filter((a) => a.date);
+  const all = tp.filter((a) => a.date);
 
   // races: --races file wins; else preserve races already in the output; else empty.
   let races: any[] = [];
@@ -302,25 +252,18 @@ function main() {
   const enriched = enrichRaceResults(races, datedFits, activities);
   races = enriched.races;
 
-  const bests = all.length ? buildBests(all, intervals.length ? intervals : all, season) : [];
-  const powerCurve = buildPowerCurve(typeof args.power === "string" ? readJson(args.power) : null, datedFits, season);
+  const bests = all.length ? buildBests(all, season) : [];
+  const powerCurve = buildPowerCurve(datedFits, season);
 
-  // Year-by-year volume — prefer the longer-history source per year (TP for 2011-2014, intervals later),
-  // so the Season page can benchmark "where am I now" against the all-time peak and the detraining troughs.
+  // Year-by-year volume from the TrainingPeaks archive, so the Season page can benchmark "where am I now"
+  // against the all-time peak and the detraining troughs.
   const byYear: Record<string, { hours: number; km: number }> = {};
-  for (const src of [tp, intervals]) {
-    const seen: Record<string, { hours: number; km: number }> = {};
-    for (const a of src) {
-      const y = (a.date || "").slice(0, 4);
-      if (!/^\d{4}$/.test(y)) continue;
-      const d = (seen[y] ??= { hours: 0, km: 0 });
-      if (a.durSec && a.durSec < 1200 * 60) d.hours += a.durSec / 3600;
-      if (a.distKm && a.distKm < 2000) d.km += a.distKm;
-    }
-    for (const [y, d] of Object.entries(seen)) {
-      // a source "wins" a year if it logged more hours there (deeper history for that year)
-      if (!byYear[y] || d.hours > byYear[y].hours) byYear[y] = d;
-    }
+  for (const a of tp) {
+    const y = (a.date || "").slice(0, 4);
+    if (!/^\d{4}$/.test(y)) continue;
+    const d = (byYear[y] ??= { hours: 0, km: 0 });
+    if (a.durSec && a.durSec < 1200 * 60) d.hours += a.durSec / 3600;
+    if (a.distKm && a.distKm < 2000) d.km += a.distKm;
   }
   const trajectory = Object.entries(byYear)
     .map(([y, d]) => ({ year: Number(y), hours: Math.round(d.hours), km: Math.round(d.km) }))

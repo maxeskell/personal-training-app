@@ -154,7 +154,7 @@ export function asOf(ageDays: number): string {
   return ageDays <= 0 ? "as of today" : `as of ${ageDays}d ago`;
 }
 
-export const SOURCE_LABEL: Record<string, string> = { "ai-endurance": "AI Endurance", garmin: "Garmin", intervals: "intervals.icu", derived: "derived", manual: "you" };
+export const SOURCE_LABEL: Record<string, string> = { "ai-endurance": "AI Endurance", garmin: "Garmin", derived: "derived", manual: "you" };
 
 export function hms(sec: number): string {
   const h = Math.floor(sec / 3600);

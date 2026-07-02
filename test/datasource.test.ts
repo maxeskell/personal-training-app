@@ -13,7 +13,7 @@ test("selectDataSource: AI Endurance is the default and resolves its aliases (ca
 });
 
 test("selectDataSource: an unknown source falls back to AI Endurance (degrade, don't crash)", () => {
-  assert.equal(selectDataSource("intervals-not-built-yet").id, "ai-endurance");
+  assert.equal(selectDataSource("some-unbuilt-source").id, "ai-endurance");
 });
 
 test("AieDataSource: satisfies the DataSource shape", () => {

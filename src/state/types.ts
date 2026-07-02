@@ -12,7 +12,7 @@ export type { ProfileDoc };
 import type { DataCompletenessReport } from "./dataCompleteness.js";
 export type { DataCompletenessReport };
 
-export type Source = "ai-endurance" | "intervals" | "garmin" | "derived" | "manual";
+export type Source = "ai-endurance" | "garmin" | "derived" | "manual";
 
 /** A value plus where it came from. `null` value = known-absent (e.g. Garmin down). */
 export interface Provenanced<T> {

@@ -1,7 +1,7 @@
 /**
  * Bounded retry-with-jitter for transient HTTP failures (429 rate-limit + 5xx server errors).
  *
- * Used on the read-only external spines (AI Endurance, intervals.icu, Open-Meteo) so a single transient
+ * Used on the read-only external spines (AI Endurance, Open-Meteo) so a single transient
  * blip degrades to a brief, capped retry instead of failing the whole flow. Deliberately NARROW: only
  * 429/5xx are retried — a 4xx is a caller error (don't hammer it) and a timeout/abort is a deliberate cap
  * we don't fight. Writes are NEVER retried by callers (a re-issued create/change could double-fire).
