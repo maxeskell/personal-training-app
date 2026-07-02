@@ -242,7 +242,7 @@ async function refresh(): Promise<void> {
   const garmin = config.garmin.enabled ? new GarminClient() : undefined;
   if (garmin) await garmin.connect();
   try {
-    // Assemble via the configured spine (AI Endurance or intervals.icu — see src/sources/).
+    // Assemble via the configured spine (see src/sources/).
     const today = todayIso();
     const state = await selectDataSource().assemble({ store, garmin, date: today, assembledAt: new Date().toISOString() });
     await store.save(state);

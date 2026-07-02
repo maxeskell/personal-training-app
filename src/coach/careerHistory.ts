@@ -6,7 +6,7 @@ import { config } from "../config.js";
  * Career history data model + best-effort loader for the read-only `/career` page.
  *
  * The data is HISTORICAL and lives OUTSIDE the live coaching state (it comes from a multi-year
- * TrainingPeaks/intervals.icu archive, not AI Endurance), so — per the repo's gitignored-user-data
+ * TrainingPeaks archive, not AI Endurance), so — per the repo's gitignored-user-data
  * convention — it sits in a gitignored file (`data/career-history.json`, see {@link config}.career.path)
  * produced by `scripts/build-career-history.ts` (`npm run career:build`). A committed
  * `career-history.example.json` documents the

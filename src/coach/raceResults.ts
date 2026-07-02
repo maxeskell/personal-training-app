@@ -6,7 +6,7 @@
  * Two sources, in preference order, with hand-authored values ALWAYS winning per field:
  *   1. a matched raw `.FIT` (by date + sport) → finish time, distance, pace, avg power/HR, AND per-lap/length
  *      splits for a single-sport race, or one summary row per discipline (swim/bike/run legs) for a triathlon;
- *   2. the activity export the career build already loads (intervals.icu / TrainingPeaks) → summary numbers
+ *   2. the activity export the career build already loads (a TrainingPeaks CSV) → summary numbers
  *      only (no splits), the fallback when no `.FIT` was exported for that race.
  *
  * PURE + deterministic: the build script does the file I/O (parsing `.FIT`s, reading the activity export)
@@ -28,7 +28,7 @@ export interface DatedFit {
   fit: FitActivity;
 }
 
-/** A normalised activity from the intervals/TP export — the no-FIT summary fallback. */
+/** A normalised activity from the TrainingPeaks export — the no-FIT summary fallback. */
 export interface ActivitySummary {
   date: string; // YYYY-MM-DD
   sport: SportFamily; // already normalised by the build

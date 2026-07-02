@@ -304,13 +304,14 @@ shape if you'd rather hand-write it.
 ```bash
 ▶ RUN   # use absolute paths to YOUR exported files; every flag is optional (missing input = empty section)
 cd /Users/maxeskell/dev/personal-training-app && npm run career:build -- \
-  --intervals /abs/path/activities.json \     # intervals.icu activities export (last-90d + season bests + no-FIT race fallback)
   --tp        /abs/path/activities_tp.csv \    # a TrainingPeaks summary CSV (all-time bests, 2011+)
-  --power     /abs/path/power_curve.json \     # intervals power-curve export (mean-maximal watts)
   --races     /abs/path/career-races.json \    # YOUR curated race list (names/locations) — see below
   --fit-dir   /abs/path/archive \              # your activity-file archive for per-race performance + splits (in addition to data/fit-streams)
   --season    2026                             # season year for the "Season" column (default: this year)
 ```
+
+> The all-time and recent (Last-90-days / Season) **power curves** are computed from your `.FIT` RIDE
+> streams — so a good `--fit-dir` archive (and `data/fit-streams/`) is what drives them.
 
 - **Race performance + splits come from your OWN files — never the web** (no official results are
   scraped). For each race the build matches an **activity file** (by date + sport) and fills finish time,
@@ -320,19 +321,17 @@ cd /Users/maxeskell/dev/personal-training-app && npm run career:build -- \
   optionally **gzipped** (`.fit.gz` / `.tcx.gz` / `.pwx.gz`), nested in per-year subfolders. Two sources are
   scanned: `data/fit-streams/` (recent files the `splits`/`sync` tools use) **plus** whatever you point
   `--fit-dir` at, which is walked **recursively** (so point it at the export's top folder). With **no**
-  matching file, the build falls back to the matching `--intervals`/`--tp` activity for the **summary numbers
+  matching file, the build falls back to the matching `--tp` activity for the **summary numbers
   only** (no splits). **Anything you hand-author in `--races` always wins** — the build only fills blanks.
 - **Author your race list** (date, type, event, location, optional recorded result) in the `--races` file
   (a JSON array; the `races` block of `career-history.example.json` is the template). Re-running without
   `--races` keeps the races already in the output file (and re-derives their performance from your files).
-- **Bests + power curve are auto-computed** from `--intervals` / `--tp` / `--power`, with GPS/calibration
-  outliers dropped (honest models). Locations you don't mark `"confidence":"confirmed"` are treated as
-  approximations in the UI.
-- **The power curve's "recent" (Last-90-days + Season) lines are computed from your `.FIT` RIDE streams**
-  (mean-maximal power in those windows) — so keep recent `.FIT`s in `data/fit-streams/` (the dashboard
-  Sync / `npm run fit-sync` puts them there automatically). The **all-time** line comes from `--power`;
-  if a window has no `.FIT`s, it falls back to that export's windows. With no ride `.FIT`s and only an
-  all-time `--power` export, the recent lines simply won't appear.
+- **Bests are auto-computed** from the `--tp` archive, with GPS/calibration outliers dropped (honest
+  models). Locations you don't mark `"confidence":"confirmed"` are treated as approximations in the UI.
+- **The power curve (all-time + Last-90-days + Season) is computed from your `.FIT` RIDE streams**
+  (mean-maximal power in each window) — so keep your ride `.FIT`s in `data/fit-streams/` (the dashboard
+  Sync / `npm run fit-sync` puts them there automatically) and/or point `--fit-dir` at your archive. With
+  no ride `.FIT`s, the power curve simply won't appear.
 - Set `COACH_CAREER_PATH` if you keep the file somewhere other than `data/career-history.json`.
 - **Tip:** once you've imported your archive (next section), the build reads it automatically — you can drop
   `--fit-dir` entirely.
