@@ -129,13 +129,51 @@ function raceRow(r: Race, idx: number, share: boolean): string {
   return `<tr><td>${when}</td><td>${event}${sub}${conf}</td><td>${loc}</td><td class="num">${perf}${splits}</td></tr>`;
 }
 
-/** Overlaid power-curve line chart (all-time / last-90d / season) over the standard durations. */
+/** One overlaid power-curve line: a name, a stroke colour, and the mean-maximal points. */
+export interface PowerSeries {
+  name: string;
+  color: string;
+  pts: PowerPoint[];
+}
+
+/**
+ * Collapse power-curve series that are IDENTICAL point-for-point (same durations + same watts) into a single
+ * line. This is the common case, not an edge one: whenever every season best was also set inside the last 90
+ * days, the Last-90-days and Season curves coincide exactly — and drawn naively the one painted last sits
+ * directly on top of the other, so a real line looks like it's "not showing" (the classic bug: only two of
+ * three lines visible). Merging is the honest fix — one line, its label joining the coincident names
+ * ("Last 90 days / Season"), so the chart says *why* there are fewer lines than series rather than hiding one.
+ *
+ * Pure + deterministic: order-preserving by first appearance, and the first series in a coincident group keeps
+ * its colour. Empty series should be filtered out before this (an empty curve isn't a real line to merge).
+ */
+export function mergeCoincidentSeries(series: PowerSeries[]): PowerSeries[] {
+  const sig = (s: PowerSeries) =>
+    [...s.pts].sort((a, b) => a.durationSec - b.durationSec).map((p) => `${p.durationSec}:${p.watts}`).join("|");
+  const out: PowerSeries[] = [];
+  const bySig = new Map<string, PowerSeries>();
+  for (const s of series) {
+    const existing = bySig.get(sig(s));
+    if (existing) existing.name = `${existing.name} / ${s.name}`;
+    else {
+      const kept: PowerSeries = { name: s.name, color: s.color, pts: s.pts };
+      bySig.set(sig(s), kept);
+      out.push(kept);
+    }
+  }
+  return out;
+}
+
+/** Overlaid power-curve line chart (all-time / last-90d / season) over the standard durations. Coincident
+ *  curves are merged into one labelled line (see {@link mergeCoincidentSeries}) so none hides another. */
 function powerCurveSvg(pc: NonNullable<CareerHistory["powerCurve"]>): string {
-  const series: Array<{ name: string; color: string; pts: PowerPoint[] }> = [
-    { name: "All-time", color: "#1f4e79", pts: pc.allTime },
-    { name: "Last 90 days", color: "#c8642d", pts: pc.last90 ?? [] },
-    { name: "Season", color: "#2e7d57", pts: pc.season ?? [] },
-  ].filter((s) => s.pts.length);
+  const series = mergeCoincidentSeries(
+    [
+      { name: "All-time", color: "#1f4e79", pts: pc.allTime },
+      { name: "Last 90 days", color: "#c8642d", pts: pc.last90 ?? [] },
+      { name: "Season", color: "#2e7d57", pts: pc.season ?? [] },
+    ].filter((s) => s.pts.length),
+  );
   // X axis: the union of durations present, ascending (categorical, evenly spaced so short + long both read).
   const durs = [...new Set(series.flatMap((s) => s.pts.map((p) => p.durationSec)))].sort((a, b) => a - b);
   const wattsAll = series.flatMap((s) => s.pts.map((p) => p.watts));
