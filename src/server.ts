@@ -218,7 +218,7 @@ async function renderLatest(share = false): Promise<string> {
     sessionFeedbacks: await loadSessionFeedbacks(), // auto-generated at sync; shown inline, no LLM here
     fuelLog: await loadFuelLog(), // one-tap fuelling feedback — renders the week-ahead card's logged state
     metricOverrides: await loadMetricOverrides(), // your pins on auto-detected metrics (Data-changes card)
-    coachRecs, // reactable recommendations from your latest readiness + deep-dive write-ups
+    coachRecs, // reactable multi-day recommendations from your latest deep-dive + ask write-ups (readiness stays on Today)
     coachRecsMerged, // cross-source clusters (opt-in): repKey → absorbed recs, for the "shown once" note
     setupHealth: {
       hasApiKey: CoachLLM.hasApiKey(),

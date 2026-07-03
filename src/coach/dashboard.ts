@@ -14,7 +14,7 @@ import type { MetricOverrides } from "../state/metricOverrides.js";
 import { paceStr } from "../insights/zones.js";
 import { coachHeadline, tsbBand, rampBand, type Tone, type Headline } from "../insights/headline.js";
 import { assembleSession, listRecentSessions, type SessionRef, type SessionDetail } from "./session.js";
-import { sessionPlanSignal } from "./reviewBridge.js";
+import { sessionPlanSignal, type ReviewSignal } from "./reviewBridge.js";
 import { config } from "../config.js";
 import type { Profile } from "../profile/schema.js";
 import { weekday, upcomingPlanned, asOfLabel, type WeekWeather } from "../weather/assess.js";
@@ -942,8 +942,12 @@ function renderTodayCard(args: {
   share?: boolean;
   now: number;
   briefEnabled: boolean;
+  /** The deterministic post-session signal for the just-completed session (the SAME one the Last-session card
+   *  renders as "⚙ Adjust the days ahead"), or null when nothing warrants a change / in share / without a key.
+   *  Lets Today's done-state point at the adjustment instead of a generic "readout is below". */
+  postSessionSignal: ReviewSignal | null;
 }): string {
-  const { today, window, insights, hl, leadKey, decisions, garminDays: gar, priorBrief, weather, fuel, sessionFeedbacks, redact, share, now, briefEnabled } = args;
+  const { today, window, insights, hl, leadKey, decisions, garminDays: gar, priorBrief, weather, fuel, sessionFeedbacks, redact, share, now, briefEnabled, postSessionSignal } = args;
 
   // ── Readiness core (the former standalone header) — rendered only when there are insights to back it ──
   const lastReadiness = [...decisions].reverse().find((d) => d.kind === "readiness");
@@ -1040,7 +1044,15 @@ function renderTodayCard(args: {
     if (todays.length === 0) {
       todayBlock = `<div class="k" style="margin-bottom:12px">Today — nothing planned (rest day).</div>`;
     } else if (allDone) {
-      todayBlock = `<div style="background:#eef7ee;border:1px solid #cfe8cf;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:14px;color:#1a6b2f">✓ <b>You're done for today</b> — ${todays.length} session${todays.length > 1 ? "s" : ""} complete. Your last session's full readout is below.</div>`;
+      // Session lifecycle: BEFORE you train, Today shows the session + its coach note (the "else" branch
+      // below); AFTER — once it's logged — the done-state flips to what the session MEANS for the days ahead.
+      // When the completed session crosses a threshold, it names that and points at the one-click gated
+      // "⚙ Adjust the days ahead" on the Last-session card below (the button itself stays in one place, so
+      // there's no duplicated handler). Otherwise it's a plain "you're done" with the readout below.
+      const adjustLine = postSessionSignal
+        ? `<div style="margin-top:6px">🧭 <b>This session flags a change to the days ahead.</b> ${escapeHtml(redact(postSessionSignal.headline))} There's a one-click <b>⚙ Adjust the days ahead</b> in your session readout below.</div>`
+        : `<div style="margin-top:2px">Your last session's full readout is below.</div>`;
+      todayBlock = `<div style="background:#eef7ee;border:1px solid #cfe8cf;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:14px;color:#1a6b2f">✓ <b>You're done for today</b> — ${todays.length} session${todays.length > 1 ? "s" : ""} complete.${adjustLine}</div>`;
     } else {
       const sessionBlocks = todays.map((p) => {
         const sport = p.sport ?? "Session";
@@ -1241,6 +1253,14 @@ export function renderDashboard({ window, decisions, insights, reactions, discus
   const surfacedInsightKeys = new Set<string>(insights ? insights.topFindings.slice(0, 5).map((f) => findingKey(f)) : []);
   if (leadKey) surfacedInsightKeys.add(leadKey);
 
+  // Post-session bridge for Today's done-state: recompute the SAME deterministic signal the Last-session card
+  // turns into "⚙ Adjust the days ahead", so Today can point at it once the session is logged. Gated
+  // identically to that card (hidden in share / without an API key to draft with) so the two never disagree —
+  // the pointer only appears when the button below actually will. Pure + cheap (no LLM/network on the recompute).
+  const lastSessionDetail =
+    !share && setupHealth?.hasApiKey ? assembleSession(today, insights, { decays: insights?.sessionDecays, fitSummaries }) : null;
+  const postSessionSignal = lastSessionDetail ? sessionPlanSignal(lastSessionDetail) : null;
+
   // Load by sport over a trailing 7 days (cutoff today-7 inclusive — the same window weekly.ts calls
   // "last 7 days", NOT the calendar week). Time in h:mm (user ask); a zero distance renders "—" not a
   // misleading 0.0 km. A bottom Total row sums sessions/time/distance across every sport. This is a
@@ -1423,7 +1443,7 @@ ${share ? `<div class="card sharebanner" style="background:#eef4ff;border:1px so
 <section id="tab-today" class="tab on">
 
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
-${renderTodayCard({ today, window, insights, hl, leadKey, decisions, garminDays, priorBrief: priorBrief ?? null, weather, fuel: todayFuelCtx, sessionFeedbacks, redact, share, now: now ?? Date.now(), briefEnabled: config.dailyBrief.enabled })}
+${renderTodayCard({ today, window, insights, hl, leadKey, decisions, garminDays, priorBrief: priorBrief ?? null, weather, fuel: todayFuelCtx, sessionFeedbacks, redact, share, now: now ?? Date.now(), briefEnabled: config.dailyBrief.enabled, postSessionSignal })}
 
 ${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks, setupHealth?.hasApiKey, share, redact)}
 ${decideCount > 0 ? `<a class="card nav-link" data-tab="decide" href="#decide" style="display:block;text-decoration:none;color:#c8642d;font-weight:600">📥 ${decideCount} ${decideCount === 1 ? "item" : "items"} waiting on your call${decideNewCount > 0 ? ` · <span style="color:#1558d6">${decideNewCount} new</span>` : ""} →</a>` : ""}

@@ -43,16 +43,24 @@ function snap(ts: string, surface: string, findings: SurfacedFinding[]): Insight
 }
 const sf = (key: string, family = "Gear"): SurfacedFinding => ({ key, family, title: key, severity: "info", detail: "d", evidence: "e" });
 
-test("latestAdviceFindings: takes the LATEST snapshot per advice surface, merges, dedupes, drops suppressed", () => {
+test("latestAdviceFindings: latest snapshot per DISPLAY surface (deep-dive/ask), merges, dedupes, drops suppressed", () => {
   const snapshots = [
-    snap("2026-06-01T07:00:00Z", "readiness", [sf("advice:readiness:old")]),
-    snap("2026-06-10T07:00:00Z", "readiness", [sf("advice:readiness:a"), sf("advice:readiness:b")]), // latest readiness wins
-    snap("2026-06-09T07:00:00Z", "deep-dive", [sf("advice:deep-dive:c")]),
-    snap("2026-06-11T07:00:00Z", "ask", [sf("advice:ask:d")]), // ask is an advice surface too
+    snap("2026-06-08T07:00:00Z", "deep-dive", [sf("advice:deep-dive:old")]),
+    snap("2026-06-10T07:00:00Z", "deep-dive", [sf("advice:deep-dive:c"), sf("advice:deep-dive:e")]), // latest deep-dive wins
+    snap("2026-06-11T07:00:00Z", "ask", [sf("advice:ask:d")]), // ask is a display surface too
     snap("2026-06-05T07:00:00Z", "dashboard", [sf("ignored-non-advice-surface")]), // not an advice surface
   ];
-  const out = latestAdviceFindings(snapshots, new Set(["advice:readiness:b"]));
-  assert.deepEqual(out.map((f) => f.key), ["advice:readiness:a", "advice:deep-dive:c", "advice:ask:d"]); // old readiness gone, b suppressed, dashboard ignored
+  const out = latestAdviceFindings(snapshots, new Set(["advice:deep-dive:e"]));
+  assert.deepEqual(out.map((f) => f.key), ["advice:deep-dive:c", "advice:ask:d"]); // old deep-dive gone, e suppressed, dashboard ignored
+});
+
+test("latestAdviceFindings: readiness is DAY-TO-DAY (lives on Today) — logged but NOT surfaced in the decision inbox", () => {
+  const snapshots = [
+    snap("2026-06-10T07:00:00Z", "readiness", [sf("advice:readiness:train-as-planned"), sf("advice:readiness:x")]),
+    snap("2026-06-09T07:00:00Z", "deep-dive", [sf("advice:deep-dive:c")]),
+  ];
+  const out = latestAdviceFindings(snapshots);
+  assert.deepEqual(out.map((f) => f.key), ["advice:deep-dive:c"], "no readiness recs echo into Coach's recommendations");
 });
 
 test("renderCoachRecs: reactable cards carry key + family + the four actions; hidden when empty or shared", () => {

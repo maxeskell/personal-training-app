@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseCareerHistory, type CareerHistory } from "../src/coach/careerHistory.js";
-import { renderCareerPage } from "../src/coach/careerPage.js";
+import { renderCareerPage, mergeCoincidentSeries, type PowerSeries } from "../src/coach/careerPage.js";
 
 const SAMPLE: CareerHistory = {
   generatedAt: "2026-01-01",
@@ -162,6 +162,54 @@ test("renderCareerPage: renders races, bests columns and a parseable power-curve
   assert.match(html, /<svg[^>]*class="pcurve"/);
   // every <svg> closes — the script/markup parses (mirrors dashboard's "script blocks still parse" rule)
   assert.equal((html.match(/<svg/g) ?? []).length, (html.match(/<\/svg>/g) ?? []).length);
+});
+
+test("mergeCoincidentSeries: identical curves collapse to one labelled line so neither hides the other", () => {
+  // The real-world trigger: every season best was also set inside the last 90 days, so last90 === season.
+  const recent: PowerSeries["pts"] = [{ durationSec: 5, watts: 577 }, { durationSec: 60, watts: 313 }];
+  const merged = mergeCoincidentSeries([
+    { name: "All-time", color: "#1f4e79", pts: [{ durationSec: 5, watts: 853 }, { durationSec: 60, watts: 454 }] },
+    { name: "Last 90 days", color: "#c8642d", pts: recent },
+    { name: "Season", color: "#2e7d57", pts: [...recent] }, // distinct object, identical values
+  ]);
+  assert.equal(merged.length, 2, "the two identical curves become a single line");
+  assert.deepEqual(merged.map((s) => s.name), ["All-time", "Last 90 days / Season"]);
+  assert.equal(merged[1].color, "#c8642d", "the first coincident series keeps its colour (the last-90 line stays visible)");
+});
+
+test("mergeCoincidentSeries: distinct curves are untouched — order, names and colours preserved", () => {
+  const series: PowerSeries[] = [
+    { name: "All-time", color: "#1f4e79", pts: [{ durationSec: 5, watts: 853 }] },
+    { name: "Last 90 days", color: "#c8642d", pts: [{ durationSec: 5, watts: 577 }] },
+  ];
+  assert.deepEqual(mergeCoincidentSeries(series), series);
+});
+
+test("mergeCoincidentSeries: point order doesn't matter — same set of points still coincides", () => {
+  const merged = mergeCoincidentSeries([
+    { name: "Last 90 days", color: "#c8642d", pts: [{ durationSec: 60, watts: 313 }, { durationSec: 5, watts: 577 }] },
+    { name: "Season", color: "#2e7d57", pts: [{ durationSec: 5, watts: 577 }, { durationSec: 60, watts: 313 }] },
+  ]);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].name, "Last 90 days / Season");
+});
+
+test("renderCareerPage: coincident last-90/season render as one legend entry (the missing-line bug)", () => {
+  const data: CareerHistory = {
+    generatedAt: "2026-07-03",
+    seasonYear: 2026,
+    races: [],
+    bests: [],
+    powerCurve: {
+      allTime: [{ durationSec: 5, watts: 853 }, { durationSec: 60, watts: 454 }],
+      last90: [{ durationSec: 5, watts: 577 }, { durationSec: 60, watts: 313 }],
+      season: [{ durationSec: 5, watts: 577 }, { durationSec: 60, watts: 313 }], // identical to last90
+    },
+  };
+  const html = renderCareerPage(data);
+  assert.match(html, /Last 90 days \/ Season/, "the coincident curves share one honest legend label");
+  // Exactly two coloured polylines are drawn (all-time + the merged line) — not three with one hidden.
+  assert.equal((html.match(/<polyline /g) ?? []).length, 2);
 });
 
 test("renderCareerPage share view: hides event names + locations, dates → year only", () => {
