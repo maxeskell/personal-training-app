@@ -22,8 +22,17 @@ export interface AdviceRec {
 
 export type AdviceSource = "readiness" | "deep-dive" | "ask";
 
-/** Insight-log surfaces that carry reactable advice recommendations (read back onto the dashboard card). */
+/** Insight-log surfaces that produce reactable advice recommendations. All three are LOGGED (so every rec
+ *  feeds the engagement weights and is `retrospect`-able); what's SHOWN in the decision inbox is the
+ *  narrower {@link ADVICE_DISPLAY_SURFACES}. */
 export const ADVICE_SURFACES = new Set<string>(["readiness", "deep-dive", "ask"]);
+
+/** The subset surfaced in the decision inbox — the "Coach's recommendations" card and the `agenda`. Readiness
+ *  is the DAY-TO-DAY lens: its verdict and its one gated action already lead the **Today** page, so echoing its
+ *  recommendations into the multi-day decision inbox just duplicates Today (and a 👍/👎 on "train as planned,
+ *  you're green" is a status, not a decision worth retrospecting). Only the durable, multi-day lenses —
+ *  deep-dive and ask — belong here. Readiness recs are still logged (weighting + retrospect), just not shown. */
+export const ADVICE_DISPLAY_SURFACES = new Set<string>(["deep-dive", "ask"]);
 
 /** The insight families a recommendation may be tagged with (the schema enum + the weighting target). */
 export const ADVICE_FAMILIES = [
@@ -121,14 +130,15 @@ export function recsToFindings(recs: AdviceRec[] | undefined, source: AdviceSour
 }
 
 /**
- * The current advice recommendations to show on the dashboard: the findings from the LATEST snapshot of
- * each advice surface, merged, deduped by key, with suppressed (snoozed/dismissed/done) keys dropped.
- * Pure — testable. Reads the same insight log the engagement model does.
+ * The current advice recommendations to show in the decision inbox: the findings from the LATEST snapshot of
+ * each DISPLAY surface (deep-dive, ask — NOT readiness, whose day-to-day calls live on Today), merged, deduped
+ * by key, with suppressed (snoozed/dismissed/done) keys dropped. Pure — testable. Reads the same insight log
+ * the engagement model does, but filters to {@link ADVICE_DISPLAY_SURFACES} so readiness stays on the Today page.
  */
 export function latestAdviceFindings(snapshots: InsightSnapshot[], suppressed: Set<string> = new Set()): SurfacedFinding[] {
   const latestBySurface = new Map<string, SurfacedFinding[]>();
   for (const s of [...snapshots].sort((a, b) => a.ts.localeCompare(b.ts))) {
-    if (ADVICE_SURFACES.has(s.surface)) latestBySurface.set(s.surface, s.findings);
+    if (ADVICE_DISPLAY_SURFACES.has(s.surface)) latestBySurface.set(s.surface, s.findings);
   }
   const out: SurfacedFinding[] = [];
   const seen = new Set<string>();
@@ -309,6 +319,6 @@ export function renderCoachRecs(
     )
     .join("");
   return `<div class="card"><h2>Coach's recommendations</h2>
-  <div class="k" style="margin-bottom:6px">Action points distilled from your latest <b>readiness</b>, <b>deep-dive</b> and <b>ask</b> write-ups, grouped by where they came from. Reacting shapes what the coach surfaces next; each is recorded by key, so you can <code>retrospect</code> on how it held up.</div>
+  <div class="k" style="margin-bottom:6px">Multi-day action points distilled from your latest <b>deep-dive</b> and <b>ask</b> write-ups, grouped by where they came from. <span class="muted">Day-to-day readiness calls live on <b>Today</b>.</span> Reacting shapes what the coach surfaces next; each is recorded by key, so you can <code>retrospect</code> on how it held up.</div>
   <div class="setup">${groupsHtml}</div></div>`;
 }

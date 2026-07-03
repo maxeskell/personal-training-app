@@ -271,16 +271,18 @@ digest** read the same signal: they're told which families you set aside and sto
 can record a **retrospective** on any insight (`retrospect` MCP tool) — *did it hold up?* — which `listening`
 joins back into an **"Outcomes you recorded"** view (insight → your reaction → outcome), so the loop answers
 "what advice did I get, what did I do, and did it work" — not just "what was I shown". The LLM write-ups join
-the loop too: **readiness, deep-dive and `ask` each tag a short list of family-labelled recommendations**,
-surfaced as individually reactable cards on the dashboard's **Coach's recommendations** card (and reactable by
-key via MCP) — so a 👍/👎/🚫 on a coaching suggestion shapes the same family weights and is retrospect-able like
-any finding. Each flow distils only the **fewest genuinely distinct** actions — merging restatements rather than
-padding to a count, so one strong recommendation stays one — and the card **groups them by where they came from**
-(today's readiness / your last deep dive / your last question), so a single coherent stance reads as one group
+the loop too: **readiness, deep-dive and `ask` each tag a short list of family-labelled recommendations** (all
+logged, so every one shapes the family weights and is reactable + retrospect-able by key via MCP). The dashboard's
+**Coach's recommendations** card surfaces only the **durable, multi-day lenses — deep-dive and `ask`**: readiness is
+the *day-to-day* lens, and its verdict plus its one gated action already lead the **Today** page, so echoing "train
+as planned, you're green" into the multi-day decision inbox would just duplicate Today (and a 👍/👎 on a status
+isn't a decision worth retrospecting). Each flow distils only the **fewest genuinely distinct** actions — merging
+restatements rather than padding to a count, so one strong recommendation stays one — and the card **groups them by
+where they came from** (your last deep dive / your last question), so a single coherent stance reads as one group
 instead of several near-identical nags. (`ask` emits the prose answer and its recommendations in one structured
 call, so there's no extra cost.) Optionally, when the `local-llm-server` is running, a sync-time pass can go one
-step further and **collapse the same idea phrased differently across those sources** (e.g. readiness and the deep
-dive both saying "take it easy today") into a single line that notes where else it came up — using
+step further and **collapse the same idea phrased differently across those sources** (e.g. the deep dive and an
+`ask` answer both saying "protect Z2 this week") into a single line that notes where else it came up — using
 embeddings + cosine similarity computed **off the render path** (the card itself stays deterministic and
 LLM-free). It's off by default (`COACH_ADVICE_CLUSTERING=true`), needs a pulled embedding model
 (`ollama pull nomic-embed-text`), and **degrades to the per-source grouping** whenever the server or model
@@ -322,6 +324,10 @@ training **deep in fatigue** (session-day TSB ≤ −25, so the days after want 
 re-computes the signal **server-side** (the browser sends only *which* session, never the trigger text) and drafts
 the **smallest** edit against a real upcoming workout through the **same gated propose→confirm proposer** as the
 "This week" cards — so it lands as the familiar **Apply / Dismiss** proposal, writing nothing until you confirm.
+This is the *post-session* half of the day, so the **Today** card carries it too: **before** you train, Today shows
+the session and its coach note (*advice on the session*); **after** — once every planned session is logged — Today's
+done-state flips to what the session *means for the days ahead*, naming this same signal and pointing straight at the
+**⚙ Adjust the days ahead** button below (the button lives in one place — Today points, it doesn't duplicate).
 This closes the loop from how a session *actually executed* into a gated plan change — something AI Endurance and
 Humango don't do (their daily adaptation keys off readiness scores, not session execution). A question like "What
 happened in my last run?" routes here automatically. Routing has three strategies via `COACH_INTENT_ROUTER` (all degrade to the regex on
