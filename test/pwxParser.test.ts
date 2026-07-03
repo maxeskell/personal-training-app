@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parsePwx } from "../src/insights/pwxParser.js";
-import { loadActivityFits } from "../src/insights/fit.js";
+import { loadActivityFits, shouldDropSamples } from "../src/insights/fit.js";
 
 const PWX = `<?xml version="1.0"?>
 <pwx xmlns="http://www.peaksware.com/PWX/1/0">
@@ -53,6 +53,20 @@ test("parsePwx: decodes sportType, per-segment laps (avg-attribute stats) and th
 test("parsePwx: no workout → null", () => {
   assert.equal(parsePwx(Buffer.from("<pwx></pwx>")), null);
   assert.equal(parsePwx(Buffer.from("nonsense")), null);
+});
+
+test("shouldDropSamples: dropSamples drops everything, but keepSamplesFor spares the accepted sport", () => {
+  // no dropSamples → keep everything, regardless of sport
+  assert.equal(shouldDropSamples({}, "Ride"), false);
+  assert.equal(shouldDropSamples({ dropSamples: false, keepSamplesFor: () => false }, "Ride"), false);
+  // dropSamples alone → drop every sport (the archive-scan default)
+  assert.equal(shouldDropSamples({ dropSamples: true }, "Ride"), true);
+  assert.equal(shouldDropSamples({ dropSamples: true }, "Run"), true);
+  // dropSamples + a ride predicate → keep rides' power, drop the rest (what the career build passes so the
+  // all-time power curve can span the whole archive without holding every run/swim's samples)
+  const keepRides = { dropSamples: true, keepSamplesFor: (s: string) => s === "Ride" };
+  assert.equal(shouldDropSamples(keepRides, "Ride"), false, "ride samples survive → they feed the power curve");
+  assert.equal(shouldDropSamples(keepRides, "Run"), true, "non-ride samples still dropped → bounded memory");
 });
 
 test("loadActivityFits: recursive scan reads a gzipped .pwx in a subfolder", () => {
