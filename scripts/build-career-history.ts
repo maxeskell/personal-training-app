@@ -181,8 +181,10 @@ const clean = (o: Record<string, any>) => Object.fromEntries(Object.entries(o).f
 
 /**
  * Power curve for the /career page — computed entirely from your raw .FIT RIDE power streams (mean-maximal
- * power at each standard duration). All-time is over every ride; the "recent" Last-90-days + Season windows
- * filter those rides by date. Returns undefined when there's no usable ride power data.
+ * power at each standard duration). All-time is over EVERY ride with power — the recent streams dir plus the
+ * whole durable archive (the caller keeps ride samples across the corpus for exactly this) — so it reflects
+ * years of history, not just the last few weeks; the "recent" Last-90-days + Season windows filter those same
+ * rides by date. Returns undefined when there's no usable ride power data.
  */
 function buildPowerCurve(fits: DatedFit[], season: number) {
   const rides = fits
@@ -234,18 +236,23 @@ function main() {
 
   // Race performance + splits from YOUR files (no scraping): match each race to a raw activity file
   // (preferred) or the activity export (summary fallback); hand-authored result fields always win. Sources:
-  //  - recentFits: the streams dir (recent .FIT, full per-second samples) → drives the power curve;
+  //  - recentFits: the streams dir (recent .FIT, full per-second samples);
   //  - corpusFits: the DURABLE activity archive (data/activity-archive/, .fit/.tcx/.pwx, gz, nested) — the
-  //    permanent corpus `archive:import` + sync build up; scanned recursively with samples dropped;
+  //    permanent corpus `archive:import` + sync build up; scanned recursively with samples dropped EXCEPT for
+  //    rides, whose power we keep so the ALL-TIME power curve spans the whole archive (not just recent rides).
+  //    Bounded memory: only ride files hold samples (runs/swims/etc. are dropped as before);
   //  - archiveFits: an extra one-off --fit-dir (e.g. an export not yet imported), same treatment.
+  const keepRidePower = (sportName: string) => sportFamily(sportName) === "ride";
   const fitDir = typeof args["fit-dir"] === "string" ? (args["fit-dir"] as string) : undefined;
   const streamsDir = fitStreamsDir();
   const corpusDir = activityArchiveDir();
   const recentFits = loadActivityFits(streamsDir);
-  const corpusFits = existsSync(corpusDir) ? loadActivityFits(corpusDir, { recursive: true, dropSamples: true }) : [];
+  const corpusFits = existsSync(corpusDir)
+    ? loadActivityFits(corpusDir, { recursive: true, dropSamples: true, keepSamplesFor: keepRidePower })
+    : [];
   const archiveFits =
     fitDir && resolve(fitDir) !== resolve(streamsDir) && resolve(fitDir) !== resolve(corpusDir)
-      ? loadActivityFits(fitDir, { recursive: true, dropSamples: true })
+      ? loadActivityFits(fitDir, { recursive: true, dropSamples: true, keepSamplesFor: keepRidePower })
       : [];
   const datedFits: DatedFit[] = dedupFits([...recentFits, ...corpusFits, ...archiveFits]).map((f) => ({ date: f.date, sport: f.sport, fit: f.fit }));
   const activities: ActivitySummary[] = all.map((a) => ({ date: a.date, sport: a.sport, distKm: a.distKm, durSec: a.durSec, np: a.np }));

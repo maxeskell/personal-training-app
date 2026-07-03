@@ -293,8 +293,27 @@ function walkFiles(dir: string): string[] {
  *  - `dropSamples` — discard per-second samples after parsing (keeps only laps/session): essential when
  *    scanning a multi-thousand-file archive for race splits, where the samples aren't needed and holding
  *    them all would blow memory. The date is taken BEFORE dropping, so matching still works.
+ *  - `keepSamplesFor` — an exception to `dropSamples`: keep the samples for any activity whose sport name
+ *    this predicate accepts. Lets the career build drop samples for the whole archive EXCEPT rides, so the
+ *    all-time power curve can read the archive's ride power without holding every run/swim's samples too.
  */
-export function loadActivityFits(dir = fitStreamsDir(), opts: { recursive?: boolean; dropSamples?: boolean } = {}): ActivityFit[] {
+/** Options for {@link loadActivityFits} that govern per-second sample retention. */
+export interface SampleLoadOpts {
+  dropSamples?: boolean;
+  keepSamplesFor?: (sportName: string) => boolean;
+}
+
+/** Whether to discard a parsed activity's per-second samples: drop when `dropSamples` is set, UNLESS
+ *  `keepSamplesFor` accepts this sport (the ride-power exception the career build relies on to read the
+ *  archive's ride power without holding every run/swim's samples). Pure — the testable core of the rule. */
+export function shouldDropSamples(opts: SampleLoadOpts, sportName: string): boolean {
+  return !!opts.dropSamples && !opts.keepSamplesFor?.(sportName);
+}
+
+export function loadActivityFits(
+  dir = fitStreamsDir(),
+  opts: { recursive?: boolean } & SampleLoadOpts = {},
+): ActivityFit[] {
   if (!dir || !existsSync(dir)) return [];
   const files = opts.recursive ? walkFiles(dir) : readdirSync(dir).map((n) => join(dir, n));
   const out: ActivityFit[] = [];
@@ -312,7 +331,7 @@ export function loadActivityFits(dir = fitStreamsDir(), opts: { recursive?: bool
       if (!fit) continue;
       const firstT = fit.samples.find((s) => s.t != null)?.t ?? fit.laps.find((l) => l.startTimeS != null)?.startTimeS;
       const date = firstT != null ? new Date(firstT * 1000).toISOString().slice(0, 10) : "";
-      if (opts.dropSamples && fit.samples.length) fit = { ...fit, samples: [] };
+      if (fit.samples.length && shouldDropSamples(opts, fit.sportName)) fit = { ...fit, samples: [] };
       out.push({ activityId: basename(path).replace(/\.(fit|tcx|pwx)(\.gz)?$/i, ""), date, sport: fit.sportName, fit });
     } catch {
       // skip unreadable/malformed/corrupt-gzip activity file
