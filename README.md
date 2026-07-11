@@ -671,7 +671,9 @@ with no recorded finish time, the per-leg splits (swim/bike/run) are summed into
 with a `∑ splits` tag — labelled as *excluding transitions* (T1/T2), so it reads a touch under the official
 finish; single-sport laps are never summed (a partial set would undercount). GPS-derived locations not marked
 "confirmed" are nearest-town approximations, and the generator drops obvious GPS/calibration outliers from
-the bests. The same **🔒 Share view** applies — event names and locations are hidden, dates collapse to the
+the bests **and the power curve** — a miscalibrated power file (one reading ~2× true for a whole ride) would
+otherwise win *every* point of the all-time curve, since it's a max across rides, so any ride whose sustained
+power is physiologically implausible for your own FTP envelope (a labelled MODEL) is left out. The same **🔒 Share view** applies — event names and locations are hidden, dates collapse to the
 year, and the data-provenance tag is dropped (splits are just performance numbers, so they stay). Absent
 data file → a friendly empty state.
 
