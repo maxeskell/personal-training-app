@@ -26,7 +26,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { loadActivityFits, fitStreamsDir, type ActivityFit } from "../src/insights/fit.js";
 import { activityArchiveDir } from "../src/archive/activityArchive.js";
-import { meanMaximalCurve, type CurvePoint } from "../src/insights/powerCurve.js";
+import { meanMaximalCurve, keepPlausibleRides, ftpProxyFromNp, type CurvePoint } from "../src/insights/powerCurve.js";
 import { enrichRaceResults, excludeFutureDated, sportFamily, type ActivitySummary, type DatedFit, type SportFamily } from "../src/coach/raceResults.js";
 
 const DURATIONS = [5, 15, 30, 60, 120, 300, 480, 600, 1200, 1800, 3600];
@@ -185,12 +185,22 @@ const clean = (o: Record<string, any>) => Object.fromEntries(Object.entries(o).f
  * whole durable archive (the caller keeps ride samples across the corpus for exactly this) — so it reflects
  * years of history, not just the last few weeks; the "recent" Last-90-days + Season windows filter those same
  * rides by date. Returns undefined when there's no usable ride power data.
+ *
+ * A plausibility guard (keepPlausibleRides) drops any ride whose sustained power is physiologically
+ * impossible for `ftpW` (a robust FTP proxy), so one miscalibrated power file can't set the whole all-time
+ * line — the mean-maximal curve is a max across rides, so without this a single ~2×-inflated ride wins every
+ * point (the real 2023-12-17 / TrainingPeaks "574019" case). `ftpW` undefined ⇒ curve left unguarded.
  */
-function buildPowerCurve(fits: DatedFit[], season: number) {
-  const rides = fits
+function buildPowerCurve(fits: DatedFit[], season: number, ftpW?: number) {
+  const allRides = fits
     .filter((f) => sportFamily(f.sport) === "ride")
     .map((f) => ({ date: f.date, watts: f.fit.samples.map((s) => s.power) }))
     .filter((a) => a.watts.some((w) => w != null));
+  const rides = keepPlausibleRides(allRides, ftpW ?? null);
+  const dropped = allRides.length - rides.length;
+  if (dropped) {
+    console.log(`  power-curve guard: dropped ${dropped} ride(s) with implausible power (> envelope for FTP≈${Math.round(ftpW!)}W)`);
+  }
   if (!rides.length) return undefined;
   const d90 = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
   const seasonStart = `${season}-01-01`;
@@ -264,7 +274,11 @@ function main() {
   races = enriched.races;
 
   const bests = all.length ? buildBests(all, season) : [];
-  const powerCurve = buildPowerCurve(datedFits, season);
+  // A robust FTP proxy from the athlete's own ride-NP distribution anchors the power-curve plausibility
+  // guard (a MODEL). Percentile-based, so the very corrupt files it exists to catch can't inflate it; needs
+  // the TP archive (`--tp`), so a curve-only rebuild without it is simply left unguarded.
+  const ftpProxy = ftpProxyFromNp(all.filter((a) => a.sport === "ride" && a.np).map((a) => a.np!)) ?? undefined;
+  const powerCurve = buildPowerCurve(datedFits, season, ftpProxy);
 
   // Year-by-year volume from the TrainingPeaks archive, so the Season page can benchmark "where am I now"
   // against the all-time peak and the detraining troughs.
