@@ -12,11 +12,11 @@
 > the MCP and the gitignored profile aren't reachable.
 
 ## To do
-- [ ] **Set the bike threshold honestly (post-Birmingham).** The race falsified FTP 199 W: NP 217 W
-      for 79 min at −0.4% decoupling, then a negative-split 10k. Update FTP in AI Endurance/Garmin
-      toward ~215–220 W now (keep-higher rule), and book a proper test/openers week **post-Japan
-      (Aug)** to set it properly — every zone, the whole 250 W bike-build arc, and next season's
-      race models hang off this one number. (Also finally resolves which power meter feeds AIE.)
+- [ ] **Set FTP 225 W in BOTH AI Endurance and Garmin Connect (decided 11 Jul, see decision below)** —
+      Garmin feeds this app's model/zones, AIE drives the plan; both must say 225 or the ledgers fight.
+      Then book the proper test/openers week **post-Japan (Aug)** and re-set from the test — every zone,
+      the 250 W bike-build arc, and the race models hang off this number. (Also finally resolves which
+      power meter feeds AIE.)
 - [ ] **Swim CSS test (400/200) before Alderford (6 Sep).** Still unset — a whole season of swim
       training ran unstructured, and the race swim positive-split ~7% (2:07→2:21/100m by 500m block).
       One pool test, set CSS in AIE, and the swim finally gets a model + paced sets.
@@ -91,7 +91,15 @@
   (b) the race is a **certified ≥217 W NP for 79 min** data point — FTP/zones update, see To do;
   (c) swim gets structure only when CSS exists — test booked-by to-do above;
   (d) taper honesty: race-morning TSB was −6.8 (fresh-ish, not peaked) — a real A-race peak wants
-  TSB ≥ 0; raise with AI Endurance before Alderford. App side, same day: multisport race .FITs now
+  TSB ≥ 0; raise with AI Endurance before Alderford.
+  _Same-evening addendum — AIE's HRV-based zone suggestion DECLINED._ AIE proposed zone ceilings
+  (End<190 / Tempo<228 / Thr<269 / VO2<304) that all back out to **FTP ≈ 253 W** — its CP-model
+  number wearing an HRV hat. n=1 evidence says no: today's race NP 217 W × 79 min (with reserve)
+  makes ~217 a FLOOR; textbook Olympic bike IF (0.90–0.95) puts the ceiling ~228–241; all-time
+  60-min mean-max is ~203 W avg (set today; the file claiming 363 W is corrupt run-power data).
+  **Decision: FTP = 225 W** (low-central of the MODEL band 220–240 — under-pitched intervals
+  complete, over-pitched ones poison the build) → zones End<169 / Tempo<203 / Thr<236 / VO2<270.
+  Set in BOTH AIE and Garmin; re-test post-Japan and adjust to the test. App side, same day: multisport race .FITs now
   auto-fetch + expand per leg (they were silently skipped — the A-race was invisible to the granular
   layer), and the career page gained a hand-authored finishing-position field.
 - **2026-07-06 — Annual testing rhythm + Sportstest one-offs.** Cost-capped at one paid round per year;
