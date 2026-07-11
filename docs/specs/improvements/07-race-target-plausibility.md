@@ -1,13 +1,27 @@
 # 07 — Race-target plausibility gate (the Birmingham 2026 lesson)
 
-**Status: partially addressed.** Written 2026-07-11, the evening of the failure it describes;
-corrected the same day — a per-leg race model DID exist (the dashboard's "Estimated race splits"
-card, `estimateTriSplits`), and it was **28 seconds accurate on the legs it modelled**. Two things
-failed around it: the swim leg was dropped (CSS unset) with only a fine-print note while the
-headline still read as a race time, and nothing compared the card's number to the profile target.
-The first failure is FIXED (same-day commit: open-water-pace swim fallback + a loud
-"not a full-race time" warning when a leg is missing). The **gate** — comparing the model to
-`target_time` and leading race-prep with any discrepancy — remains to build.
+**Status: BUILT (same day, third commit).** Written 2026-07-11, the evening of the failure it
+describes; corrected then implemented the same day. A per-leg race model already existed (the
+dashboard's "Estimated race splits" card, `estimateTriSplits`) and was **28 seconds accurate on the
+legs it modelled**; two things failed around it, and both are now fixed:
+
+1. The swim leg was dropped (CSS unset) with only a fine-print note while the headline still read
+   as a race time → **fixed**: open-water-pace swim fallback + a loud "not a full-race time"
+   warning when a leg is missing.
+2. Nothing compared the model to the athlete's target → **fixed**: `src/insights/raceTargetGate.ts`
+   parses `profile races[].target_time` (tolerant of "sub 2:00" / ranges / H:MM-vs-MM:SS ambiguity,
+   resolved against the plan's own time), matches plan→race by exact date first (source names
+   drift — AI Endurance literally spelled it "Birmingham Triahtlon"), and issues a verdict
+   (implausible >5% beyond best case / stretch / in-range / conservative / model-incomplete). The
+   dashboard card renders it colour-coded; `race_prep` receives the model + verdict as a
+   deterministic prompt block and MUST lead with an implausible target. Callers pass profile races
+   in (`loadProfileRacesSync`) so the engine stays hermetic. The golden regression from this spec's
+   acceptance is in `test/raceTargetGate.test.ts`: Birmingham's race-morning inputs predict within
+   4% of the actual 2:39:12 and flag "sub 2:00" implausible.
+
+**Remaining (small):** the post-race hook — logging `model vs official result` per race so the
+model's own error is tracked over time. Today that comparison lives in the debrief notes;
+candidate home: a `race_review` flow or the career-history recorder.
 
 ## The failure
 

@@ -1271,6 +1271,34 @@ test("race splits: a plan with un-modelled legs warns loudly next to the headlin
   for (const [i, sc] of scripts.entries()) assert.doesNotThrow(() => new Function(sc), `script ${i} must parse`);
 });
 
+test("race splits: the spec-07 target check renders next to the plan, escaped, colour-coded by verdict", () => {
+  const s = emptyState("2026-06-19", new Date().toISOString());
+  const ins = buildInsights(s, undefined, {});
+  ins.splits = [
+    {
+      race: "Race A",
+      distanceKm: 51.5,
+      predictedSec: 9600,
+      strategy: "Olympic plan.",
+      segments: [],
+      targetCheck: {
+        targetLabel: "sub 2:00",
+        targetSec: 7200,
+        verdict: "implausible",
+        gapPct: -25,
+        note: `Target sub 2:00 (2:00:00) is 25% faster than even the model's best case <"x">.`,
+      },
+    },
+  ] as never;
+  const html = renderDashboard({ window: [s], decisions: [], insights: ins });
+  assert.match(html, /Target check \(MODEL\):/);
+  assert.match(html, /faster than even the model/);
+  assert.ok(html.includes("&lt;&quot;x&quot;&gt;"), "the note is escaped");
+  assert.match(html, /#b00020/, "implausible reads red");
+  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].map((m) => m[1]);
+  for (const [i, sc] of scripts.entries()) assert.doesNotThrow(() => new Function(sc), `script ${i} must parse`);
+});
+
 test("today's session carries its full fuelling on the Today card; the weather card stays fuel-free", () => {
   const today = "2026-06-22";
   const s = emptyState(today, new Date().toISOString());

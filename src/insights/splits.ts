@@ -44,6 +44,22 @@ export interface RaceSplitPlan {
    * 2026 shipped a "2:10" that silently omitted a ~30 min swim, and read as the race prediction.
    */
   missingLegs?: string[];
+  /** The spec-07 gate verdict: athlete's own target vs this plan's band. Set by the engine when the
+   *  profile carries a matching `races[].target_time` (see raceTargetGate.ts). */
+  targetCheck?: TargetCheck;
+}
+
+/** Athlete target vs model verdict (spec 07 — the check race-prep must lead with). All MODEL-labelled. */
+export interface TargetCheck {
+  /** The athlete-authored target string, verbatim — e.g. "sub 2:00". */
+  targetLabel: string;
+  /** Parsed bound-to-beat in seconds (null when unparseable or the model is incomplete). */
+  targetSec: number | null;
+  verdict: "implausible" | "stretch" | "in-range" | "conservative" | "model-incomplete";
+  /** (target − best case)/best case ×100 — negative means the target is faster than the model's best. */
+  gapPct: number | null;
+  /** One ready-to-render sentence for the dashboard card and the race-prep prompt. */
+  note: string;
 }
 
 /** Cap on the best-case improvement we'll project — no runaway extrapolation. */

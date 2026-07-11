@@ -17,7 +17,7 @@ import {
   type MonotonyStrain,
   type TID,
 } from "./metrics.js";
-import { estimateRunSplits, estimateTriSplits, projectRaceDayImprovement, projectRaceDayRange, reliableImprovementPerDay, type RaceSplitPlan, type DurabilityState, type TriRaceType, type TriPerformance } from "./splits.js";
+import { estimateRunSplits, estimateTriSplits, projectRaceDayImprovement, projectRaceDayRange, reliableImprovementPerDay, type RaceSplitPlan, type DurabilityState, type TriRaceType } from "./splits.js";
 import { analyseRecoverySeries, sleepVsNextDayLoad, type Correlation, type Anomaly } from "./correlations.js";
 import { buildMonitoringRuleSet, monitoringFinding, type MonitoringRuleSet, type MonitoringInput } from "./monitoring.js";
 import { analyseBricks, brickFinding, type BrickAnalysis } from "./brick.js";
@@ -29,7 +29,7 @@ import { trainingStatusFinding, hrvStatusFinding, enduranceScoreFinding, powerCu
 import { garminTrendFindings } from "./garminTrends.js";
 import { analyseHeat, heatFinding } from "./heat.js";
 import { finiteNums, slope } from "./stats.js";
-import { shiftIso } from "../util/today.js";
+import { triPerformanceFromState, targetForPlan, checkTargetAgainstPlan, type ProfileRaceTarget } from "./raceTargetGate.js";
 import { engagementFindings, type EngagementContext } from "./engagement.js";
 import type { FitSummary } from "../archive/store.js";
 
@@ -191,8 +191,9 @@ function runDistanceKm(name: string): number | null {
   return null;
 }
 
-/** Detect a triathlon goal (name/event_type) + its format; defaults to Olympic when only "tri" is named. */
-function triTypeOf(name: string, eventType?: string): TriRaceType | null {
+/** Detect a triathlon goal (name/event_type) + its format; defaults to Olympic when only "tri" is named.
+ *  Exported for the race-prep flow, which builds the same per-leg plan for its target gate (spec 07). */
+export function triTypeOf(name: string, eventType?: string): TriRaceType | null {
   const s = `${name} ${eventType ?? ""}`.toLowerCase();
   if (!/\btri(athlon)?\b|70\.3|iron\s?man/.test(s)) return null;
   if (/sprint/.test(s)) return "sprint";
@@ -263,6 +264,10 @@ export interface BuildOptions {
   /** Engagement loop: derived feedback/adherence that GENERATES follow-through findings and reweights
    *  surfacing toward the families the athlete acts on (coach/listening → buildEngagementContext). */
   engagement?: EngagementContext;
+  /** Athlete-authored race targets from the profile (races[].name/date/target_time) for the spec-07
+   *  target-plausibility gate. CALLERS load these (loadProfileRacesSync) — the engine never reads the
+   *  profile itself, so tests stay hermetic. Absent/empty → no target checks, plans unchanged. */
+  profileRaces?: ProfileRaceTarget[];
 }
 
 /** Build the full insight report + detector findings from today's state (+ optional history archive). */
@@ -494,38 +499,16 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   // Triathlon goals get per-leg (swim/bike/run) plans from the current CSS / FTP / run-prediction numbers.
   const durChange = durability.run.recent != null && durability.run.prior != null ? durability.run.recent - durability.run.prior : null;
   const durState: DurabilityState = durChange == null ? "unknown" : durChange >= 2 ? "improving" : durChange <= -2 ? "slipping" : "unknown";
-  const thresholds = state.thresholds.value;
-  const runPredictions: TriPerformance["runPredictions"] = {};
-  for (const rp of state.racePredictions.value?.predictions ?? []) {
-    if (rp.label === "5K" || rp.label === "10K" || rp.label === "Half" || rp.label === "Marathon") runPredictions[rp.label] = rp.timeSeconds;
-  }
-  // Swim fallback when CSS is unset: median observed open-water pace from the last ~90d of .FIT streams
-  // (pool swims carry no GPS pace, so they exclude themselves). A rough MODEL — but the alternative was a
-  // headline race time with a whole leg silently missing (Birmingham 2026).
-  const owPaces = sessionDecays
-    .filter((d) => /swim/i.test(d.sport) && d.date >= shiftIso(state.date, -90) && d.date <= state.date && d.swim?.paceSecPer100m != null && d.swim.openWater !== false)
-    .map((d) => d.swim!.paceSecPer100m!)
-    .sort((a, b) => a - b);
-  const recentOpenWaterPaceSecPer100 = owPaces.length ? owPaces[Math.floor(owPaces.length / 2)] : undefined;
+  // Current numbers a tri plan needs — incl. the open-water swim fallback when CSS is unset (a rough
+  // MODEL, but the alternative was a headline race time with a whole leg silently missing: Birmingham
+  // 2026). Shared with the race-prep flow so both build the SAME plan (raceTargetGate.ts).
+  const triPerf = triPerformanceFromState(state, sessionDecays);
   const splits = predictions
     .filter((p) => (p.daysTo ?? -1) >= 0)
     .map((p) => {
       const tri = triTypeOf(p.race, p.eventType);
       if (tri) {
-        return estimateTriSplits(
-          p.race,
-          tri,
-          {
-            cssSecPer100: thresholds?.swimCssSecPer100,
-            recentOpenWaterPaceSecPer100,
-            ftpW: thresholds?.bikeFtpW,
-            runThresholdPaceSecPerKm: thresholds?.runThresholdPaceSecPerKm,
-            runPredictions,
-            riderWeightKg: state.weightKg.value ?? undefined,
-          },
-          durState,
-          p.date,
-        );
+        return estimateTriSplits(p.race, tri, triPerf, durState, p.date);
       }
       const km = runDistanceKm(p.race);
       return km && p.predictedSec != null ? estimateRunSplits(p.race, km, p.predictedSec, durState, p.date) : null;
@@ -560,6 +543,15 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
     plan.worstSec = r.worstSec;
     plan.bestSec = r.bestSec;
     plan.rangeBasis = r.rangeBasis;
+  }
+
+  // Spec-07 gate: the athlete's OWN target vs each plan's modelled band — attached after the range is
+  // projected so "implausible" is judged against the most generous (best-case) number. No profile
+  // races passed → no checks; plans are unchanged (the gate never invents a target).
+  for (const plan of splits) {
+    const label = targetForPlan(plan, opts?.profileRaces ?? []);
+    const check = label ? checkTargetAgainstPlan(label, plan) : null;
+    if (check) plan.targetCheck = check;
   }
 
   const findings: Finding[] = [];

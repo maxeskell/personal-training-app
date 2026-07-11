@@ -852,6 +852,12 @@ function renderSplits(ins: InsightReport, share = false): string {
         ? ` <span style="color:#b00;font-weight:600">⚠ not a full-race time — no model for ${escapeHtml(p.missingLegs.join(", "))}</span>`
         : "";
       const finish = `<b style="font-size:16px">${clockMin(best)}</b> <span class="muted">race-day best (projected)</span> → <b style="font-size:16px">${clockMin(worst)}</b> <span class="muted">race it today (current level)</span> <span class="muted">· over ${p.distanceKm} km</span>${missingWarn}`;
+      // Spec-07 target gate: the athlete's own target vs the model band — an implausible target reads
+      // red so it can't be mistaken for a pacing basis; in-range green; stretch/conservative amber.
+      const tc = p.targetCheck;
+      const tcColor =
+        tc?.verdict === "implausible" ? "#b00020" : tc?.verdict === "in-range" ? "#2e7d57" : tc?.verdict === "model-incomplete" ? "#888" : "#a86400";
+      const targetLine = tc ? `<div class="ev" style="margin:3px 0;color:${tcColor}"><b>Target check (MODEL):</b> ${escapeHtml(tc.note)}</div>` : "";
       const basisText = stripTrailingSentences(p.rangeBasis, sharedBasis);
       const basis = basisText ? `<div class="ev" style="margin:3px 0">${escapeHtml(basisText)}</div>` : "";
       const strategyText = stripTrailingSentences(p.strategy, sharedStrategy);
@@ -859,6 +865,7 @@ function renderSplits(ins: InsightReport, share = false): string {
       return `<div style="margin-bottom:16px">
         <div style="font-size:15px"><b>${raceLabel}</b>${when}</div>
         <div style="margin:5px 0">${finish}</div>
+        ${targetLine}
         ${basis}
         ${strategy}
         <table><tr class="k"><td>Segment</td><td>Target</td><td>Split</td><td>Cumulative</td></tr>${rows}</table>

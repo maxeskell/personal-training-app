@@ -1,6 +1,10 @@
 import type { CoachLLM } from "../llm/client.js";
 import type { AthleteState } from "../state/types.js";
 import { classifyRace, deriveSeasonShape, liveGoals, athleteContext, type RaceKind } from "./seasonContext.js";
+import { triTypeOf } from "../insights/engine.js";
+import { estimateTriSplits } from "../insights/splits.js";
+import { loadSessionDecays } from "../insights/fit.js";
+import { gatePromptBlock, targetForPlan, triPerformanceFromState, type ProfileRaceTarget } from "../insights/raceTargetGate.js";
 
 interface Goal {
   event_name?: string;
@@ -60,6 +64,9 @@ export async function runRacePrep(
   llm: CoachLLM,
   today: AthleteState,
   raceName?: string,
+  /** Athlete-authored race targets (profile races[]) for the spec-07 gate — callers pass
+   *  loadProfileRacesSync(); default [] keeps tests hermetic and simply skips the target check. */
+  profileRaces: ProfileRaceTarget[] = [],
 ): Promise<{ markdown: string; cacheRead: number; costUsd: number; raceLabel: string }> {
   const goals = goalsFrom(today);
   const race = pickRace(goals, today.date, raceName);
@@ -79,6 +86,29 @@ export async function runRacePrep(
   const kind = classifyRace(race);
   const shape = deriveSeasonShape(liveGoals(today), today.date);
 
+  // Spec-07 gate: build the SAME deterministic per-leg plan the dashboard card shows and compare it to
+  // the athlete's own target — the report must LEAD with an implausible target, never pace toward it
+  // (Birmingham 2026: every prep report organised pacing around "sub 2:00" while the model said 2:39-ish).
+  let gateBlock = "";
+  const triKind = triTypeOf(race.event_name ?? "", race.event_type);
+  if (triKind) {
+    const plan = estimateTriSplits(
+      race.event_name ?? "race",
+      triKind,
+      triPerformanceFromState(today, loadSessionDecays()),
+      "unknown",
+      race.event_date ? String(race.event_date).slice(0, 10) : undefined,
+    );
+    if (plan) {
+      // Target source order: the athlete's profile target, else the AI Endurance goal's target seconds.
+      const aieSec = race.target_completion_time_in_seconds;
+      const label =
+        targetForPlan(plan, profileRaces) ??
+        (aieSec ? `${Math.floor(aieSec / 3600)}:${String(Math.floor((aieSec % 3600) / 60)).padStart(2, "0")}:${String(Math.round(aieSec % 60)).padStart(2, "0")}` : undefined);
+      gateBlock = gatePromptBlock(plan, label);
+    }
+  }
+
   const prompt = [
     `Produce race-specific prep guidance as markdown for this race, calibrated to TIME-TO-RACE.`,
     `Lead with the single most important thing for this phase. Specificity rises as the race nears.`,
@@ -92,6 +122,7 @@ export async function runRacePrep(
     race.target_completion_time_in_seconds
       ? `TARGET: ${Math.round(race.target_completion_time_in_seconds / 60)} min`
       : "TARGET: —",
+    ...(gateBlock ? ["", gateBlock] : []),
     "",
     `CURRENT RECOVERY [ai-endurance]: cardio ${r?.cardioRecovery ?? "—"}/100, run orthopedic ${
       r?.orthopedic?.run ?? "—"
