@@ -846,7 +846,12 @@ function renderSplits(ins: InsightReport, share = false): string {
       // the minute. When there's no build/trend to project they read the same — the basis line says why.
       const worst = p.worstSec ?? p.predictedSec;
       const best = p.bestSec ?? worst;
-      const finish = `<b style="font-size:16px">${clockMin(best)}</b> <span class="muted">race-day best (projected)</span> → <b style="font-size:16px">${clockMin(worst)}</b> <span class="muted">race it today (current level)</span> <span class="muted">· over ${p.distanceKm} km</span>`;
+      // A plan with un-modellable legs is NOT a full-race time — say so next to the number, not in the
+      // fine print (Birmingham 2026: a headline "2:10" silently excluded the ~30 min swim).
+      const missingWarn = p.missingLegs?.length
+        ? ` <span style="color:#b00;font-weight:600">⚠ not a full-race time — no model for ${escapeHtml(p.missingLegs.join(", "))}</span>`
+        : "";
+      const finish = `<b style="font-size:16px">${clockMin(best)}</b> <span class="muted">race-day best (projected)</span> → <b style="font-size:16px">${clockMin(worst)}</b> <span class="muted">race it today (current level)</span> <span class="muted">· over ${p.distanceKm} km</span>${missingWarn}`;
       const basisText = stripTrailingSentences(p.rangeBasis, sharedBasis);
       const basis = basisText ? `<div class="ev" style="margin:3px 0">${escapeHtml(basisText)}</div>` : "";
       const strategyText = stripTrailingSentences(p.strategy, sharedStrategy);

@@ -535,10 +535,14 @@ projection (the dashboard stays decluttered — cost lives in `npm run cost` / t
     **durability trend** — improving durability earns a gentle negative split; weak/unknown durability gets
     a conservative start that protects against the late fade.
   - **Triathlons** (sprint/Olympic/70.3/IM, detected from the goal's name/type): per-leg
-    swim/T1/bike/T2/run estimates from your **current numbers** — swim from CSS, bike from FTP at the
-    format's standard intensity (power → flat-course speed via a physics model), run from your standalone
-    Garmin run prediction with an off-the-bike penalty (threshold-pace fallback), plus fixed transition
-    estimates. A leg whose input is missing (e.g. no CSS set) is named as missing, never invented.
+    swim/T1/bike/T2/run estimates from your **current numbers** — swim from CSS (falling back to your
+    **recent open-water pace** from the `.FIT` streams when CSS is unset — a rough MODEL, labelled as
+    such), bike from FTP at the format's standard intensity (power → flat-course speed via a physics
+    model), run from your standalone Garmin run prediction with an off-the-bike penalty (threshold-pace
+    fallback), plus fixed transition estimates. A leg with no usable input at all is named as missing,
+    never invented — and the headline total then carries a loud **"⚠ not a full-race time"** warning
+    rather than reading as a race prediction (an Olympic plan once shipped a headline "2:10" that
+    silently excluded the whole ~30 min swim).
 
   (Predicted times are MODEL estimates — the plan is a target, not a guarantee.)
 
