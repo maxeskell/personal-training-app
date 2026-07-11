@@ -665,7 +665,9 @@ For the one-off HTML or a PDF, use `npm run dashboard -- --share`.
 your **race history** (date · event/location · your recorded performance, with an expandable per-race
 **splits** table and an optional hand-authored **finishing position** — e.g. "19th overall · 1st of 8 AG" —
 from the official results), your **lifetime bests vs current form** side by side (all-time / last 90 days / season,
-per sport: fastest at each distance, longest, best power), and an overlaid **power curve** — an **all-time**
+per sport: fastest at each distance, longest, best power — plus a **Triathlon** row with your fastest finish at
+each standard distance, **Sprint / Standard / 70.3 / Full**, from your recorded race results; a bike-leg trace
+or a non-standard distance is never counted as a finish), and an overlaid **power curve** — an **all-time**
 line over **every ride with power in your `.FIT` archive** (years of history, not just recent rides), with the
 **Last-90-days** and **Season** windows over the same rides; curves that coincide point-for-point merge into a
 single honestly-labelled line rather than one silently hiding another. It reads a
