@@ -50,7 +50,7 @@ import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
 import { WriteGate } from "./guardrails/writeGate.js";
 import { AieClient } from "./mcp/aieClient.js";
 import { readCostRecords, summarizeCost, type CostRecord } from "./llm/costLog.js";
-import { loadProfile } from "./profile/load.js";
+import { loadProfile, loadProfileRacesSync } from "./profile/load.js";
 import { formatProfileForTool } from "./profile/context.js";
 import { updateLocalProfile } from "./profile/update.js";
 import { repoRoot, listRepoDir, readRepoFile, writeRepoFile, formatReadResult, deniedReason } from "./mcp/fileAccess.js";
@@ -609,7 +609,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
       const miss = missingKey();
       if (miss) return fail(miss);
       const { state } = await buildTodayState();
-      const { markdown, raceLabel } = await runRacePrep(new CoachLLM(await loadSystemPrompt(), "race"), state, race);
+      const { markdown, raceLabel } = await runRacePrep(new CoachLLM(await loadSystemPrompt(), "race"), state, race, loadProfileRacesSync());
       await writeReport(`race-prep-${raceLabel.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`, todayIso(), markdown);
       return ok(markdown);
     },

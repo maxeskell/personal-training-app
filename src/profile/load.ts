@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { join, isAbsolute } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { config } from "../config.js";
@@ -69,6 +70,42 @@ export async function loadProfile(): Promise<LoadedProfile> {
 /** Best-effort load for ambient use (coaching context): returns null on any error, never throws. */
 export async function loadProfileSafe(): Promise<LoadedProfile | null> {
   return loadProfile().catch(() => null);
+}
+
+/** The slice of a profile race the spec-07 target gate needs (structurally matches
+ *  insights/raceTargetGate's ProfileRaceTarget — defined here too so profile/ never imports insights/). */
+export interface ProfileRaceTargetLite {
+  name?: string | null;
+  date?: string | null;
+  target_time?: string | null;
+}
+
+/**
+ * SYNC, best-effort read of just the profile's races (name/date/target_time) — for the deterministic
+ * flows (the insight engine's target gate, race-prep) that can't await. Same resolution order as
+ * {@link loadProfile}; returns [] on ANY failure (no profile, bad YAML, failed validation) — the gate
+ * simply doesn't run. Callers pass the result in (BuildOptions.profileRaces / runRacePrep's param);
+ * the engine itself never touches the disk for it, so its tests stay hermetic.
+ */
+export function loadProfileRacesSync(): ProfileRaceTargetLite[] {
+  const candidates = [config.profilePath ? resolve(config.profilePath) : null, resolve(LOCAL_PROFILE), resolve(EXAMPLE_PROFILE)].filter(
+    (p): p is string => p != null,
+  );
+  for (const path of candidates) {
+    let text: string;
+    try {
+      text = readFileSync(path, "utf8");
+    } catch {
+      continue; // not present → next candidate (same resolution order as loadProfile)
+    }
+    try {
+      const profile = validateProfile(parseYaml(text));
+      return (profile.races ?? []).map((r) => ({ name: r.name, date: r.date, target_time: r.target_time }));
+    } catch {
+      return []; // present but invalid: mirror loadProfileSafe (no silent fallback to the example)
+    }
+  }
+  return [];
 }
 
 export interface ProfileWithDoseCycle extends LoadedProfile {

@@ -53,7 +53,7 @@ import { WriteGate } from "./guardrails/writeGate.js";
 import { DecisionLog, suppressedInsightKeys } from "./state/decisionLog.js";
 import { runSetup } from "./setup.js";
 import { initProfile } from "./profile/setup.js";
-import { loadProfileSafe } from "./profile/load.js";
+import { loadProfileSafe, loadProfileRacesSync } from "./profile/load.js";
 import { renderQuestionsText, renderQuestionsMarkdown } from "./profile/questions.js";
 import { buildSeasonArc, seasonReportText } from "./coach/seasonArc.js";
 import { runSeasonNarrative } from "./coach/seasonNarrative.js";
@@ -440,7 +440,7 @@ async function cmdDeepDive(): Promise<void> {
   const { state, window } = await buildTodayState();
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
   const engagement = await loadEngagementContext(window);
-  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
+  const ins = buildInsights(state, await loadArchive(), { profileRaces: loadProfileRacesSync(), suppressed, history: window, engagement });
   const { markdown, cacheRead, costUsd } = await runDeepDive(new CoachLLM(await loadSystemPrompt(), "deep-dive"), state, ins);
   console.log("\n" + markdown + "\n");
   const path = await writeReport("deep-dive", todayIso(), markdown);
@@ -479,7 +479,7 @@ async function cmdTune(): Promise<void> {
   const { state, window } = await buildTodayState();
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
   const engagement = await loadEngagementContext(window);
-  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
+  const ins = buildInsights(state, await loadArchive(), { profileRaces: loadProfileRacesSync(), suppressed, history: window, engagement });
   const { markdown, gains, cacheRead, costUsd } = await runTuneUp(new CoachLLM(await loadSystemPrompt(), "tune", "medium"), state, ins);
   console.log("\n" + markdown + "\n");
   if (gains.length) {
@@ -581,7 +581,7 @@ async function cmdSession(): Promise<void> {
   }
   const archive = await loadArchive();
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
-  const insights = buildInsights(state, archive, { suppressed, history: window });
+  const insights = buildInsights(state, archive, { profileRaces: loadProfileRacesSync(), suppressed, history: window });
   const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), state, insights, {
     date,
     force,
@@ -619,7 +619,7 @@ async function cmdDashboard(): Promise<void> {
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions()); // for the Set-up-&-improve card's dismissals
   const archive = await loadArchive();
   const predictionTrajectory = state.raw ? await loadPredictionTrajectory(state) : undefined;
-  const insights = state.raw ? buildInsights(state, archive, { history: window, predictionTrajectory }) : undefined;
+  const insights = state.raw ? buildInsights(state, archive, { profileRaces: loadProfileRacesSync(), history: window, predictionTrajectory }) : undefined;
   let weather: WeekWeather | undefined;
   if (config.weather.enabled) {
     const fc = await getForecast();
@@ -709,7 +709,7 @@ async function cmdDemo(): Promise<void> {
   const garminDays = buildDemoGarminDays(today);
   // Feed the demo's Garmin history into the engine too (not just the Trends card) so monitoring /
   // fuelling / sleep-correlation analyse real sample data instead of an empty series.
-  const insights = state.raw ? buildInsights(state, { garminDays }, { history: window }) : undefined;
+  const insights = state.raw ? buildInsights(state, { garminDays }, { profileRaces: loadProfileRacesSync(), history: window }) : undefined;
   const yd = new Date(`${today}T00:00:00Z`);
   yd.setUTCDate(yd.getUTCDate() - 1);
   const lastSessionDate = yd.toISOString().slice(0, 10); // the demo's most recent activity (a run)
@@ -857,7 +857,7 @@ async function runWeeklyBrief(): Promise<void> {
   await writeReport("weekly-review", reviewDate, markdown);
 
   // 2. Freeze this week's snapshot for the delta (write-if-absent, keyed by this week's Monday).
-  const insights = state.raw ? buildInsights(state, await loadArchive(), { history: window, engagement }) : undefined;
+  const insights = state.raw ? buildInsights(state, await loadArchive(), { profileRaces: loadProfileRacesSync(), history: window, engagement }) : undefined;
   await persistWeeklyBriefIfAbsent(buildWeeklySnapshot({ window, insights, now: Date.now() }));
 
   // 3. Draft the gated next-week proposals (the only generative step beyond the review).
@@ -885,7 +885,7 @@ async function cmdRace(): Promise<void> {
   const raceName = process.argv.slice(3).join(" ").trim() || undefined;
   const { state } = await buildTodayState();
   const llm = new CoachLLM(await loadSystemPrompt(), "race");
-  const { markdown, cacheRead, costUsd, raceLabel } = await runRacePrep(llm, state, raceName);
+  const { markdown, cacheRead, costUsd, raceLabel } = await runRacePrep(llm, state, raceName, loadProfileRacesSync());
   console.log("\n" + markdown + "\n");
   const path = await writeReport(`race-prep-${raceLabel.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`, todayIso(), markdown);
   console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
@@ -906,7 +906,7 @@ async function cmdPropose(): Promise<void> {
   }
   const { state, window } = await buildTodayState();
   const engagement = await loadEngagementContext(window);
-  const ins = buildInsights(state, await loadArchive(), { history: window, engagement });
+  const ins = buildInsights(state, await loadArchive(), { profileRaces: loadProfileRacesSync(), history: window, engagement });
   const llm = new CoachLLM(await loadSystemPrompt(), "propose");
   const { result, cacheRead, costUsd } = await proposeAdjustments(llm, request, state, buildProposerContext(state, ins, engagement));
   const { valid, rejected } = validateProposals(result.proposals, state.plannedSessions.value ?? [], writeContextFor(state));
@@ -939,7 +939,7 @@ async function cmdAct(): Promise<void> {
   const { state, window } = await buildTodayState();
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
   const engagement = await loadEngagementContext(window);
-  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
+  const ins = buildInsights(state, await loadArchive(), { profileRaces: loadProfileRacesSync(), suppressed, history: window, engagement });
   // Act only on SURFACED findings (good-signal, not dismissed) that warrant a plan change.
   const actionable = ins.topFindings.filter((f) => f.severity !== "info");
   if (!actionable.length) {
@@ -996,7 +996,7 @@ async function cmdCheck(): Promise<void> {
     return;
   }
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
-  const ins = buildInsights(state, await loadArchive(), { suppressed, history: window });
+  const ins = buildInsights(state, await loadArchive(), { profileRaces: loadProfileRacesSync(), suppressed, history: window });
   const alerts = alertFindings(ins.topFindings);
   if (!alerts.length) {
     console.log(`\n✓ All clear (${state.date}) — nothing above the alert bar.`);

@@ -117,6 +117,21 @@ test("tri splits: a set CSS wins over the open-water fallback", () => {
   assert.doesNotMatch(plan.strategy, /open-water pace/);
 });
 
+test("engine: the spec-07 gate attaches a targetCheck when the profile carries a matching target", () => {
+  const s = emptyState("2026-06-09", new Date().toISOString());
+  s.raw = { getRaceGoalEvent: { goals: [{ event_name: "Birmingham Triathlon", event_date: "2026-07-11", event_type: "Triathlon" }] } };
+  s.thresholds = { value: { bikeFtpW: 250, swimCssSecPer100: 110, runThresholdPaceSecPerKm: 270 }, source: "garmin" };
+  const ins = buildInsights(s, undefined, {
+    profileRaces: [{ name: "Birmingham Triathlon", date: "2026-07-11", target_time: "sub 1:30" }],
+  });
+  assert.equal(ins.splits.length, 1);
+  assert.equal(ins.splits[0].targetCheck?.verdict, "implausible");
+  assert.match(ins.splits[0].targetCheck!.note, /faster than even the model/);
+  // No profile races passed (the hermetic default) → no check, plan untouched.
+  const bare = buildInsights(s, undefined, {});
+  assert.equal(bare.splits[0].targetCheck, undefined);
+});
+
 test("engine: triathlon goals produce per-leg split plans (not run-only)", () => {
   const s = emptyState("2026-06-09", new Date().toISOString());
   s.raw = { getRaceGoalEvent: { goals: [{ event_name: "Birmingham Triathlon", event_date: "2026-07-11", event_type: "Triathlon" }] } };

@@ -35,7 +35,7 @@ import { loadArchive } from "./coach/orchestrator.js";
 import { ArchiveStore } from "./archive/store.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
-import { loadProfileSafe } from "./profile/load.js";
+import { loadProfileSafe, loadProfileRacesSync } from "./profile/load.js";
 import { runSessionFeedback, assembleSession } from "./coach/session.js";
 import { loadSessionDecays, fitStreamsDir } from "./insights/fit.js";
 import { syncFitSummaries, downloadFitStream, hasStreamDownloadTool } from "./archive/fitSync.js";
@@ -127,7 +127,7 @@ async function renderLatest(share = false): Promise<string> {
       if (merged.size) coachRecsMerged = merged;
     }
   }
-  const insights = latest.raw ? buildInsights(latest, archive, { suppressed, history: window, engagement }) : undefined;
+  const insights = latest.raw ? buildInsights(latest, archive, { profileRaces: loadProfileRacesSync(), suppressed, history: window, engagement }) : undefined;
   // Record the full surfaced set (not just what gets a reaction) so the "what I listen to" model
   // (npm run listening) can read feedback against everything shown. Best-effort, de-duped, never blocks.
   if (insights) await insightLog.recordSurfaced(insights.topFindings, "dashboard");
@@ -293,7 +293,7 @@ async function latestInsights() {
   if (!state?.raw) return null;
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
   const engagement = await loadEngagementContext(window);
-  const insights = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
+  const insights = buildInsights(state, await loadArchive(), { profileRaces: loadProfileRacesSync(), suppressed, history: window, engagement });
   return { state, insights, engagement };
 }
 

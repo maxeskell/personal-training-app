@@ -543,6 +543,14 @@ projection (the dashboard stays decluttered — cost lives in `npm run cost` / t
     never invented — and the headline total then carries a loud **"⚠ not a full-race time"** warning
     rather than reading as a race prediction (an Olympic plan once shipped a headline "2:10" that
     silently excluded the whole ~30 min swim).
+  - **Target check (the spec-07 gate):** each triathlon plan is compared against **your own target**
+    (`profile.local.yaml → races[].target_time`, matched by date then name) and the verdict renders
+    on the card — **implausible** (target >5% faster than even the projected best case — recalibrate
+    the target or the inputs, and pace off the model), **stretch**, **in-range**, or **conservative**.
+    The same deterministic model + verdict is injected into every **`race_prep`** report's context,
+    which must *lead* with an implausible target rather than build pacing around it. Born of
+    Birmingham 2026: a "sub 2:00" profile target sat unchallenged through a month of race-prep reports
+    while the athlete's own numbers modelled ~2:39 — which is what he ran.
 
   (Predicted times are MODEL estimates — the plan is a target, not a guarantee.)
 
