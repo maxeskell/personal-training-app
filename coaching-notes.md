@@ -12,11 +12,19 @@
 > the MCP and the gitignored profile aren't reachable.
 
 ## To do
-- [ ] **Set FTP 225 W in BOTH AI Endurance and Garmin Connect (decided 11 Jul, see decision below)** —
-      Garmin feeds this app's model/zones, AIE drives the plan; both must say 225 or the ledgers fight.
-      Then book the proper test/openers week **post-Japan (Aug)** and re-set from the test — every zone,
-      the 250 W bike-build arc, and the race models hang off this number. (Also finally resolves which
-      power meter feeds AIE.)
+- [x] **Set FTP 225 W in BOTH AI Endurance and Garmin Connect — DONE (Max, 11 Jul evening).**
+      Garmin side verified live via `ftp_check` (configured 225 W, read from Garmin); AIE side
+      athlete-reported (the connector is read-only and can't see which engine set it). Zones on the
+      watch recompute automatically (%FTP mode). Garmin's own MMP estimate reads 172 W — that's a
+      floor, not a verdict: its curve only climbs on hard sustained power efforts, so expect it to
+      lag until the post-Japan test block.
+- [ ] **Post-Japan FTP test / openers week (Aug) — strap on, three numbers re-set from one session.**
+      The proper test the 225 W decision was always pending: ramp/20-min protocol with the HR strap
+      paired, then re-set from the result (a) **FTP** (adjust 225 up/down to the test), (b) **max HR**
+      (race wrist-HR hit 185 vs the set 182 — strap-verify before touching), and (c) **bike LTHR**
+      (currently 160 = the Birmingham 79-min race average, so it's underset). Every zone, the 250 W
+      build arc and the race models hang off these; one session closes all three. Book it for the
+      re-entry week (w/c 10 Aug), alongside the Medichecks catch-up already listed below.
 - [ ] **Swim CSS test (400/200) before Alderford (6 Sep).** Still unset — a whole season of swim
       training ran unstructured, and the race swim positive-split ~7% (2:07→2:21/100m by 500m block).
       One pool test, set CSS in AIE, and the swim finally gets a model + paced sets.
@@ -29,8 +37,8 @@
       battery swapped, beat-to-beat HRV logging ON (athlete-reported; the next .FIT will confirm — and
       hrv messages should now appear, which also helps the DFA-α1 sparsity). Deliberately NOT touched,
       as agreed: **max HR and bike LTHR wait for the strap-verified post-Japan test** (race wrist-HR hit
-      185 vs set max 182; LTHR 160 was literally the 79-min race average). **FTP 225 in both platforms
-      remains the separate standing to-do above** — not covered by this audit unless Max says otherwise.
+      185 vs set max 182; LTHR 160 was literally the 79-min race average). FTP 225 in both platforms:
+      done the same evening — see the ticked to-do above.
 - [ ] **(agreed 11 Jul) Aero position work on the current road bike — don't wait for the Speedform.** Race-file CdA
       fitted **~0.358 m²** (MODEL: 309 flat steady samples, light 8–9 km/h wind, Crr 0.004, 81 kg
       system) — hoods territory. Getting toward ~0.30 (clip-ons / pad drop / helmet) ≈ **2.5–3.5 min
