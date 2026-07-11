@@ -232,6 +232,28 @@ test("renderCareerPage: coincident last-90/season render as one legend entry (th
   assert.equal((html.match(/<polyline /g) ?? []).length, 2);
 });
 
+test("powerCurveSvg: the two recent windows are spelled out — legend year, caption, and per-line tooltip", () => {
+  const data: CareerHistory = {
+    generatedAt: "2026-07-11",
+    seasonYear: 2026,
+    races: [],
+    bests: [],
+    powerCurve: {
+      allTime: [{ durationSec: 5, watts: 966 }, { durationSec: 1200, watts: 270 }],
+      last90: [{ durationSec: 5, watts: 618 }, { durationSec: 1200, watts: 207 }],
+      season: [{ durationSec: 5, watts: 618 }, { durationSec: 1200, watts: 240 }], // distinct from last90 at 20m
+    },
+  };
+  const html = renderCareerPage(data);
+  assert.match(html, /Season 2026/, "the Season line is year-stamped so its window isn't ambiguous");
+  // The caption defines BOTH recent windows, not just 'where you are now'.
+  assert.match(html, /rolling 90-day window/);
+  assert.match(html, /this year to date/);
+  // Each line carries a hover tooltip naming the exact window it's drawn over.
+  assert.match(html, /<title>[^<]*rolling 90-day window[^<]*<\/title>/);
+  assert.match(html, /<title>[^<]*2026 to date \(since 1 Jan\)[^<]*<\/title>/);
+});
+
 test("renderCareerPage share view: hides event names + locations, dates → year only", () => {
   const html = renderCareerPage(SAMPLE, true);
   assert.doesNotMatch(html, /Vienna City Half Marathon/);

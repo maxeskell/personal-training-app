@@ -177,15 +177,24 @@ function niceStep(range: number, target = 5): number {
 }
 
 /** Overlaid power-curve line chart (all-time / last-90d / season) over the standard durations. Coincident
- *  curves are merged into one labelled line (see {@link mergeCoincidentSeries}) so none hides another. */
-function powerCurveSvg(pc: NonNullable<CareerHistory["powerCurve"]>): string {
+ *  curves are merged into one labelled line (see {@link mergeCoincidentSeries}) so none hides another.
+ *  `seasonYear` (when known) year-stamps the Season line's legend + tooltip so its window isn't ambiguous. */
+function powerCurveSvg(pc: NonNullable<CareerHistory["powerCurve"]>, seasonYear?: number): string {
   const series = mergeCoincidentSeries(
     [
       { name: "All-time", color: "#1f4e79", pts: pc.allTime },
       { name: "Last 90 days", color: "#c8642d", pts: pc.last90 ?? [] },
-      { name: "Season", color: "#2e7d57", pts: pc.season ?? [] },
+      { name: seasonYear ? `Season ${seasonYear}` : "Season", color: "#2e7d57", pts: pc.season ?? [] },
     ].filter((s) => s.pts.length),
   );
+  // Per-line hover tooltip spelling out the window each curve is drawn over (the difference the legend can't show).
+  const tip = (name: string) => {
+    const parts: string[] = [];
+    if (/All-time/.test(name)) parts.push("every ride with power in your archive");
+    if (/Last 90 days/.test(name)) parts.push("a rolling 90-day window");
+    if (/Season/.test(name)) parts.push(seasonYear ? `${seasonYear} to date (since 1 Jan)` : "this year to date (since 1 Jan)");
+    return `${name} — best mean-maximal power over ${parts.join(" + ")}`;
+  };
   // X axis: the union of durations present, ascending (categorical, evenly spaced so short + long both read).
   const durs = [...new Set(series.flatMap((s) => s.pts.map((p) => p.durationSec)))].sort((a, b) => a - b);
   const wattsAll = series.flatMap((s) => s.pts.map((p) => p.watts));
@@ -249,7 +258,7 @@ function powerCurveSvg(pc: NonNullable<CareerHistory["powerCurve"]>): string {
   series.forEach((s, si) => {
     const pts = [...s.pts].sort((a, b) => a.durationSec - b.durationSec);
     const path = pts.map((p) => `${xi(p.durationSec).toFixed(1)},${y(p.watts).toFixed(1)}`).join(" ");
-    out.push(`<polyline points="${path}" fill="none" stroke="${s.color}" stroke-width="2.5"/>`);
+    out.push(`<polyline points="${path}" fill="none" stroke="${s.color}" stroke-width="2.5"><title>${escapeHtml(tip(s.name))}</title></polyline>`);
     for (const p of pts) {
       const px = xi(p.durationSec), py = y(p.watts);
       out.push(`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3" fill="${s.color}"/>`);
@@ -306,8 +315,8 @@ export function renderCareerInner(data: CareerHistory | null, share = false): st
     : "";
 
   const power = data.powerCurve
-    ? `<div class="card"><h2>Power curve — best vs recent</h2>${powerCurveSvg(data.powerCurve)}
-        <div class="sub" style="margin:8px 0 0">Mean-maximal power at each duration. All-time is your best ever; the recent lines show where you are now.</div></div>`
+    ? `<div class="card"><h2>Power curve — best vs recent</h2>${powerCurveSvg(data.powerCurve, data.seasonYear)}
+        <div class="sub" style="margin:8px 0 0">Mean-maximal power at each duration — the best average you've sustained for that long, from your power-meter rides. <b>All-time</b> is your best ever. <b>Season${data.seasonYear ? ` ${data.seasonYear}` : ""}</b> is this year to date (since 1&nbsp;Jan); <b>Last 90 days</b> is a rolling 90-day window. The two recent windows overlap but aren't identical, so they diverge at any duration whose best effort falls in one window but not the other.</div></div>`
     : "";
 
   return `<div class="career-inner"><h1>Career &amp; PBs</h1><div class="sub">${gen}</div>${shareNote}${races}${bests}${power}</div>`;
