@@ -97,6 +97,7 @@ interface Act {
   distKm: number;
   durSec: number;
   np?: number;
+  avgHr?: number;
 }
 
 /** A normalised activity: {date, sport, distKm, durSec, np}. From the TrainingPeaks CSV. */
@@ -107,6 +108,7 @@ function fromTp(rows: Record<string, string>[]): Act[] {
     distKm: num(r.dist_km) ?? 0,
     durSec: (num(r.dur_min) ?? 0) * 60,
     np: num(r.np_w) ?? num(r.avg_w),
+    avgHr: num(r.avg_hr),
   }));
 }
 
@@ -136,8 +138,23 @@ function longest(acts: Act[], sport: string): { value: string; date: string } | 
  *  drops lone 400W-type artifacts while keeping a genuine hard ride). Honest caveat surfaced on the page: this
  *  is NP over an ENTIRE ride ≥20km, NOT a fixed-duration record (the power-curve chart is) — a low-HR ride can
  *  still post a high NP, and meters drift across years. See docs/specs/improvements/08-dfa-durability-availability.md. */
+// A whole-ride NP/HR above this is physiologically implausible for THIS athlete (genuine rides top out ≈1.55;
+// the known 574019 GarminPing-export corruption reads ≥1.85 — see the power-curve guard in powerCurve.ts and
+// docs/specs/improvements/08-…). This screens meter-INFLATED rides the p90×1.25 spike guard can't catch: they
+// aren't lone spikes, the whole stream reads ~1.5–2× high (and slower than genuine rides at the same watts).
+// A ride with no HR can't be screened here, so it falls through to the spike guard alone.
+const MAX_PLAUSIBLE_NP_PER_BPM = 1.7;
+
 function bestPower(acts: Act[]): { value: string; date: string } | null {
-  const rides = acts.filter((a) => a.sport === "ride" && a.distKm >= 20 && a.np && a.np > 80 && a.np < 600);
+  const rides = acts.filter(
+    (a) =>
+      a.sport === "ride" &&
+      a.distKm >= 20 &&
+      a.np &&
+      a.np > 80 &&
+      a.np < 600 &&
+      !(a.avgHr && a.avgHr > 0 && a.np / a.avgHr > MAX_PLAUSIBLE_NP_PER_BPM),
+  );
   if (!rides.length) return null;
   const sorted = rides.map((a) => a.np!).sort((x, y) => x - y);
   const p90 = sorted[Math.floor(0.9 * (sorted.length - 1))];
