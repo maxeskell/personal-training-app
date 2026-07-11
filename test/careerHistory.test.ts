@@ -174,6 +174,16 @@ test("renderCareerPage: renders races, bests columns and a parseable power-curve
   assert.equal((html.match(/<svg/g) ?? []).length, (html.match(/<\/svg>/g) ?? []).length);
 });
 
+test("powerCurveSvg: axis is floored to the data (not zero) and every point carries its exact figure", () => {
+  const html = renderCareerPage(SAMPLE); // watts 966..235, so the axis should start at 200, not 0
+  // Data labels: each point prints its watts (e.g. the 966 W all-time sprint), not just a dot.
+  assert.match(html, /class="dl"[^>]*>966</, "each point is labelled with its exact watts");
+  assert.match(html, /class="dl"[^>]*>235</);
+  // Cut scale: the baseline gridline is 200 W, and there is no 0 W tick eating the lower half of the plot.
+  assert.match(html, /class="ax">200</, "y-axis is floored to a round value below the data minimum");
+  assert.doesNotMatch(html, /class="ax">0</, "the axis no longer starts at zero");
+});
+
 test("mergeCoincidentSeries: identical curves collapse to one labelled line so neither hides the other", () => {
   // The real-world trigger: every season best was also set inside the last 90 days, so last90 === season.
   const recent: PowerSeries["pts"] = [{ durationSec: 5, watts: 577 }, { durationSec: 60, watts: 313 }];

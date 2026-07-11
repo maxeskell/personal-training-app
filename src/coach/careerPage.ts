@@ -167,6 +167,15 @@ export function mergeCoincidentSeries(series: PowerSeries[]): PowerSeries[] {
   return out;
 }
 
+/** A "nice" round gridline interval (1 / 2 / 5 × 10ⁿ) that splits `range` into roughly `target` divisions. */
+function niceStep(range: number, target = 5): number {
+  const raw = range > 0 ? range / target : 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  const mult = norm < 1.5 ? 1 : norm < 3 ? 2 : norm < 7 ? 5 : 10;
+  return mult * mag;
+}
+
 /** Overlaid power-curve line chart (all-time / last-90d / season) over the standard durations. Coincident
  *  curves are merged into one labelled line (see {@link mergeCoincidentSeries}) so none hides another. */
 function powerCurveSvg(pc: NonNullable<CareerHistory["powerCurve"]>): string {
@@ -181,13 +190,20 @@ function powerCurveSvg(pc: NonNullable<CareerHistory["powerCurve"]>): string {
   const durs = [...new Set(series.flatMap((s) => s.pts.map((p) => p.durationSec)))].sort((a, b) => a - b);
   const wattsAll = series.flatMap((s) => s.pts.map((p) => p.watts));
   if (!durs.length || !wattsAll.length) return "";
-  const W = 720, H = 320, ml = 48, mr = 16, mt = 16, mb = 40;
+  const W = 720, H = 320, ml = 48, mr = 16, mt = 20, mb = 40;
   const pw = W - ml - mr, ph = H - mt - mb;
-  const wMax = Math.ceil(Math.max(...wattsAll) / 100) * 100;
+  // Y axis floored to the data, NOT to zero. A power curve compares lines whose interesting variation lives
+  // hundreds of watts above zero, so a 0-based axis squashes them into the top band (and crushes the long
+  // durations, where the lines converge, into an unreadable smear). We bracket the data with round gridlines
+  // instead — the lines spread out and separate — and print every point's exact figure so nothing is inferred.
+  const dataMin = Math.min(...wattsAll), dataMax = Math.max(...wattsAll);
+  const step = niceStep(dataMax - dataMin);
+  const wLo = Math.max(0, Math.floor(dataMin / step) * step);
+  const wHi = Math.max(wLo + step, Math.ceil(dataMax / step) * step);
   const xi = (sec: number) => ml + (durs.length === 1 ? pw / 2 : (pw * durs.indexOf(sec)) / (durs.length - 1));
-  const y = (w: number) => mt + ph * (1 - w / wMax);
+  const y = (w: number) => mt + ph * (1 - (w - wLo) / (wHi - wLo));
   const out: string[] = [`<svg viewBox="0 0 ${W} ${H}" class="pcurve" role="img" aria-label="Power curve">`];
-  for (let g = 0; g <= wMax; g += wMax <= 600 ? 100 : 200) {
+  for (let g = wLo; g <= wHi + 1e-6; g += step) {
     const yy = y(g);
     out.push(`<line x1="${ml}" y1="${yy.toFixed(1)}" x2="${W - mr}" y2="${yy.toFixed(1)}" class="grid"/>`);
     out.push(`<text x="${ml - 6}" y="${(yy + 4).toFixed(1)}" text-anchor="end" class="ax">${g}</text>`);
@@ -195,12 +211,54 @@ function powerCurveSvg(pc: NonNullable<CareerHistory["powerCurve"]>): string {
   for (const sec of durs) {
     out.push(`<text x="${xi(sec).toFixed(1)}" y="${H - mb + 16}" text-anchor="middle" class="ax">${durationLabel(sec)}</text>`);
   }
-  for (const s of series) {
+  // Data-label placement, resolved per duration-column so overlaid lines that converge don't stack their
+  // figures on top of each other. In each column the highest point labels ABOVE its dot; the rest pack
+  // DOWNWARD below their dots with a minimum gap, and the stack is lifted back up if it would spill past
+  // the plot floor. Keyed by "seriesIndex:durationSec" so each point looks up its own resolved y.
+  const LH = 11, topLim = mt + 4, botLim = H - mb + 4; // label baseline bounds
+  const labelY = new Map<string, number>();
+  for (const sec of durs) {
+    // Group the column's points by watts: series that coincide here (e.g. Last-90 == Season) share one label
+    // rather than printing the same number twice on the same dot. Groups descend by watts (strongest first).
+    const groups: Array<{ w: number; sis: number[] }> = [];
+    for (const { si, w } of series
+      .map((s, si) => ({ si, w: s.pts.find((q) => q.durationSec === sec)?.watts }))
+      .filter((c): c is { si: number; w: number } => c.w != null)
+      .sort((a, b) => b.w - a.w)) {
+      const g = groups.find((x) => x.w === w);
+      if (g) g.sis.push(si);
+      else groups.push({ w, sis: [si] });
+    }
+    if (!groups.length) continue;
+    const setAll = (sis: number[], yy: number) => sis.forEach((si) => labelY.set(`${si}:${sec}`, yy));
+    const y0 = Math.max(y(groups[0].w) - 7, topLim); // strongest group: label above its dot
+    setAll(groups[0].sis, y0);
+    let cursor = y0;
+    for (let i = 1; i < groups.length; i++) {
+      const yy = Math.max(y(groups[i].w) + 13, cursor + LH); // pack the rest downward, min gap LH
+      setAll(groups[i].sis, yy);
+      cursor = yy;
+    }
+    if (cursor > botLim) {
+      // Below-stack spilled past the floor: lift it, but never above `y0 + i·LH` so it can't collide upward.
+      const shift = cursor - botLim;
+      for (let i = 1; i < groups.length; i++)
+        setAll(groups[i].sis, Math.max(labelY.get(`${groups[i].sis[0]}:${sec}`)! - shift, y0 + i * LH));
+    }
+  }
+  series.forEach((s, si) => {
     const pts = [...s.pts].sort((a, b) => a.durationSec - b.durationSec);
     const path = pts.map((p) => `${xi(p.durationSec).toFixed(1)},${y(p.watts).toFixed(1)}`).join(" ");
     out.push(`<polyline points="${path}" fill="none" stroke="${s.color}" stroke-width="2.5"/>`);
-    for (const p of pts) out.push(`<circle cx="${xi(p.durationSec).toFixed(1)}" cy="${y(p.watts).toFixed(1)}" r="3" fill="${s.color}"/>`);
-  }
+    for (const p of pts) {
+      const px = xi(p.durationSec), py = y(p.watts);
+      out.push(`<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3" fill="${s.color}"/>`);
+      const ly = labelY.get(`${si}:${p.durationSec}`) ?? py - 7;
+      // The leftmost column's labels would sit on the y-axis ticks — inset them so figures don't run together.
+      const first = p.durationSec === durs[0];
+      out.push(`<text x="${(first ? px + 5 : px).toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="${first ? "start" : "middle"}" class="dl" fill="${s.color}">${p.watts}</text>`);
+    }
+  });
   out.push("</svg>");
   const legend = series.map((s) => `<span class="leg"><span class="sw" style="background:${s.color}"></span>${escapeHtml(s.name)}</span>`).join("");
   return `<div class="pcwrap">${out.join("")}</div><div class="legend">${legend}</div>`;

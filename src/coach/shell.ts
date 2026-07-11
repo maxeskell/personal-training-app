@@ -147,6 +147,7 @@ code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 .career-inner .tag{font-size:10px;color:#9a7b3a;background:#faf3e3;border:1px solid #ecdcbf;border-radius:9px;padding:0 6px}
 .career-inner .pcwrap{overflow-x:auto}.career-inner .pcurve{width:100%;height:auto;min-width:520px}
 .career-inner .pcurve .grid{stroke:#eee7d8}.career-inner .pcurve .ax{fill:#9a8f78;font-size:11px}
+.career-inner .pcurve .dl{font-size:9px;font-weight:600;paint-order:stroke;stroke:#fff;stroke-width:2.5px;stroke-linejoin:round}
 .career-inner .legend{margin-top:8px;font-size:12px;color:#666}.career-inner .leg{margin-right:16px;white-space:nowrap}.career-inner .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 .career-inner details.splits{margin-top:6px;text-align:left}.career-inner details.splits>summary{cursor:pointer;font-size:12px;color:#c8642d}
 .career-inner table.splitt{margin-top:6px;font-size:12px}.career-inner table.splitt td,.career-inner table.splitt th{padding:3px 7px;border-bottom:1px solid #f4f1ea}
