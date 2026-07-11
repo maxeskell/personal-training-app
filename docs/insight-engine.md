@@ -46,7 +46,12 @@ autocorrelation-aware, effect-sizes-with-CIs, and every MODEL caveat attached.
     silently corrupts the baselines and the under-fuelling/illness flags that lean on it.
 - **Stream-level (.FIT) analysis (§1)** — two layers, two sources:
   - **Thermal / effort** (per-activity temperature for the heat confounder, hot/cool-third HR, training
-    effect) comes from `fit-sync`, which pulls Garmin's *parsed summary* (`get_activity_fit_data`). This
+    effect) comes from `fit-sync`, which pulls Garmin's *parsed summary* (`get_activity_fit_data`). The
+    heat regression **prefers the ambient (met) air temperature** (`weatherTempC`, Garmin's
+    `get_activity_weather`) over the device sensor when both exist for a session — the wrist/head-unit
+    thermistor reads body heat + direct sun (a race once logged a device 23–24 °C against 18–22 °C
+    actual air), and that bias varies with conditions, so it adds noise to the EF~temperature fit. The
+    finding's evidence line states which source(s) were used. This
     now runs **automatically as part of dashboard Sync** (small, dedup'd) — and daily if you install the
     watch. No manual step.
   - **In-session biomechanics** (aerobic decoupling, cadence/GCT/vertical-osc decay) needs **raw

@@ -19,9 +19,15 @@ legs it modelled**; two things failed around it, and both are now fixed:
    acceptance is in `test/raceTargetGate.test.ts`: Birmingham's race-morning inputs predict within
    4% of the actual 2:39:12 and flag "sub 2:00" implausible.
 
-**Remaining (small):** the post-race hook — logging `model vs official result` per race so the
-model's own error is tracked over time. Today that comparison lives in the debrief notes;
-candidate home: a `race_review` flow or the career-history recorder.
+**Post-race hook: BUILT (same day, evening).** `src/insights/raceReview.ts` (pure) +
+`src/state/raceModelLog.ts` (disk): on every dashboard render the latest **complete, pre-race** splits
+plan per upcoming race is frozen into `data/race-predictions.json` (latest pre-race snapshot wins;
+plans with `missingLegs` or computed after race day are refused — a partial total is not a race time,
+and post-race inputs would leak an updated FTP into the "prediction"). Once career history carries the
+official result (matched by exact date), the frozen prediction is reviewed **once** — total + per-leg
+deltas, error %, and whether the official time fell inside the model's [best, worst] band — appended
+to `data/race-reviews.jsonl`, and the race-splits card renders the running **"Model track record"**
+line. Tests: `test/raceReview.test.ts` (freeze/refuse rules, upsert guard, review joins, idempotence).
 
 ## The failure
 
