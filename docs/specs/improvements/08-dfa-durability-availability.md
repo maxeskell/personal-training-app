@@ -29,15 +29,19 @@ that the FITs even carry R-R, hard to validate n=1; the real lever is longer str
 
 **Diagnosis — the number is arithmetically real but a poor benchmark.** Parsing the raw 2022-07-17 `.FIT`:
 true avg **229 W**, NP **266 W**, median 264 W, 20-min best 255 W, 30% of the ride >300 W. So it is the NP of a
-genuinely hard 56-min ride, not a spike or estimated-power glitch. But: (a) it is **normalized power over a
-whole ride**, not a fixed-duration record; (b) it only "won" because the spike guard rejected a bogus 404 W
-(2023-12-17) and a 295 W just above it; (c) avg HR **144** (max 164) is too low for that power — a likely
-**power-meter calibration drift** across years.
+genuinely hard 56-min ride, not a spike — but the **power is corrupt**. Decoding the FIT left/right balance
+settled it: 2022-07-17 rides at **32/68** and EF (W/bpm) **1.85**, 2022-07-31 at **31/69 / 1.97**, 2023-12-17 at
+**26/74 / 2.91** — while every other ~40 rides in that era sit at a normal ~50/50 and 1.0–1.5. A right-side
+sensor over-read inflates total power ~1.5–2×, which is exactly why the HR (144) looked "too low": the HR was
+right, the watts were wrong. These are the **574019 "GarminPing" export corruption** (see the sibling
+`power-curve.ts` guard, commit `f94c0f8`) — the same three rides that had poisoned the all-time power curve.
 
-**Fix.** Relabelled the row `Best power (≥20km)` → `Best ride power (NP)` (generator + served file), and the
-`/career` "Bests vs current" card now carries a caveat: *normalized power over a whole ride ≥20 km, spike-weighted,
-not a fixed-duration record — read the power-curve chart for true 5/20/60-min bests.* The value is kept, not
-deleted; the honesty is in the label + caveat.
+**Fix (two steps).** First relabelled the row `Best power (≥20km)` → `Best ride power (NP)` with a caveat.
+Then, once confirmed corrupt, added a **plausibility guard** to `bestPower()`: rides whose whole-ride NP/HR
+exceeds **1.7 W/bpm** are dropped (genuine tops out ≈1.55; the corrupt rides are ≥1.85). This screens the
+meter-inflated rides the p90×1.25 spike guard couldn't — they aren't lone spikes, the whole stream reads high.
+The row now shows the athlete's **genuine best: 230 W NP (2016-09-18)**. Regenerated `data/career-history.json`
+(28 races preserved, power curve re-guarded).
 
 ## 3. Race-list audit — garage rehearsals miscounted as races
 
@@ -58,7 +62,7 @@ these *mislabelled non-races*.
 ## Files touched
 
 - `src/coach/dashboard.ts` — durability row renders an honest note when null; methods note updated.
-- `scripts/build-career-history.ts` — best-power row relabelled `Best ride power (NP)`; comment.
+- `scripts/build-career-history.ts` — best-power row relabelled `Best ride power (NP)`; **plausibility guard** (drop rides with NP/HR > 1.7 W/bpm, i.e. the 574019-corrupt rides) so it shows the genuine 230 W.
 - `src/coach/careerPage.ts` — NP caveat under the bests card.
 - `data/career-history.json` (gitignored user data) — removed the two rehearsals; synced the label.
 - `README.md` — Performance-tab behaviour. Tests: `test/dashboard.test.ts`, `test/careerHistory.test.ts`.
