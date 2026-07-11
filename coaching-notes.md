@@ -42,6 +42,15 @@
       `profile races[]` (e.g. `swim_m: 400`, pool: no wetsuit, faster T1 assumptions) so Warwick-style
       races model correctly and the target gate stops false-flagging them. Until then the Warwick
       "implausible" badge is expected noise.
+- [ ] **Rally-on-Atom power offset test (10 min, post-Japan).** Fit the Rally pedals to the Wattbike
+      Atom once, record the SAME 3×5-min steady session on the watch (Rally) and Wattbike Hub (Atom)
+      simultaneously, and read the per-second offset. Why: the archive shows the two power sources have
+      NEVER measured the same effort — every outdoor ride records Rally, indoor rides pair the Atom's
+      own broadcast — so the offset is unmeasured. Until then, working assumption (MODEL, textbook):
+      Atom reads ~1–3% LOWER than Rally; fine for zone work on either platform, prefer one platform
+      consistently for threshold-precise blocks. This empirically finishes the power-provenance
+      question (the profile's confirm-power-meter open item was resolved 11 Jul: Rally → Garmin → AIE,
+      both platforms configured 225 W).
 - [x] **Garmin device audit — DONE (Max, 11 Jul evening).** Weight/RHR/height aligned, Rally pedal
       battery swapped, beat-to-beat HRV logging ON (athlete-reported; the next .FIT will confirm — and
       hrv messages should now appear, which also helps the DFA-α1 sparsity). Deliberately NOT touched,
@@ -137,6 +146,27 @@
   Set in BOTH AIE and Garmin; re-test post-Japan and adjust to the test. App side, same day: multisport race .FITs now
   auto-fetch + expand per leg (they were silently skipped — the A-race was invisible to the granular
   layer), and the career page gained a hand-authored finishing-position field.
+- **2026-07-11 (late) — power provenance + corrected-history read-through: NO plan changes needed.**
+  Asked and answered with Max, read-only review then agreed tidy-ups:
+  - **Power provenance settled:** every outdoor ride in the archive records the Rally pedals (FIT
+    device scan, product 3578 on all ~20 recent power rides incl. the race); AIE reads Garmin; both
+    platforms now configured 225 W — so plan → zones → outdoor execution is one Rally-based chain.
+    Indoor rides pair the Wattbike Atom's own power (manufacturer 73 in the June indoor file); no
+    dual-source ride exists, so the Rally↔Atom offset is unmeasured (test to-do above). Garmin's MMP
+    *estimate* (172 W) is a floor that lags until hard sustained power efforts — ignore it.
+  - **Corrected history vs the season plan:** strengthens, doesn't change it. The restored 70.3 PB
+    **4:34:50 (Monster Middle 2012, age 30, ~220 h year)** age-grades to ≈5:02–5:11 at 45 (MODEL,
+    ~1%/yr) — the 2027 On The Edge target 4:55–5:10 is now validated by his own younger self, not
+    aspiration. Phase-1 FTP goal (199→~220 W by end-2026) already beaten (225 set, race-proven).
+    Short-vs-long 2028 gate stays open by design — current form favours short (AG win at CTL ~50),
+    history proves middle (two sub-4:40 70.3s on 220–360 h years).
+  - **Dorney Lake 2:21:30 (2023) is a venue artifact** (pan-flat rowing basin, courses often measure
+    short) — it stands as the Standard-distance PB in the career table but must never be used as a
+    form benchmark; Birmingham 2:39:12 on a real course is the honest marker.
+  - **Profile tidied same night (gitignored, no ship needed):** season-plan note refs refreshed
+    (FTP 225 set Jul 2026 / all-time 60-min ~203 W guarded / 70.3 PB + age-grading); open items
+    `ftp-discrepancy` and `confirm-power-meter` resolved + removed (evidence above); profile
+    re-validated (loads clean, 8 open items remain).
 - **2026-07-11 (evening) — race-file deep dive: ~4–6 min of execution headroom, no new fitness needed (MODEL).**
   Every message type in the race .FIT decoded; full 100-finding ranked report in
   `reports/2026-07-11-race-fit-deep-dive.md` (gitignored, regenerable from the .FIT). Adds to the
