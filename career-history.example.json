@@ -32,6 +32,7 @@
       "location": "Example Lake (nearest-town approx)",
       "confidence": "strong",
       "source": "geo",
+      "position": "42nd overall · 5th of 31 AG",
       "result": {
         "time": "5:30:00",
         "avgW": 190,

@@ -56,6 +56,8 @@ export interface Race {
   location?: string; // "Vienna, Austria" — confirmed or nearest-city approximation
   confidence?: "confirmed" | "strong" | "probable";
   source?: string; // "geo+web", "S+B+R", "record", ...
+  /** Pre-formatted finishing position from the official results, hand-authored — e.g. "19th overall · 1st of 8 AG". */
+  position?: string;
   result?: RaceResult;
 }
 
@@ -195,6 +197,7 @@ export function parseCareerHistory(raw: string): CareerHistory | null {
             location: asString(x.location),
             confidence: conf === "confirmed" || conf === "strong" || conf === "probable" ? conf : undefined,
             source: asString(x.source),
+            position: asString(x.position),
             result,
           },
         ];

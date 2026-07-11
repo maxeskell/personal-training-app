@@ -62,13 +62,29 @@ export async function downloadFitStream(g: GarminClient, activityId: string, dir
 const num = (x: unknown): number | undefined =>
   typeof x === "number" && Number.isFinite(x) ? x : typeof x === "string" && x.trim() && Number.isFinite(Number(x)) ? Number(x) : undefined;
 const sportOf = (s: string): string => (/cycl|bike|ride/i.test(s) ? "Ride" : /run/i.test(s) ? "Run" : /swim/i.test(s) ? "Swim" : s);
+
+/**
+ * Garmin activity types whose raw .FIT we pull: the three endurance sports PLUS multisport races
+ * (typeKey "multi_sport" — a triathlon/duathlon lands as ONE parent activity). Multisport was previously
+ * filtered out here, which silently dropped RACE-DAY streams — the one day granular data matters most —
+ * and read as a clean "0 fetched; 0 failed". Exported for tests.
+ */
+export function isStreamCandidate(type: string): boolean {
+  return /run|cycl|bike|ride|swim|multi_?sport|triathlon|duathlon/.test(type);
+}
+
+/** Multisport parents get their RAW stream only: get_activity_fit_data's single-session summary can't
+ *  represent per-leg (swim/bike/run) data, so the thermal/effort summary layer skips them. */
+export function isMultisportType(type: string): boolean {
+  return /multi_?sport|triathlon|duathlon/.test(type);
+}
 // get_activity_weather reports temperature in °F mislabelled as °C (e.g. 63 ≈ 17°C) — correct values >45.
 const toC = (t: number | undefined): number | undefined => (t == null ? undefined : t > 45 ? +(((t - 32) * 5) / 9).toFixed(1) : t);
 
 export interface FitSyncResult {
   total: number; // candidate activities seen
   added: number;
-  skipped: number; // already archived
+  skipped: number; // already archived, or summary-layer N/A (multisport parent — raw stream only)
   failed: number;
   summaries: FitSummary[];
   /** Raw per-second streams pulled into FIT_STREAMS_DIR (0 when download_activity_file is absent). */
@@ -101,7 +117,7 @@ export async function syncFitSummaries(g: GarminClient, store: ArchiveStore, lim
   for (const a of list) {
     const id = String(a.activityId ?? a.id ?? a.activity_id ?? "");
     const type = String(a.type ?? (a.activityType as { typeKey?: string } | undefined)?.typeKey ?? "").toLowerCase();
-    if (!id || !/run|cycl|bike|ride|swim/.test(type)) continue;
+    if (!id || !isStreamCandidate(type)) continue;
     // Raw stream first, independent of the summary dedup — earlier syncs predate stream download,
     // so already-archived activities in the window still get their .FIT pulled. Best-effort.
     if (streamsSupported && !existsSync(join(streamsDir, `${id}.fit`))) {
@@ -119,6 +135,12 @@ export async function syncFitSummaries(g: GarminClient, store: ArchiveStore, lim
         streamFailures.push(`${id}: ${dl.reason}`);
         log?.(`  ? ${id}: stream download failed — ${dl.reason}`);
       }
+    }
+    // Multisport parent (race day): the raw stream above IS the value — its legs are expanded at read
+    // time (expandMultisportFit). The per-sport summary layer can't represent it, so don't fetch one.
+    if (isMultisportType(type)) {
+      skipped++;
+      continue;
     }
     if (have.has(id)) {
       skipped++;
