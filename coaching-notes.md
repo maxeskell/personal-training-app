@@ -28,11 +28,20 @@
 - [ ] **Swim CSS test (400/200) before Alderford (6 Sep).** Still unset — a whole season of swim
       training ran unstructured, and the race swim positive-split ~7% (2:07→2:21/100m by 500m block).
       One pool test, set CSS in AIE, and the swim finally gets a model + paced sets.
-- [ ] **Revise Alderford target off the race-time model, not aspiration.** Profile still says
-      "sub 2:00" for Alderford — same fantasy number Birmingham just disproved (2:39:12 while
-      executing well). Honest Olympic target at current numbers ≈ **2:32–2:36 (MODEL)**; sub-2:00 at
-      44 needs ~35-min-10k + ~250 W race watts — a different athlete. Update `profile.local.yaml →
-      races[]` once agreed. See docs/specs/improvements/07-race-target-plausibility.md.
+- [x] **Alderford + Warwick targets set — DONE (agreed with Max, 11 Jul evening).** Both fantasy
+      targets replaced in `profile.local.yaml → races[]`:
+      - **Alderford: "2:34-2:38"** (MODEL: Birmingham 2:39:12 − adopted execution gains ≈ 2:36–2:37
+        base; A-side needs the aero work to land; Japan caps the build at ~4.5 sharpen weeks; swim-leg
+        model is ~5–7 min fat until CSS is set). Gate verdict now **in-range** (0.8% gap) — the red
+        nag is gone and race-prep paces off the model.
+      - **Warwick: "1:05-1:09"** — Max confirmed it's a **400 m POOL sprint**, so the target is built
+        by hand (swim 7:30–8:00 + 20 k at 205–215 NP ≈ 35 min + 5 k at 4:25–4:35 + transitions), NOT
+        from the splits model, which assumes a 750 m open-water sprint and therefore **wrongly flags
+        this target implausible** on the dashboard. Known cosmetic false-flag; profile note documents it.
+- [ ] **Teach the splits model pool-sprint formats (small).** A per-race format/distance override in
+      `profile races[]` (e.g. `swim_m: 400`, pool: no wetsuit, faster T1 assumptions) so Warwick-style
+      races model correctly and the target gate stops false-flagging them. Until then the Warwick
+      "implausible" badge is expected noise.
 - [x] **Garmin device audit — DONE (Max, 11 Jul evening).** Weight/RHR/height aligned, Rally pedal
       battery swapped, beat-to-beat HRV logging ON (athlete-reported; the next .FIT will confirm — and
       hrv messages should now appear, which also helps the DFA-α1 sparsity). Deliberately NOT touched,
