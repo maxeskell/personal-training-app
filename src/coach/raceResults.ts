@@ -17,7 +17,7 @@
 
 import type { FitActivity } from "../insights/fitParser.js";
 import { lapSplits, lengthSplits } from "../insights/sessionSplits.js";
-import type { Race, RaceResult, RaceSplit } from "./careerHistory.js";
+import type { Race, RaceResult, RaceSplit, SportBests, BestRow, BestValue } from "./careerHistory.js";
 
 export type SportFamily = "run" | "ride" | "swim" | "other";
 
@@ -298,4 +298,88 @@ export function enrichRaceResults(
     return { ...race, result };
   });
   return { races: out, stats };
+}
+
+// ---------- triathlon PBs (best finish time at each standard distance) ----------
+
+/**
+ * The four standard triathlon distances the career "bests" card compares. Ordered so 70.3 is tested
+ * BEFORE Full — a "half-iron" / "middle-distance" label mentions "iron"/"middle" and must land in the
+ * 70.3 bucket, not the Ironman one. "Standard" also catches "Olympic" (the same 1.5/40/10 km distance).
+ */
+const TRI_DISTANCES: Array<{ label: string; match: RegExp }> = [
+  { label: "Sprint", match: /sprint/i },
+  { label: "Standard", match: /standard|olympic/i },
+  { label: "70.3", match: /70\.?3|half[-\s]?iron|middle[-\s]?dist/i },
+  { label: "Full", match: /iron\s?man|iron[-\s]?distance|\bfull[-\s]?dist/i },
+];
+
+/** A type naming a partial leg or a non-triathlon multisport must NEVER count as a triathlon finish — a
+ *  bike-leg GPS trace or a duathlon would otherwise masquerade as a whole-race PB. */
+const NON_TRI_FINISH = /\bleg\b|trace|duathlon|aquathlon|aquabike|swimrun|relay/i;
+
+/**
+ * The standard triathlon distance a race belongs to (from its `type` label), or null when it isn't one of
+ * the four — a quarter/middle-only oddball, a partial leg, or a non-triathlon. Pure — exported for tests.
+ */
+export function triathlonDistance(type: string): string | null {
+  const t = String(type ?? "");
+  if (NON_TRI_FINISH.test(t)) return null;
+  for (const d of TRI_DISTANCES) if (d.match.test(t)) return d.label;
+  return null;
+}
+
+/**
+ * Parse a pre-formatted finish time — "H:MM:SS" or "MM:SS", tolerating a leading ≈/~ (a splits-summed
+ * estimate) — into seconds, or null if it isn't a clock. Pure — exported for tests.
+ */
+export function finishTimeToSeconds(time: string | undefined): number | null {
+  if (!time) return null;
+  const m = time.replace(/[≈~]/g, "").trim().match(/^(?:(\d{1,2}):)?(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = m[1] ? Number(m[1]) : 0;
+  const min = Number(m[2]);
+  const sec = Number(m[3]);
+  if (min > 59 || sec > 59) return null;
+  return h * 3600 + min * 60 + sec;
+}
+
+/**
+ * Best (fastest) triathlon finish at each standard distance — Sprint / Standard / 70.3 / Full — from your
+ * recorded race results, compared all-time vs this season vs the last 90 days (the same windows the other
+ * bests use). Only a race with a parseable finish TIME at one of the four distances counts, so a bike-leg
+ * GPS trace, a duathlon, or a non-standard distance (a "quarter") is never mistaken for a triathlon PB.
+ * Returns a "Triathlon" {@link SportBests}, or null when there's no timed triathlon to show. Pure.
+ */
+export function triathlonBests(races: Race[], season: number, now = new Date()): SportBests | null {
+  const d90 = new Date(now.getTime() - 90 * 86400000).toISOString().slice(0, 10);
+  const seasonStart = `${season}-01-01`;
+  interface Timed {
+    label: string;
+    sec: number;
+    best: BestValue;
+    date: string;
+  }
+  const timed: Timed[] = [];
+  for (const r of races) {
+    const label = triathlonDistance(r.type);
+    const sec = finishTimeToSeconds(r.result?.time);
+    if (label == null || sec == null) continue;
+    timed.push({ label, sec, best: { value: r.result!.time!, date: r.date }, date: r.date });
+  }
+  const fastest = (pool: Timed[], label: string): BestValue | undefined => {
+    let best: Timed | undefined;
+    for (const t of pool) if (t.label === label && (!best || t.sec < best.sec)) best = t;
+    return best?.best;
+  };
+  const last90 = timed.filter((t) => t.date >= d90);
+  const seasonT = timed.filter((t) => t.date >= seasonStart);
+  const rows: BestRow[] = [];
+  for (const d of TRI_DISTANCES) {
+    const allTime = fastest(timed, d.label);
+    const l90 = fastest(last90, d.label);
+    const seas = fastest(seasonT, d.label);
+    if (allTime || l90 || seas) rows.push({ label: d.label, allTime, last90: l90, season: seas });
+  }
+  return rows.length ? { sport: "Triathlon", rows } : null;
 }

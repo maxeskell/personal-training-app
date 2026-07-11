@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { enrichRaceResults, sportFamily, isMultisport, type DatedFit, type ActivitySummary } from "../src/coach/raceResults.js";
+import {
+  enrichRaceResults,
+  sportFamily,
+  isMultisport,
+  triathlonDistance,
+  finishTimeToSeconds,
+  triathlonBests,
+  type DatedFit,
+  type ActivitySummary,
+} from "../src/coach/raceResults.js";
 import type { Race } from "../src/coach/careerHistory.js";
 import type { FitActivity, FitLap, FitSessionSummary } from "../src/insights/fitParser.js";
 
@@ -123,4 +132,75 @@ test("enrich: a race with nothing matching is returned untouched", () => {
   const { races: out, stats } = enrichRaceResults(races, [], []);
   assert.equal(out[0].result, undefined);
   assert.deepEqual(stats, { total: 1, fromFit: 0, fromActivity: 0, withSplits: 0 });
+});
+
+// ---------- triathlon PBs ----------
+
+test("triathlonDistance: maps each standard distance; excludes legs, duathlons, oddball distances", () => {
+  assert.equal(triathlonDistance("Sprint triathlon"), "Sprint");
+  assert.equal(triathlonDistance("Standard triathlon"), "Standard");
+  assert.equal(triathlonDistance("Olympic triathlon"), "Standard"); // Olympic = Standard distance
+  assert.equal(triathlonDistance("70.3 triathlon (probable)"), "70.3");
+  assert.equal(triathlonDistance("Middle-distance triathlon"), "70.3"); // middle distance = half-iron
+  assert.equal(triathlonDistance("Middle/long-distance triathlon"), null); // genuinely ambiguous → unclassified
+  assert.equal(triathlonDistance("Ironman"), "Full");
+  // Not one of the four / not a whole-race finish → null:
+  assert.equal(triathlonDistance("IM UK 2011 — bike leg (GPS trace)"), null); // partial leg
+  assert.equal(triathlonDistance("Quarter (1/4) triathlon"), null); // non-standard distance
+  assert.equal(triathlonDistance("Winter duathlon"), null);
+  assert.equal(triathlonDistance("Sportive 140 km"), null);
+  assert.equal(triathlonDistance("Marathon"), null);
+});
+
+test("finishTimeToSeconds: H:MM:SS, MM:SS, ≈-prefixed; rejects junk", () => {
+  assert.equal(finishTimeToSeconds("10:55:47"), 10 * 3600 + 55 * 60 + 47);
+  assert.equal(finishTimeToSeconds("1:02:09"), 3600 + 2 * 60 + 9);
+  assert.equal(finishTimeToSeconds("43:12"), 43 * 60 + 12); // MM:SS
+  assert.equal(finishTimeToSeconds("≈6:13:50"), 6 * 3600 + 13 * 60 + 50); // splits-summed estimate
+  assert.equal(finishTimeToSeconds(undefined), null);
+  assert.equal(finishTimeToSeconds("—"), null);
+  assert.equal(finishTimeToSeconds("DNF"), null);
+  assert.equal(finishTimeToSeconds("1:99:00"), null); // impossible minutes
+});
+
+test("triathlonBests: fastest finish per distance, all-time vs season vs last-90", () => {
+  const races: Race[] = [
+    // Sprint: three timed + one pool sprint that's fastest
+    { date: "2016-06-04", sport: "triathlon", type: "Sprint triathlon", result: { time: "1:20:10" } },
+    { date: "2022-10-09", sport: "triathlon", type: "Sprint triathlon", result: { time: "1:02:09" } },
+    { date: "2025-04-13", sport: "triathlon", type: "Sprint triathlon", result: { time: "1:09:07" } },
+    // Standard: an old PB, plus a slower one this season (should surface in season + last-90 windows)
+    { date: "2023-07-16", sport: "triathlon", type: "Standard triathlon", result: { time: "2:21:30" } },
+    { date: "2026-07-11", sport: "triathlon", type: "Olympic triathlon", result: { time: "2:39:12" } },
+    // 70.3: one timed
+    { date: "2024-06-23", sport: "triathlon", type: "70.3 triathlon", result: { time: "5:26:06" } },
+    // Full: two, faster one wins
+    { date: "2011-07-31", sport: "triathlon", type: "Ironman", result: { time: "12:21:00" } },
+    { date: "2013-07-28", sport: "triathlon", type: "Ironman", result: { time: "10:55:47" } },
+    // Excluded: a bike-leg trace with a (fast) time must NOT become a Full PB
+    { date: "2011-07-31", sport: "ride", type: "IM UK 2011 — bike leg (GPS trace)", result: { time: "6:32:17" } },
+    // Excluded: no finish time
+    { date: "2012-05-06", sport: "triathlon", type: "70.3 triathlon" },
+  ];
+  const now = new Date("2026-07-11T12:00:00Z");
+  const bests = triathlonBests(races, 2026, now)!;
+  assert.equal(bests.sport, "Triathlon");
+  const byLabel = Object.fromEntries(bests.rows.map((r) => [r.label, r]));
+  // Fastest all-time per distance:
+  assert.deepEqual(byLabel["Sprint"].allTime, { value: "1:02:09", date: "2022-10-09" });
+  assert.deepEqual(byLabel["Standard"].allTime, { value: "2:21:30", date: "2023-07-16" });
+  assert.deepEqual(byLabel["70.3"].allTime, { value: "5:26:06", date: "2024-06-23" });
+  assert.deepEqual(byLabel["Full"].allTime, { value: "10:55:47", date: "2013-07-28" }); // not the 6:32 bike leg
+  // Standard has a 2026 race → season + last-90 populated with it; other distances have no recent race.
+  assert.deepEqual(byLabel["Standard"].season, { value: "2:39:12", date: "2026-07-11" });
+  assert.deepEqual(byLabel["Standard"].last90, { value: "2:39:12", date: "2026-07-11" });
+  assert.equal(byLabel["Sprint"].season, undefined);
+  assert.equal(byLabel["Sprint"].last90, undefined);
+  // All four distances present, in canonical order.
+  assert.deepEqual(bests.rows.map((r) => r.label), ["Sprint", "Standard", "70.3", "Full"]);
+});
+
+test("triathlonBests: no timed triathlon → null (nothing to show)", () => {
+  assert.equal(triathlonBests([{ date: "2024-05-04", sport: "run", type: "Marathon", result: { time: "3:19:14" } }], 2026), null);
+  assert.equal(triathlonBests([], 2026), null);
 });
