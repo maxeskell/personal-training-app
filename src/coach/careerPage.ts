@@ -230,6 +230,12 @@ export function renderCareerInner(data: CareerHistory | null, share = false): st
         <div class="sub" style="margin:10px 0 0">Performances are your own recorded numbers (time / pace / distance / power); locations not marked confirmed are nearest-town approximations from GPS. No official results were scraped.</div></div>`
     : "";
 
+  // "Best ride power" is normalized power over a whole ride — an honest caveat, since a low-HR ride can post
+  // a high NP and power meters drift across the years, so it is NOT a duration record (the power curve is).
+  const hasRidePower = data.bests.some((b) => b.rows.some((r) => /ride power|best power/i.test(r.label)));
+  const bestsNote = hasRidePower
+    ? `<div class="sub" style="margin:10px 0 0"><b>Best ride power</b> is normalized power (NP) over a whole ride ≥20&nbsp;km — spike-weighted, not a fixed-duration record (a low-HR ride can still post a high NP, and power meters drift across years). For true 5/20/60-min bests read the power-curve chart below.</div>`
+    : "";
   const bests = data.bests.length
     ? `<div class="card"><h2>Bests vs current</h2><div class="cols">${data.bests
         .map(
@@ -238,7 +244,7 @@ export function renderCareerInner(data: CareerHistory | null, share = false): st
             .map((r) => `<tr><td>${escapeHtml(r.label)}</td>${bestCell(r.allTime, share)}${bestCell(r.last90, share)}${bestCell(r.season, share)}</tr>`)
             .join("")}</tbody></table></div>`,
         )
-        .join("")}</div></div>`
+        .join("")}</div>${bestsNote}</div>`
     : "";
 
   const power = data.powerCurve

@@ -1113,6 +1113,19 @@ test("Load & trends: durability shows BOTH run and ride, so a bike-durability he
   assert.match(html, /<td>Ride durability<\/td><td class="num">-5.8<\/td><td class="muted" colspan="2">was -3.5/);
 });
 
+test("Load & trends: a sport with no DFA-α1 durability renders an explicit note, not a vanished row", () => {
+  const s = emptyState(todayIso(), new Date().toISOString());
+  const ins = buildInsights(s, undefined, {});
+  ins.durability = {
+    run: { recent: -3.1, prior: -2.8, deltaPct: null, n: 7 },
+    ride: { recent: null, prior: null, deltaPct: null, n: 0 }, // DFA-α1 sparse — no qualifying long steady ride
+  };
+  const html = renderDashboard({ window: [s], decisions: [], insights: ins });
+  assert.match(html, /<td>Run durability<\/td><td class="num">-3.1<\/td>/); // present sport unchanged
+  // absent sport is still a row, but says WHY it's blank rather than silently disappearing
+  assert.match(html, /<td>Ride durability<\/td><td class="num muted">—<\/td><td class="muted" colspan="2">no DFA-α1 yet/);
+});
+
 test("Data changes card: surfaces an AIE-vs-Garmin disagreement side by side with a one-tap source pick", () => {
   const s = emptyState(todayIso(), new Date().toISOString());
   s.thresholds = { value: { bikeFtpW: 250 }, source: "ai-endurance" }; // the merged winner
