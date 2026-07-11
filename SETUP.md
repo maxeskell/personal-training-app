@@ -327,7 +327,10 @@ cd /Users/maxeskell/dev/personal-training-app && npm run career:build -- \
   (a JSON array; the `races` block of `career-history.example.json` is the template). Re-running without
   `--races` keeps the races already in the output file (and re-derives their performance from your files).
 - **Bests are auto-computed** from the `--tp` archive, with GPS/calibration outliers dropped (honest
-  models). Locations you don't mark `"confidence":"confirmed"` are treated as approximations in the UI.
+  models). Activities dated implausibly in the future (a corrupt device timestamp — e.g. a bad FIT epoch
+  decoding to 2106) are excluded from bests, the power curve and race matching: an activity that can't be
+  dated can't be windowed. Locations you don't mark `"confidence":"confirmed"` are treated as
+  approximations in the UI.
 - **The power curve (all-time + Last-90-days + Season) is computed from your `.FIT` RIDE streams**
   (mean-maximal power in each window) — so keep your ride `.FIT`s in `data/fit-streams/` (the dashboard
   Sync / `npm run fit-sync` puts them there automatically) and/or point `--fit-dir` at your archive. With

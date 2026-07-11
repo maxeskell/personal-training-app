@@ -27,7 +27,7 @@ import { resolve, dirname } from "node:path";
 import { loadActivityFits, fitStreamsDir, type ActivityFit } from "../src/insights/fit.js";
 import { activityArchiveDir } from "../src/archive/activityArchive.js";
 import { meanMaximalCurve, type CurvePoint } from "../src/insights/powerCurve.js";
-import { enrichRaceResults, sportFamily, type ActivitySummary, type DatedFit, type SportFamily } from "../src/coach/raceResults.js";
+import { enrichRaceResults, excludeFutureDated, sportFamily, type ActivitySummary, type DatedFit, type SportFamily } from "../src/coach/raceResults.js";
 
 const DURATIONS = [5, 15, 30, 60, 120, 300, 480, 600, 1200, 1800, 3600];
 
@@ -222,8 +222,10 @@ function main() {
   const season = Number(args.season ?? new Date().getFullYear());
   const out = resolve(typeof args.out === "string" ? args.out : "data/career-history.json");
 
+  // Future-dated activities are corrupt timestamps (a bad FIT epoch decodes to e.g. 2106-02-26) and would
+  // sit inside every Last-90/Season window forever — excluded from both inlets (TP rows here, files below).
   const tp = typeof args.tp === "string" ? fromTp(readCsv(args.tp)) : [];
-  const all = tp.filter((a) => a.date);
+  const all = excludeFutureDated(tp.filter((a) => a.date));
 
   // races: --races file wins; else preserve races already in the output; else empty.
   let races: any[] = [];
@@ -254,7 +256,9 @@ function main() {
     fitDir && resolve(fitDir) !== resolve(streamsDir) && resolve(fitDir) !== resolve(corpusDir)
       ? loadActivityFits(fitDir, { recursive: true, dropSamples: true, keepSamplesFor: keepRidePower })
       : [];
-  const datedFits: DatedFit[] = dedupFits([...recentFits, ...corpusFits, ...archiveFits]).map((f) => ({ date: f.date, sport: f.sport, fit: f.fit }));
+  const datedFits: DatedFit[] = excludeFutureDated(
+    dedupFits([...recentFits, ...corpusFits, ...archiveFits]).map((f) => ({ date: f.date, sport: f.sport, fit: f.fit })),
+  );
   const activities: ActivitySummary[] = all.map((a) => ({ date: a.date, sport: a.sport, distKm: a.distKm, durSec: a.durSec, np: a.np }));
   const enriched = enrichRaceResults(races, datedFits, activities);
   races = enriched.races;

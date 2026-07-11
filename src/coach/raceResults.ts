@@ -59,6 +59,25 @@ export function isMultisport(raceSport: string, raceType: string): boolean {
   return MULTISPORT.test(raceSport) || MULTISPORT.test(raceType);
 }
 
+/** Latest date (YYYY-MM-DD) an activity may claim and still be believed: tomorrow, allowing device
+ *  clock skew across timezones. Later than that is a corrupt timestamp, not a workout from the future. */
+export function maxPlausibleDate(now = new Date()): string {
+  return new Date(now.getTime() + 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Drop activities dated implausibly in the future — a corrupt timestamp (e.g. a bad FIT epoch decoding
+ * to 2106-02-26) otherwise sits inside every "Last 90 days"/"Season" window forever, because those
+ * windows only bound the past (`date >= start`). An activity that can't be dated can't be windowed, so
+ * it is excluded from bests/power-curve/race-matching entirely rather than re-dated (honest models:
+ * inventing a date would be a silent lie). Undated items (`date: ""`) pass through unchanged — they
+ * already match no window and no race.
+ */
+export function excludeFutureDated<T extends { date: string }>(items: T[], now = new Date()): T[] {
+  const max = maxPlausibleDate(now);
+  return items.filter((i) => !i.date || i.date <= max);
+}
+
 // ---------- formatting (the generator owns units/rounding; the page just prints) ----------
 
 function clock(sec: number): string {
