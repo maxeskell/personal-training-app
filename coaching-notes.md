@@ -12,6 +12,19 @@
 > the MCP and the gitignored profile aren't reachable.
 
 ## To do
+- [ ] **Set the bike threshold honestly (post-Birmingham).** The race falsified FTP 199 W: NP 217 W
+      for 79 min at −0.4% decoupling, then a negative-split 10k. Update FTP in AI Endurance/Garmin
+      toward ~215–220 W now (keep-higher rule), and book a proper test/openers week **post-Japan
+      (Aug)** to set it properly — every zone, the whole 250 W bike-build arc, and next season's
+      race models hang off this one number. (Also finally resolves which power meter feeds AIE.)
+- [ ] **Swim CSS test (400/200) before Alderford (6 Sep).** Still unset — a whole season of swim
+      training ran unstructured, and the race swim positive-split ~7% (2:07→2:21/100m by 500m block).
+      One pool test, set CSS in AIE, and the swim finally gets a model + paced sets.
+- [ ] **Revise Alderford target off the race-time model, not aspiration.** Profile still says
+      "sub 2:00" for Alderford — same fantasy number Birmingham just disproved (2:39:12 while
+      executing well). Honest Olympic target at current numbers ≈ **2:32–2:36 (MODEL)**; sub-2:00 at
+      44 needs ~35-min-10k + ~250 W race watts — a different athlete. Update `profile.local.yaml →
+      races[]` once agreed. See docs/specs/improvements/07-race-target-plausibility.md.
 - [ ] **Winter wheel swap** — the Hunt 40mm deep aero wheels (30mm GP5000 S TR) are the *summer*
       everyday training wheel; switch back to the 32mm alloy wheelset (nominal-32mm GP5000) when winter
       conditions arrive, and back to the Hunts in spring. Pressures differ between the two — summer
@@ -21,6 +34,19 @@
       fuel should be liquid on a slowed gut) and the missed carb channel. Build the rate up gradually in
       long runs, and rehearse it **in the Tue–Thu GI-trough window** at least once, not only on fresh days,
       so it's race-realistic for the 70.3 run leg. Vest: Salomon Active Skin 8 (flasks included) was the pick.
+- [ ] **Call Sportstest (0333 900 3330, Cannock) — price + book the two one-offs.** Get pricing for
+      (a) the endless-pool **swim video analysis** and (b) the **cycling technique analysis** (motion
+      capture / pedal-stroke + power-balance — book it *for the asymmetry question*: left heel-out/toe-in,
+      knee tracking, platform offset L −9 mm / R +5 mm, late left power phase). Sensible window: **autumn
+      2026** (post-Warwick, before the winter swim block). Also ask whether the annual bike assessment can
+      run **on your own Rally pedals** — that's what makes the lab threshold map onto every ride you record.
+- [ ] **Book the catch-up Medichecks panel for mid-Aug 2026 (w/c 10 Aug, post-Japan).** Morning, fasted,
+      ≥48 h after the last hard session. Book before flying on 18 Jul so the slot exists when you land.
+- [ ] **Book the annual testing week — last week of Feb, every year (first: Feb 2027).** Medichecks
+      Ultimate Performance panel Monday morning (fasted, ≥48 h after last hard session) + Sportstest
+      comprehensive **bike** physiological assessment (ramp + lactate thresholds + VO2max, own pedals)
+      later the same week. Late Feb = vit-D trough, iron checked before the build, end-of-base repeatable
+      state, zones set for the season, and the annual FTP data point for the 2028 short-vs-long gate.
 - [ ] **Sweat-rate test** — gives a real ml/h + sodium figure so fuelling/hydration advice isn't a
       population MODEL. Protocol: weigh yourself (minimal/no clothing, towel-dry) before a ~60 min steady
       session; record fluid drunk during it; weigh again after. Sweat loss (L) ≈ (pre-kg − post-kg) +
@@ -49,6 +75,34 @@
         the `<details>` body); optional auto-fade of an agreed item after a cool-off (today it stays annotated).
 
 ## Decisions / things we've talked through
+- **2026-07-11 — Birmingham (A-race) debrief: the target was the failure, not the athlete.**
+  Result 2:39:12, 19th overall, **1st of 8 AG** (splits + .FIT data live in `data/career-history.json`
+  and the race .FIT — not here). Execution was near-optimal: even bike, controlled run open,
+  negative-split close. The "sub 2:00" target was never derivable from any data we hold; a
+  race-morning model from the athlete's own numbers lands ~2:36–2:41. Agreed consequences:
+  (a) **targets must come from a data-derived race model before they're committed** (spec 07);
+  (b) the race is a **certified ≥217 W NP for 79 min** data point — FTP/zones update, see To do;
+  (c) swim gets structure only when CSS exists — test booked-by to-do above;
+  (d) taper honesty: race-morning TSB was −6.8 (fresh-ish, not peaked) — a real A-race peak wants
+  TSB ≥ 0; raise with AI Endurance before Alderford. App side, same day: multisport race .FITs now
+  auto-fetch + expand per leg (they were silently skipped — the A-race was invisible to the granular
+  layer), and the career page gained a hand-authored finishing-position field. Cost-capped at one paid round per year;
+  Sportstest (Dr Garry Palmer's lab, Cannock — ~25 min away) is the testing venue.
+  - **Annual, same slot every year: one "testing week", last week of February.** Bloods (Medichecks
+    Ultimate Performance, Monday fasted) + Sportstest comprehensive **bike** physiological assessment in
+    the same week. Bike, not run, because bike watts are the limiter and the lab lactate-threshold trend
+    feeds the 2028 short-vs-long decision gate; run threshold comes free from Garmin/races between times.
+    Sportstest's suggested 3–6-month retest cadence declined — once a year is the agreed spend.
+  - **One-offs to start with (not recurring): swim endless-pool video analysis + cycling technique
+    analysis.** Swim: CSS unset, technique = cheapest speed, and video shows what the shoulder does under
+    load. Bike: taken *despite* the March 2026 J.Laverack fit because the motion-capture/pedal-balance data
+    speaks directly to the documented left-side asymmetry. Their "weekly/bi-weekly coaching" upsell declined.
+  - **Run 3D gait analysis deferred** — optional one-off before the 2027 run build (the injury window);
+    only book if the budget's happy after the first two.
+  - **Catch-up blood panel: AGREED IN (2026-07-06).** One off-cycle Medichecks panel mid-Aug 2026
+    (post-Japan, rested) — last panel is Nov 2020 and tirzepatide 15 mg + 11–12 h/wk makes iron/B12/
+    lean-mass markers worth the look now rather than in Feb. One-off; the annual rhythm still starts
+    Feb 2027.
 - **2026-06-27 — Brick fuelling rehearsal + standing solid/liquid preference.** Mon 29 Jun brick
   (3 h ride → 1 h run, day +1 after the Sunday dose — drug fresh, emptying slowed though not the
   Tue–Thu trough). Agreed framework (coaching guidance; exact grams worked live off pulled
@@ -78,4 +132,7 @@
 - **2026-06-23 — 70.3 Outlaw fuelling.** Agreed the framework (coaching guidance, not athlete data):
   ~70–90 g/h, bias the bike and ease on the run, multi-transportable carb above ~60 g/h, eat to a clock,
   nothing new on race day, gut-train the rate up in long sessions. Exact grams to be worked out live once
-  the question is pinned to a specific Outlaw + your pulled weight/products.
+  the question is pinned to a specific race + your pulled weight/products.
+  - _Update 2026-07-03: the A-race is now **On The Edge 70.3** (~18 Jul 2027), not Outlaw — Outlaw was dropped. The
+    fuelling framework above is race-agnostic and unchanged; just note On The Edge is a hillier course, so pace the
+    bike (and its fuelling) off normalised power, not raw speed._
