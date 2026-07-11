@@ -25,21 +25,19 @@
       executing well). Honest Olympic target at current numbers ≈ **2:32–2:36 (MODEL)**; sub-2:00 at
       44 needs ~35-min-10k + ~250 W race watts — a different athlete. Update `profile.local.yaml →
       races[]` once agreed. See docs/specs/improvements/07-race-target-plausibility.md.
-- [ ] **Garmin device audit (10 min, before the next key session).** From the race .FIT's own
-      settings messages: device weight said **73.6 kg** (align it with the current Index reading, ~71 —
-      run power, calories and Training Effect all key off it), RHR 55 → 52, height 178 → 179. Swap the
-      **Rally pedal battery** (race file read battery_status "ok"/2.94 V, not "good"). Turn **ON
-      beat-to-beat HRV logging** (the race file carries zero hrv messages — free DFA/recovery data).
-      **Max HR and bike LTHR: don't touch until strap-verified** — race wrist-HR hit 185 vs the set max
-      182, and bike LTHR is set to 160 which was literally the 79-min race *average*; pair the strap for
-      the post-Japan FTP test and re-set both from that. (FTP 225 in both platforms: standing to-do above.)
-- [ ] **Aero position work on the current road bike — don't wait for the Speedform.** Race-file CdA
+- [x] **Garmin device audit — DONE (Max, 11 Jul evening).** Weight/RHR/height aligned, Rally pedal
+      battery swapped, beat-to-beat HRV logging ON (athlete-reported; the next .FIT will confirm — and
+      hrv messages should now appear, which also helps the DFA-α1 sparsity). Deliberately NOT touched,
+      as agreed: **max HR and bike LTHR wait for the strap-verified post-Japan test** (race wrist-HR hit
+      185 vs set max 182; LTHR 160 was literally the 79-min race average). **FTP 225 in both platforms
+      remains the separate standing to-do above** — not covered by this audit unless Max says otherwise.
+- [ ] **(agreed 11 Jul) Aero position work on the current road bike — don't wait for the Speedform.** Race-file CdA
       fitted **~0.358 m²** (MODEL: 309 flat steady samples, light 8–9 km/h wind, Crr 0.004, 81 kg
       system) — hoods territory. Getting toward ~0.30 (clip-ons / pad drop / helmet) ≈ **2.5–3.5 min
       over a 40 km leg at the same watts** — the largest single time purchase in the whole race file.
       Validate any change with fixed-power out-and-backs; the autumn Sportstest bike session (below)
       can sanity-check the position.
-- [ ] **T1 drills before Alderford (6 Sep).** Birmingham T1: **69 s of 141 stationary** + a 185 m
+- [ ] **(agreed 11 Jul) T1 drills before Alderford (6 Sep).** Birmingham T1: **69 s of 141 stationary** + a 185 m
       transition run. Rehearse suit-half-down-before-the-rack + flying mount — 20–30 s available.
       T2 was clean (39 s watch-side) — keep the flying dismount as-is.
 - [ ] **Pull the Results Base field splits (10 min).** Which leg separates 19th overall from the
@@ -126,8 +124,11 @@
   Every message type in the race .FIT decoded; full 100-finding ranked report in
   `reports/2026-07-11-race-fit-deep-dive.md` (gitignored, regenerable from the .FIT). Adds to the
   morning debrief — and the best-60-min NP **inside the race was 220 W** (decoupling −0.4%), consistent
-  with the FTP 225 decision above. **Race-execution protocol for Alderford** (proposed from the file,
-  recorded here because it has no live source — flag anything you don't buy):
+  with the FTP 225 decision above. **Race-execution protocol for Alderford** — status per item
+  (Max, same evening): **ADOPTED — bike surge cap + run start pace** (plus the aero-work and T1-drill
+  to-dos above, and the device audit now done). **Still proposed, not yet agreed: the swim-settle
+  protocol and the muscular-endurance training bias** (the ME bias is an AI Endurance conversation for
+  the post-Japan build anyway):
   - **Bike:** cap climb kicks at ~110% of target NP, soft-pedal the slow (<40 km/h) coasts, first
     5 min ≤200 W. Birmingham was ridden as **99 surges ≥300 W** (21.6% of the leg in Z6, anaerobic
     TE 3.1), the race-max HR (185) came at **minute 6 of the bike** on the first climb, and the final
