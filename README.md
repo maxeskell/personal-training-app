@@ -621,7 +621,11 @@ stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and 
   **haven't actioned yet** carries a blue **NEW** badge + left bar (and a *"▲ N not yet actioned"* roll-up at
   the top); the flag clears the moment you react, so your eye goes straight to what still needs you.
 - **Performance** — your numbers in four labelled groups: **Form & load** (the load model, multi-week trends
-  and the **recent-vs-prior** efficiency + **run *and* ride durability** rows, last-7-days load by sport),
+  and the **recent-vs-prior** efficiency + **run *and* ride durability** rows, last-7-days load by sport).
+  Durability is AI Endurance's DFA-α1, only computed on long, steady efforts with clean R-R, so it is often
+  blank — a sport with no qualifying session shows a **"no DFA-α1 yet"** note rather than a silently missing
+  row. In **Career & PBs**, *Best ride power* is normalised power (NP) over a whole ride ≥20 km — spike-weighted,
+  not a fixed-duration record (read the power-curve chart for true 5/20/60-min bests).
   **Zones & capacity** (zones & thresholds, Garmin scores), **Race readiness**
   (your race calendar, estimated times + race-day splits), then **Career & PBs** folded in.
 

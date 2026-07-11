@@ -234,3 +234,20 @@ test("renderCareerPage share view: hides event names + locations, dates → year
   // performance numbers are not identifying — still shown
   assert.match(html, /4:19\/km/);
 });
+
+test("Bests: a ride-power row carries the honest 'NP over a whole ride, not a duration record' caveat", () => {
+  const withRidePower: CareerHistory = {
+    races: [],
+    bests: [{ sport: "Bike", rows: [{ label: "Best ride power (NP)", allTime: { value: "267 W", date: "2022-07-17" } }] }],
+  };
+  const html = renderCareerPage(withRidePower);
+  assert.match(html, /Best ride power<\/b> is normalized power \(NP\)/);
+  assert.match(html, /not a fixed-duration record/);
+
+  // No ride-power row → no caveat (it's specific to that metric, not boilerplate on every bests card).
+  const runOnly: CareerHistory = {
+    races: [],
+    bests: [{ sport: "Run", rows: [{ label: "10k", allTime: { value: "43:12" } }] }],
+  };
+  assert.doesNotMatch(renderCareerPage(runOnly), /normalized power \(NP\)/);
+});
