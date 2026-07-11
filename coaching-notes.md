@@ -12,11 +12,11 @@
 > the MCP and the gitignored profile aren't reachable.
 
 ## To do
-- [ ] **Set the bike threshold honestly (post-Birmingham).** The race falsified FTP 199 W: NP 217 W
-      for 79 min at −0.4% decoupling, then a negative-split 10k. Update FTP in AI Endurance/Garmin
-      toward ~215–220 W now (keep-higher rule), and book a proper test/openers week **post-Japan
-      (Aug)** to set it properly — every zone, the whole 250 W bike-build arc, and next season's
-      race models hang off this one number. (Also finally resolves which power meter feeds AIE.)
+- [ ] **Set FTP 225 W in BOTH AI Endurance and Garmin Connect (decided 11 Jul, see decision below)** —
+      Garmin feeds this app's model/zones, AIE drives the plan; both must say 225 or the ledgers fight.
+      Then book the proper test/openers week **post-Japan (Aug)** and re-set from the test — every zone,
+      the 250 W bike-build arc, and the race models hang off this number. (Also finally resolves which
+      power meter feeds AIE.)
 - [ ] **Swim CSS test (400/200) before Alderford (6 Sep).** Still unset — a whole season of swim
       training ran unstructured, and the race swim positive-split ~7% (2:07→2:21/100m by 500m block).
       One pool test, set CSS in AIE, and the swim finally gets a model + paced sets.
@@ -25,6 +25,26 @@
       executing well). Honest Olympic target at current numbers ≈ **2:32–2:36 (MODEL)**; sub-2:00 at
       44 needs ~35-min-10k + ~250 W race watts — a different athlete. Update `profile.local.yaml →
       races[]` once agreed. See docs/specs/improvements/07-race-target-plausibility.md.
+- [ ] **Garmin device audit (10 min, before the next key session).** From the race .FIT's own
+      settings messages: device weight said **73.6 kg** (align it with the current Index reading, ~71 —
+      run power, calories and Training Effect all key off it), RHR 55 → 52, height 178 → 179. Swap the
+      **Rally pedal battery** (race file read battery_status "ok"/2.94 V, not "good"). Turn **ON
+      beat-to-beat HRV logging** (the race file carries zero hrv messages — free DFA/recovery data).
+      **Max HR and bike LTHR: don't touch until strap-verified** — race wrist-HR hit 185 vs the set max
+      182, and bike LTHR is set to 160 which was literally the 79-min race *average*; pair the strap for
+      the post-Japan FTP test and re-set both from that. (FTP 225 in both platforms: standing to-do above.)
+- [ ] **Aero position work on the current road bike — don't wait for the Speedform.** Race-file CdA
+      fitted **~0.358 m²** (MODEL: 309 flat steady samples, light 8–9 km/h wind, Crr 0.004, 81 kg
+      system) — hoods territory. Getting toward ~0.30 (clip-ons / pad drop / helmet) ≈ **2.5–3.5 min
+      over a 40 km leg at the same watts** — the largest single time purchase in the whole race file.
+      Validate any change with fixed-power out-and-backs; the autumn Sportstest bike session (below)
+      can sanity-check the position.
+- [ ] **T1 drills before Alderford (6 Sep).** Birmingham T1: **69 s of 141 stationary** + a 185 m
+      transition run. Rehearse suit-half-down-before-the-rack + flying mount — 20–30 s available.
+      T2 was clean (39 s watch-side) — keep the flying dismount as-is.
+- [ ] **Pull the Results Base field splits (10 min).** Which leg separates 19th overall from the
+      top 10? The FIT can't say; the results page can. Tells us whether the swim (18.8% of race time,
+      paced blind) is the ranking lever it appears to be — feeds the winter-emphasis question.
 - [ ] **Winter wheel swap** — the Hunt 40mm deep aero wheels (30mm GP5000 S TR) are the *summer*
       everyday training wheel; switch back to the 32mm alloy wheelset (nominal-32mm GP5000) when winter
       conditions arrive, and back to the Hunts in spring. Pressures differ between the two — summer
@@ -91,9 +111,41 @@
   (b) the race is a **certified ≥217 W NP for 79 min** data point — FTP/zones update, see To do;
   (c) swim gets structure only when CSS exists — test booked-by to-do above;
   (d) taper honesty: race-morning TSB was −6.8 (fresh-ish, not peaked) — a real A-race peak wants
-  TSB ≥ 0; raise with AI Endurance before Alderford. App side, same day: multisport race .FITs now
+  TSB ≥ 0; raise with AI Endurance before Alderford.
+  _Same-evening addendum — AIE's HRV-based zone suggestion DECLINED._ AIE proposed zone ceilings
+  (End<190 / Tempo<228 / Thr<269 / VO2<304) that all back out to **FTP ≈ 253 W** — its CP-model
+  number wearing an HRV hat. n=1 evidence says no: today's race NP 217 W × 79 min (with reserve)
+  makes ~217 a FLOOR; textbook Olympic bike IF (0.90–0.95) puts the ceiling ~228–241; all-time
+  60-min mean-max is ~203 W avg (set today; the file claiming 363 W is corrupt run-power data).
+  **Decision: FTP = 225 W** (low-central of the MODEL band 220–240 — under-pitched intervals
+  complete, over-pitched ones poison the build) → zones End<169 / Tempo<203 / Thr<236 / VO2<270.
+  Set in BOTH AIE and Garmin; re-test post-Japan and adjust to the test. App side, same day: multisport race .FITs now
   auto-fetch + expand per leg (they were silently skipped — the A-race was invisible to the granular
   layer), and the career page gained a hand-authored finishing-position field.
+- **2026-07-11 (evening) — race-file deep dive: ~4–6 min of execution headroom, no new fitness needed (MODEL).**
+  Every message type in the race .FIT decoded; full 100-finding ranked report in
+  `reports/2026-07-11-race-fit-deep-dive.md` (gitignored, regenerable from the .FIT). Adds to the
+  morning debrief — and the best-60-min NP **inside the race was 220 W** (decoupling −0.4%), consistent
+  with the FTP 225 decision above. **Race-execution protocol for Alderford** (proposed from the file,
+  recorded here because it has no live source — flag anything you don't buy):
+  - **Bike:** cap climb kicks at ~110% of target NP, soft-pedal the slow (<40 km/h) coasts, first
+    5 min ≤200 W. Birmingham was ridden as **99 surges ≥300 W** (21.6% of the leg in Z6, anaerobic
+    TE 3.1), the race-max HR (185) came at **minute 6 of the bike** on the first climb, and the final
+    third faded 217→205 W *at falling HR* — legs, not heart. Target VI ≤1.05 (was 1.10).
+  - **Run:** open at ~4:35/km from the mat. Run avg HR (158) sat BELOW the bike's (160) — inverted for
+    an Olympic — form improved while accelerating (GCT/vertical-ratio both better in Q4), last 400 m
+    4:09/km at HR 180. ~30–50 s free.
+  - **Swim:** settle by minute 1, not minute 8 — Q1 was ~1:50/100 m true vs a 2:00 average, and the
+    fade was stroke *length* (DPS −8.4% at constant 26 cyc/min), the hot-start signature. Even swim
+    ≈ 20–40 s + a calmer bike start. The CSS test (to-do) gives it numbers.
+  - **Training consequence (for the post-Japan build):** the one genuine fitness gap the file shows is
+    **late-ride muscular endurance at race watts** — bias long rides toward sweet-spot with race-watts
+    finishing blocks + brick tails. Raise with AI Endurance (propose→confirm), don't hand-edit the plan.
+  - Also on file: L/R balance 49.8/50.2 with **no drift under race load** (the documented left-side
+    asymmetry didn't show); torque effectiveness ~75/75; fuelling template validated (~60 g/h
+    liquid-led, zero GI, dose-day 6 — bank it, next rehearsal is the 70.3 rate); anaerobic TE 3.1 ⇒
+    2–3 easy days now (aligns with the Japan-transition plan); wrist-only HR all race (no strap), so
+    HR trends are solid but single beats — including the 185 — want strap confirmation.
 - **2026-07-06 — Annual testing rhythm + Sportstest one-offs.** Cost-capped at one paid round per year;
   Sportstest (Dr Garry Palmer's lab, Cannock — ~25 min away) is the testing venue.
   - **Annual, same slot every year: one "testing week", last week of February.** Bloods (Medichecks

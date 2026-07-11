@@ -131,9 +131,11 @@ function longest(acts: Act[], sport: string): { value: string; date: string } | 
   for (const a of acts) if (a.sport === sport && a.distKm <= (MAX_KM[sport] ?? 1e9) && a.distKm > (best?.distKm ?? 0)) best = { distKm: a.distKm, date: a.date };
   return best ? { value: `${best.distKm.toFixed(best.distKm < 10 ? 2 : 1)} km`, date: best.date } : null;
 }
-/** Best sustained ride power, spike-robust: power-meter calibration glitches sit far above the bulk, so we
- *  take the best ride whose NP is within 1.25× the 90th percentile of all qualifying rides (this drops lone
- *  400W-type artifacts while keeping a genuine hard ride). See the dataQuality convention. */
+/** Best whole-ride normalized power (NP), spike-robust: power-meter calibration glitches sit far above the
+ *  bulk, so we take the best ride whose NP is within 1.25× the 90th percentile of all qualifying rides (this
+ *  drops lone 400W-type artifacts while keeping a genuine hard ride). Honest caveat surfaced on the page: this
+ *  is NP over an ENTIRE ride ≥20km, NOT a fixed-duration record (the power-curve chart is) — a low-HR ride can
+ *  still post a high NP, and meters drift across years. See docs/specs/improvements/08-dfa-durability-availability.md. */
 function bestPower(acts: Act[]): { value: string; date: string } | null {
   const rides = acts.filter((a) => a.sport === "ride" && a.distKm >= 20 && a.np && a.np > 80 && a.np < 600);
   if (!rides.length) return null;
@@ -167,7 +169,7 @@ function buildBests(all: Act[], season: number) {
     row("Longest", (x) => longest(x, "run")),
   ].filter(Boolean);
   const bikeRows = [
-    row("Best power (≥20km)", (x) => bestPower(x)),
+    row("Best ride power (NP)", (x) => bestPower(x)),
     row("Longest", (x) => longest(x, "ride")),
   ].filter(Boolean);
   const swimRows = [row("Longest", (x) => longest(x, "swim"))].filter(Boolean);

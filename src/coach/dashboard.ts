@@ -235,9 +235,13 @@ function renderSignals(ins: InsightReport): string {
       : `<tr><td>${label}</td><td class="num">${t.recent}</td><td class="num">${t.deltaPct == null ? "—" : (t.deltaPct >= 0 ? "+" : "") + t.deltaPct + "%"}</td><td class="muted">${t.n} pts</td></tr>`;
   // Durability is a negative-based decay index — a % change is meaningless, so show recent vs prior absolute.
   // Both sports get a row (run + ride), so a headline like "Bike durability slipping" has its numbers on a table.
+  // Durability (DFA-α1) is only produced by AI Endurance for long, steady efforts, so it is BLANK far more
+  // often than not (≈20% of runs, a handful of rides, no swims). Render an explicit, self-explaining row
+  // when it's absent rather than silently dropping it — a vanished row reads as "broken", a noted "—" reads
+  // as "not applicable yet". See docs/specs/improvements/08-dfa-durability-availability.md.
   const durabilityRow = (label: string, t: { recent: number | null; prior: number | null; n: number }) =>
     t.recent == null
-      ? ""
+      ? `<tr><td>${label} durability</td><td class="num muted">—</td><td class="muted" colspan="2">no DFA-α1 yet — needs a long, steady effort with clean R-R</td></tr>`
       : `<tr><td>${label} durability</td><td class="num">${t.recent}</td><td class="muted" colspan="2">${t.prior != null ? `was ${t.prior} · ` : ""}closer to 0 = more durable</td></tr>`;
 
   return `<div class="card"><h2>Load &amp; trends</h2>
@@ -255,7 +259,7 @@ function renderSignals(ins: InsightReport): string {
       ${trend("Run aerobic threshold (HR)", ins.threshold.run)}
     </table>
     <details style="margin-top:10px"><summary style="cursor:pointer;color:#888;font-size:12px">Methods &amp; n=1 analytics — how these are computed</summary>
-      <div class="k" style="margin-top:8px">CTL/ATL/TSB derived from daily ESS. EF on steady runs ≥40min. Durability/threshold from AI Endurance's DFA-α1. ACWR intentionally not used (validity).</div>
+      <div class="k" style="margin-top:8px">CTL/ATL/TSB derived from daily ESS. EF on steady runs ≥40min. Durability/threshold from AI Endurance's DFA-α1 — only computed on long, steady efforts with clean R-R (≈20% of runs, a few long rides, never swims), so it is blank far more often than not. ACWR intentionally not used (validity).</div>
       ${renderAnalytics(ins)}
     </details>
   </div>`;
