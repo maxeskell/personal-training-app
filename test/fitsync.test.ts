@@ -139,3 +139,44 @@ test("syncFitSummaries: stream-download failures are aggregated, not swallowed",
     delete process.env.FIT_STREAMS_DIR;
   }
 });
+
+test("syncFitSummaries: a multisport race day downloads its raw stream but adds no per-sport summary", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "coach-fit-multi-"));
+  const { config } = await import("../src/config.js");
+  (config as { dataDir: string }).dataDir = dir;
+  process.env.FIT_STREAMS_DIR = join(dir, "fit-streams");
+  try {
+    const { ArchiveStore } = await import("../src/archive/store.js");
+    const { syncFitSummaries, isStreamCandidate, isMultisportType } = await import("../src/archive/fitSync.js");
+
+    // The regression: Garmin lists a triathlon as ONE "multi_sport" parent activity — it must be a
+    // stream candidate (it used to be filtered out entirely: "0 fetched; 0 failed" on race day).
+    assert.equal(isStreamCandidate("multi_sport"), true);
+    assert.equal(isStreamCandidate("cycling"), true);
+    assert.equal(isStreamCandidate("strength_training"), false);
+    assert.equal(isMultisportType("multi_sport"), true);
+    assert.equal(isMultisportType("cycling"), false);
+
+    const calls: string[] = [];
+    const g = {
+      async listToolNames() { return ["get_activities", "download_activity_file"]; },
+      async tryCall(name: string, args: Record<string, unknown> = {}) {
+        calls.push(name);
+        if (name === "get_activities") return { activities: [{ activityId: "RACE1", type: "multi_sport" }] };
+        if (name === "download_activity_file") {
+          await writeFile(join(String(args.output_dir), `${args.activity_id}.fit`), "fake-fit");
+          return { status: "ok" };
+        }
+        return null;
+      },
+    };
+    const r = await syncFitSummaries(g as never, new ArchiveStore(), 25);
+    assert.equal(r.streamsDownloaded, 1, "race-day .FIT stream downloaded");
+    assert.ok(existsSync(join(dir, "fit-streams", "RACE1.fit")));
+    assert.equal(r.added, 0, "no per-sport summary for a multisport parent");
+    assert.equal(r.streamsFailed, 0);
+    assert.ok(!calls.includes("get_activity_fit_data"), "summary layer skipped for the multisport parent");
+  } finally {
+    delete process.env.FIT_STREAMS_DIR;
+  }
+});

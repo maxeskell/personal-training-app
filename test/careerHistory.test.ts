@@ -15,6 +15,7 @@ const SAMPLE: CareerHistory = {
       location: "Hoorn, Netherlands",
       confidence: "confirmed",
       source: "geo+web",
+      position: "19th overall · 1st of 8 AG",
       result: { distanceKm: 83.1, time: "5:00:00", avgW: 190 },
     },
     {
@@ -53,6 +54,15 @@ test("parseCareerHistory: round-trips a valid file and sorts races by date", () 
   assert.equal(parsed.races[1].event, "Westfriesland 70.3");
   assert.equal(parsed.bests[0].rows[0].allTime?.value, "43:12");
   assert.equal(parsed.powerCurve?.allTime.length, 3);
+});
+
+test("careerPage: finishing position round-trips, renders under the event, and is hidden in share view", () => {
+  const parsed = parseCareerHistory(JSON.stringify(SAMPLE));
+  assert.equal(parsed?.races.find((r) => r.sport === "triathlon")?.position, "19th overall · 1st of 8 AG");
+  const html = renderCareerPage(SAMPLE);
+  assert.ok(html.includes("19th overall · 1st of 8 AG"), "position shown on the race row");
+  const shared = renderCareerPage(SAMPLE, true);
+  assert.ok(!shared.includes("19th overall"), "share view hides the placing (identifying with the event)");
 });
 
 test("parseCareerHistory: garbage / empty / no-content → null (page shows empty state)", () => {

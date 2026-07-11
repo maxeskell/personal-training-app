@@ -103,6 +103,9 @@ function raceRow(r: Race, idx: number, share: boolean): string {
   const event = share ? `Race ${idx + 1}` : escapeHtml(r.event ?? r.type);
   const loc = share ? '<span class="muted">—</span>' : escapeHtml(r.location ?? "—");
   const sub = !share && r.event ? `<div class="when">${escapeHtml(r.type)}</div>` : "";
+  // Finishing position (official results, hand-authored) — hidden in share view alongside the other
+  // identifying bits (a placing + event combination narrows who you are).
+  const pos = !share && r.position ? `<div class="when">${escapeHtml(r.position)}</div>` : "";
   const conf = !share && r.confidence && r.confidence !== "confirmed" ? ` <span class="tag">${escapeHtml(r.confidence)}</span>` : "";
   const res = r.result ?? {};
   // No recorded finish time, but the splits are per-discipline legs (multisport)? Sum them so Performance
@@ -126,7 +129,7 @@ function raceRow(r: Race, idx: number, share: boolean): string {
   const via = !share && res.via ? ` <span class="tag" title="${res.via === "fit" ? "Pulled from your raw .FIT file" : "From your activity export"}">${res.via === "fit" ? ".FIT" : "export"}</span>` : "";
   const perf = perfBits.length ? perfBits.join(" · ") + via : '<span class="muted">—</span>';
   const splits = res.splits && res.splits.length ? splitsBlock(res.splits) : "";
-  return `<tr><td>${when}</td><td>${event}${sub}${conf}</td><td>${loc}</td><td class="num">${perf}${splits}</td></tr>`;
+  return `<tr><td>${when}</td><td>${event}${sub}${pos}${conf}</td><td>${loc}</td><td class="num">${perf}${splits}</td></tr>`;
 }
 
 /** One overlaid power-curve line: a name, a stroke colour, and the mean-maximal points. */

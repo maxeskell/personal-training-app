@@ -257,6 +257,46 @@ export interface ActivityFit {
   fit: FitActivity;
 }
 
+/**
+ * Expand a MULTISPORT .FIT — one file carrying a `session` message per discipline leg, which is how a
+ * triathlon/duathlon race lands from Garmin's download_activity_file — into standalone per-leg
+ * activities, so everything downstream (session decays, per-interval splits, the completeness
+ * date+sport join, the career build) sees a Swim, a Ride and a Run rather than one un-analysable
+ * multisport blob. Single-session files pass through untouched (`[act]`).
+ *
+ * Each sport leg (run/ride/swim — transitions and unknown-sport sessions are dropped, their samples
+ * belong to no leg) keeps the samples and laps whose timestamps fall inside its window
+ * [its startTimeS, the next session's startTimeS); the last window is open-ended. A session without a
+ * startTimeS can't be windowed; if none carry one the file is returned unexpanded (degrade, don't
+ * invent). Pool lengths aren't carried (a multisport swim leg is open water). Pure — exported for tests.
+ */
+export function expandMultisportFit(act: FitActivity): FitActivity[] {
+  const sessions = act.sessions ?? [];
+  if (sessions.length <= 1) return [act];
+  const ordered = sessions
+    .filter((s) => s.startTimeS != null)
+    .sort((a, b) => (a.startTimeS ?? 0) - (b.startTimeS ?? 0));
+  if (!ordered.length) return [act];
+  const legs: FitActivity[] = [];
+  for (let i = 0; i < ordered.length; i++) {
+    const s = ordered[i];
+    if (!/run|ride|swim/i.test(s.sportName)) continue; // transition ("sport-3") / generic → not a leg
+    const start = s.startTimeS!;
+    const end = ordered[i + 1]?.startTimeS ?? Infinity;
+    legs.push({
+      sport: s.sport,
+      sportName: s.sportName,
+      subSport: s.subSport ?? null,
+      samples: act.samples.filter((x) => x.t != null && x.t >= start && x.t < end),
+      laps: act.laps.filter((l) => l.startTimeS != null && l.startTimeS >= start && l.startTimeS < end),
+      lengths: [],
+      sessions: [s],
+      session: { durationSec: s.durationSec, distanceKm: s.distanceKm, avgHr: s.avgHr, avgPower: s.avgPower },
+    });
+  }
+  return legs.length ? legs : [act];
+}
+
 /** Every file under `dir` (recursively). Best-effort: an unreadable dir/entry is skipped, never throws. */
 function walkFiles(dir: string): string[] {
   const out: string[] = [];
@@ -327,12 +367,20 @@ export function loadActivityFits(
     try {
       let buf = readFileSync(path);
       if (lower.endsWith(".gz")) buf = gunzipSync(buf);
-      let fit = isFit ? parseFit(buf) : isTcx ? parseTcx(buf) : parsePwx(buf);
-      if (!fit) continue;
-      const firstT = fit.samples.find((s) => s.t != null)?.t ?? fit.laps.find((l) => l.startTimeS != null)?.startTimeS;
-      const date = firstT != null ? new Date(firstT * 1000).toISOString().slice(0, 10) : "";
-      if (fit.samples.length && shouldDropSamples(opts, fit.sportName)) fit = { ...fit, samples: [] };
-      out.push({ activityId: basename(path).replace(/\.(fit|tcx|pwx)(\.gz)?$/i, ""), date, sport: fit.sportName, fit });
+      const parsed = isFit ? parseFit(buf) : isTcx ? parseTcx(buf) : parsePwx(buf);
+      if (!parsed) continue;
+      const baseId = basename(path).replace(/\.(fit|tcx|pwx)(\.gz)?$/i, "");
+      // A multisport race file expands into per-leg activities (swim/bike/run), each dated + sported
+      // on its own, so date+sport matching (splits, career build) finds the legs. Single-session
+      // files pass through unchanged.
+      const legs = expandMultisportFit(parsed);
+      for (const [i, legFit] of legs.entries()) {
+        let fit = legFit;
+        const firstT = fit.samples.find((s) => s.t != null)?.t ?? fit.laps.find((l) => l.startTimeS != null)?.startTimeS;
+        const date = firstT != null ? new Date(firstT * 1000).toISOString().slice(0, 10) : "";
+        if (fit.samples.length && shouldDropSamples(opts, fit.sportName)) fit = { ...fit, samples: [] };
+        out.push({ activityId: legs.length > 1 ? `${baseId}-leg${i + 1}` : baseId, date, sport: fit.sportName, fit });
+      }
     } catch {
       // skip unreadable/malformed/corrupt-gzip activity file
     }
@@ -346,15 +394,24 @@ export function loadSessionDecays(dir = fitStreamsDir()): SessionDecay[] {
   const out: SessionDecay[] = [];
   for (const name of readdirSync(dir)) {
     try {
-      let f: StreamFile | null = null;
+      const files: StreamFile[] = [];
       if (/\.(fit|FIT)$/.test(name)) {
         const act = parseFit(readFileSync(join(dir, name)));
-        if (act) f = fitToStreamFile(act, name);
+        // A multisport race file yields one analysable stream per leg (swim/bike/run) — mixing the
+        // legs' samples would turn the decay/decoupling maths into nonsense. Single-session: as-is.
+        if (act) {
+          const legs = expandMultisportFit(act);
+          for (const [i, leg] of legs.entries()) {
+            files.push(fitToStreamFile(leg, legs.length > 1 ? name.replace(/\.(fit|FIT)$/, `-leg${i + 1}.fit`) : name));
+          }
+        }
       } else if (name.endsWith(".json")) {
-        f = JSON.parse(readFileSync(join(dir, name), "utf8")) as StreamFile;
+        files.push(JSON.parse(readFileSync(join(dir, name), "utf8")) as StreamFile);
       }
-      const d = f ? analyseSession(f) : null;
-      if (d) out.push(d);
+      for (const f of files) {
+        const d = analyseSession(f);
+        if (d) out.push(d);
+      }
     } catch {
       // skip unreadable/malformed stream files
     }
