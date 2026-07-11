@@ -19,11 +19,15 @@ export interface HeatInput {
   avgPowerW?: number | null;
   avgHr?: number | null;
   avgTempC?: number | null;
+  /** Ambient (met) air temp for the activity — Garmin's get_activity_weather, synced onto FitSummary. */
+  weatherTempC?: number | null;
 }
 
 export interface HeatAnalysis {
   sport: string;
   n: number;
+  /** How many of the n points used ambient (met) air temp rather than the device sensor. */
+  metN: number;
   pctPerC: number | null; // % EF change per °C (negative = EF falls as it warms)
   recentEf: number | null;
   priorEf: number | null;
@@ -37,17 +41,27 @@ interface Pt {
   date: string;
   ef: number;
   temp: number;
+  met: boolean;
 }
 
 export function analyseHeat(records: HeatInput[], sport: "Run" | "Ride"): HeatAnalysis {
-  const pts: Pt[] = records
-    .filter((d) => d.sport === sport && d.avgPowerW != null && d.avgHr != null && d.avgHr > 0 && d.avgTempC != null)
-    .map((d) => ({ date: d.date, ef: d.avgPowerW! / d.avgHr!, temp: d.avgTempC! }))
-    // de-dup by date (a raw .FIT and its summary can both be present) — keep the first.
-    .filter((p, i, arr) => arr.findIndex((q) => q.date === p.date) === i)
-    .sort((a, b) => a.date.localeCompare(b.date));
+  // Ambient (met) air temp beats the device sensor when both exist: the wrist/head-unit thermistor
+  // reads body heat + direct sun (Birmingham 2026 raced at a device 23–24°C vs 18–22°C actual air),
+  // and that bias VARIES with sun/clothing, so it adds noise to the EF~temp regression.
+  const candidates: Pt[] = records
+    .filter((d) => d.sport === sport && d.avgPowerW != null && d.avgHr != null && d.avgHr > 0 && (d.weatherTempC ?? d.avgTempC) != null)
+    .map((d) => ({ date: d.date, ef: d.avgPowerW! / d.avgHr!, temp: (d.weatherTempC ?? d.avgTempC)!, met: d.weatherTempC != null }));
+  // De-dup by date (a raw .FIT and its synced summary can both be present) — prefer the record that
+  // carries ambient temp; first-seen wins among equals (the old behaviour).
+  const byDate = new Map<string, Pt>();
+  for (const p of candidates) {
+    const cur = byDate.get(p.date);
+    if (!cur || (!cur.met && p.met)) byDate.set(p.date, p);
+  }
+  const pts = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  const metN = pts.filter((p) => p.met).length;
 
-  const empty: HeatAnalysis = { sport, n: pts.length, pctPerC: null, recentEf: null, priorEf: null, efChangePct: null, recentTempC: null, priorTempC: null, heatAttributedPct: null };
+  const empty: HeatAnalysis = { sport, n: pts.length, metN, pctPerC: null, recentEf: null, priorEf: null, efChangePct: null, recentTempC: null, priorTempC: null, heatAttributedPct: null };
   if (pts.length < 8) return empty;
   const temps = pts.map((p) => p.temp);
   if (Math.max(...temps) - Math.min(...temps) < 4) return empty; // need a real temperature range
@@ -81,6 +95,7 @@ export function analyseHeat(records: HeatInput[], sport: "Run" | "Ride"): HeatAn
   return {
     sport,
     n: pts.length,
+    metN,
     pctPerC,
     recentEf: recentEf == null ? null : +recentEf.toFixed(3),
     priorEf: priorEf == null ? null : +priorEf.toFixed(3),
@@ -105,7 +120,7 @@ export function heatFinding(h: HeatAnalysis): Finding | null {
       detail:
         `Your ${h.sport.toLowerCase()} efficiency falls ~${Math.abs(h.pctPerC)}%/°C in the heat. Recent sessions averaged ${h.recentTempC}°C vs ${h.priorTempC}°C prior, ` +
         `so ~${h.heatAttributedPct}% of the ${Math.abs(h.efChangePct!)}% EF drop is temperature, not lost fitness — read the trend on comparable-temperature sessions.`,
-      evidence: `EF regressed on per-activity .FIT temperature, n=${h.n} [derived]`,
+      evidence: `EF regressed on per-activity ${tempSourceNote(h)}, n=${h.n} [derived]`,
       confidence: 0.6,
     };
   }
@@ -115,7 +130,14 @@ export function heatFinding(h: HeatAnalysis): Finding | null {
     severity: "info",
     detail:
       `Your ${h.sport.toLowerCase()} EF moves ~${Math.abs(h.pctPerC)}%/°C with ambient temperature (n=${h.n}). Keep this in mind when comparing EF across seasons — compare like temperatures, not raw values.`,
-    evidence: `EF regressed on per-activity .FIT temperature [derived]`,
+    evidence: `EF regressed on per-activity ${tempSourceNote(h)} [derived]`,
     confidence: 0.5,
   };
+}
+
+/** Honest provenance for the evidence line: which temperature source(s) the regression actually used. */
+function tempSourceNote(h: Pick<HeatAnalysis, "n" | "metN">): string {
+  if (h.metN === 0) return ".FIT device temperature";
+  if (h.metN >= h.n) return "ambient (met) air temperature";
+  return `temperature (ambient met air for ${h.metN}/${h.n}, .FIT device for the rest)`;
 }

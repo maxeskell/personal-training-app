@@ -560,10 +560,13 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   findings.push(...runLoadRampFindings(runRamp));
   findings.push(...formAndIntensityFindings(load, monotony, tid));
 
-  // 3. Efficiency / durability trends. Heat confounds EF and is only known when per-activity .FIT
-  // temperature exists, so an EF-slipping call without it must say a hot spell can't be ruled out.
+  // 3. Efficiency / durability trends. Heat confounds EF and is only known when per-activity
+  // temperature exists (device sensor OR the synced ambient met reading), so an EF-slipping call
+  // without either must say a hot spell can't be ruled out.
   const hasThermal = [...sessionDecays, ...(archive?.fitSummaries ?? [])].some(
-    (r) => typeof (r as { avgTempC?: unknown }).avgTempC === "number",
+    (r) =>
+      typeof (r as { avgTempC?: unknown }).avgTempC === "number" ||
+      typeof (r as { weatherTempC?: unknown }).weatherTempC === "number",
   );
   findings.push(...efficiencyDurabilityFindings("Run", ef.run, durability.run, hasThermal));
   // Bike EF + durability are computed the same way but were never surfaced — for a triathlete with a power

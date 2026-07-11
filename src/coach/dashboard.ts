@@ -17,6 +17,7 @@ import { assembleSession, listRecentSessions, type SessionRef, type SessionDetai
 import { sessionPlanSignal, type ReviewSignal } from "./reviewBridge.js";
 import { config } from "../config.js";
 import type { Profile } from "../profile/schema.js";
+import type { RaceReviewRecord } from "../insights/raceReview.js";
 import { weekday, upcomingPlanned, asOfLabel, type WeekWeather } from "../weather/assess.js";
 import type { WaterTempCard } from "../weather/waterTemp.js";
 import { assessHealthRisk, type HealthRiskAssessment } from "../guardrails/wellbeing.js";
@@ -130,6 +131,11 @@ export interface DashboardInput {
    * (HRV/RHR/sleep/VO2max) aren't identifying; weight/body-comp aren't on the dashboard at all.
    */
   share?: boolean;
+  /**
+   * Completed-race reviews from the spec-07 race-model log (frozen pre-race prediction vs official
+   * result) — renders the "model track record" line on the race-splits card. Omitted/empty → no line.
+   */
+  raceReviews?: RaceReviewRecord[];
   /**
    * Minutes since the snapshot was assembled, set ONLY when the server wants the page to kick a
    * background Sync on load (stale-while-revalidate). Leave unset for the one-off CLI HTML file,
@@ -829,7 +835,22 @@ function stripTrailingSentences(s: string | undefined, trailing: string): string
   return (t.endsWith(trailing) ? t.slice(0, t.length - trailing.length) : t).trim();
 }
 
-function renderSplits(ins: InsightReport, share = false): string {
+/**
+ * The model's own track record (spec-07 post-race hook): frozen pre-race predictions vs official
+ * results. Hidden in share view (real race names + dates are identifying). All-numeric apart from the
+ * race name, which is escaped like everything else.
+ */
+function modelTrackRecordLine(reviews: RaceReviewRecord[] | undefined): string {
+  if (!reviews?.length) return "";
+  const sorted = [...reviews].sort((a, b) => a.date.localeCompare(b.date));
+  const last = sorted[sorted.length - 1];
+  const absErrs = sorted.map((r) => Math.abs(r.errorPct)).sort((a, b) => a - b);
+  const medianAbsErrPct = absErrs[Math.floor(absErrs.length / 2)];
+  const sign = last.errorSec >= 0 ? "+" : "−";
+  return `<div class="ev" style="margin:0 0 8px"><b>Model track record:</b> ${sorted.length} race${sorted.length === 1 ? "" : "s"} reviewed, median error ${medianAbsErrPct}% — last: ${escapeHtml(last.race)} predicted ${hms(last.predictedSec)} vs official ${hms(last.officialSec)} (${sign}${hms(Math.abs(last.errorSec))}).</div>`;
+}
+
+function renderSplits(ins: InsightReport, share = false, raceReviews?: RaceReviewRecord[]): string {
   if (!ins.splits.length) return "";
   // Hoist the caveats every race repeats verbatim into one shared note below, stripped from each block.
   const sharedBasis = commonTrailingSentences(ins.splits.map((p) => p.rangeBasis ?? ""));
@@ -879,7 +900,7 @@ function renderSplits(ins: InsightReport, share = false): string {
   const shared = [sharedBasis, sharedStrategy].filter(Boolean).join(" ");
   const sharedNote = shared ? `<div class="ev" style="margin:0 0 8px"><b>Applies to all races:</b> ${escapeHtml(shared)}</div>` : "";
   return `<div class="card"><h2>Estimated race splits</h2>${blocks}
-    ${sharedNote}<div class="k">Run races build from AI Endurance's predicted finish shaped by your durability trend; triathlon legs are modelled from your current CSS / FTP / run predictions at standard race intensities. <b>A MODEL — a range and a pacing plan, not a guarantee.</b></div>
+    ${sharedNote}${share ? "" : modelTrackRecordLine(raceReviews)}<div class="k">Run races build from AI Endurance's predicted finish shaped by your durability trend; triathlon legs are modelled from your current CSS / FTP / run predictions at standard race intensities. <b>A MODEL — a range and a pacing plan, not a guarantee.</b></div>
     ${raceGlossary()}
   </div>`;
 }
@@ -1228,7 +1249,7 @@ function renderNextWeekProposals(proposals: WeeklyProposalView[]): string {
   );
 }
 
-export function renderDashboard({ window, decisions, insights, reactions, discussions, firstSeen, garminDays, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, seasonReport, seasonProse, career, priorBrief, weeklyDelta, now, share }: DashboardInput): string {
+export function renderDashboard({ window, decisions, insights, reactions, discussions, firstSeen, garminDays, fitSummaries, canFetchFit, weather, profile, autoSyncStaleMin, suppressed, weeklyReview, researchDigest, setupHealth, sessionFeedbacks, metricOverrides, coachRecs, coachRecsMerged, fuelLog, seasonReport, seasonProse, career, priorBrief, weeklyDelta, now, share, raceReviews }: DashboardInput): string {
   const today = window[window.length - 1];
 
   // Fuelling — week ahead (deterministic, no LLM on render): per-session pre/during/after from the
@@ -1400,7 +1421,7 @@ export function renderDashboard({ window, decisions, insights, reactions, discus
 </div>`;
   const perfFormLoad = [insights ? collapse(renderSignals(insights)) : "", trendsCard, collapse(loadCard)].filter((s) => s.trim()).join("\n");
   const perfZones = [collapse(renderZones(today)), collapse(renderScores(today))].filter((s) => s.trim()).join("\n");
-  const perfRace = [racesCard, insights ? collapse(renderSplits(insights, share)) : ""].filter((s) => s.trim()).join("\n");
+  const perfRace = [racesCard, insights ? collapse(renderSplits(insights, share, raceReviews)) : ""].filter((s) => s.trim()).join("\n");
 
   // Plan tab body. Every piece is best-effort (weather can fail to fetch, the season fold degrades to
   // nothing without a plan), so when ALL of them are absent — e.g. a render right after a restart, before

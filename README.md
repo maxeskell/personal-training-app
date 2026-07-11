@@ -551,6 +551,14 @@ projection (the dashboard stays decluttered — cost lives in `npm run cost` / t
     which must *lead* with an implausible target rather than build pacing around it. Born of
     Birmingham 2026: a "sub 2:00" profile target sat unchallenged through a month of race-prep reports
     while the athlete's own numbers modelled ~2:39 — which is what he ran.
+  - **Model track record (the spec-07 post-race hook):** while a race is still ahead, its latest
+    complete plan is **frozen** (`data/race-predictions.json` — the last pre-race snapshot wins; plans
+    with missing legs, or computed after race day, are never frozen). Once the official result lands in
+    your career history, the frozen prediction is judged against it **once** — total + per-leg deltas
+    and whether the official time fell inside the model's range — into the append-only
+    `data/race-reviews.jsonl`, and the splits card shows the running **"Model track record"** line
+    (races reviewed, median error, the latest comparison). The model earns trust the same way every
+    other estimator here does: against results, in writing.
 
   (Predicted times are MODEL estimates — the plan is a target, not a guarantee.)
 

@@ -12,6 +12,7 @@ import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard, renderResearchDigestPage, aieGapKeyFromSetupKey } from "./coach/dashboard.js";
 import { renderCareerPage } from "./coach/careerPage.js";
 import { loadCareerHistory } from "./coach/careerHistory.js";
+import { recordAndReviewRaces } from "./state/raceModelLog.js";
 import { buildSeasonArc } from "./coach/seasonArc.js";
 import { renderSeasonPage, type SeasonProse } from "./coach/seasonPage.js";
 import { latestAdviceFindings, clusterAdvice, clustersToDisplay } from "./coach/adviceRecs.js";
@@ -158,6 +159,10 @@ async function renderLatest(share = false): Promise<string> {
   // the standalone /season and /career routes so the tab and the deep page show identical content.
   const profile = (await loadProfileSafe())?.profile;
   const career = loadCareerHistory();
+  // Spec-07 post-race hook: freeze the latest PRE-race splits plan per upcoming race, and once the
+  // official result lands in career history, log model-vs-official (the model's own track record).
+  // Best-effort — a store failure means no track-record line, never a broken render.
+  const raceReviews = insights ? await recordAndReviewRaces(insights.splits, latest.date, career?.races ?? []) : [];
   let seasonReport: ReturnType<typeof buildSeasonArc> | undefined;
   let seasonProse: SeasonProse | undefined;
   try {
@@ -211,6 +216,7 @@ async function renderLatest(share = false): Promise<string> {
     seasonReport,
     seasonProse,
     career,
+    raceReviews,
     autoSyncStaleMin,
     suppressed, // dismissed "Set up & improve" items (shares the insight snooze machinery)
     weeklyReview: await latestWeeklyReview(), // "This week" group — read persisted, never re-run
