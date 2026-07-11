@@ -1,22 +1,32 @@
 # 07 — Race-target plausibility gate (the Birmingham 2026 lesson)
 
-**Status: proposed (not built).** Written 2026-07-11, the evening of the failure it describes.
+**Status: partially addressed.** Written 2026-07-11, the evening of the failure it describes;
+corrected the same day — a per-leg race model DID exist (the dashboard's "Estimated race splits"
+card, `estimateTriSplits`), and it was **28 seconds accurate on the legs it modelled**. Two things
+failed around it: the swim leg was dropped (CSS unset) with only a fine-print note while the
+headline still read as a race time, and nothing compared the card's number to the profile target.
+The first failure is FIXED (same-day commit: open-water-pace swim fallback + a loud
+"not a full-race time" warning when a leg is missing). The **gate** — comparing the model to
+`target_time` and leading race-prep with any discrepancy — remains to build.
 
 ## The failure
 
 Birmingham Triathlon 2026 (the season's A-race) carried a profile target of **"sub 2:00"** for an
 Olympic-distance race. The athlete finished in **2:39:12 — a 39-minute miss — while executing
 close to optimally** (even-paced bike at −0.4% decoupling, negative-split run, 1st of 8 in AG).
-The target was not a stretch; it described a different athlete. A back-of-envelope model from the
-athlete's own live numbers on race morning (swim ~2:00/100m observed pace, bike ~31 km/h at
-raceable watts, run threshold 4:43/km + brick cost, transitions ~3:30) predicts **~2:36–2:41** —
-the actual result was dead-centre in that band.
+The target was not a stretch; it described a different athlete.
 
-**No part of the pipeline ever challenged the number.** The target lives in
+The dashboard's race-splits card modelled T1+bike+T2+run at **2:09:44**; the athlete's actual
+modelled-legs total was **2:09:16** — the model was nearly perfect. But with no CSS set the swim
+leg was silently omitted (headline "2:10 · over 50 km" — an Olympic is 51.5 km), so the card read
+as a full-race prediction ~30 minutes fast, and the athlete reasonably took 2:10 as the number.
+
+**And no part of the pipeline ever challenged the target.** The target lives in
 `profile.local.yaml → races[].target_time` (athlete-authored, never validated); AI Endurance never
-had it (`set-race-targets` is a standing open item); and every LLM race-prep report accepted it
-verbatim — T-27d through T-1d all organised pacing advice around "sub-2:00" without once comparing
-it to the athlete's data. The coach's own guardrails ("label estimates as MODELs", "n=1 data over
+had it (`set-race-targets` is a standing open item); the splits card's 2:10 and the target's 2:00
+were never compared; and every LLM race-prep report accepted "sub-2:00" verbatim — T-27d through
+T-1d all organised pacing advice around it without once comparing it to the athlete's data (or to
+the card's model). The coach's own guardrails ("label estimates as MODELs", "n=1 data over
 priors") were applied to everything except the goal itself.
 
 ## The fix

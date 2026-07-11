@@ -79,14 +79,22 @@
   Result 2:39:12, 19th overall, **1st of 8 AG** (splits + .FIT data live in `data/career-history.json`
   and the race .FIT — not here). Execution was near-optimal: even bike, controlled run open,
   negative-split close. The "sub 2:00" target was never derivable from any data we hold; a
-  race-morning model from the athlete's own numbers lands ~2:36–2:41. Agreed consequences:
+  race-morning model from the athlete's own numbers lands ~2:36–2:41.
+  _Correction (same day, from Max): a per-leg model DID exist — the dashboard's "Estimated race
+  splits" card predicted 2:09:44 for T1+bike+T2+run, and the modelled-legs actual was 2:09:16
+  (28 s accurate) — but with CSS unset it silently dropped the swim, so its headline "2:10" read
+  as a full-race time ~30 min fast. Fixed same day (second ship): swim falls back to recent
+  open-water .FIT pace, and a plan with un-modelled legs warns "not a full-race time" on the
+  headline. Fuelling: executed to plan, reported good — logged._
+  Agreed consequences:
   (a) **targets must come from a data-derived race model before they're committed** (spec 07);
   (b) the race is a **certified ≥217 W NP for 79 min** data point — FTP/zones update, see To do;
   (c) swim gets structure only when CSS exists — test booked-by to-do above;
   (d) taper honesty: race-morning TSB was −6.8 (fresh-ish, not peaked) — a real A-race peak wants
   TSB ≥ 0; raise with AI Endurance before Alderford. App side, same day: multisport race .FITs now
   auto-fetch + expand per leg (they were silently skipped — the A-race was invisible to the granular
-  layer), and the career page gained a hand-authored finishing-position field. Cost-capped at one paid round per year;
+  layer), and the career page gained a hand-authored finishing-position field.
+- **2026-07-06 — Annual testing rhythm + Sportstest one-offs.** Cost-capped at one paid round per year;
   Sportstest (Dr Garry Palmer's lab, Cannock — ~25 min away) is the testing venue.
   - **Annual, same slot every year: one "testing week", last week of February.** Bloods (Medichecks
     Ultimate Performance, Monday fasted) + Sportstest comprehensive **bike** physiological assessment in

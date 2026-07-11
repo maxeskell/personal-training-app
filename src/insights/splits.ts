@@ -38,6 +38,12 @@ export interface RaceSplitPlan {
   worstSec?: number;
   bestSec?: number;
   rangeBasis?: string;
+  /**
+   * Legs that could NOT be modelled (e.g. "swim (no CSS set)") — `predictedSec` EXCLUDES them, so it is
+   * NOT a full-race time. Surfaced so the UI can say that loudly next to the headline number: Birmingham
+   * 2026 shipped a "2:10" that silently omitted a ~30 min swim, and read as the race prediction.
+   */
+  missingLegs?: string[];
 }
 
 /** Cap on the best-case improvement we'll project — no runaway extrapolation. */
@@ -212,6 +218,8 @@ export type TriRaceType = "sprint" | "olympic" | "half-iron" | "ironman";
 /** The athlete's current numbers a tri plan is built from (all optional — legs degrade individually). */
 export interface TriPerformance {
   cssSecPer100?: number;
+  /** Fallback swim basis when CSS is unset: observed OPEN-WATER pace from recent .FIT streams (sec/100m). */
+  recentOpenWaterPaceSecPer100?: number;
   ftpW?: number;
   runThresholdPaceSecPerKm?: number;
   /** Standalone run race predictions (Garmin race predictor) — preferred run-leg basis. */
@@ -288,7 +296,9 @@ export function estimateTriSplits(
   date?: string,
 ): RaceSplitPlan | null {
   const c = TRI[type];
-  const hasSwim = perf.cssSecPer100 != null && perf.cssSecPer100 > 0;
+  const cssPace = perf.cssSecPer100 != null && perf.cssSecPer100 > 0 ? perf.cssSecPer100 : undefined;
+  const owPace = perf.recentOpenWaterPaceSecPer100 != null && perf.recentOpenWaterPaceSecPer100 > 0 ? perf.recentOpenWaterPaceSecPer100 : undefined;
+  const hasSwim = cssPace != null || owPace != null;
   const hasBike = perf.ftpW != null && perf.ftpW > 0;
   const runPredSec = perf.runPredictions?.[c.runPred];
   const hasRun = (runPredSec != null && runPredSec > 0) || (perf.runThresholdPaceSecPerKm != null && perf.runThresholdPaceSecPerKm > 0);
@@ -310,12 +320,18 @@ export function estimateTriSplits(
     segments.push({ label, distanceKm, targetPaceSecPerKm: distanceKm > 0 ? Math.round(sec / distanceKm) : 0, splitSec, cumulativeSec, target });
   };
 
-  if (hasSwim) {
-    const pace100 = perf.cssSecPer100! * c.swimCssFactor;
+  if (cssPace != null) {
+    const pace100 = cssPace * c.swimCssFactor;
     push(`Swim ${c.swimM} m`, c.swimM / 1000, (c.swimM / 100) * pace100, `${clock(pace100)}/100m`);
-    basis.push(`swim ~CSS${pctOver(c.swimCssFactor)} (CSS ${clock(perf.cssSecPer100!)}/100m)`);
+    basis.push(`swim ~CSS${pctOver(c.swimCssFactor)} (CSS ${clock(cssPace)}/100m)`);
+  } else if (owPace != null) {
+    // No CSS: fall back to the athlete's OBSERVED recent open-water pace — already race-ish effort, so
+    // no CSS race factor is applied. A rough MODEL, but ~30 min of real swim beats silently omitting the
+    // leg (the Birmingham 2026 failure: a headline "2:10" that wasn't a race time).
+    push(`Swim ${c.swimM} m`, c.swimM / 1000, (c.swimM / 100) * owPace, `${clock(owPace)}/100m`);
+    basis.push(`swim at your recent open-water pace (${clock(owPace)}/100m — rough MODEL; set CSS in AI Endurance for a real one)`);
   } else {
-    missing.push("swim (no CSS set)");
+    missing.push("swim (no CSS set, no recent open-water swims)");
   }
   push("T1", 0, c.t1Sec, "transition");
 
@@ -361,5 +377,5 @@ export function estimateTriSplits(
     missing.length ? ` No estimate for ${missing.join(", ")}.` : ""
   }`;
 
-  return { race, date, distanceKm: +raced.toFixed(1), predictedSec: Math.round(cum), strategy, segments };
+  return { race, date, distanceKm: +raced.toFixed(1), predictedSec: Math.round(cum), strategy, segments, missingLegs: missing.length ? missing : undefined };
 }

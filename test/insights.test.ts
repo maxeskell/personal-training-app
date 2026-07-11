@@ -84,7 +84,37 @@ test("tri splits: degrade per leg — missing FTP drops the bike leg and is name
   assert.match(plan.strategy, /no FTP/);
   // No bike leg → no bike sensitivity note (it's only meaningful when the bike is estimated).
   assert.doesNotMatch(plan.strategy, /CdA/);
+  assert.ok(plan.missingLegs?.some((m) => m.includes("bike")), "the dropped leg is machine-readable, not just prose");
   assert.equal(estimateTriSplits("Local Tri", "olympic", {}, "unknown"), null);
+});
+
+test("tri splits: no CSS but recent open-water pace → swim leg from observed pace, labelled a rough MODEL", () => {
+  const plan = estimateTriSplits(
+    "Birmingham Triathlon",
+    "olympic",
+    { recentOpenWaterPaceSecPer100: 133, ftpW: 199, runPredictions: { "10K": 2767 }, riderWeightKg: 71 },
+    "unknown",
+  )!;
+  const swim = plan.segments.find((s) => s.label === "Swim 1500 m");
+  assert.ok(swim, "swim leg present from the open-water fallback");
+  assert.equal(swim!.splitSec, 1995, "1500 m at the observed 2:13/100m — no CSS race factor applied");
+  assert.match(plan.strategy, /recent open-water pace/);
+  assert.match(plan.strategy, /set CSS in AI Endurance/);
+  assert.equal(plan.missingLegs, undefined, "nothing silently missing");
+  assert.equal(plan.segments.at(-1)!.cumulativeSec, plan.predictedSec, "headline total now includes the swim");
+});
+
+test("tri splits: swim un-modellable → missingLegs says so and the total excludes it (the Birmingham 2026 lesson)", () => {
+  const plan = estimateTriSplits("Birmingham Triathlon", "olympic", { ftpW: 199, runPredictions: { "10K": 2767 }, riderWeightKg: 71 }, "unknown")!;
+  assert.ok(!plan.segments.some((s) => s.label.startsWith("Swim")));
+  assert.ok(plan.missingLegs?.some((m) => m.includes("swim")), "the omission is structural, for the UI to shout");
+  assert.match(plan.strategy, /No estimate for swim/);
+});
+
+test("tri splits: a set CSS wins over the open-water fallback", () => {
+  const plan = estimateTriSplits("Tri", "olympic", { cssSecPer100: 110, recentOpenWaterPaceSecPer100: 133, ftpW: 200 }, "unknown")!;
+  assert.match(plan.strategy, /CSS 1:50\/100m/);
+  assert.doesNotMatch(plan.strategy, /open-water pace/);
 });
 
 test("engine: triathlon goals produce per-leg split plans (not run-only)", () => {

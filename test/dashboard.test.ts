@@ -1252,6 +1252,25 @@ test("race splits: caveats every race repeats are hoisted into one shared note, 
   assert.match(html, /~4\.7%/);
 });
 
+test("race splits: a plan with un-modelled legs warns loudly next to the headline number", () => {
+  const s = emptyState("2026-06-19", new Date().toISOString());
+  const ins = buildInsights(s, undefined, {});
+  ins.splits = [
+    {
+      race: "Race A",
+      distanceKm: 50,
+      predictedSec: 7784,
+      strategy: "Olympic plan: bike 83% FTP. No estimate for swim (no CSS set, no recent open-water swims).",
+      segments: [],
+      missingLegs: ["swim (no CSS set, no recent open-water swims)"],
+    },
+  ] as never;
+  const html = renderDashboard({ window: [s], decisions: [], insights: ins });
+  assert.match(html, /⚠ not a full-race time — no model for swim/, "the omission sits next to the headline, not in fine print");
+  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script(?:\s[^>]*)?>/gi)].map((m) => m[1]);
+  for (const [i, sc] of scripts.entries()) assert.doesNotThrow(() => new Function(sc), `script ${i} must parse`);
+});
+
 test("today's session carries its full fuelling on the Today card; the weather card stays fuel-free", () => {
   const today = "2026-06-22";
   const s = emptyState(today, new Date().toISOString());

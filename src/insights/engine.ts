@@ -29,6 +29,7 @@ import { trainingStatusFinding, hrvStatusFinding, enduranceScoreFinding, powerCu
 import { garminTrendFindings } from "./garminTrends.js";
 import { analyseHeat, heatFinding } from "./heat.js";
 import { finiteNums, slope } from "./stats.js";
+import { shiftIso } from "../util/today.js";
 import { engagementFindings, type EngagementContext } from "./engagement.js";
 import type { FitSummary } from "../archive/store.js";
 
@@ -498,6 +499,14 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   for (const rp of state.racePredictions.value?.predictions ?? []) {
     if (rp.label === "5K" || rp.label === "10K" || rp.label === "Half" || rp.label === "Marathon") runPredictions[rp.label] = rp.timeSeconds;
   }
+  // Swim fallback when CSS is unset: median observed open-water pace from the last ~90d of .FIT streams
+  // (pool swims carry no GPS pace, so they exclude themselves). A rough MODEL — but the alternative was a
+  // headline race time with a whole leg silently missing (Birmingham 2026).
+  const owPaces = sessionDecays
+    .filter((d) => /swim/i.test(d.sport) && d.date >= shiftIso(state.date, -90) && d.date <= state.date && d.swim?.paceSecPer100m != null && d.swim.openWater !== false)
+    .map((d) => d.swim!.paceSecPer100m!)
+    .sort((a, b) => a - b);
+  const recentOpenWaterPaceSecPer100 = owPaces.length ? owPaces[Math.floor(owPaces.length / 2)] : undefined;
   const splits = predictions
     .filter((p) => (p.daysTo ?? -1) >= 0)
     .map((p) => {
@@ -508,6 +517,7 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
           tri,
           {
             cssSecPer100: thresholds?.swimCssSecPer100,
+            recentOpenWaterPaceSecPer100,
             ftpW: thresholds?.bikeFtpW,
             runThresholdPaceSecPerKm: thresholds?.runThresholdPaceSecPerKm,
             runPredictions,
