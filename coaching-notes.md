@@ -12,6 +12,21 @@
 > the MCP and the gitignored profile aren't reachable.
 
 ## To do
+- [ ] **Run form — standing cues for every run + brick (from Birmingham race photos, 13 Jul 2026).**
+      Surface these in run and brick session prep until habitual — the crossover is worst in the first km
+      off the bike. (1) **Arm carriage:** hands cross the body's midline across the chest in nearly every
+      run frame (Run-265/1356, Finish-320), rotating the torso and leaking energy. Cue: drive the *elbow*
+      straight back, hands track front-to-back past the hips ("train tracks", hip-to-nipple), never crossing
+      the sternum. (2) **Relax the hands:** fists clenched in several frames — soft hands (imagine holding a
+      crisp); tension there travels up into the shoulders. Foot strike + posture already good, so this is the
+      one run-economy lever from the photos. Add a mid-run cue reset, and one deliberately in the first km
+      off the bike in bricks.
+- [ ] **Bike position micro-cues (Birmingham race photos, 13 Jul 2026) — folds into the aero-position to-do below.**
+      On the road bike in the drops the position is committed and low, but (1) **shoulders shrug up toward the
+      ears** (Bike-245 front-on) — consciously drop/relax them to hold the position longer and unload the neck;
+      (2) **the back rounds through the thoracic spine** instead of hinging from the hips — a flatter back off a
+      bigger hip hinge is both more aero and a stronger power position. Test alongside any pad-drop / clip-on
+      change on the fixed-power out-and-backs already planned.
 - [x] **Set FTP 225 W in BOTH AI Endurance and Garmin Connect — DONE (Max, 11 Jul evening).**
       Garmin side verified live via `ftp_check` (configured 225 W, read from Garmin); AIE side
       athlete-reported (the connector is read-only and can't see which engine set it). Zones on the
