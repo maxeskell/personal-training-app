@@ -29,7 +29,7 @@ import { ArchiveStore } from "./archive/store.js";
 import { answerQuestion } from "./coach/ask.js";
 import { runWeeklyReview } from "./coach/weekly.js";
 import { runRacePrep } from "./coach/racePrep.js";
-import { runDeepDive, insightMetricsSummary, insightFindings } from "./coach/deepDive.js";
+import { runDeepDive, insightMetricsSummary, insightFindings, nextDeepDiveAction, type DeepDiveJob } from "./coach/deepDive.js";
 import { coachHeadline } from "./insights/headline.js";
 import { buildSeasonArc, seasonReportText } from "./coach/seasonArc.js";
 import { runSeasonNarrative } from "./coach/seasonNarrative.js";
@@ -227,6 +227,33 @@ export function formatReadiness(
  * local stdio surface, opt-in on the remote HTTP/Cowork surface (COACH_MCP_PROFILE_WRITE=true) since it
  * writes a file on the host from a remote session.
  */
+/**
+ * The single in-flight deep-dive job (see DeepDiveJob). Module-scoped so it survives across `deep_dive`
+ * calls within a process — the tool starts generation in the background and returns at once, so a
+ * follow-up call can report progress or hand back the finished report instead of paying the LLM again.
+ */
+let deepDiveJob: DeepDiveJob | null = null;
+
+/**
+ * Generate the deep dive and write its report, OFF the request/response path. Runs to completion in the
+ * background even after the caller's request returns (or its client has timed out), so the report always
+ * lands. Never throws — a failure is recorded on the job for the next `deep_dive` call to surface.
+ */
+async function generateDeepDive(job: DeepDiveJob): Promise<void> {
+  try {
+    const { state, window } = await buildTodayState();
+    const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
+    const engagement = await loadEngagementContext(window);
+    const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
+    const { markdown } = await runDeepDive(new CoachLLM(await loadSystemPrompt(), "deep-dive"), state, ins);
+    await writeReport("deep-dive", job.date, markdown);
+  } catch (e) {
+    job.error = e instanceof Error ? e.message : String(e);
+  } finally {
+    job.done = true;
+  }
+}
+
 export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite?: boolean; includeFileAccess?: boolean } = {}): McpServer {
   const server = new McpServer({ name: "endurance-coach", version: "0.1.0" });
   // Whether this surface may take a caller-supplied filesystem path. Off by default (the HTTP/Cowork
@@ -617,18 +644,37 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
 
   server.tool(
     "deep_dive",
-    "Insight-engine deep dive: a coach-style analysis (load & form, efficiency & durability, injury risk, goal tracking) over your computed metrics. Also writes a dated report. Use-when: you want the insight metrics EXPLAINED as trends. High LLM cost. `insights` is the same data with NO LLM; `weekly` is scoped to last week; `season_arc` is the multi-season view.",
-    {},
-    async () => {
+    "Insight-engine deep dive: a coach-style analysis (load & form, efficiency & durability, injury risk, goal tracking) over your computed metrics, written to a dated report. ASYNC (two-step): the first call starts generation in the background and returns at once (it's high-cost — two Opus-4.8 passes — and outran the old blocking call's transport timeout); call it AGAIN — or `read_report <date>-deep-dive.md` — a minute later to get the finished write-up. Returns today's report immediately if already generated (pass refresh=true to regenerate). `insights` is the same data with NO LLM and no wait; `weekly` is scoped to last week; `season_arc` is the multi-season view.",
+    { refresh: z.boolean().optional().describe("Regenerate today's deep dive even if a report already exists (default false → return the existing one).") },
+    async ({ refresh }) => {
       const miss = missingKey();
       if (miss) return fail(miss);
-      const { state, window } = await buildTodayState();
-      const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
-      const engagement = await loadEngagementContext(window);
-      const ins = buildInsights(state, await loadArchive(), { suppressed, history: window, engagement });
-      const { markdown } = await runDeepDive(new CoachLLM(await loadSystemPrompt(), "deep-dive"), state, ins);
-      await writeReport("deep-dive", todayIso(), markdown);
-      return ok(markdown);
+      const today = todayIso();
+      const reportName = `${today}-deep-dive.md`;
+      const reportExists = (await listReports()).some((r) => r.name === reportName);
+      const action = nextDeepDiveAction({ today, reportExists, job: deepDiveJob, now: Date.now(), refresh: !!refresh });
+      switch (action.kind) {
+        case "return-report":
+          return ok(await readReport(reportName));
+        case "in-progress":
+          return ok(
+            `⏳ Deep dive still generating (${action.elapsedSec}s elapsed; Opus 4.8 at high effort usually takes ~60–120s). ` +
+              `Call \`deep_dive\` again — or \`read_report ${reportName}\` — shortly to read it. \`insights\` has the same numbers right now, no wait.`,
+          );
+        case "report-error": {
+          deepDiveJob = null; // surfaced once — allow a retry on the next call
+          return fail(`Previous deep-dive attempt failed: ${action.error}. Call \`deep_dive\` again to retry.`);
+        }
+        case "start": {
+          const job: DeepDiveJob = { date: today, startedAt: Date.now(), done: false };
+          deepDiveJob = job;
+          void generateDeepDive(job); // fire-and-forget: writes reports/<date>-deep-dive.md when done
+          return ok(
+            `🚀 Deep dive started (Opus 4.8, high effort — usually ~60–120s). It writes to reports/${reportName}. ` +
+              `Call \`deep_dive\` again — or \`read_report ${reportName}\` — in a moment to read it. Meanwhile \`insights\` gives the same numbers with no LLM wait.`,
+          );
+        }
+      }
     },
   );
 
