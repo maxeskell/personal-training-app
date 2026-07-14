@@ -81,6 +81,55 @@ export function insightFindings(ins: InsightReport, ctx?: FindingContext): strin
   ].join("\n");
 }
 
+/**
+ * In-flight deep-dive job state. `deep_dive` is high-cost (two sequential Opus-4.8 high-effort calls)
+ * and reliably outran the MCP client's request timeout (~60s → error -32001), so the report — written
+ * only after both calls returned — never landed. The tool now runs generation in the BACKGROUND and
+ * returns at once; this tracks the one job so a repeat call can report progress instead of starting a
+ * second run. The report on disk is the source of truth; this in-memory state is a best-effort overlay.
+ */
+export interface DeepDiveJob {
+  /** The report date this job is generating (YYYY-MM-DD). */
+  date: string;
+  /** epoch ms when generation started — for the "Ns elapsed" progress line. */
+  startedAt: number;
+  /** set true when generation settles (success OR failure). */
+  done: boolean;
+  /** populated iff generation threw; surfaced once, then the job is cleared to allow a retry. */
+  error?: string;
+}
+
+export type DeepDiveAction =
+  | { kind: "return-report" }
+  | { kind: "in-progress"; elapsedSec: number }
+  | { kind: "report-error"; error: string }
+  | { kind: "start" };
+
+/**
+ * Decide what `deep_dive` should do on this call — pure so it can be unit-tested without the LLM or
+ * transport. Ordering matters: an in-flight job wins over everything (never start a second run, even
+ * for a refresh); otherwise today's finished report is returned unless `refresh` forces a regenerate;
+ * a settled-but-failed job surfaces its error (caller clears it to allow retry); else start fresh.
+ */
+export function nextDeepDiveAction(opts: {
+  today: string;
+  reportExists: boolean;
+  job: DeepDiveJob | null;
+  now: number;
+  refresh: boolean;
+}): DeepDiveAction {
+  const { today, reportExists, job, now, refresh } = opts;
+  const jobForToday = job && job.date === today ? job : null;
+  if (jobForToday && !jobForToday.done) {
+    return { kind: "in-progress", elapsedSec: Math.max(0, Math.round((now - jobForToday.startedAt) / 1000)) };
+  }
+  if (reportExists && !refresh) return { kind: "return-report" };
+  if (jobForToday && jobForToday.done && jobForToday.error) {
+    return { kind: "report-error", error: jobForToday.error };
+  }
+  return { kind: "start" };
+}
+
 /** Synthesise the coach-style deep-dive prose from the computed metrics. Costs one LLM call. */
 export async function runDeepDive(
   llm: CoachLLM,

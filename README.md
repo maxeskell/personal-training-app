@@ -884,7 +884,8 @@ see and blocking for minutes (which used to surface in Cowork as a mystery timeo
 | `log_fuel` | record how a session's fuelling went (`good` / `rough` / `bonked` / `skipped`, + optional carb/hr and note) — the one-tap feedback that improves future guidance. A **local** log write, no AI Endurance mutation | none |
 | `cost` | local token-cost report (today / 7d / 30d / all-time + monthly projection) | none |
 | `ask` | free-form Q&A over your assembled state + insights | LLM (logged) |
-| `readiness` / `weekly` / `race_prep` / `deep_dive` / `session_feedback` | the coaching flows, each also writing its dated report | LLM (logged) |
+| `readiness` / `weekly` / `race_prep` / `session_feedback` | the coaching flows, each also writing its dated report | LLM (logged) |
+| `deep_dive` | insight-engine analysis → dated report. **Async (two-step):** the first call starts generation in the background and returns at once (it's high-cost — two Opus passes, ~2 min — and outran the MCP request timeout as a blocking call); call again, or `read_report <date>-deep-dive.md`, to fetch it. Returns today's report immediately if already made; `refresh=true` regenerates | LLM (logged) |
 | `fuel_review` | learning review over your fuel log — observed carb/hr tolerance, what sits well per sport, caffeine/timing, and suggested profile tweaks (you apply them). Wellbeing-screened; needs ≥3 logged sessions | LLM (logged) |
 | `propose_adjustment` → `confirm` / `decline` | **the only write path** — `propose_adjustment` logs proposals + trade-offs and writes nothing; `confirm <id>` is the sole tool that mutates AI Endurance; `decline <id>` dismisses | gated write |
 
