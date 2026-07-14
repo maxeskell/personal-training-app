@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Install the unattended morning readiness ping as a macOS launchd agent.
 # Usage: bash scripts/install-schedule.sh [HOUR] [MINUTE]   (defaults 06:00)
+#
+# The ping also carries the weekly brief (it fires when last Sunday's review is missing), so a missed
+# ping is not just a missed readiness — it can cost the week's review. RunAtLoad exists for that:
+# StartCalendarInterval alone is fired-and-forgotten if the Mac is POWERED OFF at HH:MM (asleep is fine —
+# launchd catches up on wake; off is not). RunAtLoad re-fires it at the next login, and `cmdPing` is
+# idempotent per calendar date (see lastPingOk), so the catch-up can never double-notify or double-spend.
 set -euo pipefail
 
 HOUR="${1:-6}"
@@ -42,6 +48,7 @@ cat > "$PLIST" <<PLIST_EOF
     <key>Hour</key><integer>$HOUR</integer>
     <key>Minute</key><integer>$MINUTE</integer>
   </dict>
+  <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>$PROJECT/reports/ping.log</string>
   <key>StandardErrorPath</key><string>$PROJECT/reports/ping.log</string>
 </dict>
@@ -51,7 +58,7 @@ PLIST_EOF
 launchctl unload "$PLIST" 2>/dev/null || true
 launchctl load "$PLIST"
 
-printf '\nInstalled %s — runs `npm run ping` daily at %02d:%02d.\n' "$LABEL" "$HOUR" "$MINUTE"
+printf '\nInstalled %s — runs `npm run ping` daily at %02d:%02d (and at login, to recover a day the Mac was off).\n' "$LABEL" "$HOUR" "$MINUTE"
 echo "Logs: $PROJECT/reports/ping.log"
 echo "Reads ANTHROPIC_API_KEY + Garmin/AIE creds from the project .env / ~/.endurance-coach / ~/.garminconnect."
 echo "Uninstall: bash scripts/uninstall-schedule.sh"

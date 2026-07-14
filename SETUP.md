@@ -281,7 +281,7 @@ Code is deployed **locally** with `npm run ship` (see the deploy section of the 
 pull-based auto-updater runs by default. Prefer hands-free pull updates instead? `npm run autoupdate:install`
 (or `npm run service:install`, which adds it) still exists.
 
-For the **unattended morning readiness ping** (and, **on Sundays, the weekly brief** — the Plan-tab
+For the **unattended morning readiness ping** (which also carries **the weekly brief** — the Plan-tab
 week-over-week delta + the gated next-week proposals), schedule the one daily job:
 
 ```bash
@@ -289,8 +289,20 @@ week-over-week delta + the gated next-week proposals), schedule the one daily jo
 cd /Users/maxeskell/dev/personal-training-app && npm run schedule:install -- 6 30
 ```
 
-The weekly brief rides this same job — there's no separate installer. Run it on demand any time with
+The weekly brief rides this same job — there's no separate installer. It fires whenever **last Sunday's
+review is missing**, not merely when today is Sunday, so a Sunday the Mac was off is caught up by the next
+ping that runs (up to 3 days late) rather than losing the week silently. Run it on demand any time with
 `cd /Users/maxeskell/dev/personal-training-app && npm run weekly:brief`.
+
+Optionally, schedule the **post-swim deep dive** — a full deep dive on the evenings you swam, and nothing
+at all (no LLM spend) on the days you didn't:
+
+```bash
+▶ RUN   # optional `-- HH MM` sets the time (default 19:00, i.e. after an evening pool session)
+cd /Users/maxeskell/dev/personal-training-app && npm run post-swim:install
+```
+
+Stop it with `npm run post-swim:uninstall`; run the gated check by hand with `npm run post-swim`.
 
 ## Step 6a — (optional) Career history (the `/career` tab)
 

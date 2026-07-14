@@ -93,9 +93,23 @@ and decisions that travels with the repo.
   can't be written into the plan. Everything still goes through the explicit propose→confirm gate.
 - **Observable unattended ping.** `ping` is idempotent per day (a re-fire won't double-notify or double-spend),
   records a success heartbeat, and **notifies you if it fails** instead of failing silently; `doctor` warns
-  if the scheduled ping hasn't succeeded in over a day. **On Sundays the ping also runs the weekly brief** —
+  if the scheduled ping hasn't succeeded in over a day. **The ping also carries the weekly brief** —
   one scheduled job, no separate installer — freezing the week's snapshot, the review and its gated next-week
   proposals together (all idempotent, so a re-fire is safe).
+- **The weekly brief catches up a missed Sunday.** It fires when *last Sunday's review is missing*, not when
+  "today is Sunday" — because a same-day trigger silently loses the whole week whenever the Mac is off on
+  Sunday morning (the ping never runs, so the branch is never even evaluated). The next ping that does run
+  heals it, and dates the report against **the Sunday the week ended**, not the day it happened to run, so a
+  Monday catch-up can't file last week's review under this week and corrupt the week-over-week delta.
+  Catch-up gives up after 3 days (`WEEKLY_CATCHUP_DAYS`) — past Wednesday you're through the week and a
+  review of it is noise, so it waits for the next Sunday. The morning agent also sets `RunAtLoad`, which is
+  what recovers a day the Mac was **powered off** at 06:00 (asleep already recovers on wake; off does not).
+- **Post-swim deep dive (`post-swim`).** The evening job: a deep dive **only if a swim landed today**, quiet
+  and free on every other day, so it can sit on a daily timer. It reads the live `actualActivities` from AI
+  Endurance — deliberately *not* the local archive, which is backfilled and lags by days, so an archive-backed
+  gate would never fire on the evening you actually swam. Idempotent on the report itself, so a manual
+  `npm run deep-dive` earlier the same day suppresses it rather than paying twice.
+  Install with `npm run post-swim:install` (default 19:00; `npm run post-swim:uninstall` to stop).
 
 Garmin is **optional** — leave `GARMIN_ENABLED=false` and the coach runs on AI Endurance alone.
 To enable it, run the one-time `garmin-mcp-auth` (see `.env.example`) then set `GARMIN_ENABLED=true`.

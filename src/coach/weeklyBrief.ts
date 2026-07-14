@@ -57,7 +57,15 @@ const ENDURANCE_ZONE = "Endurance";
  * insight engine's load model (the same source the proposer + headline read), so the brief never invents a
  * second fitness number. Used both to persist (Sunday job) and — via the diff — to render.
  */
-export function buildWeeklySnapshot(args: { window: AthleteState[]; insights?: InsightReport; now?: number }): WeeklySnapshot {
+export function buildWeeklySnapshot(args: {
+  window: AthleteState[];
+  insights?: InsightReport;
+  now?: number;
+  /** Override the week this snapshot is filed under. A caught-up Sunday brief runs on a Monday, so the
+   *  window's last day belongs to the NEW week — without this the snapshot would be filed against the
+   *  wrong Monday and silently corrupt the week-over-week delta. Defaults to the window's own week. */
+  weekStart?: string;
+}): WeeklySnapshot {
   const today = args.window[args.window.length - 1];
   const agg = weeklyAggregates(args.window);
   const bySportMin: Record<string, number> = {};
@@ -65,7 +73,7 @@ export function buildWeeklySnapshot(args: { window: AthleteState[]; insights?: I
   const adherencePct: Record<string, number | null> = {};
   for (const [zone, v] of Object.entries(agg.adherence)) adherencePct[zone] = v.pct;
   return {
-    weekStart: mondayOf(today.date),
+    weekStart: args.weekStart ?? mondayOf(today.date),
     capturedAt: new Date(args.now ?? Date.now()).toISOString(),
     bySportMin,
     ctl: args.insights?.load?.ctl ?? null,

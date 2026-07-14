@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "Personal AI endurance coach — local-first orchestrator",
+  "description": "Personal AI endurance coach \u2014 local-first orchestrator",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -51,6 +51,9 @@
     "pm2:start": "pm2 start ecosystem.config.cjs",
     "pm2:stop": "pm2 stop endurance-dashboard",
     "deep-dive": "tsx src/cli.ts deep-dive",
+    "post-swim": "tsx src/cli.ts post-swim",
+    "post-swim:install": "bash scripts/install-post-swim.sh",
+    "post-swim:uninstall": "bash scripts/uninstall-post-swim.sh",
     "season": "tsx src/cli.ts season",
     "act": "tsx src/cli.ts act",
     "check": "tsx src/cli.ts check",
