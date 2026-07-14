@@ -49,10 +49,10 @@ export class CoachLLM {
 
   /**
    * Cap a single SDK call at `ms` so a hung request can't stall a flow indefinitely. The budget is
-   * per-shape: the interactive `structured` flows use COACH_LLM_TIMEOUT_MS; the long STREAMED flows
-   * (reports + research, which can legitimately run for minutes) use the larger `longTimeoutMs`.
-   * Passes an AbortSignal the SDK uses to abort the underlying request/stream; the SDK's own 429/5xx
-   * retries run within the deadline. A non-positive `ms` disables the cap.
+   * per-DEPTH, not per-shape: the long STREAMED flows (reports + research) and any structured call at
+   * "high" effort or above get `longTimeoutMs`; the cheap interactive flows (readiness/ask/tune/session)
+   * get COACH_LLM_TIMEOUT_MS. Passes an AbortSignal the SDK uses to abort the underlying request/stream;
+   * the SDK's own 429/5xx retries run within the deadline. A non-positive `ms` disables the cap.
    */
   private async withDeadline<T>(make: (signal: AbortSignal | undefined) => Promise<T>, ms: number): Promise<T> {
     if (!Number.isFinite(ms) || ms <= 0) return make(undefined);
@@ -61,7 +61,13 @@ export class CoachLLM {
     try {
       return await make(ctrl.signal);
     } catch (err) {
-      if (ctrl.signal.aborted) throw new Error(`CoachLLM ${this.operation} call exceeded its ${ms}ms wall-clock budget (COACH_LLM_TIMEOUT_MS).`);
+      if (ctrl.signal.aborted) {
+        // Name the knob that actually applies — the long budget is a 3× multiple of the same env var, and
+        // a message blaming "COACH_LLM_TIMEOUT_MS=120000" for a 360000ms abort sends you hunting a ghost.
+        const isLong = ms === config.coachLlm.longTimeoutMs;
+        const knob = isLong ? "3× COACH_LLM_TIMEOUT_MS — the deep-flow budget" : "COACH_LLM_TIMEOUT_MS";
+        throw new Error(`CoachLLM ${this.operation} call exceeded its ${ms}ms wall-clock budget (${knob}).`);
+      }
       throw err;
     } finally {
       clearTimeout(timer);
@@ -103,7 +109,7 @@ export class CoachLLM {
         messages: [{ role: "user", content: userContent }],
       },
       { signal },
-    ), config.coachLlm.timeoutMs);
+    ), config.coachLlm.structuredTimeoutMs(this.effort));
 
     // A truncated response can yield structurally-valid-but-incomplete JSON (e.g. a cut-off proposals
     // array) that downstream code — including the write gate — would treat as authoritative. Refuse it.
