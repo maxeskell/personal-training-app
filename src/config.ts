@@ -97,6 +97,19 @@ export const config = {
     get longTimeoutMs(): number {
       return this.timeoutMs * 3;
     },
+    /**
+     * Budget for a one-shot STRUCTURED call, keyed on reasoning effort rather than call shape.
+     *
+     * Shape is the wrong axis: a structured call at "high" is a DEEP flow (the weekly brief's gated
+     * next-week proposals, `propose`/`act`, the research digest) that reasons for minutes, and it was
+     * being aborted at the interactive cap meant for readiness/ask — which is exactly how the weekly
+     * brief lost its proposals on 2026-07-05 ("exceeded its 120000ms wall-clock budget"). Effort is the
+     * app's own marker for depth (cheap frequent flows are "medium"; deep ones are "high"), so deep
+     * structured calls get the same long budget the streamed reports already had.
+     */
+    structuredTimeoutMs(effort: "low" | "medium" | "high" | "xhigh" | "max"): number {
+      return effort === "low" || effort === "medium" ? this.timeoutMs : this.longTimeoutMs;
+    },
   },
 
   /** Bounded retry on transient 429/5xx for the read-only external spines (AI Endurance reads and

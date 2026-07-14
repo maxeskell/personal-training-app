@@ -69,3 +69,17 @@ test("coachLlm.longTimeoutMs is 3× the interactive cap, and retry.attempts is a
   // COACH_RETRY_ATTEMPTS parses to a positive integer (a non-numeric override falls back to 3).
   assert.ok(Number.isInteger(config.retry.attempts) && config.retry.attempts >= 1);
 });
+
+test("structuredTimeoutMs: deep structured calls get the long budget, cheap interactive ones don't", async () => {
+  const { config } = await import("../src/config.js");
+  // The regression: the weekly brief's proposer is a "high"-effort STRUCTURED call. Budgeting it by call
+  // shape gave it the 120s interactive cap, and it was aborted mid-run on 2026-07-05 — the review landed
+  // but its gated next-week proposals were silently lost. Depth, not shape, decides the budget.
+  assert.equal(config.coachLlm.structuredTimeoutMs("high"), config.coachLlm.longTimeoutMs);
+  assert.equal(config.coachLlm.structuredTimeoutMs("xhigh"), config.coachLlm.longTimeoutMs);
+  assert.equal(config.coachLlm.structuredTimeoutMs("max"), config.coachLlm.longTimeoutMs);
+
+  // ...but readiness/ask/tune/session stay on the tight cap — a hung cheap flow must still fail fast.
+  assert.equal(config.coachLlm.structuredTimeoutMs("medium"), config.coachLlm.timeoutMs);
+  assert.equal(config.coachLlm.structuredTimeoutMs("low"), config.coachLlm.timeoutMs);
+});

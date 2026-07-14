@@ -847,9 +847,13 @@ The HTTP startup banner spells out exactly what each surface exposes.
 retry a transient rate-limit/5xx with jittered backoff (`COACH_RETRY_ATTEMPTS`, default 3, honouring
 `Retry-After`): AI Endurance per-tool calls are capped (not just connect) and read-retried, as is
 the weather fetch. Each coach LLM call is bounded by `COACH_LLM_TIMEOUT_MS` (default
-120s) for the interactive flows, with **3× that for the long streamed flows** (weekly/race/deep-dive
-reports and the research digest, which can legitimately run for minutes) so a real long run isn't cut
-off; the Anthropic SDK adds its own 429/5xx retries within the deadline. A write to the plan is **never**
+120s) for the cheap interactive flows, with **3× that for every deep flow** — and the budget follows
+reasoning **effort, not call shape**. That distinction is load-bearing: the weekly brief's gated
+next-week proposals are a `"high"`-effort *structured* call, and while it was budgeted as "structured ⇒
+interactive" it got the 120s cap and was aborted mid-run (2026-07-05: the review landed, its proposals
+were silently lost). Deep flows — streamed (weekly/race/deep-dive reports, research) *and* structured
+(proposals, `propose`/`act`) — now share the long budget, while readiness/ask/tune/session keep the tight
+cap so a genuinely hung cheap flow still fails fast; the Anthropic SDK adds its own 429/5xx retries within the deadline. A write to the plan is **never**
 retried (it fires exactly once through the gate), and error detail on these paths is redacted before it
 can reach a log or an MCP response.
 
