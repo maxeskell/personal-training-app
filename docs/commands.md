@@ -60,6 +60,7 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 | Command | What it does |
 |---|---|
 | `npm run deep-dive` | insight-engine analysis (load/EF/durability/ramp/goal) → report |
+| `npm run post-swim` | the same deep dive, but **only if a swim landed today** — quiet and free otherwise, so it can sit on a daily timer. Idempotent on today's report |
 | `npm run season` | multi-season strategic review: CTL arc / phases / structural levers → report (also the `/season` page; deterministic digest with no API key) |
 | `npm run listening` | engagement model: what you act on vs dismiss, plan adherence + plan changes |
 
@@ -108,7 +109,8 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 | Command | What it does |
 |---|---|
 | `npm run ping` | unattended morning readiness: verdict + report + desktop notification. **On Sundays it also runs the weekly brief** (review + snapshot + gated next-week proposals), frozen together |
-| `npm run schedule:install` (`-- HH MM`) | schedule the daily `ping` (e.g. `-- 6 30`); `schedule:uninstall` to remove. The Sunday weekly brief rides this one job — no separate installer |
+| `npm run schedule:install` (`-- HH MM`) | schedule the daily `ping` (e.g. `-- 6 30`); `schedule:uninstall` to remove. The weekly brief rides this one job — no separate installer. Sets `RunAtLoad`, so a day the Mac was powered off is recovered at next login (the ping is idempotent per date) |
+| `npm run post-swim:install` (`-- HH MM`) | schedule the post-swim deep dive (default 19:00): fit-sync, then a deep dive only if you swam today; `post-swim:uninstall` to remove |
 | `npm run watch:install` (`-- HH MM`) | proactive daily watch (fit-sync + fire-only check); `watch:uninstall` to remove |
 | `npm run serve:install` / `serve:uninstall` | keep the dashboard server running at login |
 | `npm run autoupdate:install` / `autoupdate:uninstall` | _(legacy, off by default)_ fast-forward pull + restart on a timer — superseded by `npm run ship` |

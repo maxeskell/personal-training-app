@@ -24,7 +24,8 @@ import { seasonNudgeDue } from "./coach/seasonNudge.js";
 import { renderDashboard } from "./coach/dashboard.js";
 import { buildBriefSnapshot, type BriefSnapshot } from "./coach/dailyBrief.js";
 import { loadPriorBrief, persistBriefIfAbsent } from "./coach/briefStore.js";
-import { buildWeeklySnapshot, diffWeeklySnapshots, isSunday } from "./coach/weeklyBrief.js";
+import { buildWeeklySnapshot, diffWeeklySnapshots, mondayOf } from "./coach/weeklyBrief.js";
+import { weeklyBriefDue, weeklyReviewDates, postSwimDue, deepDiveDates } from "./coach/scheduleGates.js";
 import { persistWeeklyBriefIfAbsent, loadRecentWeeklyBriefs } from "./coach/weeklyBriefStore.js";
 import { draftWeeklyProposals, weeklyProposer } from "./coach/weeklyProposals.js";
 import { latestWeeklyReview, latestResearchDigest, latestSeasonNarrative, latestWeeklyReviewProse } from "./coach/setupSources.js";
@@ -423,7 +424,18 @@ async function cmdPing(): Promise<void> {
     await maybeSeasonNudge(state).catch(() => {}); // quarterly season-review nudge (best-effort)
     // Sunday cadence: the weekly brief rides the ping (one scheduled actor) — review + snapshot + gated
     // next-week proposals, frozen together. Best-effort: a brief failure must not break the readiness ping.
-    if (isSunday(state.date)) await runWeeklyBrief().catch((e) => console.warn(`[weekly-brief] skipped: ${e instanceof Error ? e.message : e}`));
+    //
+    // Gated on the ARTEFACT, not on today being Sunday. A same-day `isSunday()` test silently loses the
+    // whole week whenever the Mac is off on Sunday morning (the ping never runs, the branch is never
+    // evaluated, nothing retries) — which is exactly how the week ending 2026-07-12 went unreviewed.
+    // Asking "is last Sunday's review missing?" instead means the next ping that runs heals it.
+    const wk = weeklyBriefDue(state.date, await weeklyReviewDates());
+    if (wk.due) {
+      console.log(`\n[weekly-brief] ${wk.reason}`);
+      await runWeeklyBrief(wk.reviewDate).catch((e) => console.warn(`[weekly-brief] skipped: ${e instanceof Error ? e.message : e}`));
+    } else {
+      console.log(`\n[weekly-brief] not due — ${wk.reason}`);
+    }
     console.log(`\n(report written; desktop notification sent if on macOS)`);
   } catch (err) {
     // PROD-2: an unattended failure is otherwise invisible — the athlete just gets no readiness and no
@@ -434,10 +446,11 @@ async function cmdPing(): Promise<void> {
   }
 }
 
-/** `deep-dive` — compute insight metrics, synthesise a coach-style analysis, write a report. */
-async function cmdDeepDive(): Promise<void> {
-  if (!requireLLM()) process.exit(1);
-  const { state, window } = await buildTodayState();
+/** Generate + persist today's deep dive. Shared by `deep-dive` (always) and `post-swim` (gated).
+ *  Takes an already-assembled state when the caller has one, so the gated path doesn't pay for a
+ *  second AI Endurance assemble just to decide, then re-assemble to act. */
+async function generateDeepDive(pre?: { state: AthleteState; window: AthleteState[] }): Promise<void> {
+  const { state, window } = pre ?? (await buildTodayState());
   const suppressed = suppressedInsightKeys(await new DecisionLog().insightReactions());
   const engagement = await loadEngagementContext(window);
   const ins = buildInsights(state, await loadArchive(), { profileRaces: loadProfileRacesSync(), suppressed, history: window, engagement });
@@ -445,6 +458,32 @@ async function cmdDeepDive(): Promise<void> {
   console.log("\n" + markdown + "\n");
   const path = await writeReport("deep-dive", todayIso(), markdown);
   console.log(`(report → ${path}; ${costNote(costUsd, cacheRead)})`);
+}
+
+/** `deep-dive` — compute insight metrics, synthesise a coach-style analysis, write a report. */
+async function cmdDeepDive(): Promise<void> {
+  if (!requireLLM()) process.exit(1);
+  await generateDeepDive();
+}
+
+/**
+ * `post-swim` — the unattended evening job: run the deep dive ONLY if a swim landed today.
+ *
+ * Quiet by default (the `check` discipline): a non-swim day exits 0 having spent nothing, so this can
+ * sit on a daily launchd timer without burning the LLM budget six days a week. Idempotent on the
+ * report itself, so a manual `npm run deep-dive` earlier the same day suppresses it rather than paying twice.
+ */
+async function cmdPostSwim(): Promise<void> {
+  const { state, window } = await buildTodayState();
+  const decision = postSwimDue(state.date, state.actualActivities.value ?? [], await deepDiveDates());
+  if (!decision.due) {
+    console.log(`\n✓ post-swim: nothing to do — ${decision.reason}.`);
+    return;
+  }
+  if (!requireLLM()) process.exit(1);
+  console.log(`\npost-swim: ${decision.reason}…`);
+  await generateDeepDive({ state, window });
+  await notify("Post-swim deep dive", "Today's swim analysed — report written.").catch(() => {});
 }
 
 /** `season` — multi-season strategic review: the deterministic Season-arc report + an LLM strategic
@@ -842,23 +881,26 @@ async function cmdWeekly(): Promise<void> {
 /**
  * The Sunday weekly brief: generate + persist the weekly review, freeze the week's snapshot (for the
  * week-over-week delta), and draft ≤3 gated next-week proposals — all in one process, so "what the review
- * analysed" and "what the delta diffs" are identical. Runs as a Sunday branch of the morning ping (and
+ * analysed" and "what the delta diffs" are identical. Runs off the morning ping's cadence gate (and
  * on-demand via `npm run weekly:brief`); idempotent (snapshot write-if-absent, per-bullet proposal skip).
+ *
+ * `reviewDate` is the Sunday the week ENDED, which is not always today: a ping that missed Sunday catches
+ * up on Monday and must still file the artefacts against the week they describe.
  */
-async function runWeeklyBrief(): Promise<void> {
+async function runWeeklyBrief(reviewDate?: string): Promise<void> {
   if (!requireLLM()) return; // best-effort inside the ping; never break the morning readiness
   const { state, window } = await buildTodayState();
-  const reviewDate = state.date; // one source for the report date + the snapshot's week (matches cmdDashboard)
+  const forDate = reviewDate ?? state.date; // one source for the report date + the snapshot's week
   const engagement = await loadEngagementContext(window);
 
   // 1. The cohesive weekly review (same generator + report name as `npm run weekly`).
   const llm = new CoachLLM(await loadSystemPrompt(), "weekly");
   const { markdown, cacheRead, costUsd } = await runWeeklyReview(llm, window, engagement);
-  await writeReport("weekly-review", reviewDate, markdown);
+  await writeReport("weekly-review", forDate, markdown);
 
-  // 2. Freeze this week's snapshot for the delta (write-if-absent, keyed by this week's Monday).
+  // 2. Freeze the reviewed week's snapshot for the delta (write-if-absent, keyed by that week's Monday).
   const insights = state.raw ? buildInsights(state, await loadArchive(), { profileRaces: loadProfileRacesSync(), history: window, engagement }) : undefined;
-  await persistWeeklyBriefIfAbsent(buildWeeklySnapshot({ window, insights, now: Date.now() }));
+  await persistWeeklyBriefIfAbsent(buildWeeklySnapshot({ window, insights, now: Date.now(), weekStart: mondayOf(forDate) }));
 
   // 3. Draft the gated next-week proposals (the only generative step beyond the review).
   let proposalNote = "";
@@ -867,10 +909,10 @@ async function runWeeklyBrief(): Promise<void> {
     const propose = weeklyProposer({ state, insights, engagement, llm: proposerLlm });
     const gate = new WriteGate(new AieClient(), new DecisionLog());
     const existing = await new DecisionLog().all();
-    const res = await draftWeeklyProposals({ reviewMarkdown: markdown, reviewDate, existing, propose, gate });
+    const res = await draftWeeklyProposals({ reviewMarkdown: markdown, reviewDate: forDate, existing, propose, gate });
     proposalNote = ` ${res.drafted} next-week proposal(s) queued${res.skipped ? `, ${res.skipped} already present` : ""};`;
   }
-  console.log(`(weekly brief → reports/${reviewDate}-weekly-review.md;${proposalNote} ${costNote(costUsd, cacheRead)})`);
+  console.log(`(weekly brief → reports/${forDate}-weekly-review.md;${proposalNote} ${costNote(costUsd, cacheRead)})`);
 }
 
 /** `weekly:brief` — run the full Sunday brief on demand (review + snapshot + gated proposals). */
@@ -1155,6 +1197,7 @@ const commands: Record<string, () => Promise<void>> = {
   dashboard: cmdDashboard,
   demo: cmdDemo,
   "deep-dive": cmdDeepDive,
+  "post-swim": cmdPostSwim,
   season: cmdSeason,
   tune: cmdTune,
   fuelling: cmdFuelling,
@@ -1199,6 +1242,7 @@ if (!run) {
   console.log("  dashboard  generate + open the glanceable Today/Week/Trends/Race view");
   console.log("  demo       render the dashboard from built-in SAMPLE data (no account/Garmin/key needed)");
   console.log("  deep-dive  insight-engine analysis (load/EF/durability/ramp/goal) → report");
+  console.log("  post-swim  same deep dive, but only if a swim landed today (quiet otherwise) — the evening job");
   console.log("  season     multi-season strategic review (CTL arc / phases / structural levers) → report; also the /season page");
   console.log("  tune       weekly marginal-gains: the smaller, easy-to-action tweaks (not 'train more') → report");
   console.log("  fuelling   per-session pre/during/after from your logged nutrition (deterministic, only what a session needs)");
