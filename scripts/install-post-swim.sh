@@ -35,7 +35,7 @@ cat > "$PLIST" <<PLIST_EOF
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string><string>-lc</string>
-    <string>cd "$PROJECT" && "$NPM_BIN" run fit-sync ; "$NPM_BIN" run post-swim</string>
+    <string>cd "$PROJECT" &amp;&amp; "$NPM_BIN" run fit-sync ; "$NPM_BIN" run post-swim</string>
   </array>
   <key>WorkingDirectory</key><string>$PROJECT</string>
   <key>EnvironmentVariables</key>
