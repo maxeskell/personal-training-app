@@ -75,6 +75,7 @@
     "test": "tsx --test test/*.test.ts",
     "probe": "tsx src/cli.ts probe",
     "fit-sync": "tsx src/cli.ts fit-sync",
+    "catch-up": "tsx src/cli.ts catch-up",
     "backfill": "tsx src/cli.ts backfill",
     "archive:import": "tsx src/cli.ts archive-import",
     "archive:backfill": "tsx src/cli.ts archive-backfill",

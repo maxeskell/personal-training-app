@@ -38,7 +38,26 @@ Garmin actually connected, or whether its data had stopped arriving.
 
 ## Tests
 `test/health.test.ts` covers `garminFreshnessCheck` (disabled → no check; fresh setup → info; within window → ok;
-stale → warn incl. the date; exclusive boundary). Full suite green (803 tests).
+stale → warn incl. the date; exclusive boundary). `test/recover.test.ts` covers the recovery planner + the
+no-network "all current" path. Full suite green.
+
+## Auto-recovery (closing the loop — landed 2026-08-13)
+Detection (above) tells you a source is behind; **recovery downloads the missing span automatically**. New
+`src/archive/recover.ts`:
+- `planGapRecovery(newestIso, today, staleDays, overlap)` — PURE: is a source stale, how big is the gap, and what
+  date to backfill from (newest − overlap, re-fetching the last partial day). A `null` newest (fresh install) is
+  *not* a gap — that's a cold-start `backfill`, not recovery.
+- `recoverGaps()` — measures each source's lag (AI Endurance activities, Garmin daily, Garmin activities+streams)
+  and, for any stale **and** reachable, backfills exactly the gap: `backfillActivities` for AIE, `backfillGarmin`
+  for daily, `backfillGarminActivities` (incremental) + a gap-sized `syncFitSummaries` for activities/streams.
+  Degrade-don't-crash: every source is independent and best-effort; it never throws. Unlike the fixed-window jobs
+  (dashboard refresh = 5 latest, `fit-sync` = 25, `archive-heal` = ≤200 backlog), it's framed around *how far
+  behind is this source now*, so a multi-week outage heals in one pass.
+- Surfaced as `npm run catch-up` (`-- --stale-days N`) **and** wired into the morning ping: the daily heartbeat now
+  auto-heals any gap and notifies on recovery — or, if a source is still unreachable with a real gap, warns.
+
+So the full arc for a future outage: the live `doctor` probe + freshness check make it **visible**; the ping's
+`recoverGaps` makes it **self-healing** the moment the connection returns.
 
 ## Follow-ups
 

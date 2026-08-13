@@ -32,13 +32,14 @@ import { latestWeeklyReview, latestResearchDigest, latestSeasonNarrative, latest
 import { loadSessionFeedbacks, saveSessionFeedback } from "./coach/sessionFeedbackStore.js";
 import { loadMetricOverrides } from "./state/metricOverrides.js";
 import { buildDemoWindow, buildDemoGarminDays, demoProfile } from "./demo/sampleData.js";
-import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact, cmdActivityArchiveImport, cmdActivityArchiveBackfill, cmdActivityArchiveHeal } from "./cli/dataCommands.js";
+import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact, cmdActivityArchiveImport, cmdActivityArchiveBackfill, cmdActivityArchiveHeal, cmdRecoverGaps } from "./cli/dataCommands.js";
 import { buildInsights } from "./insights/engine.js";
 import { alertFindings, loadModel } from "./insights/metrics.js";
 import { InsightLog } from "./state/insightLog.js";
 import { analyseListening, formatListening } from "./coach/listening.js";
 import { loadEngagementContext } from "./coach/engagementContext.js";
 import { ArchiveStore } from "./archive/store.js";
+import { recoverGaps } from "./archive/recover.js";
 import { answerQuestion } from "./coach/ask.js";
 import { runSessionFeedback } from "./coach/session.js";
 import { loadSessionDecays } from "./insights/fit.js";
@@ -421,18 +422,22 @@ async function cmdPing(): Promise<void> {
     const note = verdict.why.length > 180 ? verdict.why.slice(0, 177) + "…" : verdict.why;
     await notify(`Readiness: ${verdict.verdict.toUpperCase()}`, note);
     await recordPingSuccess(state.date); // heartbeat for the doctor check
-    // Early-warning for a silent Garmin outage: readiness still renders on AIE alone, so a broken Garmin
-    // sync (crashed subprocess, expired token) is otherwise invisible for weeks. If the archived daily data
-    // has gone stale, fire a desktop notification. Best-effort — never let it break the ping.
-    if (config.garmin.enabled) {
-      try {
-        const days = await new ArchiveStore().loadGarminDays();
-        const newest = days.length ? days.map((d) => d.date).sort().at(-1)! : null;
-        const fresh = garminFreshnessCheck(newest, new Date(), true);
-        if (fresh?.status === "warn") await notify("Garmin sync stalled", fresh.detail).catch(() => {});
-      } catch {
-        /* no archive yet — nothing to warn about */
+    // Auto-heal after an outage: readiness still renders on AIE alone, so a broken sync (a crashed Garmin
+    // subprocess, an expired token, days offline) is otherwise invisible for weeks. Measure how far each
+    // source has fallen behind and, now that it's reachable again, download the missing span. Best-effort —
+    // a recovery failure must never break the ping. Notify only on a real event (data recovered, or a source
+    // still unreachable with a real gap), so a normal day stays silent.
+    try {
+      const rec = await recoverGaps({ log: (m) => console.log(`[catch-up] ${m}`) });
+      if (rec.ran) {
+        console.log(`[catch-up] ${rec.summary}`);
+        await notify("Data gap recovered", rec.summary).catch(() => {});
+      } else if (rec.stillStale) {
+        const stuck = rec.sources.filter((s) => s.status === "unreachable" || s.status === "error");
+        await notify("Data sync stalled", stuck.map((s) => `${s.source} ${s.gapDays}d behind${s.note ? ` (${s.note})` : ""}`).join("; ")).catch(() => {});
       }
+    } catch (e) {
+      console.warn(`[catch-up] skipped: ${e instanceof Error ? e.message : e}`);
     }
     await maybeSeasonNudge(state).catch(() => {}); // quarterly season-review nudge (best-effort)
     // Sunday cadence: the weekly brief rides the ping (one scheduled actor) — review + snapshot + gated
@@ -1248,6 +1253,7 @@ const commands: Record<string, () => Promise<void>> = {
   "archive-import": cmdActivityArchiveImport,
   "archive-backfill": cmdActivityArchiveBackfill,
   "archive-heal": cmdActivityArchiveHeal,
+  "catch-up": cmdRecoverGaps,
   probe: cmdProbe,
   "fit-sync": cmdFitSync,
   decisions: cmdDecisions,
@@ -1292,6 +1298,7 @@ if (!run) {
   console.log("  archive-compact  de-duplicate the archive files in place (one record per date/id)");
   console.log("  probe      capture live Garmin tool surface + AIE detail samples → reports/ (Phase-2 mapping)");
   console.log("  fit-sync [n]  download recent Garmin run/ride .FIT files (get_activity_fit_data) → streams dir");
+  console.log("  catch-up      auto-recover any missing data after an outage — backfills each source's gap to today");
   console.log('  decisions [pending | retro <id> "<note>"]   view log / pending / add retrospective');
   console.log("  (LLM flows need ANTHROPIC_API_KEY)");
   process.exit(1);

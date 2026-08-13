@@ -229,8 +229,10 @@ fire-only health check), `npm run backfill:install` (history grind).
   `mcp` SDK 2.0 removed. The dep was unpinned, so uvx silently resolved mcp 2.0 and the subprocess crashed
   on import — Garmin ingest was dead for ~4 weeks (2026-07-17 → 2026-08-13) with no visible signal, because
   `doctor` only checked token *age*. Fixed by pinning `--with mcp<2` in `config.ts`; `doctor` now runs a
-  **live** Garmin probe and a data-**freshness** warning (also notified on the daily `ping`). Drop the
-  constraint only when the `garmin_mcp` pin is bumped to a mcp-2.x-compatible commit. See
+  **live** Garmin probe + a data-**freshness** check, and the outage class is now both **visible** (doctor) and
+  **self-healing**: the morning `ping` runs `recoverGaps` (`npm run catch-up`) — measures each source's lag and
+  downloads the missing span the moment the connection returns, notifying on recovery or a still-stuck source.
+  Drop the `mcp<2` constraint only when the `garmin_mcp` pin is bumped to a mcp-2.x-compatible commit. See
   [docs/specs/improvements/09-garmin-mcp-dependency-pin.md](docs/specs/improvements/09-garmin-mcp-dependency-pin.md).
 - **Concurrent writes.** State writes are atomic (temp + `rename`) AND serialized by a cross-process
   lock (`proper-lockfile` on the state dir), so the dashboard autosync and a cron `update` can't

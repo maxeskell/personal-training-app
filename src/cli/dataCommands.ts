@@ -5,6 +5,7 @@ import { withAie, todayIso } from "../coach/orchestrator.js";
 import { extractJson, garminInner } from "../state/assemble.js";
 import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate } from "../archive/backfill.js";
 import { syncFitSummaries } from "../archive/fitSync.js";
+import { recoverGaps } from "../archive/recover.js";
 import { activityArchiveDir, importDir, archiveSummary } from "../archive/activityArchive.js";
 import { backfillGarminFits } from "../archive/activityArchiveBackfill.js";
 
@@ -338,4 +339,37 @@ export async function cmdArchiveCompact(): Promise<void> {
   }
   console.log(total ? `\nRemoved ${total} duplicate record(s).` : "\nNothing to compact — archive already clean.");
   await printArchiveStatus(store);
+}
+
+/**
+ * `catch-up` — automatic gap recovery after a connection was down for a while. Measures how far each source
+ * (AI Endurance activities, Garmin daily, Garmin activities+streams) is behind today and, for any that are
+ * stale AND reachable now, downloads exactly the missing span. Unlike the fixed-window jobs (dashboard
+ * refresh syncs the 5 latest, `fit-sync` the 25 latest, `archive-heal` a ≤200 backlog slice), it sizes the
+ * backfill to the actual gap, so a multi-week outage is healed in one pass. Best-effort per source — a still-
+ * unreachable source is reported, not fatal. Also runs automatically on the morning ping.
+ * `--stale-days N` overrides the trigger threshold (default 2).
+ */
+export async function cmdRecoverGaps(): Promise<void> {
+  const args = process.argv.slice(3);
+  const sdIdx = args.indexOf("--stale-days");
+  const staleDaysArg = sdIdx >= 0 ? Number(args[sdIdx + 1]) : NaN;
+  const staleDays = Number.isFinite(staleDaysArg) ? staleDaysArg : undefined;
+  console.log(`\nCatch-up: checking each source's lag vs today${staleDays != null ? ` (stale > ${staleDays}d)` : ""} …\n`);
+  const rec = await recoverGaps({ staleDays, log: (m) => console.log(m) });
+  console.log("");
+  for (const s of rec.sources) {
+    const icon = s.status === "recovered" ? "⬇" : s.status === "current" ? "✓" : s.status === "disabled" ? "·" : "⚠";
+    const detail =
+      s.status === "recovered"
+        ? `+${s.added}${s.streams != null ? ` (+${s.streams} streams)` : ""} over ${s.gapDays}d`
+        : s.status === "current"
+          ? `current (${s.gapDays}d behind)`
+          : s.status === "disabled"
+            ? "disabled"
+            : `${s.status}${s.note ? ` — ${s.note}` : ""} (${s.gapDays}d behind)`;
+    console.log(`  ${icon} ${s.source.padEnd(26)} ${detail}`);
+  }
+  console.log(`\n${rec.summary}`);
+  await printArchiveStatus(new ArchiveStore());
 }
