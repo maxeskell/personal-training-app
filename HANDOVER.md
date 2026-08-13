@@ -225,6 +225,13 @@ fire-only health check), `npm run backfill:install` (history grind).
 - **Garmin is an unofficial client.** It scrapes Garmin Connect via a pinned community MCP, is
   rate-limited and occasionally fragile, and its tokens expire ~6-monthly. It is optional by design —
   treat any Garmin breakage as "degrade to AI Endurance," not an outage.
+- **Garmin SDK pin (`--with mcp<2`).** `garmin_mcp@d31de79` imports `mcp.server.fastmcp`, which the Python
+  `mcp` SDK 2.0 removed. The dep was unpinned, so uvx silently resolved mcp 2.0 and the subprocess crashed
+  on import — Garmin ingest was dead for ~4 weeks (2026-07-17 → 2026-08-13) with no visible signal, because
+  `doctor` only checked token *age*. Fixed by pinning `--with mcp<2` in `config.ts`; `doctor` now runs a
+  **live** Garmin probe and a data-**freshness** warning (also notified on the daily `ping`). Drop the
+  constraint only when the `garmin_mcp` pin is bumped to a mcp-2.x-compatible commit. See
+  [docs/specs/improvements/09-garmin-mcp-dependency-pin.md](docs/specs/improvements/09-garmin-mcp-dependency-pin.md).
 - **Concurrent writes.** State writes are atomic (temp + `rename`) AND serialized by a cross-process
   lock (`proper-lockfile` on the state dir), so the dashboard autosync and a cron `update` can't
   interleave to last-writer-wins; `load()` also shape-guards each slot, dropping a corrupt/hand-edited

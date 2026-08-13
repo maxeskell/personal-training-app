@@ -1,7 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { config } from "../config.js";
-import { redactSecrets } from "../health.js";
+import { redactSecrets } from "../util/redact.js";
 
 /**
  * OPTIONAL, degradable Garmin gap-filler (Taxuspt/garmin_mcp over stdio).
@@ -18,6 +18,9 @@ export class GarminClient {
   private client?: Client;
   private transport?: StdioClientTransport;
   available = false;
+  /** Redacted reason for the most recent failure (connect/tool). Lets a health check surface WHY Garmin
+   *  is down (e.g. a subprocess import crash) instead of a bare "unavailable". Set by `warn()`. */
+  lastError?: string;
 
   /** Attempt to start the stdio subprocess. Returns false if Garmin is unavailable. */
   async connect(): Promise<boolean> {
@@ -94,6 +97,7 @@ export class GarminClient {
   private warn(op: string, err: unknown): void {
     const raw = err instanceof Error ? err.message : String(err);
     const msg = redactSecrets(raw);
+    this.lastError = msg;
     // The ~6-month token expiry / MFA re-auth is the predictable failure — make it actionable.
     const looksLikeAuth = /401|403|unauthor|forbidden|login|token|expired|mfa|authenticate/i.test(raw);
     const hint = looksLikeAuth
