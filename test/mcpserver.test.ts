@@ -39,12 +39,12 @@ test("formatCost: empty log, and a windowed report with a per-operation line", a
   // date silently expires once today passes date+7d and the per-operation line drops out of the window.
   const recentTs = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // 1 day ago — always in-window
   const recs: CostRecord[] = [
-    { ts: recentTs, operation: "ask", model: "claude-opus-4-8", input: 100, output: 50, cacheWrite: 0, cacheRead: 0, costUsd: 0.001 },
+    { ts: recentTs, operation: "ask", model: "claude-opus-5", input: 100, output: 50, cacheWrite: 0, cacheRead: 0, costUsd: 0.001 },
   ];
   const out = formatCost(recs, 7);
   assert.match(out, /last 7d/);
   assert.match(out, /ask/);
-  assert.match(out, /claude-opus-4-8/);
+  assert.match(out, /claude-opus-5/);
 });
 
 test("summarizeState renders provenance + a sync-gaps section for an empty state", async () => {

@@ -86,7 +86,7 @@ export const config = {
     },
   },
 
-  /** The coach's reasoning core (Anthropic / claude-opus-4-8 — see src/llm/client.ts). */
+  /** The coach's reasoning core (Anthropic / claude-opus-5 — see src/llm/client.ts). */
   coachLlm: {
     /** Wall-clock cap (ms) on an INTERACTIVE coach LLM call (readiness/ask/tune/…) so a hung request can't
      *  stall a flow (the Anthropic SDK already retries 429/5xx within this). Generous default. */
@@ -147,8 +147,8 @@ export const config = {
   },
 
   /**
-   * Anthropic pricing ($ per million tokens) for local cost accounting — claude-opus-4-8.
-   * cacheWrite is the 5-minute-TTL rate (1.25× input); cacheRead is 0.1× input. Override via env
+   * Anthropic pricing ($ per million tokens) for local cost accounting — claude-opus-5 ($5/$25, same as
+   * Opus 4.8). cacheWrite is the 5-minute-TTL rate (1.25× input); cacheRead is 0.1× input. Override via env
    * if the published rates change. Used only for the cost log / `cost` report — never sent anywhere.
    */
   pricing: {
