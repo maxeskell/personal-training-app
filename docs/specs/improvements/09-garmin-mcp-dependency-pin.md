@@ -40,7 +40,14 @@ Garmin actually connected, or whether its data had stopped arriving.
 `test/health.test.ts` covers `garminFreshnessCheck` (disabled → no check; fresh setup → info; within window → ok;
 stale → warn incl. the date; exclusive boundary). Full suite green (803 tests).
 
-## Follow-ups (open)
-- When a `garmin_mcp` commit that targets mcp 2.x lands, bump the pin **and** drop `--with mcp<2` together.
+## Follow-ups
+
+- **Upstream still requires mcp<2 (checked 2026-08-13).** The latest `garmin_mcp` HEAD (`3610be6`) resolves mcp
+  **1.29.0**, not 2.0 — upstream fixed the same crash by self-constraining `mcp<2` in its own deps, and still
+  imports `mcp.server.fastmcp`. So there is **no mcp-2.x-compatible garmin_mcp yet**; `--with mcp<2` cannot be
+  dropped by bumping. HEAD still ships `download_activity_file`, but we deliberately keep the `d31de79` pin (known-good,
+  no reason to take upstream churn). Re-check when upstream actually migrates to the mcp 2.x API; only then bump the
+  pin **and** drop `--with mcp<2` together. `--with mcp<2` is belt-and-suspenders regardless.
 - Consider a broader dependency-freshness audit cadence — this class of break (pinned app, unpinned transitive dep) is
-  invisible until it fires.
+  invisible until it fires. (A first pass on 2026-08-13 took the npm deps to latest: Opus 5, `@anthropic-ai/sdk` 0.116,
+  TypeScript 7, MCP SDK 1.30, and `npm audit fix` for the transitive `hono`/`ip-address` advisories.)

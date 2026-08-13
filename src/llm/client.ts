@@ -5,16 +5,19 @@ import { appendCostRecord, costUsd, type LlmUsage } from "./costLog.js";
 /**
  * Thin wrapper over the Anthropic SDK for the coach's reasoning core.
  *
- * - Model: claude-opus-4-8 with adaptive thinking + high effort (intelligence-sensitive).
- * - The (stable) system prompt is marked ephemeral for prompt-caching. NOTE: the prompt is currently
- *   ~3k tokens, below Opus 4.8's 4096-token cache minimum, so the marker is a no-op until the prompt
- *   grows — every call pays full input price today (see the cost report).
+ * - Model: claude-opus-5 with adaptive thinking + high effort (intelligence-sensitive). Opus 5 is a
+ *   drop-in for Opus 4.8 at the SAME price ($5/$25 per MTok) — the pricing table in config.ts is unchanged.
+ *   Both breaking changes in the 4.8→5 move are moot here: we already set thinking explicitly (adaptive)
+ *   and never disable it, so "thinking on by default" and "disabled-thinking capped at high effort" don't bite.
+ * - The (stable) system prompt is marked ephemeral for prompt-caching. At ~3k tokens it is ABOVE Opus 5's
+ *   512-token cache minimum (down from 1024 on Opus 4.8), so the system prompt caches across calls within
+ *   the 5-minute TTL — cache-read tokens show up in the cost report.
  * - Structured output via output_config.format guarantees a parseable verdict.
  * - Every call records its token usage + dollar cost to the local cost log (see costLog.ts).
  */
 export class CoachLLM {
   private readonly client: Anthropic;
-  readonly model = "claude-opus-4-8";
+  readonly model = "claude-opus-5";
 
   /**
    * `operation` labels the call in the cost log (e.g. "readiness", "ask", "session").
@@ -111,6 +114,12 @@ export class CoachLLM {
       { signal },
     ), config.coachLlm.structuredTimeoutMs(this.effort));
 
+    // Opus 5's safety classifiers can decline a request (HTTP 200, stop_reason "refusal", empty content).
+    // Extraordinarily unlikely for endurance coaching, but guard before parsing so it surfaces as a clear,
+    // degradable error rather than a confusing "did not return valid JSON".
+    if (res.stop_reason === "refusal") {
+      throw new Error("LLM declined the request (safety classifier) — no structured result produced.");
+    }
     // A truncated response can yield structurally-valid-but-incomplete JSON (e.g. a cut-off proposals
     // array) that downstream code — including the write gate — would treat as authoritative. Refuse it.
     if (res.stop_reason === "max_tokens") {
@@ -148,13 +157,16 @@ export class CoachLLM {
           thinking: { type: "adaptive" },
           output_config: { effort: this.effort },
           system: [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }],
-          // Server-side web search (current 2026-02 tool — adds dynamic result filtering on Opus 4.8). Capped to bound cost.
+          // Server-side web search (current 2026-02 tool — dynamic result filtering, supported on Opus 5). Capped to bound cost.
           tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxSearches }],
           messages: [{ role: "user", content: userContent }],
         },
         { signal },
       )
       .finalMessage(), config.coachLlm.longTimeoutMs);
+    if (res.stop_reason === "refusal") {
+      throw new Error("LLM declined the research request (safety classifier) — no digest this run.");
+    }
     const text = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
@@ -186,6 +198,9 @@ export class CoachLLM {
         { signal },
       )
       .finalMessage(), config.coachLlm.longTimeoutMs);
+    if (res.stop_reason === "refusal") {
+      throw new Error("LLM declined the request (safety classifier) — no prose produced.");
+    }
     const text = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)

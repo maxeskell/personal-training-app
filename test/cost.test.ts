@@ -13,7 +13,7 @@ function rec(operation: string, ageDays: number, cost: number): CostRecord {
   return {
     ts: new Date(Date.now() - ageDays * 86_400_000).toISOString(),
     operation,
-    model: "claude-opus-4-8",
+    model: "claude-opus-5",
     input: 100,
     output: 200,
     cacheWrite: 0,
@@ -44,7 +44,7 @@ test("isLocalModel: Ollama models are local; Anthropic models are not", () => {
   for (const m of ["llama3.2:1b", "nomic-embed-text", "all-minilm", "qwen2.5:1.5b"]) {
     assert.equal(isLocalModel(m), true, `${m} should be local`);
   }
-  for (const m of ["claude-opus-4-8", "claude-haiku-4-5", "claude-sonnet-4-6"]) {
+  for (const m of ["claude-opus-5", "claude-haiku-4-5", "claude-sonnet-4-6"]) {
     assert.equal(isLocalModel(m), false, `${m} should not be local`);
   }
 });

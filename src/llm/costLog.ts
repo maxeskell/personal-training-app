@@ -31,7 +31,7 @@ export interface CostRecord extends LlmUsage {
  * on Haiku are priced from the Haiku table, everything else from the (Opus) default — so the cost log
  * doesn't bill a Haiku intent micro-call at Opus rates.
  */
-export function costUsd(u: LlmUsage, model = "claude-opus-4-8"): number {
+export function costUsd(u: LlmUsage, model = "claude-opus-5"): number {
   const p = /haiku/i.test(model) ? config.pricingHaiku : config.pricing;
   const usd =
     (u.input * p.inputPerMTok +
