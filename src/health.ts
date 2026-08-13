@@ -67,6 +67,61 @@ export async function fileChecks(): Promise<Check[]> {
   return checks;
 }
 
+/** The Garmin tool that pulls a raw per-second .FIT (garmin_mcp ≥ d31de79). Absent on older builds. */
+const GARMIN_STREAM_TOOL = "download_activity_file";
+/** Warn once Garmin daily data is this stale — wellness (RHR/HRV) uploads every worn day, so a >3-day
+ *  gap means the sync pipeline is broken (a crashed subprocess, an expired token), not just a rest week. */
+export const GARMIN_STALE_WARN_DAYS = 3;
+
+/**
+ * Freshness of the archived Garmin *daily* stream — the early-warning signal that a silent Garmin outage
+ * (like the mcp-2.0 import crash) went unnoticed for weeks. PURE: takes the newest archived daily date and
+ * `now`, returns a Check. `null` when Garmin is disabled (nothing to watch) or has no data yet (fresh setup
+ * is not a fault). This is what turns "everything degraded quietly" into a visible ⚠.
+ */
+export function garminFreshnessCheck(
+  newestDailyIso: string | null,
+  now: Date,
+  enabled: boolean,
+  staleWarnDays: number = GARMIN_STALE_WARN_DAYS,
+): Check | null {
+  if (!enabled) return null;
+  if (!newestDailyIso) return { name: "Garmin freshness", status: "info", detail: "no Garmin daily data archived yet" };
+  const ageDays = (now.getTime() - new Date(`${newestDailyIso}T00:00:00Z`).getTime()) / 86_400_000;
+  if (ageDays > staleWarnDays) {
+    return {
+      name: "Garmin freshness",
+      status: "warn",
+      detail: `newest Garmin daily is ${newestDailyIso} (${ageDays.toFixed(0)}d ago) — sync looks stalled; run \`npm run doctor\` for the live reason`,
+    };
+  }
+  return { name: "Garmin freshness", status: "ok", detail: `newest Garmin daily ${newestDailyIso} (${ageDays.toFixed(0)}d ago)` };
+}
+
+/**
+ * LIVE Garmin liveness: actually spawn the garmin_mcp subprocess and list its tools. This is the check
+ * that would have caught the mcp-2.0 crash immediately — the old doctor only read the token's *age*, which
+ * stayed green through a 4-week total outage. Best-effort and self-closing; never throws. Only meaningful
+ * when Garmin is enabled (callers guard on `config.garmin.enabled`).
+ */
+export async function garminLiveCheck(): Promise<Check> {
+  const { GarminClient } = await import("./mcp/garminClient.js");
+  const g = new GarminClient();
+  try {
+    const connected = await g.connect();
+    if (!connected) {
+      return { name: "Garmin live", status: "warn", detail: `unreachable — ${g.lastError ?? "subprocess failed to start"} (degrading to AI Endurance only)` };
+    }
+    const tools = await g.listToolNames();
+    if (!tools.includes(GARMIN_STREAM_TOOL)) {
+      return { name: "Garmin live", status: "warn", detail: `connected (${tools.length} tools) but no ${GARMIN_STREAM_TOOL} — old garmin_mcp build; raw .FIT download unavailable` };
+    }
+    return { name: "Garmin live", status: "ok", detail: `connected, ${tools.length} tools incl. ${GARMIN_STREAM_TOOL} (raw .FIT download available)` };
+  } finally {
+    await g.close();
+  }
+}
+
 // --- HTTP /health surface + remote self-check (PROD hardening) -------------------------------------
 //
 // The MCP server exposes an UNAUTHENTICATED `/health` so "is the connector up?" is one curl through the

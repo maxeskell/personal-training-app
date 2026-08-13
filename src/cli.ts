@@ -47,7 +47,7 @@ import { getForecast } from "./weather/store.js";
 import { assessWeek, latestActuals, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
 
 import { notify } from "./notify.js";
-import { fileChecks, redactSecrets, checkRemoteHealth } from "./health.js";
+import { fileChecks, redactSecrets, checkRemoteHealth, garminLiveCheck, garminFreshnessCheck } from "./health.js";
 import open from "open";
 import { assessHealthRisk } from "./guardrails/wellbeing.js";
 import { WriteGate } from "./guardrails/writeGate.js";
@@ -421,6 +421,19 @@ async function cmdPing(): Promise<void> {
     const note = verdict.why.length > 180 ? verdict.why.slice(0, 177) + "…" : verdict.why;
     await notify(`Readiness: ${verdict.verdict.toUpperCase()}`, note);
     await recordPingSuccess(state.date); // heartbeat for the doctor check
+    // Early-warning for a silent Garmin outage: readiness still renders on AIE alone, so a broken Garmin
+    // sync (crashed subprocess, expired token) is otherwise invisible for weeks. If the archived daily data
+    // has gone stale, fire a desktop notification. Best-effort — never let it break the ping.
+    if (config.garmin.enabled) {
+      try {
+        const days = await new ArchiveStore().loadGarminDays();
+        const newest = days.length ? days.map((d) => d.date).sort().at(-1)! : null;
+        const fresh = garminFreshnessCheck(newest, new Date(), true);
+        if (fresh?.status === "warn") await notify("Garmin sync stalled", fresh.detail).catch(() => {});
+      } catch {
+        /* no archive yet — nothing to warn about */
+      }
+    }
     await maybeSeasonNudge(state).catch(() => {}); // quarterly season-review nudge (best-effort)
     // Sunday cadence: the weekly brief rides the ping (one scheduled actor) — review + snapshot + gated
     // next-week proposals, frozen together. Best-effort: a brief failure must not break the readiness ping.
@@ -1149,6 +1162,25 @@ async function cmdDoctor(): Promise<void> {
     });
   } catch (e) {
     checks.push({ name: "AIE connection", status: "warn", detail: `could not reach AI Endurance: ${e instanceof Error ? e.message : String(e)}` });
+  }
+
+  // Live Garmin liveness + archive freshness. The token-age line in fileChecks() has no network, so it
+  // stayed ✓ through a 4-week total outage (mcp 2.0 crashed the subprocess on import) — these two actually
+  // open a connection and read how stale the data is, so the same failure now shows as a ⚠.
+  if (config.garmin.enabled) {
+    try {
+      checks.push(await garminLiveCheck());
+    } catch (e) {
+      checks.push({ name: "Garmin live", status: "warn", detail: `check failed: ${e instanceof Error ? e.message : String(e)}` });
+    }
+    try {
+      const days = await new ArchiveStore().loadGarminDays();
+      const newest = days.length ? days.map((d) => d.date).sort().at(-1)! : null;
+      const fresh = garminFreshnessCheck(newest, new Date(), true);
+      if (fresh) checks.push(fresh);
+    } catch {
+      /* archive not present yet — nothing to judge freshness against */
+    }
   }
 
   // Morning-ping heartbeat (PROD-2): surface a silently-failing 06:00 ping.

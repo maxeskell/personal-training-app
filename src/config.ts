@@ -126,11 +126,17 @@ export const config = {
     enabled: process.env.GARMIN_ENABLED === "true",
     /** Spawn command for the Taxuspt/garmin_mcp stdio server. Pinned to the commit that added
      *  download_activity_file (raw per-second .FIT download, 2026-06-10) — the pin also makes uvx
-     *  rebuild its cached env, so the tool appears without a manual `uvx --refresh`. Bump deliberately. */
+     *  rebuild its cached env, so the tool appears without a manual `uvx --refresh`. Bump deliberately.
+     *
+     *  `--with mcp<2` pins the Python `mcp` SDK below 2.0. garmin_mcp@d31de79 does
+     *  `from mcp.server.fastmcp import FastMCP`, but mcp 2.0 REMOVED that module — leaving it unpinned let
+     *  uvx resolve mcp 2.0 and the subprocess crashed on import (`ModuleNotFoundError: mcp.server.fastmcp`),
+     *  silently degrading every Garmin call to AIE-only for ~4 weeks (2026-07-17 → 2026-08-13). Keep the
+     *  constraint until the garmin_mcp pin is bumped to a commit that targets mcp 2.x. */
     command: process.env.GARMIN_MCP_COMMAND ?? "uvx",
     args: parseArgsList(
       process.env.GARMIN_MCP_ARGS ??
-        "--python 3.12 --from git+https://github.com/Taxuspt/garmin_mcp@d31de7980d652289e5368637261fcd17aa2c7d90 garmin-mcp",
+        "--python 3.12 --with mcp<2 --from git+https://github.com/Taxuspt/garmin_mcp@d31de7980d652289e5368637261fcd17aa2c7d90 garmin-mcp",
     ),
     /** Hard timeout (ms) for any Garmin call — never let it block the coach. Some endpoints
      *  (power-duration curve, race predictions) parse many activities server-side and are slow. */

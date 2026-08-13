@@ -23,7 +23,7 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 | `npm run auth:aie` | one-time AI Endurance OAuth (opens a browser); tokens cached in `~/.endurance-coach` |
 | `npm run verify:reads` | exercise every read tool and confirm the write-gate is closed |
 | `npm run state:today` | assemble + persist + summarise today's AthleteState |
-| `npm run doctor` | health check: creds, Garmin token age, API key, AI Endurance tool drift |
+| `npm run doctor` | health check: creds, API key, AI Endurance tool drift, and — when Garmin is enabled — a **live** Garmin probe (spawns the subprocess, lists tools, checks `download_activity_file`) plus an archived-daily **freshness** warning. The live probe catches a crashed/incompatible garmin_mcp that a token-age check alone would miss. |
 
 ## Daily coaching
 | Command | What it does |
