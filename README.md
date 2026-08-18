@@ -463,6 +463,27 @@ well on the bike vs running, caffeine timing — and suggests `fuelling.preferen
 n=1 and descriptive (a MODEL), **wellbeing-screened** (about fuelling *enough* for the work — never
 restriction, deficits or weight targets), and needs ≥3 logged sessions before it'll say anything.
 
+## Supplement protocol (what & when)
+
+Tell the app what you take — or are considering — and **when it applies**, and the dashboard's Plan tab
+shows a **"Supplements — what & when"** card: what's active today, what starts soon, and race-tied
+loading counted off your race calendar. Entries live in `profile.local.yaml → supplements:` (see
+`profile.example.yaml` for the commented format):
+
+- `when: daily` — always on (e.g. creatine).
+- `when: seasonal` + `months: [october, … march]` — seasonal windows (e.g. winter vitamin D); the card
+  flips to "starts 1 October — in N days" as the window approaches.
+- `when: race_week` + `days_before_race: 3` — loading protocols (e.g. beetroot nitrate); the card names
+  the race and the exact start day.
+- `when: race_day` — race-morning items (e.g. caffeine).
+
+`status` keeps the list honest: `active` (on the protocol), `proposed` (surfaced as **"discuss with
+coach first"** before you start it), `lapsed` (kept as history, deliberately not recommended — lapsed
+and out-of-window entries sit behind a disclosure). Every entry carries an honest `evidence` grading
+(`established` / `guideline` / `mixed` / `low` / `model`). Deterministic — no LLM on render; race names
+and dates are redacted in the share view; **not medical advice**. With no `supplements:` block the card
+stays hidden and the **"Finish setup"** card lists it as an open profile question instead.
+
 ## Marginal gains + keeping the knowledge current
 
 Two flows answer "what small thing can I improve?" and "is the coach's thinking up to date?" — on a

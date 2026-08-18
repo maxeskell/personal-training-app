@@ -179,6 +179,29 @@ fuelling:
                                # sodium mg/hr loss to replace. From a sweat-patch test, or estimate (salty ~1200 / average
                                # ~900 / light ~500). e.g. 900
 
+# Supplement protocol — WHAT to take and WHEN. Drives the Plan tab's "Supplements — what & when" card,
+# computed deterministically off today's date + your races[] calendar. Per entry:
+#   when: daily | seasonal | race_week | race_day     (default daily)
+#   months: [...]        # seasonal only — full lowercase month names, ordered start → end
+#   days_before_race: 3  # race_week only — loading starts this many days before each race (default 3)
+#   status: active | proposed | lapsed   (default active; proposed = discuss with your coach before
+#                        # starting; lapsed = kept as history, deliberately not recommended)
+#   evidence: established | guideline | mixed | low | model   # honest grading, shown on the card
+# Doses are free text ("400 IU/day") — stable context, never live performance numbers. Not medical advice.
+supplements: []
+#   - name: Vitamin D3
+#     dose: 400 IU/day
+#     when: seasonal
+#     months: [october, november, december, january, february, march]
+#     status: active
+#     evidence: guideline
+#     why: UK winter guidance — minimal skin synthesis Oct-Mar
+#   - name: Beetroot nitrate shot
+#     dose: 2 shots/day final 2-3 days + 1 shot ~2-3h pre-race
+#     when: race_week
+#     days_before_race: 3
+#     evidence: mixed
+
 races:
   # Your own targets. Mirror these into AI Endurance manually: this connector is
   # read-only and cannot set them there.

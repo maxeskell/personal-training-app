@@ -22,6 +22,14 @@ const optDate = z
 const strOrNum = z.union([z.string(), z.number()]).nullable().optional();
 
 export const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"] as const;
+
+/** Calendar months for seasonal supplement windows — full lowercase names, like WEEKDAYS. */
+export const MonthEnum = z.enum([
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+]);
+export const MONTHS = MonthEnum.options;
+export type MonthName = z.infer<typeof MonthEnum>;
 const weekday = z.enum(WEEKDAYS);
 
 /** Free-form map/list: type-checked as a container but its contents are left open (rich real data). */
@@ -77,6 +85,31 @@ export const BloodsSchema = z
   })
   .passthrough();
 export type Bloods = z.infer<typeof BloodsSchema>;
+
+/**
+ * One supplement-protocol entry — WHAT to take and WHEN, so the dashboard's "Supplements — what & when"
+ * card can compute "active now / starts soon / race-tied" deterministically from today's date + the
+ * profile race calendar. `when` picks the clock: `daily`, `seasonal` (+ `months`, full lowercase names
+ * ordered start → end), `race_week` (+ `days_before_race`, default 3), or `race_day`. `status` keeps the
+ * record honest: `active` (on the protocol), `proposed` (agreed to DISCUSS with the coach before
+ * starting), `lapsed` (kept as history, deliberately not recommended). `evidence` is an honest grading
+ * shown on the card. Doses are free text ("400 IU/day") — stable context, never live performance
+ * numbers; the no-live-numbers guard still walks every key here like the rest of the profile.
+ */
+export const SupplementSchema = z
+  .object({
+    name: z.string(),
+    dose: optStr,
+    when: z.enum(["daily", "seasonal", "race_week", "race_day"]).nullable().optional(),
+    months: z.array(MonthEnum).optional(),
+    days_before_race: z.number().int().min(0).max(30).nullable().optional(),
+    status: z.enum(["active", "proposed", "lapsed"]).nullable().optional(),
+    evidence: z.enum(["established", "guideline", "mixed", "low", "model"]).nullable().optional(),
+    why: optStr,
+    notes: optStr,
+  })
+  .passthrough();
+export type Supplement = z.infer<typeof SupplementSchema>;
 
 /**
  * Multi-season plan — the strategic arc the `/season` page grades against (rebuild → 70.3 → Ironman).
@@ -136,6 +169,7 @@ export const ProfileSchema = z
     equipment: looseMap.optional(),
     bike_fit: looseMap.optional(),
     fuelling: looseMap.optional(),
+    supplements: z.array(SupplementSchema).optional(),
     races: z.array(RaceSchema).optional(),
     season_plan: SeasonPlanSchema.optional(),
     ai_endurance_todo: looseMap.optional(),

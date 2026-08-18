@@ -113,10 +113,11 @@ to the prompt as a sanity hint.
 Top-level blocks (all optional except `schema_version` and `identity`):
 
 `identity` · `biomechanics` · `health` (incl. `medication`) · `bloods` · `availability` · `equipment` ·
-`bike_fit` · `fuelling` · `races` · `ai_endurance_todo` · `open_items`.
+`bike_fit` · `fuelling` · `supplements` · `races` · `ai_endurance_todo` · `open_items`.
 
 Validation is strict on the **contract** — enum domains (`sex`, `units`, race `priority`/`distance`,
-weekday names), `YYYY-MM-DD` dates, `schema_version` — and **permissive** on the free-form blocks
+weekday names, supplement `when`/`status`/`months`/`evidence`), `YYYY-MM-DD` dates, `schema_version` —
+and **permissive** on the free-form blocks
 (`biomechanics`, `equipment`, `bike_fit`, `fuelling`), so a richly-detailed real profile isn't
 rejected. The blank example and a fully-filled profile both validate. See `src/profile/schema.ts`.
 

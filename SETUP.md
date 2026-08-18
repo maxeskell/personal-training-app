@@ -200,6 +200,13 @@ you add it, the card shows a one-line nudge with the format, and the **"Finish s
 an open item — nothing breaks, it's just an empty inventory waiting on you. See the
 [Fuelling Spec](docs/specs/Fuelling_Spec.md) for the full picture.
 
+**Worth filling in: your supplement protocol.** Under `supplements:` list what you take and when it
+applies (`daily` / `seasonal` + months / `race_week` + days-before / `race_day`) — the Plan tab's
+**"Supplements — what & when"** card then shows what's active today, what starts soon and race-tied
+loading counted off your race calendar, each with an honest `evidence` grading. Entries marked
+`proposed` surface as "discuss with coach first"; `lapsed` keeps history without recommending it.
+`profile.example.yaml` carries a commented draft. Not medical advice.
+
 **Worth filling in: each bike's race weight.** Under `equipment.bikes.<name>.race_weight_g` record the
 bike *as you race it*, in **grams** — weigh it the way you ride (e.g. with one full bottle) and log the
 grams (10 kg → `10000`). Grams, not kg, on purpose: a `weight_kg` is treated as your live bodyweight and
