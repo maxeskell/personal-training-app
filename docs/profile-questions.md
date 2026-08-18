@@ -85,6 +85,12 @@ This page is generated from `src/profile/questions.ts` (the same data behind
 | `fuelling.products` | What nutrition do you actually use? (gels, bars, drink mix, electrolytes, recovery, supplements — per-serving carbs/sodium/caffeine) | Powers the 'Fuelling — next session' dashboard card and the `fuelling` tool: per-session pre/during/after built from YOUR products, only when a session needs it. See profile.example.yaml → fuelling.products for the format. |
 | `fuelling.preferences.sweat_rate_ml_per_hour` | Have you measured your sweat rate (ml/hr, from a weigh-in/out test)? Add your sweat sodium (mg/L) too if known. | Replaces the generic ml/hr fluid MODEL in the fuelling plan with YOUR measured number; paired with sweat_sodium_mg_per_l it also states a sodium mg/hr loss to replace. Until set, the hydration line is a population estimate. |
 
+## supplements
+
+| Field | Question | Why it matters |
+|---|---|---|
+| `supplements` | Any supplements on your protocol — daily, seasonal (e.g. winter vitamin D), race-week loading, race-day, or ones to discuss first? (each: name, dose, when, status) | Drives the Plan tab's 'Supplements — what & when' card: what's active today, what starts soon (seasonal windows), and race-tied loading counted off your race calendar — with honest evidence labels. Not medical advice. |
+
 ## races
 
 | Field | Question | Why it matters |

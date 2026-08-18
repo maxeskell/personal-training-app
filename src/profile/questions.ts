@@ -224,6 +224,15 @@ export const PROFILE_QUESTIONS: ProfileQuestion[] = [
     why: "Replaces the generic ml/hr fluid MODEL in the fuelling plan with YOUR measured number; paired with sweat_sodium_mg_per_l it also states a sodium mg/hr loss to replace. Until set, the hydration line is a population estimate.",
   },
 
+  // --- supplements (protocol with timing windows; drives the "Supplements — what & when" card) ---
+  {
+    area: "supplements",
+    field: "supplements",
+    question:
+      "Any supplements on your protocol — daily, seasonal (e.g. winter vitamin D), race-week loading, race-day, or ones to discuss first? (each: name, dose, when, status)",
+    why: "Drives the Plan tab's 'Supplements — what & when' card: what's active today, what starts soon (seasonal windows), and race-tied loading counted off your race calendar — with honest evidence labels. Not medical advice.",
+  },
+
   // --- races (extra targets beyond the first; the first is set in profile:init) ---
   {
     area: "races",

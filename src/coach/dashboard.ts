@@ -25,6 +25,7 @@ import { fuelSessionInner, renderFuelExtras, fuelScript } from "./fuelCard.js";
 import { buildWeekFuelPlans, loadFuelPrefs, type FuelPlan } from "./fuelPlan.js";
 import { loadInventory, type FuelProduct } from "./fuelInventory.js";
 import { latestFuelByDateSport, fuelLogKey, type FuelLogRecord } from "./fuelLogStore.js";
+import { renderSupplementCard } from "./supplementCard.js";
 import {
   escapeHtml,
   TONE_COLOR,
@@ -1441,9 +1442,12 @@ export function renderDashboard({ window, decisions, insights, reactions, discus
     : "";
   // Gate the delta+link on there being OTHER plan content, so an all-absent Plan tab still hits the
   // friendly empty-state fallback below rather than rendering a lone delta line.
-  const corePlan = [weatherHtml, renderWeeklyProse(seasonProse), seasonFold].filter((s) => s.trim());
+  // Supplement protocol — deterministic "what & when" from the profile + race calendar; "" when the
+  // profile lists no supplements (the setup nudge rides the profile-questions machinery instead).
+  const supplementsHtml = renderSupplementCard({ profile, nowMs: now ?? Date.now(), timezone: config.athlete.timezone, share: !!share });
+  const corePlan = [weatherHtml, supplementsHtml, renderWeeklyProse(seasonProse), seasonFold].filter((s) => s.trim());
   const planBody = corePlan.length
-    ? [weatherHtml, weeklyDeltaHtml, weeklyLinkHtml, renderWeeklyProse(seasonProse), seasonFold].filter((s) => s.trim()).join("\n")
+    ? [weatherHtml, weeklyDeltaHtml, weeklyLinkHtml, supplementsHtml, renderWeeklyProse(seasonProse), seasonFold].filter((s) => s.trim()).join("\n")
     : "";
 
   return `${pageHead(`Endurance Coach — ${today.date}`)}<body>

@@ -162,6 +162,15 @@
   - **Comeback-block guidance (post-viral + heatwave, 19 days to Alderford):** intensity is earned —
     hard sessions only when feeling fully well; the pending post-Japan FTP test wants full health AND a
     cooler day (aim w/c 24 Aug — still clear of the taper).
+  - **Supplement protocol now lives in the app (same day, follow-up ask):** new `supplements:` profile
+    block + the Plan tab's deterministic "Supplements — what & when" card (active now / coming up /
+    proposed / parked, counted off the race calendar). Agreed protocol: vitamin D3 400 IU/day Oct–Mar
+    (active, seasonal); beetroot-nitrate race-week loading (active — buy Beet It Sport shots, the
+    RE:GEN in the cupboard is the recovery variant); caffeine as the race-day lever (active; in-race
+    dosing stays with fuelling). Creatine 3–5 g/day: **PROPOSED — discuss before starting** (best-evidence
+    lean-mass case on a GLP-1; expect +1–2% water weight and a higher creatinine on future panels). XXL
+    stack (beta-alanine / acetyl-L-carnitine / NitroX) confirmed lapsed → pruned from fuelling.products,
+    kept in supplements as `lapsed` history.
 - **2026-07-11 — Birmingham (A-race) debrief: the target was the failure, not the athlete.**
   Result 2:39:12, 19th overall, **1st of 8 AG** (splits + .FIT data live in `data/career-history.json`
   and the race .FIT — not here). Execution was near-optimal: even bike, controlled run open,
