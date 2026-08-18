@@ -99,13 +99,20 @@
       knee tracking, platform offset L −9 mm / R +5 mm, late left power phase). Sensible window: **autumn
       2026** (post-Warwick, before the winter swim block). Also ask whether the annual bike assessment can
       run **on your own Rally pedals** — that's what makes the lab threshold map onto every ride you record.
-- [ ] **Book the catch-up Medichecks panel for mid-Aug 2026 (w/c 10 Aug, post-Japan).** Morning, fasted,
-      ≥48 h after the last hard session. Book before flying on 18 Jul so the slot exists when you land.
+- [x] **Catch-up Medichecks panel — DONE (drawn 12 Aug 2026, fasted; results 13 Aug; panel + flags saved
+      to `profile.local.yaml → bloods.panels`, the canonical store).** Headline: strong panel, 2020→2026
+      trend emphatically good; one flag (lymphocytes 0.39) read as post-viral transient — full read +
+      decisions in the 2026-08-18 Decisions entry below. Protocol miss for next time: drawn 11:41, outside
+      the 6-10am cortisol window — the annual testing week (below) now specifies pre-10am.
 - [ ] **Book the annual testing week — last week of Feb, every year (first: Feb 2027).** Medichecks
-      Ultimate Performance panel Monday morning (fasted, ≥48 h after last hard session) + Sportstest
+      panel Monday morning (fasted, **pre-10am** — that lands the in-window cortisol/T:C baseline the
+      Aug 2026 panel missed; ≥48 h after last hard session; pick a panel that **includes CK** — the
+      Ultimate Performance panel doesn't, the 2020 Well Man UltraVit did) + Sportstest
       comprehensive **bike** physiological assessment (ramp + lactate thresholds + VO2max, own pedals)
       later the same week. Late Feb = vit-D trough, iron checked before the build, end-of-base repeatable
-      state, zones set for the season, and the annual FTP data point for the 2028 short-vs-long gate.
+      state, zones set for the season, the annual FTP data point for the 2028 short-vs-long gate — and it
+      re-checks the Aug 2026 watch items (lymphocytes, active-B12 set point, folate, SHBG, winter vit D
+      on ~400 IU/day).
 - [ ] **Sweat-rate test** — gives a real ml/h + sodium figure so fuelling/hydration advice isn't a
       population MODEL. Protocol: weigh yourself (minimal/no clothing, towel-dry) before a ~60 min steady
       session; record fluid drunk during it; weigh again after. Sweat loss (L) ≈ (pre-kg − post-kg) +
@@ -134,6 +141,27 @@
         the `<details>` body); optional auto-fade of an agreed item after a cool-off (today it stays annotated).
 
 ## Decisions / things we've talked through
+- **2026-08-18 — Aug 2026 catch-up bloods: read, saved, decided.** Panel (drawn 12 Aug, fasted, 11:41;
+  results 13 Aug) saved to `profile.local.yaml → bloods.panels` with flags/notes — that's the canonical
+  store. Headline: the 2020→2026 trend validates the tirzepatide + training era (trigs 1.34→0.77, HDL
+  1.11→1.84, ferritin 70→140, vit D 68→84, testosterone 15.7→21.6, HbA1c/CRP flat) and shows **no
+  low-energy-availability signature** — the thing the catch-up panel was booked to check. Agreed:
+  - **Lymphocytes 0.39 read as post-viral transient.** Max felt rough post-Japan ("jet lag + something
+    deeper — a bug makes sense in hindsight"); archive shows a rest day before the draw (no acute-exercise
+    artifact); the lab's own transit-delay caveat applies; platelets low-normal fit the picture. The
+    report's **4-week FBC recheck: DECLINED** by Max — coach recommended the ~£35 recheck once (taper
+    morning 3–4 Sep), decision respected. **Reopen triggers (per the report): fever, mouth ulcers,
+    swollen glands, recurrent infections, or another unexplained run-down spell → GP** (not a mail-order
+    kit); otherwise the Feb 2027 annual FBC closes the loop.
+  - **MMA test: DECLINED** (same call as 2020) — active B12 is a six-year stable set point (56→52);
+    food-first, watched annually.
+  - **No supplements at all currently (confirmed).** Vit D 84 = summer sun alone. Coach recommendation
+    standing: **~400 IU/day vit D Oct–Mar** (standard UK winter guidance + the 2020 GP advice); the
+    late-winter retest open item stays. B12/folate stay food-first — nutrient **density** matters on a
+    GLP-1 appetite (eggs/dairy/fish/meat; greens/legumes).
+  - **Comeback-block guidance (post-viral + heatwave, 19 days to Alderford):** intensity is earned —
+    hard sessions only when feeling fully well; the pending post-Japan FTP test wants full health AND a
+    cooler day (aim w/c 24 Aug — still clear of the taper).
 - **2026-07-11 — Birmingham (A-race) debrief: the target was the failure, not the athlete.**
   Result 2:39:12, 19th overall, **1st of 8 AG** (splits + .FIT data live in `data/career-history.json`
   and the race .FIT — not here). Execution was near-optimal: even bike, controlled run open,
