@@ -12,6 +12,9 @@
 > the MCP and the gitignored profile aren't reachable.
 
 ## To do
+- [ ] **Flip creatine to `active` on 7 Sep (day after Alderford).** Decision 19 Aug: start 3–5 g/day
+      post-race so the +1–2% water weight doesn't ride into the A-race — the supplements card's
+      `proposed` entry carries the full note; this line is the trigger to flip it.
 - [ ] **Run form — standing cues for every run + brick (from Birmingham race photos, 13 Jul 2026).**
       Surface these in run and brick session prep until habitual — the crossover is worst in the first km
       off the bike. (1) **Arm carriage:** hands cross the body's midline across the chest in nearly every
@@ -33,16 +36,17 @@
       watch recompute automatically (%FTP mode). Garmin's own MMP estimate reads 172 W — that's a
       floor, not a verdict: its curve only climbs on hard sustained power efforts, so expect it to
       lag until the post-Japan test block.
-- [ ] **Post-Japan FTP test / openers week (Aug) — strap on, three numbers re-set from one session.**
-      The proper test the 225 W decision was always pending: ramp/20-min protocol with the HR strap
-      paired, then re-set from the result (a) **FTP** (adjust 225 up/down to the test), (b) **max HR**
-      (race wrist-HR hit 185 vs the set 182 — strap-verify before touching), and (c) **bike LTHR**
-      (currently 160 = the Birmingham 79-min race average, so it's underset). Every zone, the 250 W
-      build arc and the race models hang off these; one session closes all three. Book it for the
-      re-entry week (w/c 10 Aug), alongside the Medichecks catch-up already listed below.
-- [ ] **Swim CSS test (400/200) before Alderford (6 Sep).** Still unset — a whole season of swim
-      training ran unstructured, and the race swim positive-split ~7% (2:07→2:21/100m by 500m block).
-      One pool test, set CSS in AIE, and the swim finally gets a model + paced sets.
+- [ ] **Strap-verified FTP test — MOVED post-Alderford, w/c 7 Sep (agreed 19 Aug 2026).** The pre-taper
+      window closed (post-viral comeback + heatwave ate the w/c 10 Aug re-entry plan), so the already-
+      agreed 40 km race-simulation ride settles RACE pacing (225 vs 200) before the taper, and the
+      formal ramp/20-min strap test re-sets the three numbers properly the week after Alderford:
+      (a) **FTP** (adjust 225 up/down to the test), (b) **max HR** (race wrist-HR hit 185 vs the set
+      182 — strap-verify before touching), and (c) **bike LTHR** (currently 160 = the Birmingham
+      79-min race average, so it's underset). Every zone and the 250 W build arc hang off these; one
+      session closes all three.
+- [x] **Swim CSS test (400/200) — DONE (measured ~14 Aug 2026): CSS 1:53/100m.** Set app-side via
+      COACH_SWIM_CSS (AIE's API can't read UI-set CSS back); state, zones and the race swim model now
+      run off a measured number, and the stale `swim-css-not-set` profile item was cleared (19 Aug).
 - [x] **Alderford + Warwick targets set — DONE (agreed with Max, 11 Jul evening).** Both fantasy
       targets replaced in `profile.local.yaml → races[]`:
       - **Alderford: "2:34-2:38"** (MODEL: Birmingham 2:39:12 − adopted execution gains ≈ 2:36–2:37
@@ -81,14 +85,15 @@
 - [ ] **(agreed 11 Jul) T1 drills before Alderford (6 Sep).** Birmingham T1: **69 s of 141 stationary** + a 185 m
       transition run. Rehearse suit-half-down-before-the-rack + flying mount — 20–30 s available.
       T2 was clean (39 s watch-side) — keep the flying dismount as-is.
-- [ ] **Pull the Results Base field splits (10 min).** Which leg separates 19th overall from the
-      top 10? The FIT can't say; the results page can. Tells us whether the swim (18.8% of race time,
-      paced blind) is the ranking lever it appears to be — feeds the winter-emphasis question.
+- [x] **Pull the Results Base field splits — DONE (by Max, before 19 Aug 2026; finding not retained).**
+      The pull happened but which leg separates 19th from the top 10 wasn't logged. If the winter
+      swim-vs-bike emphasis question needs the number, re-pull post-season — it's 10 minutes.
 - [ ] **Winter wheel swap** — the Hunt 40mm deep aero wheels (30mm GP5000 S TR) are the *summer*
       everyday training wheel; switch back to the 32mm alloy wheelset (nominal-32mm GP5000) when winter
       conditions arrive, and back to the Hunts in spring. Pressures differ between the two — summer
       (30mm) ≈ 52 F / 60 R psi; winter (32mm, wetter roads) ≈ 48 F / 55 R psi (both MODELs, tune by feel).
-- [ ] **Rehearse long-run liquid carb (once the running vest arrives)** — load PF 60 in the front soft
+- [ ] **Rehearse long-run liquid carb — vest ARRIVED (confirmed 19 Aug 2026), rehearsal now live** —
+      load PF 60 in the front soft
       flasks and practise drinking carb *on the run*, not just water. Closes the GLP-1 fuelling gap (run
       fuel should be liquid on a slowed gut) and the missed carb channel. Build the rate up gradually in
       long runs, and rehearse it **in the Tue–Thu GI-trough window** at least once, not only on fresh days,
@@ -113,13 +118,11 @@
       state, zones set for the season, the annual FTP data point for the 2028 short-vs-long gate — and it
       re-checks the Aug 2026 watch items (lymphocytes, active-B12 set point, folate, SHBG, winter vit D
       on ~400 IU/day).
-- [ ] **Sweat-rate test** — gives a real ml/h + sodium figure so fuelling/hydration advice isn't a
-      population MODEL. Protocol: weigh yourself (minimal/no clothing, towel-dry) before a ~60 min steady
-      session; record fluid drunk during it; weigh again after. Sweat loss (L) ≈ (pre-kg − post-kg) +
-      fluid drunk (L); rate = that ÷ session hours. Repeat once cooler / once warmer if you can. Note
-      shirt salt-staining / sweat taste for a rough sodium read (a patch test is the accurate version).
-      The field now exists — put the result in `profile.local.yaml → fuelling.preferences.sweat_rate_ml_per_hour`
-      (and `sweat_sodium_mg_per_l` if known); the fuelling plan then uses your number instead of the MODEL.
+- [x] **Sweat-rate test — DECLINED (Max, 19 Aug 2026).** Happy with the population MODEL; the hydration
+      line keeps its honest estimate label. The setup-card question was down-ranked with a discussed-
+      with-coach note (visible, not hidden). Reopen only if a hot race or hydration trouble makes the
+      real number matter — the protocol lives in `docs/profile-questions.md` and the field
+      (`fuelling.preferences.sweat_rate_ml_per_hour`) still exists if that day comes.
 
 - [x] **Fuel card solid/liquid balance preference — SHIPPED (Phase 1).** `fuelling.preferences.solid_liquid_split`
       (`liquid`|`even`|`solid`, bare or per-sport) now drives `planFuel` (`src/coach/fuelPlan.ts`); `even`
@@ -141,6 +144,95 @@
         the `<details>` body); optional auto-fade of an agreed item after a cool-off (today it stays annotated).
 
 ## Decisions / things we've talked through
+- **2026-08-19 — Triage session: bad weigh-in purged, proposal queue zeroed, open items closed down.**
+  - **Erroneous 10 Aug weigh-in deleted.** The Index S2 reading (76.55 kg, body fat 0%, SMM 0 kg — a
+    failed-impedance scale glitch) was stripped from `data/archive/garmin-daily.jsonl` (the row's
+    sleep/HRV kept; backfill never re-fetches a present date) and Max deleted it in Garmin Connect
+    too. Live state was never polluted (weight reads 71 kg from the AIE profile); the deep-dive's
+    "0 kg SMM glitch" flag is cleared. The 7 Aug reading (72.79 kg / 20.6% / 30.6 kg SMM) stands as
+    the latest real body-comp point.
+  - **Pending proposals: 12 → 0.** CONFIRMED: cap Thu 20 Aug's Anaerobic Ride to aerobic/tempo
+    (written to AIE — ACWR 1.6 HIGH + taper from ~24 Aug outweighed the normalized morning HRV/RHR).
+    DECLINED: the 3 brick alternates (the already-applied Friday brick covers the rehearsal) and the
+    8 stale June load-management proposals (sessions two months past).
+  - **Creatine: start ~7 Sep, the day after Alderford** — not before, so the +1–2% water weight
+    (~1 kg) doesn't ride into the A-race. The supplements entry stays `proposed` with the decision
+    noted; flip to `active` on the day (to-do above).
+  - **CSS test confirmed measured** (1:53/100m, ~14 Aug) — to-do ticked, `swim-css-not-set` profile
+    item removed. **Strap FTP test moved post-Alderford** (w/c 7 Sep); the agreed race-sim ride owns
+    pre-race pacing (see the re-scoped to-do).
+  - **Closed as moot:** `set-race-targets` (AIE's API can't read UI-set targets back, so the app
+    tracks `target_time` from the profile — chasing the AIE UI adds nothing; `ai_endurance_todo`
+    marked resolved) and `wednesday-long-run-gi` (the 7.5–10 mg dose made the trough manageable —
+    reopen only on evidence). **Declined:** sweat-rate test (population MODEL accepted).
+  - **Knowledge layer current again:** the June digest approved (had sat pending 62 days), a fresh
+    research run made the same day (~$0.40) and its digest approved. New priors: passive heat as an
+    optional additive stimulus (never displacing a session), CWI kept away from adaptation-focused
+    sessions, aero position beats kit but only measured (frontal area is a poor drag proxy), sleep
+    as the first amber-day check. Taper (~2wk, −40–60% volume, hold intensity/frequency) and
+    HRV-trend-gating priors reconfirmed unchanged.
+  - **Profile tidied:** `power_meter_note` now records the settled Rally→Garmin→AIE provenance (it
+    still claimed the FTP discrepancy was open); cleat-shim re-dated to post-Alderford; the
+    `races-2027` + `gb-age-group` research records archived below (off the agenda's face), replaced
+    by one slim book-the-2027-races item; Speedform stays open (no news from J.Laverack — chase
+    post-season). Results Base splits pull marked done (finding not retained; re-pull post-season if
+    the winter-emphasis question needs it); running vest confirmed arrived (liquid-carb rehearsal
+    live).
+- **2026-07 — 2027 race calendar DECIDED (archived here from profile `open_items`, 19 Aug 2026).**
+  Outlaw DROPPED; On The Edge 70.3 (Compton Verney, LOCAL) is the A-race. A = On The Edge (~18 Jul,
+  ✅ BOOKED & PAID — 2026 deferral; decision-gate diagnostic, read bike off normalised power on a
+  hillier course). B = Grafman (~6 Jun, ✅ BOOKED & CONFIRMED, ATW, ~6wk dress rehearsal). C = ATW
+  Mallory Park sprint (~27 Jun, optional sharpener — also a GB Euro sprint age-group QUALIFIER, but
+  parked/not targeted in 2027). UK TRIATHLON LEAGUE campaign (best 3 of 4 count; only Sprint/Olympic
+  UK Triathlon events qualify — On The Edge/Grafman/Mallory do NOT): Stratford sprint (~19 Apr,
+  replaced Coventry Spring Sprint) + Birmingham sprint (~1 Aug, untapered, ~2wk post-A) + Alderford
+  Oly (~5 Sep) + Warwickshire sprint (~3 Oct). BOOKING STATUS: A & B booked; the 4 league races +
+  Mallory still UNBOOKED (entries open autumn 2026 → early 2027; no urgency, book as they open —
+  the slim `book-2027-races` profile item tracks this). Do NOT book Outlaw or the Ultimate
+  (Ultimate 150/100 are middle = no league points, and it clashes ~1wk before the A).
+- **2026-07 — GB age-group pathway RESEARCHED & RECOMMENDED (archived here from profile
+  `open_items`, 19 Aug 2026).** NATIONAL pathway (represent GB at Euro/World champs), SEPARATE from
+  both the UK Triathlon League AND from Ironman 70.3 Worlds (Max's stated horizon_goal — that is an
+  IRONMAN-brand slot, a THIRD thing; none of his current races are Ironman-branded, so they don't
+  feed it either). Age group M45-49 for 2028. VERIFIED FACTS: membership = Core Triathlon England is
+  enough (includes the GB race licence). Sprint/Standard = race a DESIGNATED qualifier, top-4 in AG
+  and/or within 120% (Euro)/115% (Worlds) of AG winner, 4 slots/AG/race + roll-down. Middle/Long/
+  AQUABIKE = NOT a set race — qualify by SUBMITTING a past result within 120% of AG winner (aquabike
+  = swim+T1+bike of a middle tri; min 1.5k OW swim + 50mi bike); small fields drop you to a later
+  cut-off (Q3). Register intent + £10 by 5pm the Fri before (sprint/std). 2028 qualifier calendar
+  (2027 races) NOT published yet — Mallory is a perennial sprint qualifier (confirm 2027). CHALLENGE
+  / CORRECTION of earlier take: (a) 'aquabike is the soft route' was WRONG for Max — aquabike
+  ISOLATES his bike (the limiter), so the 120% bar is HARDER there, not easier. (b) The standard is
+  % of winner, not deep roll-down, so 'smaller field = easier' doesn't hold. (c) BIKE IS THE GATE:
+  at FTP ~199W (all-time 1hr ~215W) he is not near AG-qualifying pace at any Olympic-family
+  distance; GB is bike-gated and realistically 2029+, not 2028. RECOMMENDATION: the most attainable
+  route is MIDDLE-DISTANCE TRIATHLON by result submission — his 4:55-5:10 70.3 target plausibly sits
+  ~within 120% of an M45-49 middle winner (his endurance offsets the bike deficit; sprint/standard/
+  aquabike expose his weaknesses). So do NOT chase a qualifier in 2027 (keep it the diagnostic year;
+  a full-effort Mallory sprint 3wk before the A hurts the A build). Instead, the FREE moves in 2027:
+  (1) buy Core Triathlon England membership; (2) race Grafman/On The Edge for CLEAN swim+bike+run
+  splits — Grafman is the better *submittable* middle result (bigger field, ex-champs venue);
+  (3) BENCHMARK: pull real M45-49 middle-distance winner times from a recent GB champs and compute
+  120% vs Max's projected time to size the true gap. Then IF the 2028 gate says SHORT, build 2028
+  around a middle-distance submission (bike → 250W+ is the whole game). BENCHMARK (REAL DATA — 2025
+  Europe Middle-Distance Champs, Pamplona, M45-49): AG winner 4:12:11 → 120% (Euro) cutoff = 5:02:37
+  (caught ~27 of 39 finishers, ~70% of field); 115% (Worlds) cutoff = 4:50:01 (~top 20). Max's
+  4:55-5:10 target STRADDLES the Euro line measured off the champs winner (4:55 ≈ 7.5min inside,
+  5:10 ≈ 7min over). BUT qualification is measured off the SLOWER domestic-race AG winner, so at a
+  home qualifier Max at target pace is comfortably inside 120% → Euro middle qualification is
+  realistic IF he hits target time (which already assumes FTP→~240W). Worlds 115% is a stretch (even
+  4:55 is ~5min over off this winner). Bike is the gate: champs front bikes 2:13-2:20/90k; Max's
+  target bike is bottom-third of this field → the bike build IS the qualification plan; swim/run are
+  fine. TIMELINE: 2028 if the build flies, 2029 more likely. NEXT DATA POINT: pull the M45-49 winner
+  time at the DOMESTIC race Max would submit (Grafman) — that is the actual reference number. Verify
+  all specifics on britishtriathlon.org. DECISION (Jul 2026): 2027 = UK Triathlon League + diagnostic
+  year ONLY — NOT adding an Ironman 70.3 (3 middle-distance races in a season judged too much on the
+  11-12h/wk ceiling + GLP-1 recovery). England/GB age-group AIMED AT 2028: use 2027 race times as
+  the go/no-go signal; if the fitness is clearly there, race a proper qualifier in 2028 (Mallory
+  sprint, or a big-field 70.3 middle submission). ADMIN ALREADY DONE: Max is an existing British
+  Triathlon member and HOLDS AN ANNUAL RACE LICENCE (= Core/Ultimate tier), so eligibility is fully
+  covered — the GB question is now PURELY performance, no paperwork left. (British Triathlon = the
+  federation; Triathlon England is the home nation under it — one membership, not two.)
 - **2026-08-18 — Aug 2026 catch-up bloods: read, saved, decided.** Panel (drawn 12 Aug, fasted, 11:41;
   results 13 Aug) saved to `profile.local.yaml → bloods.panels` with flags/notes — that's the canonical
   store. Headline: the 2020→2026 trend validates the tirzepatide + training era (trigs 1.34→0.77, HDL
