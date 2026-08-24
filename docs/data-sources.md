@@ -47,7 +47,10 @@ ever obtain TP partner-API access, the `DataSource` seam below is where a native
 2. Register it in `selectDataSource()`.
 3. Add its config to `.env.example`, and set `COACH_SOURCE=<name>` in `.env`.
 
-**Honest note on parity:** AI Endurance provides modelled signals (DFA-α1 **durability**, its **race
-predictions**, **plan-progress adherence**) that other sources may not expose. Those cards degrade for a
-source that lacks them — the coach is most capable on AI Endurance. Label what a source can't provide;
-never fabricate it.
+**Honest note on parity:** AI Endurance provides modelled signals (its **race predictions**,
+**plan-progress adherence**, the **recovery model**) that other sources may not expose. Per-activity
+DFA-α1 **durability** was one of these until AIE's 2026-08 "durability for all workouts" update removed
+the values from the connector (only per-activity `exclude_*` flags + `power_is_from_hr` remain — archived
+history still carries the old values; see `docs/specs/improvements/10-aie-durability-for-all-workouts.md`).
+Those cards degrade for a source that lacks them — the coach is most capable on AI Endurance. Label what a
+source can't provide; never fabricate it.
