@@ -67,6 +67,13 @@ So the full arc for a future outage: the live `doctor` probe + freshness check m
   dropped by bumping. HEAD still ships `download_activity_file`, but we deliberately keep the `d31de79` pin (known-good,
   no reason to take upstream churn). Re-check when upstream actually migrates to the mcp 2.x API; only then bump the
   pin **and** drop `--with mcp<2` together. `--with mcp<2` is belt-and-suspenders regardless.
+- **Re-checked 2026-08-24 (dependency-audit pass): unchanged.** Upstream HEAD is *still* `3610be6` (2026-08-04, no
+  new commits), its `pyproject.toml` now self-constrains `mcp>=1.28.1,<2`, and it still imports
+  `mcp.server.fastmcp` — so the decision above stands verbatim: keep `d31de79` + `--with mcp<2`. Noted for
+  whenever the bump does happen, `d31de79..3610be6` also carries: a fix suppressing stdout during garminconnect
+  login that could corrupt the MCP stdio stream (#205), Garmin Coach workout exposure (#243), cycling VO₂max in
+  training status (#147), a profile-VO₂max fallback when trend history is missing (#240), and run-workout /
+  nutrition write tools — worth taking together when upstream migrates to mcp 2.x.
 - Consider a broader dependency-freshness audit cadence — this class of break (pinned app, unpinned transitive dep) is
   invisible until it fires. (A first pass on 2026-08-13 took the npm deps to latest: Opus 5, `@anthropic-ai/sdk` 0.116,
   TypeScript 7, MCP SDK 1.30, and `npm audit fix` for the transitive `hono`/`ip-address` advisories.)
