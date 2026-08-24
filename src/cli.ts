@@ -1296,7 +1296,7 @@ if (!run) {
   console.log("  backfill [from]  archive full history (AIE activities + Garmin daily) → data/archive/");
   console.log("  archive-status  show archived counts + date ranges (distinct records)");
   console.log("  archive-compact  de-duplicate the archive files in place (one record per date/id)");
-  console.log("  probe      capture live Garmin tool surface + AIE detail samples → reports/ (Phase-2 mapping)");
+  console.log("  probe      capture live Garmin tool surface + AIE run/ride samples + new-field hunt (durability/decoupling/power_is_from_hr) → reports/");
   console.log("  fit-sync [n]  download recent Garmin run/ride .FIT files (get_activity_fit_data) → streams dir");
   console.log("  catch-up      auto-recover any missing data after an outage — backfills each source's gap to today");
   console.log('  decisions [pending | retro <id> "<note>"]   view log / pending / add retrospective');

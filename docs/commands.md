@@ -97,7 +97,7 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 | `npm run backfill` | archive full history (AI Endurance + Garmin) → `data/archive/` (resumable) |
 | `npm run backfill:status` | archived counts + date ranges |
 | `npm run backfill:compact` | de-duplicate the archive files in place (safe to re-run) |
-| `npm run probe` | dump the live Garmin tool surface + AIE detail samples → `reports/` (for mapping) |
+| `npm run probe` | dump the live Garmin tool surface + AIE run/ride summary+detail samples → `reports/`, and print a **field hunt**: where durability / decoupling / drift / `power_is_from_hr` / `activity_id` keys live and how densely durability is populated — the confirmation step for AIE's 2026-08 durability-for-all-workouts update (spec 10) |
 
 ## Use the coach from Claude (MCP server)
 | Command | What it does |

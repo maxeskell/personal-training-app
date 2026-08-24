@@ -3,6 +3,7 @@ import { ArchiveStore } from "../archive/store.js";
 import { GarminClient } from "../mcp/garminClient.js";
 import { withAie, todayIso } from "../coach/orchestrator.js";
 import { extractJson, garminInner } from "../state/assemble.js";
+import { scanKeys, firstObjectArray, listCoverage } from "../util/keyScan.js";
 import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate } from "../archive/backfill.js";
 import { syncFitSummaries } from "../archive/fitSync.js";
 import { recoverGaps } from "../archive/recover.js";
@@ -67,9 +68,12 @@ export async function cmdBackfill(): Promise<void> {
 
 /**
  * `probe` — Phase-2 data introspection. Lists the live Garmin MCP tool surface and captures one sample
- * payload per tool (trying common arg shapes), plus AIE activity summary-vs-detail so we can confirm the
- * activityId join. Writes everything to a gitignored reports/ file to build the health/injury-risk
- * mappers against REAL field shapes instead of guesses. Review before sharing — it's your own data.
+ * payload per tool (trying common arg shapes), plus AIE run+ride activity summary-vs-detail so we can
+ * confirm the activityId join — and a FIELD HUNT that reports where durability / decoupling / drift /
+ * power_is_from_hr keys live and how densely durability is populated (AIE's 2026-08 durability-for-all-
+ * workouts update lands as data, not a tool change, so this is the check that confirms it). Writes
+ * everything to a gitignored reports/ file to build mappers against REAL field shapes instead of
+ * guesses. Review before sharing — it's your own data.
  */
 export async function cmdProbe(): Promise<void> {
   const today = todayIso();
@@ -131,14 +135,41 @@ export async function cmdProbe(): Promise<void> {
     }
   }
 
-  // --- AIE: summary vs detail for one recent run, to inspect the activityId join keys ---
+  // --- AIE: run + ride summary vs detail — join keys, zone/FTP fields, and the 2026-08 field hunt ---
   try {
+    const aieSamples: Record<string, unknown> = {};
     await withAie(async (aie) => {
-      out.aieRunningActivity = extractJson(await aie.read("getRunningActivity", {}));
-      out.aieRunningActivityDetail = extractJson(await aie.read("getRunningActivityDetail", {}));
-      out.aieUser = extractJson(await aie.read("getUser", {}));
+      // Per-tool best-effort: one tool erroring (e.g. a detail tool with no callable arg shape — the
+      // activity_id join gap, Insight_Engine_Spec §6) must not cost the probe the other samples; that ONE
+      // sample degrades to a probeError note instead.
+      for (const tool of ["getRunningActivity", "getRunningActivityDetail", "getCyclingActivity", "getCyclingActivityDetail", "getUser"] as const) {
+        try {
+          aieSamples[tool] = extractJson(await aie.read(tool, {}));
+        } catch (err) {
+          aieSamples[tool] = { probeError: err instanceof Error ? err.message : String(err) };
+        }
+      }
     });
-    console.log("\nAIE: captured getRunningActivity + getRunningActivityDetail + getUser (for join-key + zone/FTP field inspection).");
+    out.aieSamples = aieSamples;
+    console.log("\nAIE: sampled getRunningActivity(+Detail) + getCyclingActivity(+Detail) + getUser (join-key / zone / FTP inspection).");
+
+    // Field hunt for AIE's 2026-08 announcements: per-workout durability for ALL run & ride workouts
+    // (previously DFA-α1-only — spec 08 measured run 20% / ride 4% coverage) and the partner-API-documented
+    // power_is_from_hr honesty flag. Prints key NAMES + types + coverage only — values stay in the report.
+    const HUNT = [/durab/i, /decoupl/i, /drift/i, /dfa/i, /alpha/i, /power_?is_?from_?hr/i, /activity_?id/i];
+    const hunt: Record<string, unknown> = {};
+    console.log("\nAIE field hunt (durability / decoupling / drift / DFA-α1 / power_is_from_hr / activity_id):");
+    for (const [tool, sample] of Object.entries(aieSamples)) {
+      const hits = scanKeys(sample, HUNT, { maxHits: 40 });
+      const list = firstObjectArray(sample);
+      const coverage = list ? listCoverage(list, [/durab/i, /decoupl/i, /drift/i]) : null;
+      hunt[tool] = { hits, coverage };
+      const uniqueKeys = [...new Set(hits.map((h) => h.key))];
+      const head = uniqueKeys.length ? uniqueKeys.slice(0, 4).join(", ") + (uniqueKeys.length > 4 ? ", …" : "") : "no matching keys";
+      const cov = coverage && coverage.keys.length ? ` — durability-ish populated on ${coverage.withValue}/${coverage.total} items` : "";
+      console.log(`  · ${tool}: ${head}${cov}`);
+    }
+    out.aieFieldHunt = hunt;
   } catch (err) {
     console.log(`\nAIE probe skipped: ${err instanceof Error ? err.message : String(err)}`);
   }
