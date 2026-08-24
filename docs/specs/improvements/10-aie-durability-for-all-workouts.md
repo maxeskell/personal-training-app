@@ -1,7 +1,7 @@
 # 10 — AIE "durability for all run & ride workouts": probe-gated uptake plan
 
-**Status:** ⏳ probe-gated (instrumentation landed; mapper/display changes wait on live field shapes) ·
-**Opened:** 2026-08-24 · **Owner:** Max
+**Status:** ◐ probe run 2026-08-24 — flag uptake landed (see "Probe result" below); per-workout durability
+VALUES are not exposed over the connector, so the value side waits on AIE · **Opened:** 2026-08-24 · **Owner:** Max
 
 ## Context
 
@@ -51,6 +51,38 @@ add a display-only honesty flag on ride analysis (estimated-power rides labelled
 the spec 08 NP plausibility guard). Historically blocked by the summary→detail `activity_id` join gap
 (Insight_Engine_Spec §6) — the hunt reports whether `activity_id` now exists on summaries, which would
 also unblock per-session detail reads generally.
+
+## Probe result (2026-08-24) — cases B + C fired together
+
+The Mac probe (`reports/probe-2026-08-24T11-10-14.json`) settled it:
+
+- **The DFA-α1 VALUE fields are GONE from live summaries** — `aerobic_durability_…_in_percent` (both
+  variants) *and* the `aerobic_threshold_dfa_alpha1_*` HR/W fields no longer appear on any of 20 recent
+  runs or 20 recent rides. The update replaced per-workout values with **control flags**:
+  `exclude_from_durability` / `exclude_from_curves` / `exclude_from_model` / `exclude_hr_data` on 20/20
+  items (booleans, all currently `false`), plus **`power_is_from_hr`** on cycling summaries (matching the
+  partner docs). So AIE computes durability for all workouts **in-app**, but the connector does not carry
+  the number — case C for the value, case B for the flags.
+- **The `activity_id` join gap persists**: summary items carry NO id key of any kind, and both
+  `*ActivityDetail` tools fail on empty args (`int() argument must be … not 'NoneType'`).
+- **New write tool `setActivityFlags`** appeared (doctor's drift check) — evidently the writer for those
+  per-activity flags.
+
+**Landed in response (same day):**
+- `mapRichActivity` maps `powerIsFromHr` / `excludeFromDurability` / `excludeHrData`; the DFA value
+  mappings STAY (archived rows still carry them — historical trends keep working).
+- Honesty filters: `efTrend` drops rides with HR-derived power (EF = watts/HR on watts-from-HR measures
+  the model, not fitness) and bad-HR sessions; `durabilityTrend` and `thresholdTrend` respect the
+  athlete's exclude flags. Tests: `test/richActivity.test.ts` (fixtures verbatim from the probe).
+- Dashboard durability row's empty state now states the real reason (connector stopped sending values,
+  2026-08) instead of the stale "needs a long, steady effort" advice.
+- `setActivityFlags` registered in `AIE_WRITE_TOOLS` — gated as a write, **not** proposable — so doctor's
+  drift check is clean again and no code path can call it outside the write gate.
+
+**Still open (owner: AIE):** the emailed ask (Gmail draft to markus@aiendurance.com) — expose per-workout
+durability values over the connector, and an activity id on summaries so the Detail tools become callable.
+When values reappear: extend the mapper with the observed names, revert the dashboard row text, and record
+the measured coverage here.
 
 ## Definition of done for the follow-up (whichever case fires)
 

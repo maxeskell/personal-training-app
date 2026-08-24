@@ -234,6 +234,12 @@ fire-only health check), `npm run backfill:install` (history grind).
   downloads the missing span the moment the connection returns, notifying on recovery or a still-stuck source.
   Drop the `mcp<2` constraint only when the `garmin_mcp` pin is bumped to a mcp-2.x-compatible commit. See
   [docs/specs/improvements/09-garmin-mcp-dependency-pin.md](docs/specs/improvements/09-garmin-mcp-dependency-pin.md).
+- **AIE stopped sending per-activity DFA-α1 values (2026-08).** The "durability for all workouts" update
+  replaced per-workout durability / aerobic-threshold VALUES in connector summaries with `exclude_*`
+  control flags + `power_is_from_hr` (probe 2026-08-24; spec 10), and added a `setActivityFlags` write tool
+  (now registered, gated, not proposable). Durability/threshold trends run on archived history and the
+  dashboard row says so; EF/durability/threshold trends honour the new flags. Ask to AIE drafted: re-expose
+  the value + an activity id (the summary→detail join is still id-less).
 - **Concurrent writes.** State writes are atomic (temp + `rename`) AND serialized by a cross-process
   lock (`proper-lockfile` on the state dir), so the dashboard autosync and a cron `update` can't
   interleave to last-writer-wins; `load()` also shape-guards each slot, dropping a corrupt/hand-edited
