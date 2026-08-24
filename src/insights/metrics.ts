@@ -91,6 +91,14 @@ function mean(xs: number[]): number | null {
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 }
 
+/** Lenient boolean for AIE flag fields (live payloads send real booleans; strings tolerated). */
+function flag(x: unknown): boolean | undefined {
+  if (typeof x === "boolean") return x;
+  if (x === "true") return true;
+  if (x === "false") return false;
+  return undefined;
+}
+
 export interface RichActivity {
   date: string;
   sport: "Run" | "Ride" | "Swim";
@@ -102,9 +110,22 @@ export interface RichActivity {
   aerThrHr?: number;
   aerThrW?: number;
   hrvArtifactPct?: number;
+  /** AIE marked this ride's power as DERIVED FROM HR (not measured) — EF on it would be circular. */
+  powerIsFromHr?: boolean;
+  /** Athlete flagged this activity out of AIE's durability analysis (bad strap, stop-start, …). */
+  excludeFromDurability?: boolean;
+  /** Athlete flagged this activity's HR data as bad — drop it from every HR-derived metric. */
+  excludeHrData?: boolean;
 }
 
-/** Map one raw AIE activity object (+ sport) into a RichActivity. Shared by live + archived paths. */
+/**
+ * Map one raw AIE activity object (+ sport) into a RichActivity. Shared by live + archived paths.
+ *
+ * The DFA-α1 value fields (durability %, aerobic-threshold HR/W) were REMOVED from the connector's
+ * live summaries in AIE's 2026-08 "durability for all workouts" update (probe 2026-08-24 — spec 10):
+ * live payloads now carry only the exclude_* control flags + power_is_from_hr. The value mappings stay
+ * because ARCHIVED rows captured before the change still hold them — historical trends keep working.
+ */
 export function mapRichActivity(a: Record<string, unknown>, sport: RichActivity["sport"]): RichActivity {
   return {
     date: String(a.activity_date_local ?? a.activity_date ?? "").slice(0, 10),
@@ -119,6 +140,9 @@ export function mapRichActivity(a: Record<string, unknown>, sport: RichActivity[
     aerThrHr: num(a.aerobic_threshold_dfa_alpha1_heart_rate_cluster) ?? num(a.aerobic_threshold_dfa_alpha1_heart_rate_ramp),
     aerThrW: num(a.aerobic_threshold_dfa_alpha1_watts_cluster) ?? num(a.aerobic_threshold_dfa_alpha1_watts_ramp),
     hrvArtifactPct: num(a.hrv_artifact_percentage),
+    powerIsFromHr: flag(a.power_is_from_hr),
+    excludeFromDurability: flag(a.exclude_from_durability),
+    excludeHrData: flag(a.exclude_hr_data),
   };
 }
 
@@ -221,19 +245,25 @@ function splitTrend(values: Array<number | undefined>, half = 5): Trend {
   return { recent: recent == null ? null : +recent.toFixed(2), prior: prior == null ? null : +prior.toFixed(2), deltaPct, n: v.length };
 }
 
-/** Efficiency Factor = avg power ÷ avg HR. Steady-aerobic proxy: sessions ≥ 40 min. */
+/**
+ * Efficiency Factor = avg power ÷ avg HR. Steady-aerobic proxy: sessions ≥ 40 min.
+ * Honesty filters: a ride whose power AIE derived FROM HR (power_is_from_hr) makes EF circular
+ * (watts = f(HR), so watts/HR measures the model, not fitness), and athlete-flagged bad HR
+ * (exclude_hr_data) poisons the denominator — both are dropped, mirroring spec 08's NP/HR guard.
+ */
 export function efTrend(acts: RichActivity[], sport: RichActivity["sport"]): Trend {
   const ef = acts
-    .filter((a) => a.sport === sport && (a.movingSec ?? 0) >= 2400 && a.avwatts && a.avhr)
+    .filter((a) => a.sport === sport && (a.movingSec ?? 0) >= 2400 && a.avwatts && a.avhr && a.powerIsFromHr !== true && a.excludeHrData !== true)
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((a) => a.avwatts! / a.avhr!);
   return splitTrend(ef);
 }
 
-/** Durability trend — consume AI Endurance's DFA-α1 durability %. */
+/** Durability trend — consume AI Endurance's DFA-α1 durability %. Respects the athlete's own
+ *  exclude_from_durability flag (set in AIE) so a flagged session never skews the trend. */
 export function durabilityTrend(acts: RichActivity[], sport: RichActivity["sport"]): Trend {
   const vals = acts
-    .filter((a) => a.sport === sport)
+    .filter((a) => a.sport === sport && a.excludeFromDurability !== true)
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((a) => a.durabilityPct);
   return splitTrend(vals);
@@ -283,10 +313,11 @@ export function intensityDistribution(
   };
 }
 
-/** Aerobic-threshold (HR) trend from DFA-α1, dropping noisy readings (high HRV artifact). */
+/** Aerobic-threshold (HR) trend from DFA-α1, dropping noisy readings (high HRV artifact) and
+ *  athlete-flagged bad-HR sessions (exclude_hr_data). */
 export function thresholdTrend(acts: RichActivity[], sport: RichActivity["sport"], maxArtifactPct = 5): Trend {
   const vals = acts
-    .filter((a) => a.sport === sport && (a.hrvArtifactPct == null || a.hrvArtifactPct <= maxArtifactPct))
+    .filter((a) => a.sport === sport && (a.hrvArtifactPct == null || a.hrvArtifactPct <= maxArtifactPct) && a.excludeHrData !== true)
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((a) => a.aerThrHr);
   return splitTrend(vals);

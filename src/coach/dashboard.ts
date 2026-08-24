@@ -242,13 +242,15 @@ function renderSignals(ins: InsightReport): string {
       : `<tr><td>${label}</td><td class="num">${t.recent}</td><td class="num">${t.deltaPct == null ? "—" : (t.deltaPct >= 0 ? "+" : "") + t.deltaPct + "%"}</td><td class="muted">${t.n} pts</td></tr>`;
   // Durability is a negative-based decay index — a % change is meaningless, so show recent vs prior absolute.
   // Both sports get a row (run + ride), so a headline like "Bike durability slipping" has its numbers on a table.
-  // Durability (DFA-α1) is only produced by AI Endurance for long, steady efforts, so it is BLANK far more
-  // often than not (≈20% of runs, a handful of rides, no swims). Render an explicit, self-explaining row
-  // when it's absent rather than silently dropping it — a vanished row reads as "broken", a noted "—" reads
-  // as "not applicable yet". See docs/specs/improvements/08-dfa-durability-availability.md.
+  // Availability changed twice: DFA-α1 durability was only ever produced for long, steady efforts with clean
+  // R-R (≈20% of runs, a handful of rides, no swims — spec 08), and since AIE's 2026-08 "durability for all
+  // workouts" update the connector no longer sends per-activity durability VALUES at all (only exclude flags —
+  // probe 2026-08-24, spec 10), so the trend runs on archived history until AIE re-exposes the number. Render
+  // an explicit, self-explaining row when it's absent rather than silently dropping it — a vanished row reads
+  // as "broken", a noted "—" reads as "not available". See specs 08 + 10.
   const durabilityRow = (label: string, t: { recent: number | null; prior: number | null; n: number }) =>
     t.recent == null
-      ? `<tr><td>${label} durability</td><td class="num muted">—</td><td class="muted" colspan="2">no DFA-α1 yet — needs a long, steady effort with clean R-R</td></tr>`
+      ? `<tr><td>${label} durability</td><td class="num muted">—</td><td class="muted" colspan="2">no durability values — AI Endurance's connector stopped sending them (2026-08); trend resumes when it re-exposes per-workout durability</td></tr>`
       : `<tr><td>${label} durability</td><td class="num">${t.recent}</td><td class="muted" colspan="2">${t.prior != null ? `was ${t.prior} · ` : ""}closer to 0 = more durable</td></tr>`;
 
   return `<div class="card"><h2>Load &amp; trends</h2>

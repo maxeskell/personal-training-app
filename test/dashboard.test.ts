@@ -1118,12 +1118,12 @@ test("Load & trends: a sport with no DFA-α1 durability renders an explicit note
   const ins = buildInsights(s, undefined, {});
   ins.durability = {
     run: { recent: -3.1, prior: -2.8, deltaPct: null, n: 7 },
-    ride: { recent: null, prior: null, deltaPct: null, n: 0 }, // DFA-α1 sparse — no qualifying long steady ride
+    ride: { recent: null, prior: null, deltaPct: null, n: 0 }, // no values — AIE's 2026-08 connector change (spec 10)
   };
   const html = renderDashboard({ window: [s], decisions: [], insights: ins });
   assert.match(html, /<td>Run durability<\/td><td class="num">-3.1<\/td>/); // present sport unchanged
   // absent sport is still a row, but says WHY it's blank rather than silently disappearing
-  assert.match(html, /<td>Ride durability<\/td><td class="num muted">—<\/td><td class="muted" colspan="2">no DFA-α1 yet/);
+  assert.match(html, /<td>Ride durability<\/td><td class="num muted">—<\/td><td class="muted" colspan="2">no durability values — AI Endurance's connector stopped sending them \(2026-08\)/);
 });
 
 test("Data changes card: surfaces an AIE-vs-Garmin disagreement side by side with a one-tap source pick", () => {

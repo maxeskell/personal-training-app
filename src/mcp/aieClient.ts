@@ -20,7 +20,7 @@ export interface AieClientOptions {
   timeoutMs?: number;
 }
 
-/** The 20 AI Endurance tools, split by side-effect. Writes are gated (M3). */
+/** The AI Endurance tools (14 reads + 9 gated writes), split by side-effect. Writes are gated (M3). */
 export const AIE_READ_TOOLS = [
   "getUser",
   "getAvailability",
@@ -47,6 +47,7 @@ export const AIE_WRITE_TOOLS = [
   "createRideRunWorkoutAdvanced", // added by AIE after the v1 README; gated as a write (verify args before use)
   "createSwimWorkout",
   "createStrengthOtherWorkout",
+  "setActivityFlags", // added by AIE 2026-08 (doctor drift, probe 2026-08-24) — sets per-activity exclude_*/power flags; gated as a write, NOT proposable (verify args before any use)
 ] as const;
 
 export type AieReadTool = (typeof AIE_READ_TOOLS)[number];
