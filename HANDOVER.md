@@ -240,12 +240,16 @@ fire-only health check), `npm run backfill:install` (history grind).
   one back to `absent()`. The decision log holds its own lock for the confirm critical section.
 - **Demo / no-account mode shipped.** `npm run demo` renders the dashboard on bundled sample data with
   no account or API key, so a stranger can evaluate the app. The live flows still need real accounts.
-- **`npm audit` is clean** (0 vulnerabilities as of the 2026-08-13 upgrade pass). That pass took the LLM
+- **`npm audit` is clean** (0 vulnerabilities as of the 2026-08-24 upgrade pass). The 2026-08-13 pass took the LLM
   core to **`claude-opus-5`** (drop-in for Opus 4.8 at the same $5/$25 pricing — no pricing-table change; we
   already use adaptive thinking + effort, so neither Opus-5 breaking change applies), bumped
   `@anthropic-ai/sdk` → 0.116, **TypeScript → 7**, `@modelcontextprotocol/sdk` → 1.30, and cleared 5 GitHub
   Dependabot advisories (transitive `hono` / `ip-address` under the MCP SDK) via `npm audit fix`. The older
-  esbuild advisory (dev-only, via `tsx`) stays resolved on `esbuild@0.28.1`. Keep it clear on dependency bumps.
+  esbuild advisory (dev-only, via `tsx`) stays resolved on `esbuild@0.28.1`. The 2026-08-24 pass bumped
+  `@anthropic-ai/sdk` → 0.120 (additive; includes fixes to non-streaming per-request timeouts and streamed
+  `message_delta` accumulation) and `open` → 11.0.1, confirmed every other dependency already at latest, and
+  re-checked the `garmin_mcp` pin against upstream (HEAD unchanged since 2026-08-04, still requires `mcp<2` —
+  the pin stands; see spec 9). Keep it clear on dependency bumps.
 - **Deeper technical debt** remains: test inversion on the parser/server/write-gate, a few statistical
   edge cases, duplicated small utilities, and the perf of re-parsing the archive per request. The
   earlier security/integrity initiatives (server auth + localhost default, write-path arg validation,
