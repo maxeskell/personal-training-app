@@ -318,7 +318,8 @@ it — `on` (default, every recent session), `latest` (only the most recent), or
 `npm run session` on demand instead). `npm run session` always produces an on-demand readout (and writes to the same store).
 The card also shows what the session was **meant to be** — the matching
 planned workout (title, planned vs done time), or an explicit note when nothing in the plan matched. It
-joins your **AI Endurance metrics** (power/HR/ESS/durability) with the
+joins your **AI Endurance metrics** (power/HR/ESS; DFA-α1 durability on pre-2026-08 archived sessions
+only — AIE's connector stopped sending it, see spec 10) with the
 **.FIT biomechanics** (in-session cadence/GCT/vertical-osc drift, aerobic decoupling, temperature) and the
 **archive thermal summary**, then reads it against your **prior comparable sessions** and that day's **TSB**
 — so a dip in deep fatigue or heat isn't mistaken for lost fitness. **Swims are read on their own terms:**
