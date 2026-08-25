@@ -48,6 +48,25 @@ export interface AssembleOptions {
   baselineWindowDays?: number;
 }
 
+/**
+ * The AIE spine reads (cost-aware defaults: summaryMode + low resolution). Exported so a test can pin
+ * the arg contract: `with_dfa_alpha1: true` restores the DFA-α1 threshold/value fields AIE moved behind
+ * an opt-in request flag in 2026-08 (spec 10) — losing the flag would silently blank the a1 fields on
+ * every new session. Swims never carry DFA-α1 (no R-R in water), so the swim read stays lean.
+ */
+export const AIE_STATE_READS: ReadonlyArray<[AieReadTool, Record<string, unknown>]> = [
+  ["getUser", {}],
+  ["getPlannedWorkouts", { summaryMode: true }],
+  ["getRunningActivity", { with_dfa_alpha1: true }],
+  ["getCyclingActivity", { with_dfa_alpha1: true }],
+  ["getSwimmingActivity", {}],
+  ["getRecoveryModel", {}],
+  ["getPlanProgress", {}],
+  ["getPrediction", {}],
+  ["getNutritionModel", {}],
+  ["getRaceGoalEvent", {}],
+];
+
 export async function assembleState(
   aie: AieClient,
   garmin: GarminClient | undefined,
@@ -57,21 +76,7 @@ export async function assembleState(
   const state = emptyState(opts.date, opts.assembledAt);
   const raw: Record<string, unknown> = {};
 
-  // --- AI Endurance reads (cost-aware defaults: summaryMode + low resolution) ---
-  const reads: Array<[AieReadTool, Record<string, unknown>]> = [
-    ["getUser", {}],
-    ["getPlannedWorkouts", { summaryMode: true }],
-    ["getRunningActivity", {}],
-    ["getCyclingActivity", {}],
-    ["getSwimmingActivity", {}],
-    ["getRecoveryModel", {}],
-    ["getPlanProgress", {}],
-    ["getPrediction", {}],
-    ["getNutritionModel", {}],
-    ["getRaceGoalEvent", {}],
-  ];
-
-  for (const [tool, args] of reads) {
+  for (const [tool, args] of AIE_STATE_READS) {
     try {
       raw[tool] = extractJson(await aie.read(tool, args));
     } catch (err) {

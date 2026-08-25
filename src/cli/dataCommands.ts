@@ -149,6 +149,28 @@ export async function cmdProbe(): Promise<void> {
           aieSamples[tool] = { probeError: err instanceof Error ? err.message : String(err) };
         }
       }
+      // 2026-08-25 (AIE reply, spec 10): the a1 fields are opt-in on the list tools (with_dfa_alpha1 —
+      // production passes it), summaries carry an `id`, and the Detail tools are due to grow
+      // with_dfa_alpha1 / with_power_curve durability payloads (they return a bare {} until AIE's
+      // rollout lands). Sample the flagged + id-joined variants so the field hunt self-detects the
+      // rollout — when the Detail sample stops being empty, phase 2 of spec 10 is buildable.
+      for (const [tool, detail] of [
+        ["getRunningActivity", "getRunningActivityDetail"],
+        ["getCyclingActivity", "getCyclingActivityDetail"],
+      ] as const) {
+        try {
+          const flagged = extractJson(await aie.read(tool, { with_dfa_alpha1: true }));
+          aieSamples[`${tool}+with_dfa_alpha1`] = flagged;
+          const id = (firstObjectArray(flagged)?.[0] as Record<string, unknown> | undefined)?.id;
+          if (id != null) {
+            aieSamples[`${detail}+flags`] = extractJson(
+              await aie.read(detail, { activity_id: id, with_dfa_alpha1: true, with_power_curve: true }),
+            );
+          }
+        } catch (err) {
+          aieSamples[`${tool}+with_dfa_alpha1`] = { probeError: err instanceof Error ? err.message : String(err) };
+        }
+      }
     });
     out.aieSamples = aieSamples;
     console.log("\nAIE: sampled getRunningActivity(+Detail) + getCyclingActivity(+Detail) + getUser (join-key / zone / FTP inspection).");
@@ -156,9 +178,9 @@ export async function cmdProbe(): Promise<void> {
     // Field hunt for AIE's 2026-08 announcements: per-workout durability for ALL run & ride workouts
     // (previously DFA-α1-only — spec 08 measured run 20% / ride 4% coverage) and the partner-API-documented
     // power_is_from_hr honesty flag. Prints key NAMES + types + coverage only — values stay in the report.
-    const HUNT = [/durab/i, /decoupl/i, /drift/i, /dfa/i, /alpha/i, /power_?is_?from_?hr/i, /activity_?id/i];
+    const HUNT = [/durab/i, /decoupl/i, /drift/i, /dfa/i, /alpha/i, /power_?is_?from_?hr/i, /(^|_)id$/i, /curve/i, /within/i, /time_?series/i];
     const hunt: Record<string, unknown> = {};
-    console.log("\nAIE field hunt (durability / decoupling / drift / DFA-α1 / power_is_from_hr / activity_id):");
+    console.log("\nAIE field hunt (durability / decoupling / drift / DFA-α1 / power_is_from_hr / id / curve / within / time-series):");
     for (const [tool, sample] of Object.entries(aieSamples)) {
       const hits = scanKeys(sample, HUNT, { maxHits: 40 });
       const list = firstObjectArray(sample);

@@ -48,9 +48,12 @@ ever obtain TP partner-API access, the `DataSource` seam below is where a native
 3. Add its config to `.env.example`, and set `COACH_SOURCE=<name>` in `.env`.
 
 **Honest note on parity:** AI Endurance provides modelled signals (its **race predictions**,
-**plan-progress adherence**, the **recovery model**) that other sources may not expose. Per-activity
-DFA-α1 **durability** was one of these until AIE's 2026-08 "durability for all workouts" update removed
-the values from the connector (only per-activity `exclude_*` flags + `power_is_from_hr` remain — archived
-history still carries the old values; see `docs/specs/improvements/10-aie-durability-for-all-workouts.md`).
-Those cards degrade for a source that lacks them — the coach is most capable on AI Endurance. Label what a
-source can't provide; never fabricate it.
+**plan-progress adherence**, the **recovery model**, **DFA-α1 thresholds**) that other sources may not
+expose. The a1 fields became opt-in in AIE's 2026-08 "durability for all workouts" update — the app
+requests them with `with_dfa_alpha1: true` on the activity list reads. Per-activity DFA-α1 **durability**
+is the one signal currently in transit: AIE confirmed (2026-08-25) it returns via the per-activity
+*Detail* tools as two opt-in measurements (internal drift vs the athlete's own trend; mechanical
+within-session fade on nearly every ride/run) — archived pre-2026-08 history carries the old values
+meanwhile (see `docs/specs/improvements/10-aie-durability-for-all-workouts.md`). Those cards degrade for
+a source that lacks them — the coach is most capable on AI Endurance. Label what a source can't provide;
+never fabricate it.

@@ -1,7 +1,9 @@
 # 10 — AIE "durability for all run & ride workouts": probe-gated uptake plan
 
-**Status:** ◐ probe run 2026-08-24 — flag uptake landed (see "Probe result" below); per-workout durability
-VALUES are not exposed over the connector, so the value side waits on AIE · **Opened:** 2026-08-24 · **Owner:** Max
+**Status:** ◐ AIE replied + second Mac probe 2026-08-25 — `with_dfa_alpha1` uptake shipped (thresholds
+restored on list reads, summaries carry a live `id`); per-workout durability arrives via the Detail tools
+as two opt-in measurements — Detail returns `{}` until AIE's rollout (the probe self-detects it; phase 2
+below is the agreed design) · **Opened:** 2026-08-24 · **Owner:** Max
 
 ## Context
 
@@ -79,10 +81,73 @@ The Mac probe (`reports/probe-2026-08-24T11-10-14.json`) settled it:
 - `setActivityFlags` registered in `AIE_WRITE_TOOLS` — gated as a write, **not** proposable — so doctor's
   drift check is clean again and no code path can call it outside the write gate.
 
-**Still open (owner: AIE):** the emailed ask (Gmail draft to markus@aiendurance.com) — expose per-workout
-durability values over the connector, and an activity id on summaries so the Detail tools become callable.
-When values reappear: extend the mapper with the observed names, revert the dashboard row text, and record
-the measured coverage here.
+## AIE's reply + second Mac probe (2026-08-25) — both asks confirmed; flag uptake shipped
+
+Markus (AIE) answered the emailed ask, confirming both gaps and correcting the mental model:
+
+- **Durability is TWO measurements, not one scalar.** (a) *Internal* `durability_drift` — this session's
+  internal drift (HR, DFA-α1, respiration frequency) vs the athlete's own fitted ~6-week trend at matched
+  work (mean residual, position vs the confidence band, trend %-loss at the anchors, and the n of sessions
+  behind the fit). Needs clean R-R → stays sparse (spec 08's coverage numbers apply to it). (b) *External*
+  `within_session_durability` — sustained power / GAP pace fade along the session's own accumulated-kJ /
+  GAP-km axis, plus the peak power/pace curve, % of recent best, and an effort-structure summary.
+  Mechanical, no HRV → lands on **nearly every ride and run**. Both arrive as opt-in inputs on
+  `get*ActivityDetail` (`with_dfa_alpha1`, `with_power_curve`) — deliberately heavy per-activity reads,
+  kept OFF the list tools by design (that payload weight is what drove the summary slimming).
+- **Summaries get an id** (the Detail / `setActivityFlags` join key) — and the 2026-08-25 probe shows it
+  is **already live**: numeric `id` on 20/20 runs and rides, flag or no flag.
+- **Usable immediately:** `with_dfa_alpha1: true` on the LIST tools restores the removed a1 fields.
+  Probe-verified the same day; composes with backfill's `startDate`/`endDate` windowing.
+- **Heads-up (breaking-ish, upstream):** the Detail tools will gain `with_time_series_metrics` (default
+  **false**) — today they always return per-sample arrays — and the a1 scalars on Detail likewise move
+  behind `with_dfa_alpha1`. Audited: nothing in this repo parses Detail payloads (splits and the power
+  curve are .FIT-based; only the probe samples Detail, best-effort) — zero exposure, but any future
+  Detail consumer must pass its flags explicitly (phase 2 rule 4).
+
+**Probe measurements (2026-08-25, Mac):**
+
+- Flagged list payloads restore the `aerobic/anaerobic_threshold_dfa_alpha1_{watts,heart_rate}_{ramp,cluster}`
+  family **verbatim** — the existing mapper needed no change; `thresholdTrend` resumes for new sessions.
+- `aerobic_durability_…_in_percent` (both variants) did **NOT** return — durability % remains
+  archive-only until the Detail rollout.
+- NEW unmapped fields under the flag: `average_of_dfa_alpha1` (18–19/20 populated) and
+  `mean_of_dfa_alpha1_times_power[_or_pace][_normalized_over_two_weeks_in_percent]` (15/20 rides, 0/20
+  runs). **Identity check says this is NOT durability renamed:** its coverage is inverted vs durability's
+  (4% of rides / 20% of runs), and on 8 overlapping runs whose archived durability % is known, the new
+  field is null. Left unmapped until AIE documents the semantics — mapping it to `durabilityPct` would
+  fabricate a durability trend.
+- Detail tools: callable with `{ activity_id: <id> }` (the empty-args `int()`/NoneType error is gone) but
+  return a bare `{}` for every arg shape tried, flags included — the durability payload isn't rolled out
+  yet, matching Markus's "I'll follow up when it's live".
+
+**Landed in response (2026-08-25):**
+
+- `assembleState` + `backfillActivities` pass `with_dfa_alpha1: true` on run + ride list reads (swims
+  never carry a1, so the swim read stays lean); `test/aieReadArgs.test.ts` pins the arg contract so a
+  refactor can't silently drop the flag — the archive is append-once, so a missed flag is a permanent
+  hole in the trend history.
+- `mapRichActivity` maps the summary `id`; `test/richActivity.test.ts` pins the third (flagged) payload
+  era, including that the new `mean_*` fields do NOT become `durabilityPct`.
+- `npm run probe` also samples the flagged list variants AND a Detail call joined on a live id with both
+  flags — when the Detail sample stops being `{}`, phase 2 is buildable.
+- Dashboard durability row + methods note, README session-card line, `docs/data-sources.md` parity note
+  and the HANDOVER known-issue entry updated to the migration reality.
+
+## Phase 2 — the two-measurement durability read (blocked on AIE's Detail rollout; design agreed)
+
+Do **not** build early — the probe's Detail sample turning non-empty is the trigger. Then:
+
+1. **On-demand Detail reads only.** Session readout + deep-dive flows fetch ONE activity's Detail
+   (`with_power_curve`, plus `with_dfa_alpha1` where R-R was clean); never in the daily assemble loop —
+   ~40 activities × a heavy payload is exactly what AIE's summary slimming exists to prevent.
+2. **Two labelled MODEL reads, not one durability number:** external `within_session_durability`
+   (near-universal) and internal `durability_drift` weighted by its sessions-behind-the-trend count; keep
+   the in-house .FIT stream decoupling as the independent cross-check ("don't overrule the platform").
+3. Dashboard durability row switches from the migration empty-state to the two-read rendering; revisit
+   `durabilityTrend`'s minimum-N assumptions against whichever read AIE serves per sport.
+4. Any Detail consumer passes `with_time_series_metrics` explicitly (false unless the flow needs samples).
+5. Optional, only if wanted: `power_is_from_hr` per-session honesty labelling via the id join;
+   `setActivityFlags` stays gated + not proposable until a write-path use case clears change-control.
 
 ## Definition of done for the follow-up (whichever case fires)
 
