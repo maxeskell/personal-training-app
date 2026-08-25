@@ -1123,7 +1123,7 @@ test("Load & trends: a sport with no DFA-α1 durability renders an explicit note
   const html = renderDashboard({ window: [s], decisions: [], insights: ins });
   assert.match(html, /<td>Run durability<\/td><td class="num">-3.1<\/td>/); // present sport unchanged
   // absent sport is still a row, but says WHY it's blank rather than silently disappearing
-  assert.match(html, /<td>Ride durability<\/td><td class="num muted">—<\/td><td class="muted" colspan="2">no durability values — AI Endurance's connector stopped sending them \(2026-08\)/);
+  assert.match(html, /<td>Ride durability<\/td><td class="num muted">—<\/td><td class="muted" colspan="2">no recent durability values — AI Endurance is moving per-workout durability into its per-activity detail payloads \(confirmed 2026-08, spec 10\)/);
 });
 
 test("Data changes card: surfaces an AIE-vs-Garmin disagreement side by side with a one-tap source pick", () => {

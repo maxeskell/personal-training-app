@@ -3,11 +3,18 @@ import assert from "node:assert/strict";
 import { mapRichActivity, durabilityTrend, efTrend, thresholdTrend, type RichActivity } from "../src/insights/metrics.js";
 
 /**
- * The AIE summary payload changed shape in the 2026-08 "durability for all workouts" update (probe
- * 2026-08-24, spec 10): the DFA-α1 VALUE fields (durability %, aerobic-threshold HR/W) disappeared and
- * per-activity control flags (exclude_from_durability, exclude_hr_data, power_is_from_hr) appeared.
- * These tests pin both eras: legacy archived rows keep their values; new rows map the flags; and the
- * trends honour the flags — most importantly EF, where HR-derived power would be circular.
+ * The AIE summary payload has three eras, all pinned here (spec 10):
+ *  1. Legacy (pre-2026-08, archived rows): DFA-α1 value fields present — durability %, thresholds.
+ *  2. Unflagged 2026-08 (probe 2026-08-24): value fields gone; control flags
+ *     (exclude_from_durability, exclude_hr_data, power_is_from_hr) appeared.
+ *  3. Flagged 2026-08-25 (probe same day; production passes `with_dfa_alpha1: true`): the threshold
+ *     fields return verbatim, summaries carry an `id`, and NEW a1 stats appear
+ *     (`average_of_dfa_alpha1`, `mean_of_dfa_alpha1_times_power*`) that must NOT map to durabilityPct —
+ *     the probe proved they are a different metric (coverage inverted vs durability; null on sessions
+ *     whose archived durability is known). Durability % itself stays archive-only until AIE's
+ *     Detail-tool rollout.
+ * The trend tests pin that the trends honour the control flags — most importantly EF, where
+ * HR-derived power would be circular.
  */
 
 /** A live post-2026-08 ride, field names verbatim from the 2026-08-24 probe. */
@@ -46,7 +53,7 @@ test("mapRichActivity: live 2026-08 shape maps the flags and degrades the gone v
   assert.equal(r.aerThrW, undefined);
 });
 
-test("mapRichActivity: legacy archived rows still yield their DFA-α1 values; flags stay undefined", () => {
+test("mapRichActivity: legacy archived rows still yield their DFA-α1 values; flags and id stay undefined", () => {
   const r = mapRichActivity(
     {
       activity_date_local: "2026-05-10T08:00:00Z",
@@ -60,6 +67,32 @@ test("mapRichActivity: legacy archived rows still yield their DFA-α1 values; fl
   assert.equal(r.aerThrHr, 138);
   assert.equal(r.powerIsFromHr, undefined);
   assert.equal(r.excludeFromDurability, undefined);
+  assert.equal(r.id, undefined, "pre-2026-08 rows have no id — Detail joins must handle that");
+});
+
+/** A flagged (`with_dfa_alpha1: true`) ride, field names verbatim from the 2026-08-25 probe. */
+const FLAGGED_RIDE = {
+  ...LIVE_RIDE,
+  id: 8412345,
+  aerobic_threshold_dfa_alpha1_watts_cluster: 205,
+  anaerobic_threshold_dfa_alpha1_watts_cluster: 248,
+  aerobic_threshold_dfa_alpha1_heart_rate_cluster: 139,
+  anaerobic_threshold_dfa_alpha1_heart_rate_cluster: 162,
+  average_of_dfa_alpha1: 0.62,
+  mean_of_dfa_alpha1_times_power_or_pace_normalized_over_two_weeks_in_percent: 97.4,
+};
+
+test("mapRichActivity: flagged 2026-08-25 shape maps id + restored thresholds; the new a1 stats do NOT become durability", () => {
+  const r = mapRichActivity(FLAGGED_RIDE, "Ride");
+  assert.equal(r.id, 8412345, "id is the Detail/setActivityFlags join key — must survive mapping");
+  assert.equal(r.aerThrW, 205);
+  assert.equal(r.aerThrHr, 139);
+  assert.equal(r.excludeFromDurability, false, "control flags still map alongside the restored values");
+  assert.equal(
+    r.durabilityPct,
+    undefined,
+    "mean_of_dfa_alpha1_times_power*_normalized… is a different metric (probe 2026-08-25) — mapping it to durabilityPct would fabricate a durability trend",
+  );
 });
 
 const act = (over: Partial<RichActivity>): RichActivity => ({ date: "2026-06-01", sport: "Ride", ...over });

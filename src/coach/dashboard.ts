@@ -243,14 +243,16 @@ function renderSignals(ins: InsightReport): string {
   // Durability is a negative-based decay index — a % change is meaningless, so show recent vs prior absolute.
   // Both sports get a row (run + ride), so a headline like "Bike durability slipping" has its numbers on a table.
   // Availability changed twice: DFA-α1 durability was only ever produced for long, steady efforts with clean
-  // R-R (≈20% of runs, a handful of rides, no swims — spec 08), and since AIE's 2026-08 "durability for all
-  // workouts" update the connector no longer sends per-activity durability VALUES at all (only exclude flags —
-  // probe 2026-08-24, spec 10), so the trend runs on archived history until AIE re-exposes the number. Render
-  // an explicit, self-explaining row when it's absent rather than silently dropping it — a vanished row reads
+  // R-R (≈20% of runs, a handful of rides, no swims — spec 08), and AIE's 2026-08 "durability for all
+  // workouts" update moved per-activity durability out of the connector summaries. AIE confirmed
+  // (2026-08-25, spec 10) it returns via the per-activity Detail tools as TWO measurements — internal
+  // drift vs the athlete's own trend, and a mechanical within-session fade that lands on nearly every
+  // ride/run — so the trend runs on archived history until that rollout lands. Render an explicit,
+  // self-explaining row when it's absent rather than silently dropping it — a vanished row reads
   // as "broken", a noted "—" reads as "not available". See specs 08 + 10.
   const durabilityRow = (label: string, t: { recent: number | null; prior: number | null; n: number }) =>
     t.recent == null
-      ? `<tr><td>${label} durability</td><td class="num muted">—</td><td class="muted" colspan="2">no durability values — AI Endurance's connector stopped sending them (2026-08); trend resumes when it re-exposes per-workout durability</td></tr>`
+      ? `<tr><td>${label} durability</td><td class="num muted">—</td><td class="muted" colspan="2">no recent durability values — AI Endurance is moving per-workout durability into its per-activity detail payloads (confirmed 2026-08, spec 10); trend resumes when that lands</td></tr>`
       : `<tr><td>${label} durability</td><td class="num">${t.recent}</td><td class="muted" colspan="2">${t.prior != null ? `was ${t.prior} · ` : ""}closer to 0 = more durable</td></tr>`;
 
   return `<div class="card"><h2>Load &amp; trends</h2>
@@ -268,7 +270,7 @@ function renderSignals(ins: InsightReport): string {
       ${trend("Run aerobic threshold (HR)", ins.threshold.run)}
     </table>
     <details style="margin-top:10px"><summary style="cursor:pointer;color:#888;font-size:12px">Methods &amp; n=1 analytics — how these are computed</summary>
-      <div class="k" style="margin-top:8px">CTL/ATL/TSB derived from daily ESS. EF on steady runs ≥40min. Durability/threshold from AI Endurance's DFA-α1 — only computed on long, steady efforts with clean R-R (≈20% of runs, a few long rides, never swims), so it is blank far more often than not. ACWR intentionally not used (validity).</div>
+      <div class="k" style="margin-top:8px">CTL/ATL/TSB derived from daily ESS. EF on steady runs ≥40min. Durability/threshold from AI Endurance's DFA-α1 — only computed on long, steady efforts with clean R-R (≈20% of runs, a few long rides, never swims), so it is blank far more often than not; per-workout durability is mid-migration to AIE's per-activity detail payloads (spec 10), so its trend reads archived pre-2026-08 sessions until that lands. ACWR intentionally not used (validity).</div>
       ${renderAnalytics(ins)}
     </details>
   </div>`;

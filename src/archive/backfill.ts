@@ -10,10 +10,16 @@ import { ArchiveStore, type ArchivedActivity, type GarminDay, type GarminActivit
  */
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const SPORTS: Array<[string, ArchivedActivity["sport"]]> = [
-  ["getRunningActivity", "Run"],
-  ["getCyclingActivity", "Ride"],
-  ["getSwimmingActivity", "Swim"],
+/**
+ * Tool → sport → extra read args. Exported so a test can pin the arg contract: `with_dfa_alpha1: true`
+ * restores the DFA-α1 fields AIE moved behind an opt-in flag in 2026-08 (spec 10) — without it, every
+ * newly archived row would permanently lack them (the archive is append-once, so a missed field is a
+ * hole in the trend history forever). Swims never carry DFA-α1.
+ */
+export const BACKFILL_SPORTS: Array<[string, ArchivedActivity["sport"], Record<string, unknown>]> = [
+  ["getRunningActivity", "Run", { with_dfa_alpha1: true }],
+  ["getCyclingActivity", "Ride", { with_dfa_alpha1: true }],
+  ["getSwimmingActivity", "Swim", {}],
 ];
 
 function monthsBetween(fromIso: string, toIso: string): Array<[string, string]> {
@@ -48,8 +54,8 @@ export async function backfillActivities(
   let added = 0;
   for (const [s, e] of monthsBetween(fromIso, toIso)) {
     const batch: ArchivedActivity[] = [];
-    for (const [tool, sport] of SPORTS) {
-      const r = extractJson(await aie.read(tool as never, { startDate: s, endDate: e })) as { activities?: Record<string, unknown>[] };
+    for (const [tool, sport, extraArgs] of BACKFILL_SPORTS) {
+      const r = extractJson(await aie.read(tool as never, { startDate: s, endDate: e, ...extraArgs })) as { activities?: Record<string, unknown>[] };
       for (const a of r?.activities ?? []) {
         const date = String(a.activity_date_local ?? a.activity_date ?? "").slice(0, 10);
         if (!date) continue;

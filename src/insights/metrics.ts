@@ -102,6 +102,8 @@ function flag(x: unknown): boolean | undefined {
 export interface RichActivity {
   date: string;
   sport: "Run" | "Ride" | "Swim";
+  /** AIE's activity id (on summaries since 2026-08) — the join key for the Detail tools + setActivityFlags. */
+  id?: number;
   ess?: number;
   avwatts?: number;
   avhr?: number;
@@ -121,15 +123,21 @@ export interface RichActivity {
 /**
  * Map one raw AIE activity object (+ sport) into a RichActivity. Shared by live + archived paths.
  *
- * The DFA-α1 value fields (durability %, aerobic-threshold HR/W) were REMOVED from the connector's
- * live summaries in AIE's 2026-08 "durability for all workouts" update (probe 2026-08-24 — spec 10):
- * live payloads now carry only the exclude_* control flags + power_is_from_hr. The value mappings stay
- * because ARCHIVED rows captured before the change still hold them — historical trends keep working.
+ * AIE's 2026-08 "durability for all workouts" update moved the DFA-α1 fields behind an opt-in
+ * `with_dfa_alpha1: true` request flag on the list tools (default false), which assemble + backfill now
+ * pass (AIE reply 2026-08-25, probe same day — spec 10). Flagged payloads restore the aerobic-threshold
+ * fields verbatim; the per-workout durability % (`aerobic_durability_…_in_percent`) did NOT return — it
+ * now exists only on pre-change ARCHIVED rows, until AIE ships durability on the Detail tools. The
+ * flagged payloads also carry new a1 stats (`average_of_dfa_alpha1`, `mean_of_dfa_alpha1_times_power*`)
+ * that are deliberately NOT mapped to durabilityPct: their coverage (15/20 rides, 0/20 runs) is the
+ * opposite of durability's (4% rides, 20% runs) and they're null on sessions whose archived durability
+ * is known — a different metric, catalogued in spec 10 for when AIE documents it.
  */
 export function mapRichActivity(a: Record<string, unknown>, sport: RichActivity["sport"]): RichActivity {
   return {
     date: String(a.activity_date_local ?? a.activity_date ?? "").slice(0, 10),
     sport,
+    id: num(a.id),
     ess: num(a.external_stress_score),
     avwatts: num(a.activity_avwatts),
     avhr: num(a.activity_avhr),
