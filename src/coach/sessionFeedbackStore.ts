@@ -1,6 +1,7 @@
 import { mkdir, readFile, appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "../config.js";
+import type { ActivityDurability } from "../insights/activityDetail.js";
 
 /**
  * Persisted per-session deep-feedback store. The `session` deep dive used to be on-demand (a dashboard
@@ -25,6 +26,9 @@ export interface SessionFeedbackRecord {
   generatedAt: string; // ISO
   costUsd: number;
   markdown: string;
+  /** Per-session durability (AIE Detail tools, spec 10 phase 2) — absent on legacy/pre-rollout records
+   *  and when the fetch degraded. Stored so the card renders it with no network on page load. */
+  durability?: ActivityDurability;
 }
 
 function file(): string {

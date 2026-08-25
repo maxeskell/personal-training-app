@@ -38,6 +38,7 @@ import { runTuneUp } from "./coach/tuneUp.js";
 import { runResearchDigest } from "./coach/research.js";
 import { readKnowledge, writePendingDigest, pendingName, knowledgeFreshness, listPending } from "./knowledge/store.js";
 import { runSessionFeedback } from "./coach/session.js";
+import { aieDurabilityFetcher } from "./coach/sessionDurability.js";
 import { loadSessionDecays } from "./insights/fit.js";
 import { buildWeekFuelPlans, loadFuelPrefs, formatWeekFuelText } from "./coach/fuelPlan.js";
 import { loadInventory } from "./coach/fuelInventory.js";
@@ -772,6 +773,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
         force,
         decays: loadSessionDecays(),
         fitSummaries: await new ArchiveStore().loadFitSummaries(),
+        fetchDurability: aieDurabilityFetcher(),
       });
       if (!feedback) return fail(date ? `No activity found for ${date}.` : "No recent activity found to analyse.");
       if (feedback.skippedNoFit) return ok(feedback.markdown + "\n\n(no LLM call made — pass force=true for summary-only feedback)");

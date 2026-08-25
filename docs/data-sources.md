@@ -50,10 +50,12 @@ ever obtain TP partner-API access, the `DataSource` seam below is where a native
 **Honest note on parity:** AI Endurance provides modelled signals (its **race predictions**,
 **plan-progress adherence**, the **recovery model**, **DFA-α1 thresholds**) that other sources may not
 expose. The a1 fields became opt-in in AIE's 2026-08 "durability for all workouts" update — the app
-requests them with `with_dfa_alpha1: true` on the activity list reads. Per-activity DFA-α1 **durability**
-is the one signal currently in transit: AIE confirmed (2026-08-25) it returns via the per-activity
-*Detail* tools as two opt-in measurements (internal drift vs the athlete's own trend; mechanical
-within-session fade on nearly every ride/run) — archived pre-2026-08 history carries the old values
-meanwhile (see `docs/specs/improvements/10-aie-durability-for-all-workouts.md`). Those cards degrade for
-a source that lacks them — the coach is most capable on AI Endurance. Label what a source can't provide;
-never fabricate it.
+requests them with `with_dfa_alpha1: true` on the activity list reads. Per-activity **durability**
+returned on 2026-08-25 via the per-activity *Detail* tools as two opt-in measurements (internal
+`durability_drift` vs the athlete's own trend; mechanical `within_session_durability` on nearly every
+ride/run): the app fetches them once per analysed session in the session readout — never in bulk, the
+payload weight is why AIE slimmed the summaries — and renders them on the Last-session card; archived
+pre-2026-08 history still carries the old summary values for the multi-week trend (see
+`docs/specs/improvements/10-aie-durability-for-all-workouts.md`). Those cards degrade for a source that
+lacks them — the coach is most capable on AI Endurance. Label what a source can't provide; never
+fabricate it.

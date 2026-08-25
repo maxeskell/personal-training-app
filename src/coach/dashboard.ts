@@ -3,6 +3,7 @@ import type { DecisionRecord, InsightReaction, CoachDiscussion } from "../state/
 import { executedSourceKeys } from "../state/decisionLog.js";
 import type { FitSummary } from "../archive/store.js";
 import { findSessionFeedback, type SessionFeedbackRecord } from "./sessionFeedbackStore.js";
+import { durabilityCardLine } from "../insights/activityDetail.js";
 import type { InsightReport } from "../insights/engine.js";
 import type { SurfacedFinding } from "../state/insightLog.js";
 import { renderCoachRecs } from "./adviceRecs.js";
@@ -244,15 +245,16 @@ function renderSignals(ins: InsightReport): string {
   // Both sports get a row (run + ride), so a headline like "Bike durability slipping" has its numbers on a table.
   // Availability changed twice: DFA-α1 durability was only ever produced for long, steady efforts with clean
   // R-R (≈20% of runs, a handful of rides, no swims — spec 08), and AIE's 2026-08 "durability for all
-  // workouts" update moved per-activity durability out of the connector summaries. AIE confirmed
-  // (2026-08-25, spec 10) it returns via the per-activity Detail tools as TWO measurements — internal
-  // drift vs the athlete's own trend, and a mechanical within-session fade that lands on nearly every
-  // ride/run — so the trend runs on archived history until that rollout lands. Render an explicit,
-  // self-explaining row when it's absent rather than silently dropping it — a vanished row reads
-  // as "broken", a noted "—" reads as "not available". See specs 08 + 10.
+  // workouts" update moved per-activity durability out of the connector summaries and into the Detail
+  // tools as TWO measurements (rollout live 2026-08-25 — spec 10): a mechanical within-session fade on
+  // nearly every ride/run, and an internal drift vs the athlete's own trend. Those now land per-session
+  // on the Last-session card; THIS multi-week trend still reads the archived pre-2026-08 series until
+  // enough of the new reads accumulate to trend honestly (spec 10 phase 2, deferred item). Render an
+  // explicit, self-explaining row when it's absent rather than silently dropping it — a vanished row
+  // reads as "broken", a noted "—" reads as "not available". See specs 08 + 10.
   const durabilityRow = (label: string, t: { recent: number | null; prior: number | null; n: number }) =>
     t.recent == null
-      ? `<tr><td>${label} durability</td><td class="num muted">—</td><td class="muted" colspan="2">no recent durability values — AI Endurance is moving per-workout durability into its per-activity detail payloads (confirmed 2026-08, spec 10); trend resumes when that lands</td></tr>`
+      ? `<tr><td>${label} durability</td><td class="num muted">—</td><td class="muted" colspan="2">no recent values on this multi-week trend — per-session durability now arrives on the Last-session card (AI Endurance detail feed, 2026-08); this trend resumes once enough of those accumulate (spec 10)</td></tr>`
       : `<tr><td>${label} durability</td><td class="num">${t.recent}</td><td class="muted" colspan="2">${t.prior != null ? `was ${t.prior} · ` : ""}closer to 0 = more durable</td></tr>`;
 
   return `<div class="card"><h2>Load &amp; trends</h2>
@@ -472,12 +474,17 @@ function renderLastSession(
   });
   let feedback: string;
   switch (cardState.kind) {
-    case "stored":
+    case "stored": {
+      // Per-session durability (AIE Detail feed, spec 10 phase 2) — captured at generation time and
+      // rendered from the store, so the card stays network-free. MODEL-labelled; absent → no line.
+      const durLine = stored!.durability ? durabilityCardLine(stored!.durability) : "";
       // Share view: the deep feedback is generated prose that names the athlete's real races (e.g. "with
       // Birmingham 22 days out") — redact those before rendering so a shared screenshot/PDF stays anonymous.
       feedback = `<div class="k" style="margin:8px 0 4px">🔍 Session feedback <span class="muted">(${stored!.deep ? "deep analysis" : "summary"} · ${escapeHtml(fmtSince(Date.now() - new Date(stored!.generatedAt).getTime()))})</span></div>
+      ${durLine ? `<div class="k" style="margin:0 0 6px">📉 Session durability <span class="muted">(AI Endurance detail — MODEL)</span>: ${escapeHtml(durLine)}</div>` : ""}
       <div style="font-size:14px;color:#333;white-space:pre-wrap">${mdLite(redact(stored!.markdown.replace(/^# .*\n+/, "")))}</div>`;
       break;
+    }
     case "auto":
       // A screenshot can't run the fetch (and would freeze on "Downloading…"), so share view degrades to
       // a static line; the live page renders the placeholder the on-load loadSessionFeedback() swaps out.

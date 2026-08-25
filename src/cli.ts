@@ -42,6 +42,7 @@ import { ArchiveStore } from "./archive/store.js";
 import { recoverGaps } from "./archive/recover.js";
 import { answerQuestion } from "./coach/ask.js";
 import { runSessionFeedback } from "./coach/session.js";
+import { aieDurabilityFetcher } from "./coach/sessionDurability.js";
 import { loadSessionDecays } from "./insights/fit.js";
 import { readCostRecords, summarizeCost, isLocalModel } from "./llm/costLog.js";
 import { getForecast } from "./weather/store.js";
@@ -644,6 +645,7 @@ async function cmdSession(): Promise<void> {
     force,
     decays: loadSessionDecays(),
     fitSummaries: await new ArchiveStore().loadFitSummaries(),
+    fetchDurability: aieDurabilityFetcher(),
   });
   if (!feedback) {
     console.error(date ? `\nNo activity found for ${date}.\n` : "\nNo recent activity found to analyse.\n");

@@ -38,6 +38,7 @@ import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
 import { loadProfileSafe, loadProfileRacesSync } from "./profile/load.js";
 import { runSessionFeedback, assembleSession } from "./coach/session.js";
+import { aieDurabilityFetcher } from "./coach/sessionDurability.js";
 import { loadSessionDecays, fitStreamsDir } from "./insights/fit.js";
 import { syncFitSummaries, downloadFitStream, hasStreamDownloadTool } from "./archive/fitSync.js";
 import { proposeAdjustments, validateProposals, buildProposerContext, writeContextFor } from "./coach/planAdjust.js";
@@ -364,7 +365,7 @@ async function produceSessionFeedback(li: LatestInsights, date: string, sport: S
       }
     }
   }
-  const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), li.state, li.insights, { date, sport, durationMin, force, decays, fitSummaries });
+  const feedback = await runSessionFeedback(new CoachLLM(await loadSystemPrompt(), "session", "medium"), li.state, li.insights, { date, sport, durationMin, force, decays, fitSummaries, fetchDurability: aieDurabilityFetcher() });
   if (!feedback) return { status: "no-data", markdown: "No recent activity found to analyse." };
   if (feedback.skippedNoFit) return { status: "no-fit", markdown: feedback.markdown };
   // Persist so subsequent page loads serve it inline (no LLM on render) — same store the auto-backfill writes.
@@ -376,6 +377,7 @@ async function produceSessionFeedback(li: LatestInsights, date: string, sport: S
     generatedAt: new Date().toISOString(),
     costUsd: feedback.costUsd,
     markdown: feedback.markdown,
+    durability: feedback.detail.durability ?? undefined,
   });
   return { status: "ready", markdown: feedback.markdown, deep: !!feedback.detail.decay };
 }

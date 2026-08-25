@@ -17,6 +17,7 @@ import type { InsightReport } from "../insights/engine.js";
 import { fitStreamsDir, type SessionDecay } from "../insights/fit.js";
 import type { FitSummary } from "../archive/store.js";
 import { richActivities, type RichActivity } from "../insights/metrics.js";
+import { durabilityContextLines, type ActivityDurability, type DurabilityFetcher } from "../insights/activityDetail.js";
 import { raceCalendarLines, liveGoals } from "./seasonContext.js";
 import { fmt } from "./dashboardHelpers.js";
 
@@ -58,6 +59,10 @@ export interface SessionDetail {
   durabilityPct: number | null;
   aerThrHr: number | null;
   aerThrW: number | null;
+  /** AIE's activity id (on summaries since 2026-08) — enables the on-demand Detail durability fetch. */
+  aieId: number | null;
+  /** Per-session durability from the Detail tools (spec 10 phase 2) — null until fetched / when unavailable. */
+  durability: ActivityDurability | null;
   decay: SessionDecay | null; // biomechanics from the .FIT stream (may be absent)
   fit: FitSummary | null; // thermal / training-effect from the archive (may be absent)
   comparable: ComparableContext;
@@ -78,6 +83,12 @@ export interface AssembleSessionOpts {
   fitSummaries?: FitSummary[];
   /** Run the LLM even without the raw .FIT stream (summary-only feedback). */
   force?: boolean;
+  /**
+   * Optional live fetcher for the AIE per-session durability (Detail tools — spec 10 phase 2). Injected
+   * by call sites (`aieDurabilityFetcher()`); absent in tests and anywhere without AIE reach, where the
+   * readout degrades to summary metrics. Fetched only when the LLM will actually run (post .FIT gate).
+   */
+  fetchDurability?: DurabilityFetcher;
 }
 
 /** An activity's rounded moving minutes — the duration discriminator used across keys and matching. */
@@ -181,9 +192,10 @@ export function assembleSession(state: AthleteState, insights: InsightReport | u
     durMinMean: r1(mean(prior.map((a) => (a.movingSec ? a.movingSec / 60 : NaN)).filter((x) => Number.isFinite(x)))),
   };
 
-  // Join the .FIT biomechanics + archive thermal summary. RichActivity carries no id, so on a day with
-  // two same-sport sessions we best-match by duration (Tier 2 record-linkage) rather than grabbing the
-  // first — so each session gets ITS stream, not the longer one's.
+  // Join the .FIT biomechanics + archive thermal summary. The AIE id (on summaries since 2026-08) is an
+  // AIE-internal key the .FIT layers don't share, so on a day with two same-sport sessions we still
+  // best-match by duration (Tier 2 record-linkage) rather than grabbing the first — each session gets
+  // ITS stream, not the longer one's.
   const decayCand = (opts.decays ?? []).filter((d) => d.date === target.date && decayMatchesSport(d.sport, target.sport));
   const fitCand = (opts.fitSummaries ?? []).filter((f) => f.date === target.date && decayMatchesSport(f.sport, target.sport));
   const decay = closestByDuration(decayCand, (d) => d.durationMin, targetDurMin);
@@ -203,6 +215,8 @@ export function assembleSession(state: AthleteState, insights: InsightReport | u
     durabilityPct: target.durabilityPct ?? null,
     aerThrHr: target.aerThrHr ?? null,
     aerThrW: target.aerThrW ?? null,
+    aieId: target.id ?? null,
+    durability: null,
     decay,
     fit,
     comparable,
@@ -310,6 +324,8 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
     );
   }
 
+  if (d.durability) lines.push("", ...durabilityContextLines(d.durability));
+
   // What's coming next (user ask): the following 7 days of planned sessions, so the model can say
   // whether this session should change anything ahead — or explicitly that nothing should.
   const horizon = new Date(`${d.date}T00:00:00Z`);
@@ -370,6 +386,12 @@ export async function runSessionFeedback(
   // shows — skip the LLM spend and say how to unlock it (user ask). `force` overrides.
   if (!detail.decay && !opts.force) {
     return { detail, markdown: missingFitNote(detail), cacheRead: 0, costUsd: 0, skippedNoFit: true };
+  }
+
+  // Per-session durability (AIE Detail tools) — fetched only now, once the LLM is definitely running,
+  // so a skipped session costs no Detail read. Best-effort: a failed/empty fetch degrades to null.
+  if (opts.fetchDurability && detail.aieId != null) {
+    detail.durability = await opts.fetchDurability(detail.sport, detail.aieId).catch(() => null);
   }
 
   const prompt = [
