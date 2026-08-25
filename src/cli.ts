@@ -29,7 +29,7 @@ import { weeklyBriefDue, weeklyReviewDates, postSwimDue, deepDiveDates } from ".
 import { persistWeeklyBriefIfAbsent, loadRecentWeeklyBriefs } from "./coach/weeklyBriefStore.js";
 import { draftWeeklyProposals, weeklyProposer } from "./coach/weeklyProposals.js";
 import { latestWeeklyReview, latestResearchDigest, latestSeasonNarrative, latestWeeklyReviewProse } from "./coach/setupSources.js";
-import { loadSessionFeedbacks, saveSessionFeedback } from "./coach/sessionFeedbackStore.js";
+import { loadSessionFeedbacks, saveSessionFeedback, recordFromFeedback } from "./coach/sessionFeedbackStore.js";
 import { loadMetricOverrides } from "./state/metricOverrides.js";
 import { buildDemoWindow, buildDemoGarminDays, demoProfile } from "./demo/sampleData.js";
 import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact, cmdActivityArchiveImport, cmdActivityArchiveBackfill, cmdActivityArchiveHeal, cmdRecoverGaps } from "./cli/dataCommands.js";
@@ -659,14 +659,7 @@ async function cmdSession(): Promise<void> {
   const path = await writeReport("session-feedback", feedback.detail.date, feedback.markdown);
   // Persist to the session-feedback store too, so the dashboard surfaces it inline and the history is
   // kept for analysis (same store the auto-at-sync generation writes to).
-  await saveSessionFeedback({
-    date: feedback.detail.date,
-    sport: String(feedback.detail.sport),
-    deep: !!feedback.detail.decay,
-    generatedAt: new Date().toISOString(),
-    costUsd: feedback.costUsd,
-    markdown: feedback.markdown,
-  });
+  await saveSessionFeedback(recordFromFeedback(feedback));
   console.log("\n" + feedback.markdown + "\n");
   console.log(`(report → ${path}; saved to the session-feedback store; ${costNote(feedback.costUsd, feedback.cacheRead)})`);
 }

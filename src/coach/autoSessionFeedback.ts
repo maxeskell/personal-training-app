@@ -8,7 +8,7 @@ import { ArchiveStore } from "../archive/store.js";
 import { loadSystemPrompt } from "./persona.js";
 import { runSessionFeedback } from "./session.js";
 import { aieDurabilityFetcher } from "./sessionDurability.js";
-import { loadSessionFeedbacks, latestBySession, sessionFeedbackKey, saveSessionFeedback } from "./sessionFeedbackStore.js";
+import { loadSessionFeedbacks, latestBySession, sessionFeedbackKey, saveSessionFeedback, recordFromFeedback } from "./sessionFeedbackStore.js";
 import type { RichActivity } from "../insights/metrics.js";
 import { shiftIso } from "../util/today.js";
 
@@ -89,16 +89,7 @@ export async function backfillSessionFeedback(
       const fb = await runSessionFeedback(new CoachLLM(prompt, "session", "medium"), state, insights, { date, sport: sport as RichActivity["sport"], durationMin, decays, fitSummaries, fetchDurability });
       // No .FIT yet → leave unstored (no tokens were spent); a later sync retries once it's downloaded.
       if (!fb || fb.skippedNoFit) continue;
-      await saveSessionFeedback({
-        date: fb.detail.date,
-        sport: String(fb.detail.sport),
-        durationMin: fb.detail.durationMin ?? undefined,
-        deep: !!fb.detail.decay,
-        generatedAt: new Date().toISOString(),
-        costUsd: fb.costUsd,
-        markdown: fb.markdown,
-        durability: fb.detail.durability ?? undefined,
-      });
+      await saveSessionFeedback(recordFromFeedback(fb));
       generated += 1;
     } catch {
       /* best-effort per session — a single failure must not stop the rest or the sync */

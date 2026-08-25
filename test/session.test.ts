@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { assembleSession, buildSessionContext, listRecentSessions, runSessionFeedback } from "../src/coach/session.js";
+import { recordFromFeedback } from "../src/coach/sessionFeedbackStore.js";
 import { isLastSessionQuestion } from "../src/coach/ask.js";
 import { emptyState } from "../src/state/types.js";
 import type { SessionDecay } from "../src/insights/fit.js";
@@ -244,6 +245,15 @@ test("runSessionFeedback: an injected durability fetcher is called with the AIE 
   // No fetcher (tests, no-AIE contexts) → no durability, no network dependency — degrade, don't crash.
   const bare = (await runSessionFeedback(llmStub(), stateWithRuns(), undefined, { decays: [RUN_DECAY] }))!;
   assert.equal(bare.detail.durability, null);
+
+  // The ONE record builder every save site uses — a field dropped here (durability was, on the CLI
+  // path, 2026-08-25) is a field dropped everywhere, so pin the full shape.
+  const rec = recordFromFeedback(fb);
+  assert.equal(rec.date, fb.detail.date);
+  assert.equal(rec.durationMin, fb.detail.durationMin);
+  assert.equal(rec.deep, true);
+  assert.equal(rec.markdown, fb.markdown);
+  assert.equal(rec.durability?.within[0].windows[0].fadePctTotal, 11.5, "the fetched read persists");
 });
 
 test("runSessionFeedback: --force runs without the stream; a joined stream runs normally", async () => {

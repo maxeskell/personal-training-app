@@ -20,7 +20,7 @@ import { loadAdviceEmbeddingIndex } from "./state/adviceEmbeddings.js";
 import { updateLocalProfile } from "./profile/update.js";
 import { latestWeeklyReview, latestResearchDigest, latestWeeklyReviewProse, latestSeasonNarrative } from "./coach/setupSources.js";
 import { listPending, readPending } from "./knowledge/store.js";
-import { loadSessionFeedbacks, saveSessionFeedback, findSessionFeedback, sessionFeedbackKey } from "./coach/sessionFeedbackStore.js";
+import { loadSessionFeedbacks, saveSessionFeedback, findSessionFeedback, sessionFeedbackKey, recordFromFeedback } from "./coach/sessionFeedbackStore.js";
 import { loadFuelLog, saveFuelLog, isFuelOutcome } from "./coach/fuelLogStore.js";
 import { loadInventory } from "./coach/fuelInventory.js";
 import { runFuelReview } from "./coach/fuelReview.js";
@@ -369,16 +369,7 @@ async function produceSessionFeedback(li: LatestInsights, date: string, sport: S
   if (!feedback) return { status: "no-data", markdown: "No recent activity found to analyse." };
   if (feedback.skippedNoFit) return { status: "no-fit", markdown: feedback.markdown };
   // Persist so subsequent page loads serve it inline (no LLM on render) — same store the auto-backfill writes.
-  await saveSessionFeedback({
-    date: feedback.detail.date,
-    sport: String(feedback.detail.sport),
-    durationMin: feedback.detail.durationMin ?? undefined,
-    deep: !!feedback.detail.decay,
-    generatedAt: new Date().toISOString(),
-    costUsd: feedback.costUsd,
-    markdown: feedback.markdown,
-    durability: feedback.detail.durability ?? undefined,
-  });
+  await saveSessionFeedback(recordFromFeedback(feedback));
   return { status: "ready", markdown: feedback.markdown, deep: !!feedback.detail.decay };
 }
 
