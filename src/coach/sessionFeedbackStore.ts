@@ -2,6 +2,7 @@ import { mkdir, readFile, appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "../config.js";
 import type { ActivityDurability } from "../insights/activityDetail.js";
+import type { SessionFeedback } from "./session.js";
 
 /**
  * Persisted per-session deep-feedback store. The `session` deep dive used to be on-demand (a dashboard
@@ -33,6 +34,24 @@ export interface SessionFeedbackRecord {
 
 function file(): string {
   return join(config.dataDir, "session-feedback.jsonl");
+}
+
+/**
+ * Build the store record from a finished readout — in ONE place, so a new field can't be silently
+ * dropped by one of the three save sites (exactly what happened to `durability` on the CLI path, and
+ * historically to `durationMin` there too, 2026-08-25). All save sites go through this.
+ */
+export function recordFromFeedback(fb: SessionFeedback): Omit<SessionFeedbackRecord, "schemaVersion"> {
+  return {
+    date: fb.detail.date,
+    sport: String(fb.detail.sport),
+    durationMin: fb.detail.durationMin ?? undefined,
+    deep: !!fb.detail.decay,
+    generatedAt: new Date().toISOString(),
+    costUsd: fb.costUsd,
+    markdown: fb.markdown,
+    durability: fb.detail.durability ?? undefined,
+  };
 }
 
 /** Append one feedback record. Best-effort: a logging failure must never break a sync. */
