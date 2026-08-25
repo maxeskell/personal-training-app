@@ -219,6 +219,33 @@ test("runSessionFeedback: no raw .FIT stream → no LLM call, zero cost, explain
   assert.match(fb.markdown, /Export Original/);
 });
 
+test("runSessionFeedback: an injected durability fetcher is called with the AIE id and its read lands in the LLM context", async () => {
+  const s = stateWithRuns();
+  (s.raw.getRunningActivity as { activities: Record<string, unknown>[] }).activities[0].id = 8412345;
+  const calls: Array<[string, number]> = [];
+  const fetchDurability = async (sport: "Run" | "Ride" | "Swim", id: number) => {
+    calls.push([sport, id]);
+    return {
+      within: [{ metric: "power", axis: "km", windows: [{ window: "5min", fadePctTotal: 11.5, fresh: "402 W" }] }],
+      drift: null,
+      recentBest: [],
+      referenceDays: null,
+      referenceCount: null,
+    };
+  };
+  let prompt = "";
+  const llm = { text: async (p: string) => ((prompt = p), { text: "LLM FEEDBACK", cacheRead: 0, costUsd: 0.01 }) } as unknown as CoachLLM;
+  const fb = (await runSessionFeedback(llm, s, undefined, { decays: [RUN_DECAY], fetchDurability }))!;
+  assert.deepEqual(calls, [["Run", 8412345]], "fetched once, for the analysed session");
+  assert.match(prompt, /AIE PER-SESSION DURABILITY \[ai-endurance — MODEL/);
+  assert.match(prompt, /power: 5min faded 11\.5% from fresh 402 W/);
+  assert.equal(fb.detail.durability?.within[0].metric, "power", "the read is kept on the detail for persistence");
+
+  // No fetcher (tests, no-AIE contexts) → no durability, no network dependency — degrade, don't crash.
+  const bare = (await runSessionFeedback(llmStub(), stateWithRuns(), undefined, { decays: [RUN_DECAY] }))!;
+  assert.equal(bare.detail.durability, null);
+});
+
 test("runSessionFeedback: --force runs without the stream; a joined stream runs normally", async () => {
   const forced = (await runSessionFeedback(llmStub(), stateWithRuns(), undefined, { force: true }))!;
   assert.ok(!forced.skippedNoFit);

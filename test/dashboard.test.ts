@@ -345,10 +345,27 @@ test("Last-session card: stored inline; live fetch when producible; honest note 
     insights: ins,
     setupHealth: { hasApiKey: true, waterTempSet: true, lastSyncAgeHours: 1 },
     sessionFeedbacks: [
-      { schemaVersion: 1, date: "2026-06-09", sport: "Run", deep: true, generatedAt: new Date().toISOString(), costUsd: 0.2, markdown: "# Session feedback — 2026-06-09 Run\n\n## Verdict\n**Solid** aerobic run." },
+      {
+        schemaVersion: 1,
+        date: "2026-06-09",
+        sport: "Run",
+        deep: true,
+        generatedAt: new Date().toISOString(),
+        costUsd: 0.2,
+        markdown: "# Session feedback — 2026-06-09 Run\n\n## Verdict\n**Solid** aerobic run.",
+        // Per-session durability captured from the AIE Detail feed (spec 10 phase 2) → one MODEL line.
+        durability: {
+          within: [{ metric: "power", axis: "km", windows: [{ window: "5min", fadePctTotal: 12.4, fresh: "410 W" }] }],
+          drift: { axis: "km", metrics: [{ metric: "a1", nPoints: 8, meanResidual: -0.01, bandLabel: "in_band", inBand: 6, above: 1, below: 1, trendN: 9, pctLossAtAnchors: [] }] },
+          recentBest: [],
+          referenceDays: null,
+          referenceCount: null,
+        },
+      },
     ],
   });
   assert.match(withFb, /Session feedback <span class="muted">\(deep analysis/);
+  assert.match(withFb, /Session durability <span class="muted">\(AI Endurance detail — MODEL\)<\/span>: power fade 12\.4% \(5min\) · drift vs trend: a1 in band/);
   assert.match(withFb, /<b>Solid<\/b> aerobic run/, "markdown is rendered inline");
   assert.ok(!withFb.includes("sessionFeedback()"), "still no button");
   assert.ok(!withFb.includes('id="sessfb"'), "stored → no live placeholder");
@@ -1123,7 +1140,7 @@ test("Load & trends: a sport with no DFA-α1 durability renders an explicit note
   const html = renderDashboard({ window: [s], decisions: [], insights: ins });
   assert.match(html, /<td>Run durability<\/td><td class="num">-3.1<\/td>/); // present sport unchanged
   // absent sport is still a row, but says WHY it's blank rather than silently disappearing
-  assert.match(html, /<td>Ride durability<\/td><td class="num muted">—<\/td><td class="muted" colspan="2">no recent durability values — AI Endurance is moving per-workout durability into its per-activity detail payloads \(confirmed 2026-08, spec 10\)/);
+  assert.match(html, /<td>Ride durability<\/td><td class="num muted">—<\/td><td class="muted" colspan="2">no recent values on this multi-week trend — per-session durability now arrives on the Last-session card \(AI Endurance detail feed, 2026-08\)/);
 });
 
 test("Data changes card: surfaces an AIE-vs-Garmin disagreement side by side with a one-tap source pick", () => {

@@ -164,7 +164,7 @@ export async function cmdProbe(): Promise<void> {
           const id = (firstObjectArray(flagged)?.[0] as Record<string, unknown> | undefined)?.id;
           if (id != null) {
             aieSamples[`${detail}+flags`] = extractJson(
-              await aie.read(detail, { activity_id: id, with_dfa_alpha1: true, with_power_curve: true }),
+              await aie.read(detail, { activityId: id, with_dfa_alpha1: true, with_power_curve: true }),
             );
           }
         } catch (err) {

@@ -319,8 +319,9 @@ it — `on` (default, every recent session), `latest` (only the most recent), or
 The card also shows what the session was **meant to be** — the matching
 planned workout (title, planned vs done time), or an explicit note when nothing in the plan matched. It
 joins your **AI Endurance metrics** (power/HR/ESS, DFA-α1 thresholds — restored 2026-08 behind an opt-in
-connector flag the app passes; per-workout DFA-α1 durability itself is mid-migration to AIE's per-activity
-detail payloads, so it covers pre-2026-08 archived sessions only until that rollout lands, see spec 10) with the
+connector flag the app passes), **AIE's per-session durability detail** (live 2026-08-25, fetched once per
+analysed session: the mechanical within-session fade on nearly every ride/run, plus internal drift vs your
+own trend when R-R allows — both MODEL-labelled, see spec 10) with the
 **.FIT biomechanics** (in-session cadence/GCT/vertical-osc drift, aerobic decoupling, temperature) and the
 **archive thermal summary**, then reads it against your **prior comparable sessions** and that day's **TSB**
 — so a dip in deep fatigue or heat isn't mistaken for lost fitness. **Swims are read on their own terms:**
@@ -667,9 +668,10 @@ stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and 
   the top); the flag clears the moment you react, so your eye goes straight to what still needs you.
 - **Performance** — your numbers in four labelled groups: **Form & load** (the load model, multi-week trends
   and the **recent-vs-prior** efficiency + **run *and* ride durability** rows, last-7-days load by sport).
-  Durability is AI Endurance's DFA-α1 index from **archived** sessions — AIE's 2026-08 update is moving
-  per-activity durability into its per-activity detail payloads (confirmed in rollout, spec 10), so the trend
-  runs on history until that lands and a sport with no values shows an explanatory note rather than a silently
+  Durability now has two layers: **per-session** reads land on the Last-session card from AIE's detail feed
+  (live 2026-08 — a mechanical within-session fade, plus internal drift vs your own trend when R-R allows),
+  while this **multi-week trend** still reads archived pre-2026-08 DFA-α1 sessions until enough of the new
+  reads accumulate (spec 10); a sport with no values shows an explanatory note rather than a silently
   missing row. In **Career & PBs**, *Best ride power* is normalised power (NP) over a whole ride ≥20 km — spike-weighted,
   not a fixed-duration record (read the power-curve chart for true 5/20/60-min bests).
   **Zones & capacity** (zones & thresholds, Garmin scores), **Race readiness**

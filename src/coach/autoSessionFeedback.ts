@@ -7,6 +7,7 @@ import { loadSessionDecays } from "../insights/fit.js";
 import { ArchiveStore } from "../archive/store.js";
 import { loadSystemPrompt } from "./persona.js";
 import { runSessionFeedback } from "./session.js";
+import { aieDurabilityFetcher } from "./sessionDurability.js";
 import { loadSessionFeedbacks, latestBySession, sessionFeedbackKey, saveSessionFeedback } from "./sessionFeedbackStore.js";
 import type { RichActivity } from "../insights/metrics.js";
 import { shiftIso } from "../util/today.js";
@@ -79,12 +80,13 @@ export async function backfillSessionFeedback(
   const decays = loadSessionDecays();
   const fitSummaries = await new ArchiveStore().loadFitSummaries();
   const prompt = await loadSystemPrompt();
+  const fetchDurability = aieDurabilityFetcher();
   let generated = 0;
   for (const key of keys) {
     const [date, sport, durStr] = key.split("|");
     const durationMin = durStr ? Number(durStr) : undefined;
     try {
-      const fb = await runSessionFeedback(new CoachLLM(prompt, "session", "medium"), state, insights, { date, sport: sport as RichActivity["sport"], durationMin, decays, fitSummaries });
+      const fb = await runSessionFeedback(new CoachLLM(prompt, "session", "medium"), state, insights, { date, sport: sport as RichActivity["sport"], durationMin, decays, fitSummaries, fetchDurability });
       // No .FIT yet → leave unstored (no tokens were spent); a later sync retries once it's downloaded.
       if (!fb || fb.skippedNoFit) continue;
       await saveSessionFeedback({
@@ -95,6 +97,7 @@ export async function backfillSessionFeedback(
         generatedAt: new Date().toISOString(),
         costUsd: fb.costUsd,
         markdown: fb.markdown,
+        durability: fb.detail.durability ?? undefined,
       });
       generated += 1;
     } catch {

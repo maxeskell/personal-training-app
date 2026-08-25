@@ -1,9 +1,10 @@
 # 10 — AIE "durability for all run & ride workouts": probe-gated uptake plan
 
-**Status:** ◐ AIE replied + second Mac probe 2026-08-25 — `with_dfa_alpha1` uptake shipped (thresholds
-restored on list reads, summaries carry a live `id`); per-workout durability arrives via the Detail tools
-as two opt-in measurements — Detail returns `{}` until AIE's rollout (the probe self-detects it; phase 2
-below is the agreed design) · **Opened:** 2026-08-24 · **Owner:** Max
+**Status:** ✓ landed in two waves on 2026-08-25 — morning: `with_dfa_alpha1` uptake on list reads
+(thresholds restored, summary `id` mapped); evening: AIE shipped the Detail rollout (MCP v1.1/1.2) and
+phase 2 landed — per-session two-measurement durability fetched on-demand in the session readout, stored,
+and rendered on the Last-session card · **Remaining:** the multi-week durability-trend switch once enough
+stored reads accumulate (phase 2 item 3) · **Opened:** 2026-08-24 · **Owner:** Max
 
 ## Context
 
@@ -133,21 +134,46 @@ Markus (AIE) answered the emailed ask, confirming both gaps and correcting the m
 - Dashboard durability row + methods note, README session-card line, `docs/data-sources.md` parity note
   and the HANDOVER known-issue entry updated to the migration reality.
 
-## Phase 2 — the two-measurement durability read (blocked on AIE's Detail rollout; design agreed)
+## Phase 2 — the two-measurement durability read (LANDED 2026-08-25, same-day as AIE's rollout)
 
-Do **not** build early — the probe's Detail sample turning non-empty is the trigger. Then:
+AIE shipped the rollout hours after the reply (MCP repo v1.1.0/v1.2.0, 2026-08-25). Facts from the live
+Mac probe against it:
 
-1. **On-demand Detail reads only.** Session readout + deep-dive flows fetch ONE activity's Detail
-   (`with_power_curve`, plus `with_dfa_alpha1` where R-R was clean); never in the daily assemble loop —
-   ~40 activities × a heavy payload is exactly what AIE's summary slimming exists to prevent.
-2. **Two labelled MODEL reads, not one durability number:** external `within_session_durability`
-   (near-universal) and internal `durability_drift` weighted by its sessions-behind-the-trend count; keep
-   the in-house .FIT stream decoupling as the independent cross-check ("don't overrule the platform").
-3. Dashboard durability row switches from the migration empty-state to the two-read rendering; revisit
-   `durabilityTrend`'s minimum-N assumptions against whichever read AIE serves per sport.
-4. Any Detail consumer passes `with_time_series_metrics` explicitly (false unless the flow needs samples).
-5. Optional, only if wanted: `power_is_from_hr` per-session honesty labelling via the id join;
-   `setActivityFlags` stays gated + not proposable until a write-path use case clears change-control.
+- **Detail input is `activityId`** (camelCase, per the MCP repo docs; the repo also documents
+  `resolution` and the three `with_*` flags). Earlier same-day calls with `activity_id` returned a bare
+  `{}`; with `activityId` + flags both Detail tools return full payloads (~4–5KB without time series).
+- **`within_session_durability`** (external, with `with_power_curve`): per-family
+  `{axis, fade_series{window: {by_work, fade_percent_total, fresh|fresh_pace}}}` — a ride is one power
+  family on a kJ axis; a run has keyed `gap` (pace) + `power` families on a km axis. Landed on both
+  sampled sessions. Also `pct_of_recent_best*` per curve anchor and a `reference_window`
+  (days/activity_count).
+- **`durability_drift`** (internal, with `with_dfa_alpha1`): `{axis, anchors, metrics{hr|a1|rf}}`, each
+  metric `{n_points, covered_x, mean_residual_vs_trend, band_position{label, above, below, in_band},
+  trend_pct_loss_at_anchors, trend_ride_count}`. Present on the sampled ride (10-session trend), absent
+  on the sampled run — sparse by design (needs clean R-R + trend history), exactly as the reply said.
+- **Four new tools** appeared with v1.2.0 (doctor drift): reads `getOtherActivity` +
+  `analyzeActivityStream`, writes `createRideRunWorkoutByIntensity` + `changeWorkoutIntensity`.
+
+**What shipped (this repo, same day):**
+
+1. **On-demand Detail reads only** — `aieDurabilityFetcher()` (`coach/sessionDurability.ts`) makes ONE
+   best-effort Detail read for the analysed session, injected into `runSessionFeedback` at every call
+   site (auto-backfill at sync, dashboard route, CLI `session`, MCP `session_feedback`); never in the
+   daily assemble loop. Tests stay hermetic — no fetcher, no network.
+2. **Two labelled MODEL reads, kept distinct** — `insights/activityDetail.ts` maps both shapes
+   defensively (`mapActivityDurability`), the LLM context carries them via `durabilityContextLines`
+   (with an explicit "absent drift is normal" line and a judge-vs-intent caution), and the .FIT stream
+   decoupling stays as the independent cross-check. Fixture tests pin both sport shapes + the
+   pre-rollout `{}` → null.
+3. **Persisted + rendered** — the mapped read is stored on the session-feedback record and the
+   Last-session card shows a compact MODEL-labelled line from the store (no network on render).
+   **Deferred:** switching the multi-week durability-trend row to the new reads — it stays on archived
+   pre-2026-08 history until enough stored reads accumulate to trend honestly; the row's empty state
+   points at the card meanwhile.
+4. Detail consumers pass their flags explicitly; nothing requests `with_time_series_metrics`.
+5. The four new tools are registered (reads in `AIE_READ_TOOLS`; writes gated in `AIE_WRITE_TOOLS`,
+   NOT proposable) — doctor drift clean. `power_is_from_hr` labelling via the id join stays optional;
+   `setActivityFlags` unchanged (gated, unused).
 
 ## Definition of done for the follow-up (whichever case fires)
 

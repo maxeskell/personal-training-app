@@ -20,7 +20,7 @@ export interface AieClientOptions {
   timeoutMs?: number;
 }
 
-/** The AI Endurance tools (14 reads + 9 gated writes), split by side-effect. Writes are gated (M3). */
+/** The AI Endurance tools (16 reads + 11 gated writes), split by side-effect. Writes are gated (M3). */
 export const AIE_READ_TOOLS = [
   "getUser",
   "getAvailability",
@@ -31,6 +31,8 @@ export const AIE_READ_TOOLS = [
   "getCyclingActivityDetail",
   "getRunningActivityDetail",
   "getSwimmingActivityDetail",
+  "getOtherActivity", // added by AIE MCP v1.2.0 (2026-08-25, doctor drift) — strength/other summaries
+  "analyzeActivityStream", // added by AIE MCP v1.2.0 (2026-08-25, doctor drift) — read-only stream analysis
   "getRaceGoalEvent",
   "getPrediction",
   "getRecoveryModel",
@@ -48,6 +50,8 @@ export const AIE_WRITE_TOOLS = [
   "createSwimWorkout",
   "createStrengthOtherWorkout",
   "setActivityFlags", // added by AIE 2026-08 (doctor drift, probe 2026-08-24) — sets per-activity exclude_*/power flags; gated as a write, NOT proposable (verify args before any use)
+  "createRideRunWorkoutByIntensity", // added by AIE MCP v1.2.0 (2026-08-25, doctor drift); gated as a write, NOT proposable (verify args before any use)
+  "changeWorkoutIntensity", // added by AIE MCP v1.2.0 (2026-08-25, doctor drift); gated as a write, NOT proposable (verify args before any use)
 ] as const;
 
 export type AieReadTool = (typeof AIE_READ_TOOLS)[number];
