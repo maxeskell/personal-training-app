@@ -190,6 +190,19 @@
   Mallory still UNBOOKED (entries open autumn 2026 → early 2027; no urgency, book as they open —
   the slim `book-2027-races` profile item tracks this). Do NOT book Outlaw or the Ultimate
   (Ultimate 150/100 are middle = no league points, and it clashes ~1wk before the A).
+  - _Update 2026-09-01 (scheduled 2027-booking check) — PUBLISHED DATES now supersede the
+    provisionals above. **A = On The Edge is Sun 25 JULY 2027, not ~18 Jul** (do3.co.uk) — one week
+    later, which lands it on Outlaw's old 25 Jul weekend, so the 'On The Edge falls a week before
+    Outlaw' half of the drop-Outlaw rationale is void (the already-paid/closer half still stands).
+    Knock-ons: Grafman is now ~7wk out (was ~6), Mallory ~4wk out (was ~3), and the post-A league
+    sprint sits 13 days after the A. **Stratford is Sun 18 Apr** (the ~19 Apr provisional was a
+    Monday) and is now ✅ BOOKED. **The '~1 Aug Birmingham' league sprint is Sat 7 AUG 2027 and has
+    been RENAMED 'West Midlands Triathlon'** — King Edward's, Edgbaston; UK Triathlon runs a
+    SEPARATE 'Birmingham Triathlon' at Sutton Park (2027 TBA), so booking the wrong one is a live
+    trap. Its sprint is 400m / 6k bike / 5k run — league points only, never a fitness read; entry
+    was LIVE with limited spaces on 1 Sep 2026. Alderford, Warwickshire and Mallory 2027 dates all
+    still UNPUBLISHED. League tally 1/4 booked (need ≥3 to place); Max is holding off booking until
+    he can do several at once._
 - **2026-07 — GB age-group pathway RESEARCHED & RECOMMENDED (archived here from profile
   `open_items`, 19 Aug 2026).** NATIONAL pathway (represent GB at Euro/World champs), SEPARATE from
   both the UK Triathlon League AND from Ironman 70.3 Worlds (Max's stated horizon_goal — that is an
@@ -385,6 +398,6 @@
   ~70–90 g/h, bias the bike and ease on the run, multi-transportable carb above ~60 g/h, eat to a clock,
   nothing new on race day, gut-train the rate up in long sessions. Exact grams to be worked out live once
   the question is pinned to a specific race + your pulled weight/products.
-  - _Update 2026-07-03: the A-race is now **On The Edge 70.3** (~18 Jul 2027), not Outlaw — Outlaw was dropped. The
+  - _Update 2026-07-03: the A-race is now **On The Edge 70.3** (Sun 25 Jul 2027 — date confirmed 1 Sep 2026; was pencilled ~18 Jul), not Outlaw — Outlaw was dropped. The
     fuelling framework above is race-agnostic and unchanged; just note On The Edge is a hillier course, so pace the
     bike (and its fuelling) off normalised power, not raw speed._
