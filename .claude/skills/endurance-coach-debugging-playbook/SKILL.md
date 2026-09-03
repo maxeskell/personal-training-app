@@ -147,11 +147,11 @@ The settled root-cause writeup lives in `endurance-coach-failure-archaeology`; d
 
 ## Provenance and maintenance
 
-_Verified against the repo on 2026-07-04 (branch `main`)._ Re-run these to check a fact still holds:
+_Verified against the repo on 2026-09-03 (branch `main`)._ Re-run these to check a fact still holds:
 
-- Test count (730 as of 2026-07-04): `cd /Users/maxeskell/dev/personal-training-app && npm test 2>&1 | tail -5`
+- Test count (874 as of 2026-09-03): `cd /Users/maxeskell/dev/personal-training-app && npm test 2>&1 | tail -5`
 - Runner diagnostic still the canonical one: `grep -n "iTCP:3000" CLAUDE.md`
-- `doctor` behaviour + lines: `sed -n '1093,1131p' src/cli.ts` and `sed -n '30,72p' src/health.ts`
+- `doctor` behaviour + lines: `grep -n "async function cmdDoctor" src/cli.ts` (then read ~50 lines) and `grep -n "export async function fileChecks\|export async function aieHealthProbe" src/health.ts`
 - Structured-output scrubber (strips `maxItems`/`minItems`): `grep -n "maxItems" src/llm/client.ts`
 - Garmin keep-higher FTP guard: `grep -n "keeping the higher\|priorBikeFtp" src/state/assemble.ts`
 - Garmin lactate-speed ×10 guard: `grep -n "10× under-report\|v \*= 10" src/state/assemble.ts`
@@ -160,6 +160,7 @@ _Verified against the repo on 2026-07-04 (branch `main`)._ Re-run these to check
 - Monitoring `validated` bar: `grep -n "validated\|walk-forward\|permutation\|Bonferroni" src/insights/monitoring.ts`
 - Autoupdate dirty-tree fence: `grep -n "local changes present\|git diff --quiet" scripts/autoupdate.sh`
 - Proposal TTL (7 days): `grep -n "PROPOSAL_TTL_DAYS" src/guardrails/writeGate.ts`
-- AIE write-tool set (8 tools, 3 proposable): `sed -n '41,50p' src/mcp/aieClient.ts`
+- AIE write-tool set (11 tools, 3 proposable): `grep -n "AIE_WRITE_TOOLS" -A 13 src/mcp/aieClient.ts`
 - `state` renders `—` for null slots: `grep -n '"—"' src/cli.ts`
 - OAuth is host-only (localhost:8765): `grep -rn "8765" src/ scripts/ HANDOVER.md`
+- Token-loss defences (spec 11): `grep -n "retireTokens\|drainInflight" src/mcp/oauthProvider.ts`, `grep -n "guardedRefresh" src/mcp/aieFetch.ts`, `grep -n "caffeinate" scripts/install-schedule.sh scripts/install-post-swim.sh`
