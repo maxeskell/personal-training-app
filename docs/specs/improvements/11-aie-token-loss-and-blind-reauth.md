@@ -1,7 +1,8 @@
 # 11 — AI Endurance token loss (30 Aug 2026) and the re-auth path that couldn't see it
 
-**Status:** ✓ phase 1 landed 2026-09-03 (this branch) — the recovery command works again and a rejected
-token is retired, never deleted · **Open:** phases 2–4 below · **Opened:** 2026-09-02 · **Owner:** Max
+**Status:** ✓ phase 1 landed 2026-09-03 — the recovery command works again and a rejected token is
+retired, never deleted; ✓ phase 1b same morning — reads bypass the SDK's output-schema check (see below) ·
+**Open:** phases 2–4 below · **Opened:** 2026-09-02 · **Owner:** Max
 
 ## Symptom
 
@@ -57,6 +58,17 @@ Every AI Endurance (AIE) slot in `data/state/2026-09-0{1,2}.json` was null with
   the SSE shim, retire-not-delete + atomic save + audit line, single-flow redirect, probe verdicts. Docs:
   README, `.env.example`, `docs/commands.md`, `docs/data-sources.md` (token lifecycle), HANDOVER, the
   debugging-playbook skill.
+
+## Phase 1b — the read path was broken too (found by the new live-read line, 3 Sep 10:30)
+
+The first `npm run doctor` after re-auth reported `AI Endurance live read ⚠ failed: MCP error -32600: Tool
+getUser has an output schema but did not return structured content`. A probe (raw `tools/list` +
+`tools/call`) showed AI Endurance now declares an `outputSchema` on **all 27 tools** while still answering
+with text-only `content` — and MCP SDK ≥1.30's `Client.callTool()` throws on that combination for every
+tool. With a valid token, every read would still have failed and the state would still have been all-null.
+`AieClient.callOnce` now issues the raw `tools/call` request (`client.request(..., CallToolResultSchema)`),
+which returns the same `content[].text` JSON the app has always parsed (`state/payload.ts extractJson`, which
+prefers `structuredContent` whenever a server sends it, so nothing changes if AIE starts returning it).
 
 ## Still open (the plan; see the 2 Sep review)
 
