@@ -168,3 +168,32 @@ test("aieHealthProbe: connect alone is not health — the verdict comes from an 
   assert.equal(await aieHealthProbe(1000, fake(async () => { throw new Error("AIE tool getUser failed: 503"); })), "unreachable");
   assert.equal(await aieHealthProbe(1000, fake(async () => ({}), async () => { throw new Error("connect timed out"); })), "unreachable");
 });
+
+test("healthNotifyDecision: notify on failure, on a different failure, on recovery, and once a day while still down — not every run", async () => {
+  const { healthNotifyDecision } = await import("../src/health.js");
+  const t = (h: number) => new Date(Date.UTC(2026, 7, 30, h, 0, 0));
+  const fail = { ok: false, detail: "AI Endurance re-auth needed — run `npm run auth:aie` on the host" };
+  const ok = { ok: true, detail: "ok (aie=ok)" };
+  // First failure → notify.
+  const d1 = healthNotifyDecision(null, fail, t(12));
+  assert.equal(d1.notify, true);
+  assert.equal(d1.next.lastOk, false);
+  assert.equal(d1.next.firstFailTs, t(12).toISOString());
+  // Same failure 20 minutes later → silent.
+  const d2 = healthNotifyDecision(d1.next, fail, new Date(t(12).getTime() + 20 * 60_000));
+  assert.equal(d2.notify, false);
+  assert.equal(d2.next.firstFailTs, d1.next.firstFailTs, "the first-failure time is preserved");
+  // A different failure → notify.
+  const d3 = healthNotifyDecision(d2.next, { ok: false, detail: "unreachable (no response / timeout) — the tunnel or the server is down" }, t(13));
+  assert.equal(d3.notify, true);
+  // Same failure a day later → the daily reminder, naming when it started.
+  const d4 = healthNotifyDecision(d3.next, d3.next.lastDetail ? { ok: false, detail: d3.next.lastDetail } : fail, new Date(t(13).getTime() + 24 * 3_600_000));
+  assert.equal(d4.notify, true);
+  assert.match(d4.message, /Still failing since 2026-08-30 12:00/);
+  // Recovery → notify once, then quiet.
+  const d5 = healthNotifyDecision(d4.next, ok, t(15));
+  assert.equal(d5.notify, true);
+  assert.match(d5.message, /Recovered after \d+h/);
+  assert.equal(healthNotifyDecision(d5.next, ok, t(16)).notify, false);
+  assert.equal(healthNotifyDecision(null, ok, t(16)).notify, false, "a healthy first run says nothing");
+});

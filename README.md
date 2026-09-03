@@ -110,6 +110,16 @@ and decisions that travels with the repo.
   gate would never fire on the evening you actually swam. Idempotent on the report itself, so a manual
   `npm run deep-dive` earlier the same day suppresses it rather than paying twice.
   Install with `npm run post-swim:install` (default 19:00; `npm run post-swim:uninstall` to stop).
+- **The scheduled jobs survive a dozing Mac and a bad morning** (spec 11). Both timers run under
+  `caffeinate -is`, so a run that starts inside a 2-second dark wake isn't suspended mid token-refresh — how
+  the AI Endurance token was lost three times in 2026 (re-run `npm run schedule:install` and
+  `npm run post-swim:install` once to pick this up). The ping retries a *transient* connect failure twice
+  (30 s, then 60 s) — never an auth error; a structured LLM call that blows its short wall-clock budget is
+  retried once with the 3× deep-flow budget; a CLI drains an in-flight token refresh before it exits; the
+  refresh itself is a cross-process critical section (one refresher at a time, and a refresh another process
+  already completed is reused rather than re-sent); `health-remote` notifies on *change* plus one daily
+  reminder instead of every 20 minutes (state in `reports/healthcheck-state.json`); and the 30-minute
+  backfill warns when the AI Endurance archive falls behind.
 
 Garmin is **optional** — leave `GARMIN_ENABLED=false` and the coach runs on AI Endurance alone.
 To enable it, run the one-time `garmin-mcp-auth` (see `.env.example`) then set `GARMIN_ENABLED=true`.

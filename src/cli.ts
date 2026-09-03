@@ -49,7 +49,9 @@ import { getForecast } from "./weather/store.js";
 import { assessWeek, latestActuals, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
 
 import { notify } from "./notify.js";
-import { fileChecks, redactSecrets, checkRemoteHealth, garminLiveCheck, garminFreshnessCheck } from "./health.js";
+import { fileChecks, redactSecrets, checkRemoteHealth, garminLiveCheck, garminFreshnessCheck, healthNotifyDecision, type HealthNotifyState } from "./health.js";
+import { retryTransient } from "./util/transient.js";
+import { drainInflight } from "./mcp/oauthProvider.js";
 import open from "open";
 import { assessHealthRisk } from "./guardrails/wellbeing.js";
 import { WriteGate } from "./guardrails/writeGate.js";
@@ -205,10 +207,26 @@ async function cmdHealthRemote(): Promise<void> {
   }
   const result = await checkRemoteHealth(base);
   console.log(`${result.ok ? "✓" : "✗"} remote health (${base}): ${result.detail}`);
-  if (!result.ok) {
-    await notify("Endurance Coach connector", redactSecrets(result.detail)).catch(() => {});
-    process.exit(2);
+  // Notify on CHANGE (fail, a different failure, recovery) plus one daily reminder — not every 20 minutes
+  // (spec 11: ~100 identical alerts in two days, then silence, are indistinguishable from the app's side).
+  const { readFile, writeFile, mkdir } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  const statePath = join(process.cwd(), "reports", "healthcheck-state.json");
+  let prev: HealthNotifyState | null = null;
+  try {
+    prev = JSON.parse(await readFile(statePath, "utf8")) as HealthNotifyState;
+  } catch {
+    /* first run */
   }
+  const decision = healthNotifyDecision(prev, result, new Date());
+  if (decision.notify) await notify("Endurance Coach connector", redactSecrets(decision.message)).catch(() => {});
+  try {
+    await mkdir(join(process.cwd(), "reports"), { recursive: true });
+    await writeFile(statePath, JSON.stringify(decision.next));
+  } catch {
+    /* best-effort marker */
+  }
+  if (!result.ok) process.exit(2);
 }
 
 /** `verify` — exercise every read tool and report per-tool status. */
@@ -413,7 +431,9 @@ async function cmdPing(): Promise<void> {
   }
 
   try {
-    const { state, verdict, risk } = await gatherReadiness();
+    // A transient connect failure (a dark-wake run, Wi-Fi not up yet) gets two more tries; auth errors and
+    // LLM budget aborts do not (spec 11 — eight mornings were lost to one 20 s attempt).
+    const { state, verdict, risk } = await retryTransient(() => gatherReadiness(), { log: (m) => console.warn(`[ping] ${m}`) });
 
     const lines = [
       `# Morning readiness — ${state.date}`,
@@ -1327,7 +1347,10 @@ if (!run) {
   console.log("  (LLM flows need ANTHROPIC_API_KEY)");
   process.exit(1);
 }
-run().catch((err) => {
+run().catch(async (err) => {
   console.error("\nError:", err instanceof Error ? err.message : err);
+  // Let an in-flight token refresh + its save land before exiting (spec 11: exiting mid-refresh with the
+  // rotated token's reply still in flight is how the 30 Aug 2026 token was lost).
+  await drainInflight(15_000).catch(() => {});
   process.exit(1);
 });

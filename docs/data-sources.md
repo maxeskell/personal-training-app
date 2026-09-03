@@ -59,8 +59,17 @@ and Claude Code / Desktop sessions. Nothing coordinates them; this is how it beh
   `outputSchema` on every tool but answers text-only; the SDK's `callTool()` rejects that on every read
   (3 Sep 2026). `extractJson` parses `content[].text` and prefers `structuredContent` when present.
 
-What is *not* solved here (see the plan in spec 11): a lost-reply rotation cannot be recovered client-side
-— only detected and surfaced — so the scheduled jobs that refresh should not run while the Mac is dozing.
+- **Refreshes are serialised and drainable** (`src/mcp/aieFetch.ts`). The transport's fetch takes a
+  cross-process lock (`<secretsDir>/aie-tokens.lock`, proper-lockfile) around a `refresh_token` grant,
+  re-reads the file under the lock and — if another process already rotated the token — answers from disk
+  instead of re-sending a now-dead token; a 400 is logged as `refresh-rejected(<error>)`. The POST and the
+  save behind it are tracked, and a CLI awaits `drainInflight()` before `process.exit`, so a timed-out run
+  no longer abandons a rotation whose reply is still in flight. The scheduled jobs also run under
+  `caffeinate -is` so the Mac can't doze off mid-refresh.
+
+What is *not* solvable client-side: a rotation whose reply is genuinely lost (the connection died) leaves
+a dead refresh token — it is detected (`invalid_grant` → retired file → every surface says so) and fixed by
+`npm run auth:aie`.
 
 ## TrainingPeaks / Strava / others?
 

@@ -78,6 +78,22 @@ export class CoachLLM {
   }
 
   /**
+   * One retry with the long budget after a wall-clock abort (spec 11): five unattended readiness pings died
+   * on the short cap between July and September 2026 and nobody is waiting at 06:00. Only when the first
+   * budget was the short one; the SDK's own 429/5xx retries live inside each attempt.
+   */
+  private async withBudgetRetry<T>(attempt: (ms: number) => Promise<T>, ms: number): Promise<T> {
+    try {
+      return await attempt(ms);
+    } catch (err) {
+      const long = config.coachLlm.longTimeoutMs;
+      if (!shouldRetryWithLongBudget(err, ms, long)) throw err;
+      console.warn(`CoachLLM ${this.operation}: retrying once with the long budget (${long}ms) — ${err instanceof Error ? err.message : String(err)}`);
+      return attempt(long);
+    }
+  }
+
+  /**
    * One-shot structured completion. `schema` is a JSON Schema; the response is parsed and
    * returned as T. The system prompt is cached across calls within the 5-minute TTL.
    */
@@ -97,7 +113,7 @@ export class CoachLLM {
             )
           : n;
     const safeSchema = stripArrayLimits(schema) as Record<string, unknown>;
-    const res = await this.withDeadline((signal) => this.client.messages.create(
+    const attempt = (ms: number) => this.withDeadline((signal) => this.client.messages.create(
       {
         model: this.model,
         max_tokens: 4000,
@@ -112,7 +128,8 @@ export class CoachLLM {
         messages: [{ role: "user", content: userContent }],
       },
       { signal },
-    ), config.coachLlm.structuredTimeoutMs(this.effort));
+    ), ms);
+    const res = await this.withBudgetRetry(attempt, config.coachLlm.structuredTimeoutMs(this.effort));
 
     // Opus 5's safety classifiers can decline a request (HTTP 200, stop_reason "refusal", empty content).
     // Extraordinarily unlikely for endurance coaching, but guard before parsing so it surfaces as a clear,
@@ -211,4 +228,9 @@ export class CoachLLM {
     const { usage, costUsd } = await this.meter(res.usage);
     return { text, cacheRead: usage.cacheRead, costUsd };
   }
+}
+
+/** Pure: retry a structured call once with the long budget only after a wall-clock abort on a SHORTER one. */
+export function shouldRetryWithLongBudget(err: unknown, usedMs: number, longMs: number): boolean {
+  return err instanceof Error && /wall-clock budget/.test(err.message) && usedMs < longMs;
 }
