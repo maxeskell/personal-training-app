@@ -6,7 +6,7 @@ import { extractJson, garminInner } from "../state/assemble.js";
 import { scanKeys, firstObjectArray, listCoverage } from "../util/keyScan.js";
 import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate } from "../archive/backfill.js";
 import { syncFitSummaries } from "../archive/fitSync.js";
-import { recoverGaps } from "../archive/recover.js";
+import { recoverGaps, DEFAULT_RECOVER_STALE_DAYS } from "../archive/recover.js";
 import { activityArchiveDir, importDir, archiveSummary } from "../archive/activityArchive.js";
 import { backfillGarminFits } from "../archive/activityArchiveBackfill.js";
 
@@ -367,6 +367,13 @@ async function printArchiveStatus(store: ArchiveStore): Promise<void> {
   const s = await store.summary();
   console.log(`\nArchive (${config.dataDir}/archive/):`);
   console.log(`  AIE activities:    ${s.activities} (${s.actRange})`);
+  // The 30-minute Garmin grind prints this line 48× a day — make it a lag monitor too (spec 11: the AIE
+  // archive sat at 28 Aug for six days in plain sight while every run said nothing).
+  const aieNewest = /(\d{4}-\d{2}-\d{2})\s*$/.exec(String(s.actRange ?? ""))?.[1];
+  const lagDays = aieNewest ? Math.round((Date.parse(todayIso()) - Date.parse(aieNewest)) / 86_400_000) : null;
+  if (lagDays != null && lagDays > DEFAULT_RECOVER_STALE_DAYS) {
+    console.log(`  ⚠ AI Endurance activities are ${lagDays}d behind — run \`npm run catch-up\`; if it keeps lagging, \`npm run doctor\` → "AI Endurance live read"`);
+  }
   console.log(`  Garmin activities: ${s.garminActivities} (${s.garActRange})`);
   console.log(`  Garmin daily:      ${s.garminDays} days (${s.garRange})`);
 }

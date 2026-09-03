@@ -38,6 +38,30 @@ export interface FileOAuthClientProviderOptions {
   log?: (line: string) => void;
 }
 
+/**
+ * In-flight token work the process must not exit under — a refresh POST (tracked by aieFetch) and the save
+ * that follows it. A CLI awaits `drainInflight()` before `process.exit` (spec 11: the 06:00 ping's exit
+ * mid-refresh, with the rotated token's reply still in flight, is how the 30 Aug 2026 token was lost).
+ */
+const inflight = new Set<Promise<unknown>>();
+export function trackInflight<T>(p: Promise<T>): Promise<T> {
+  inflight.add(p);
+  p.finally(() => inflight.delete(p)).catch(() => {});
+  return p;
+}
+/** Wait (bounded) for in-flight token work to settle. Resolves immediately when there is none. */
+export async function drainInflight(maxMs = 15_000): Promise<void> {
+  if (!inflight.size) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    Promise.allSettled([...inflight]),
+    new Promise<void>((r) => {
+      timer = setTimeout(r, maxMs);
+    }),
+  ]);
+  if (timer) clearTimeout(timer);
+}
+
 /** Basename prefix of a retired token file (see invalidateCredentials). */
 export const RETIRED_TOKENS_PREFIX = "aie-tokens.revoked-";
 
@@ -118,12 +142,21 @@ export class FileOAuthClientProvider implements OAuthClientProvider {
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
+    return trackInflight(this.saveTokensNow(tokens));
+  }
+
+  private async saveTokensNow(tokens: OAuthTokens): Promise<void> {
     await this.ensureDir();
     // Atomic: write beside, then rename over. `saved_at` is ours (the SDK strips unknown keys on its side).
     const tmp = `${this.tokensPath}.${process.pid}.tmp`;
     await writeFile(tmp, JSON.stringify({ ...tokens, saved_at: new Date().toISOString() }, null, 2), { mode: 0o600 });
     await rename(tmp, this.tokensPath);
     this.event("saved", tokens);
+  }
+
+  /** Public audit hook for the refresh guard (aieFetch): same line format, same no-secrets rule. */
+  note(eventName: string, tokens?: OAuthTokens): void {
+    this.event(eventName, tokens);
   }
 
   async saveCodeVerifier(verifier: string): Promise<void> {

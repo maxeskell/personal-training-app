@@ -104,7 +104,7 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 |---|---|
 | `npm run mcp` | expose the coach over MCP (stdio) for Claude Desktop / Claude Code — see [docs/mcp-server.md](mcp-server.md) |
 | `npm run mcp:http` | …or over HTTP (localhost + auth) for Claude Cowork via an HTTPS tunnel |
-| `npm run health-remote` | probe the public tunnel `/health` and alert if the connector is down/needs re-auth |
+| `npm run health-remote` | probe the public tunnel `/health?deep=1` (an authenticated AI Endurance read) and notify on a *change* — down, a different failure, recovery — plus one daily reminder while it stays down (state in `reports/healthcheck-state.json`), never every run |
 
 ## Hands-free automation (macOS launchd; prints a Linux cron/systemd equivalent)
 | Command | What it does |

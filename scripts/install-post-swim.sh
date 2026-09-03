@@ -26,6 +26,8 @@ fi
 
 mkdir -p "$HOME/Library/LaunchAgents" "$PROJECT/reports"
 
+# Runs under `caffeinate -is` so the Mac can't doze off mid-run (see install-schedule.sh / spec 11).
+
 cat > "$PLIST" <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -34,6 +36,7 @@ cat > "$PLIST" <<PLIST_EOF
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
   <array>
+    <string>/usr/bin/caffeinate</string><string>-is</string>
     <string>/bin/bash</string><string>-lc</string>
     <string>cd "$PROJECT" &amp;&amp; "$NPM_BIN" run fit-sync ; "$NPM_BIN" run post-swim</string>
   </array>

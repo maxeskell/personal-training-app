@@ -26,6 +26,10 @@ fi
 
 mkdir -p "$HOME/Library/LaunchAgents" "$PROJECT/reports"
 
+# The ping runs under `caffeinate -is`: a 06:00 run that launches inside a 2-second macOS "dark wake" and is
+# suspended mid token-refresh is how the AI Endurance token was lost three times in 2026 (spec 11).
+# -i holds off idle sleep, -s system sleep (honoured on AC power).
+
 cat > "$PLIST" <<PLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -34,6 +38,8 @@ cat > "$PLIST" <<PLIST_EOF
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
   <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-is</string>
     <string>$NPM_BIN</string>
     <string>run</string>
     <string>ping</string>
@@ -58,7 +64,7 @@ PLIST_EOF
 launchctl unload "$PLIST" 2>/dev/null || true
 launchctl load "$PLIST"
 
-printf '\nInstalled %s — runs `npm run ping` daily at %02d:%02d (and at login, to recover a day the Mac was off).\n' "$LABEL" "$HOUR" "$MINUTE"
+printf '\nInstalled %s — runs `npm run ping` daily at %02d:%02d under caffeinate (and at login, to recover a day the Mac was off).\n' "$LABEL" "$HOUR" "$MINUTE"
 echo "Logs: $PROJECT/reports/ping.log"
 echo "Reads ANTHROPIC_API_KEY + Garmin/AIE creds from the project .env / ~/.endurance-coach / ~/.garminconnect."
 echo "Uninstall: bash scripts/uninstall-schedule.sh"

@@ -5,9 +5,10 @@ import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { config } from "../config.js";
 import { redactSecrets } from "../util/redact.js";
 import { retry, RetryableHttpError, looksLikeRetryableHttp } from "../util/retry.js";
-import { FileOAuthClientProvider, ReauthRequiredError } from "./oauthProvider.js";
+import { FileOAuthClientProvider, ReauthRequiredError, drainInflight } from "./oauthProvider.js";
+import { aieFetch, withoutSseGet } from "./aieFetch.js";
 
-export { ReauthRequiredError, UnauthorizedError };
+export { ReauthRequiredError, UnauthorizedError, withoutSseGet };
 
 export interface AieClientOptions {
   /**
@@ -59,25 +60,6 @@ export type AieReadTool = (typeof AIE_READ_TOOLS)[number];
 export type AieWriteTool = (typeof AIE_WRITE_TOOLS)[number];
 
 const WRITE_SET = new Set<string>(AIE_WRITE_TOOLS);
-
-/**
- * The SDK opens a GET event-stream right after `initialize` (server → client notifications, which nothing
- * here consumes) and, when THAT request 401s, starts a second OAuth authorization in the background. In the
- * interactive `auth` flow that meant a second browser tab and a second PKCE verifier racing the real one;
- * headless it is a wasted discovery round-trip + verifier rewrite on every connect. AI Endurance answers the
- * GET with 401 (verified 2026-09-02), so answer it locally with the 405 the SDK treats as "no event stream
- * offered", and pass every other request (tool calls, discovery, the token endpoint) straight through.
- */
-export function withoutSseGet(serverUrl: string, base: typeof fetch = fetch): typeof fetch {
-  return (input, init) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-    const accept = new Headers(init?.headers).get("accept") ?? "";
-    if ((init?.method ?? "GET").toUpperCase() === "GET" && url === serverUrl && accept.includes("text/event-stream")) {
-      return Promise.resolve(new Response(null, { status: 405, statusText: "Method Not Allowed" }));
-    }
-    return base(input, init);
-  };
-}
 
 /**
  * Thin, auth-aware client for the AI Endurance remote MCP server.
@@ -144,7 +126,7 @@ export class AieClient {
     );
     this.transport = new StreamableHTTPClientTransport(new URL(config.aie.serverUrl), {
       authProvider: this.auth,
-      fetch: withoutSseGet(config.aie.serverUrl),
+      fetch: aieFetch(this.auth, config.aie.serverUrl), // SSE-GET shim + locked, drainable refresh (spec 11)
     });
     await this.withTimeout(this.client.connect(this.transport), label);
   }
@@ -247,6 +229,8 @@ export class AieClient {
   }
 
   async close(): Promise<void> {
+    // A refresh (and the save behind it) may still be in flight when a flow finishes — let it land.
+    await drainInflight(10_000).catch(() => {});
     await this.transport?.close().catch(() => {});
     this.client = undefined;
     this.transport = undefined;

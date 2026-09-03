@@ -85,10 +85,16 @@ prefers `structuredContent` whenever a server sends it, so nothing changes if AI
   `npm run weekly:brief -- <sunday>` regenerates a week. `recoverGaps` reports `reauth_needed`, honours the
   caller's threshold, and the ping always logs the catch-up outcome. Post-swim says "cannot confirm today's
   sessions (Garmin saw …)" during an outage. Not done here: healthcheck notification dedup (phase 3).
-- **Phase 3 — stop the sleep-split refresh.** Wrap the scheduled jobs in `caffeinate -i` and/or schedule a
-  real wake (`pmset repeat wakeorpoweron … 05:58`), let the CLI drain an in-flight refresh before exiting,
-  and give the token endpoint POST its own abort/timeout. Verify rotation empirically from the audit lines
-  after re-auth (fingerprint changes per save ⇒ rotation confirmed).
+- ✓ **Phase 3 — the sleep-split refresh is fenced (landed 2026-09-03).** Both timers run under
+  `caffeinate -is` (`scripts/install-schedule.sh`, `install-post-swim.sh`); the ping retries a transient
+  connect failure twice (`src/util/transient.ts`, never an auth error); `CoachLLM.structured` retries once
+  with the 3× budget after a wall-clock abort; `src/mcp/aieFetch.ts` serialises the refresh grant under a
+  proper-lockfile lock, re-reads the file and reuses a rotation another process completed, logs a 400 as
+  `refresh-rejected(<error>)`, and tracks the POST + save so `drainInflight()` (awaited by `AieClient.close`
+  and the CLI's exit path) lets them land; `health-remote` dedups notifications
+  (`healthNotifyDecision`, state in `reports/healthcheck-state.json`); the backfill warns when the AIE
+  archive lags. Not done: a scheduled real wake (`pmset repeat`) — needs sudo, and caffeinate covers the
+  observed failure. Still to observe: whether the `[aie-oauth]` fingerprints change per save (rotation).
 - **Phase 4 — regenerate what was written blind.** After re-auth: `npm run catch-up`; re-assemble
   2026-09-0{1,2}; regenerate the 2026-08-24 weekly brief (its `bySportMin {}` / `ctl null` snapshot is now the
   baseline for the next week-over-week delta); let the sync backfill session readouts for the 30 Aug, 31 Aug

@@ -249,8 +249,10 @@ fire-only health check), `npm run backfill:install` (history grind).
   the dashboard outage banner + honest header/Today/Last-session text, an MCP `get_state` OFFLINE cue, a
   ping heartbeat that records degraded/reauth/failed (`coach/pingHeartbeat.ts`, shown by `doctor`), the
   weekly brief deferring on an outage (and `weekly:brief -- <sunday>` to regenerate one), `catch-up`
-  naming a re-auth, and post-swim saying "cannot confirm" instead of "no swim". Still open (spec 11):
-  keeping the Mac awake for the scheduled jobs and draining an in-flight refresh before a CLI exits.
+  naming a re-auth, and post-swim saying "cannot confirm" instead of "no swim". Phase 3 (same day): caffeinate-wrapped timers, a ping connect retry, a one-shot long-budget LLM
+  retry, drain-before-exit, a locked / deduplicated refresh (`mcp/aieFetch.ts`), healthcheck notification
+  dedup, and a backfill lag warning. Nothing from spec 11 remains open except watching the `[aie-oauth]`
+  fingerprints over the coming days to confirm the refresh token really rotates.
 - **AIE's DFA-α1 fields are opt-in since 2026-08; per-session durability comes from the Detail tools.**
   The "durability for all workouts" update moved the a1 fields behind a `with_dfa_alpha1: true` request
   flag on the list tools — assemble + backfill pass it (2026-08-25), so aerobic-threshold values flow

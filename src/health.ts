@@ -251,3 +251,50 @@ export async function checkRemoteHealth(
 // error paths can use it without importing health.ts (which imports aieClient → would be a cycle).
 // Re-exported here so existing importers keep working.
 export { redactSecrets } from "./util/redact.js";
+
+// --- Healthcheck notification dedup (spec 11) ---------------------------------------------------------
+//
+// cmdHealthRemote used to notify on EVERY failing run — ~100 identical banners in two days during the
+// 30 Aug 2026 outage, then silence when the probe went blind — which the app couldn't tell apart from zero
+// banners. Notify on change (fail, a different failure, recovery) plus one daily reminder while still down.
+
+export interface HealthNotifyState {
+  lastOk: boolean;
+  lastDetail: string;
+  firstFailTs?: string;
+  lastNotifiedTs?: string;
+  lastOkTs?: string;
+}
+
+export const HEALTH_REMIND_MS = 24 * 3_600_000;
+
+/** Pure: given the previous state and this run's verdict, whether to notify, what to say, and the next state. */
+export function healthNotifyDecision(
+  prev: HealthNotifyState | null,
+  result: RemoteHealthResult,
+  now: Date,
+  remindMs: number = HEALTH_REMIND_MS,
+): { notify: boolean; message: string; next: HealthNotifyState } {
+  const ts = now.toISOString();
+  if (result.ok) {
+    const recovered = prev ? !prev.lastOk : false;
+    const hours = prev?.firstFailTs ? Math.round((now.getTime() - new Date(prev.firstFailTs).getTime()) / 3_600_000) : null;
+    return {
+      notify: recovered,
+      message: recovered ? `Recovered${hours != null ? ` after ${hours}h` : ""} — ${result.detail}` : "",
+      next: { lastOk: true, lastDetail: result.detail, lastOkTs: ts },
+    };
+  }
+  const stillDown = !!prev && !prev.lastOk;
+  const firstFailTs = stillDown ? (prev!.firstFailTs ?? ts) : ts;
+  const changed = !stillDown || prev!.lastDetail !== result.detail;
+  const lastNotified = stillDown ? prev!.lastNotifiedTs : undefined;
+  const reminderDue = !lastNotified || now.getTime() - new Date(lastNotified).getTime() >= remindMs;
+  const notify = changed || reminderDue;
+  const message = changed ? result.detail : `Still failing since ${firstFailTs.slice(0, 16).replace("T", " ")} — ${result.detail}`;
+  return {
+    notify,
+    message,
+    next: { lastOk: false, lastDetail: result.detail, firstFailTs, lastNotifiedTs: notify ? ts : lastNotified, lastOkTs: prev?.lastOkTs },
+  };
+}
