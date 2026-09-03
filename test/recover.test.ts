@@ -69,3 +69,13 @@ test("recoverGaps with an all-current archive recovers nothing and opens no conn
   assert.equal(aie?.status, "current");
   assert.match(rec.summary, /nothing to recover/i);
 });
+
+test("summarizeRecovery: a re-auth failure is named (not 'unreachable — will retry') and honours the caller's staleDays", async () => {
+  const { summarizeRecovery } = await import("../src/archive/recover.js");
+  const reauth = summarizeRecovery([{ source: "AIE activities", gapDays: 4, added: 0, status: "reauth_needed", note: "token missing" }], 2);
+  assert.equal(reauth.stillStale, true);
+  assert.match(reauth.summary, /re-authorisation.*auth:aie/);
+  // The same 4-day gap under a 7-day threshold is not "still stale" — the threshold used to be ignored.
+  assert.equal(summarizeRecovery([{ source: "AIE activities", gapDays: 4, added: 0, status: "unreachable" }], 7).stillStale, false);
+  assert.match(summarizeRecovery([{ source: "AIE activities", gapDays: 0, added: 0, status: "current" }]).summary, /nothing to recover/);
+});

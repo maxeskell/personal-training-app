@@ -916,6 +916,17 @@ token the server rejects on refresh is **retired** to `~/.endurance-coach/aie-to
 (never deleted) with one `[aie-oauth]` audit line in the job's log; see
 [docs/data-sources.md → "AI Endurance token lifecycle"](docs/data-sources.md#ai-endurance-token-lifecycle).
 
+**When AI Endurance is down, the app says so** (spec 11). Every assemble records per-source health on the
+snapshot (`state.sources.aie`: ok / degraded / down, the failed tools, whether re-auth is needed, and the
+last *good* sync time carried forward). While the spine is down the dashboard shows a red banner at the top
+with the fix, the header reads "Snapshot assembled … · AI Endurance offline — last synced …" instead of
+"Data last updated", Today says "plan unknown" rather than "rest day", the Last-session line says how old it
+is and lists what Garmin has already delivered, the Set-up card carries a "Reconnect AI Endurance" item, MCP
+`get_state` prefixes an OFFLINE warning, the morning ping records a *degraded / reauth_needed / failed*
+heartbeat that `doctor` reports, the Sunday brief defers rather than freezing an empty week, and `catch-up`
+names a re-auth (not "unreachable — will retry"). To regenerate a week's brief after an outage:
+`npm run weekly:brief -- <that Sunday>` (move its `data/weekly-brief/<monday>.json` aside first).
+
 **Tools exposed** (read-first; the write path stays gated):
 
 | Tool | What it does | Cost |

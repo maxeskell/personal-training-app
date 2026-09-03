@@ -318,3 +318,13 @@ test("weeklyBulletRequest: carries the bullet verbatim and invites the smallest 
   assert.match(req, /changeWorkoutAdvice/); // invites a coaching-note edit for non-structural cues
   assert.match(req, /propose nothing/i); // degrade path for un-bindable bullets
 });
+
+test("snapshotUsable: an empty week (no sport minutes, null CTL) is a data outage, not a week off — never frozen", async () => {
+  const { snapshotUsable } = await import("../src/coach/weeklyBriefStore.js");
+  const empty = { weekStart: "2026-08-24", capturedAt: "2026-09-01T05:01:54Z", bySportMin: {}, ctl: null, tsb: null, adherencePct: {} } as unknown as Parameters<typeof snapshotUsable>[0];
+  assert.equal(snapshotUsable(empty), false);
+  const real = { ...empty, bySportMin: { Ride: 279, Swim: 44 }, ctl: 49.4 } as unknown as Parameters<typeof snapshotUsable>[0];
+  assert.equal(snapshotUsable(real), true);
+  const restWeekWithCtl = { ...empty, ctl: 41.2 } as unknown as Parameters<typeof snapshotUsable>[0];
+  assert.equal(snapshotUsable(restWeekWithCtl), true, "a genuine rest week still has a CTL");
+});

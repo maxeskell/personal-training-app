@@ -5,6 +5,7 @@ import { loadDashboardToken, isAuthorized, hostAllowed, parseAllowedHosts, COOKI
 import { AieClient } from "./mcp/aieClient.js";
 import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
+import { aieOutage } from "./state/sourceHealth.js";
 import { selectDataSource } from "./sources/index.js";
 import { DecisionLog, suppressedInsightKeys, reactionFromLabel, latestCoachDiscussions } from "./state/decisionLog.js";
 import { InsightLog } from "./state/insightLog.js";
@@ -102,6 +103,7 @@ async function renderLatest(share = false): Promise<string> {
       <h2>No data yet</h2><p>Run <code>npm run ping</code> (or hit <a href="/refresh">/refresh</a>) to assemble your first state.</p></body>`;
   }
   const latest = window[window.length - 1];
+  const outage = aieOutage(latest); // spec 11: sync age + the Set-up nudge key on the last GOOD AIE sync
   const log = new DecisionLog();
   const decisions = await log.all();
   const reactionState = await log.insightReactions();
@@ -230,7 +232,8 @@ async function renderLatest(share = false): Promise<string> {
     setupHealth: {
       hasApiKey: CoachLLM.hasApiKey(),
       waterTempSet: water?.tempC != null,
-      lastSyncAgeHours: (Date.now() - new Date(latest.assembledAt).getTime()) / 3_600_000,
+      lastSyncAgeHours: (Date.now() - new Date(outage.down && outage.since ? outage.since : latest.assembledAt).getTime()) / 3_600_000,
+      aieOutage: outage.down ? { since: outage.since, reauthNeeded: outage.reauthNeeded } : undefined,
     },
   });
 }

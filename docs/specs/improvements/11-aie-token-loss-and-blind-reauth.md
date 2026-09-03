@@ -72,13 +72,19 @@ prefers `structuredContent` whenever a server sends it, so nothing changes if AI
 
 ## Still open (the plan; see the 2 Sep review)
 
-- **Phase 2 — make the outage visible on every surface.** A per-source health block on `AthleteState`
-  (`sources.aie = { ok, error, lastGoodAt }`) computed in `assembleState`; a top-of-page dashboard banner
-  ("AI Endurance disconnected since <lastGoodAt> — run …") and honest Today/Last-session text when the plan
-  and activities are unknown (not "rest day"); `Data last updated` split into assembled / AIE synced / Garmin
-  synced; the MCP `get_state` stale warning keyed on source health, not the date; the ping records a
-  *degraded* heartbeat (doctor shows it) when every AIE read failed; `recoverGaps` treats an unreachable AIE
-  as stalled regardless of gap size; healthcheck notifications deduped (on change + one daily reminder).
+- ✓ **Phase 2 — the outage is visible on every surface (landed 2026-09-03).** `state.sources.aie`
+  (`src/state/sourceHealth.ts`: status ok/degraded/down, failed tools, reauthNeeded, `lastGoodAt` carried
+  forward through an outage; `aieOutage()` also reads legacy snapshots from their raw errors) is computed in
+  `assembleState`. Dashboard: red `role="alert"` banner with the fix (no host path in share view), header
+  "Snapshot assembled … · AI Endurance offline — last synced …", Today "plan unknown" instead of "rest day",
+  Last-session staleness note + "Synced from Garmin, awaiting AI Endurance" lines from the .FIT summaries,
+  Set-up card "Reconnect AI Endurance" item keyed on source health (sync age now = last GOOD sync). MCP
+  `summarizeState` prefixes an OFFLINE cue. Ping heartbeat `{status: ok|degraded|reauth_needed|failed}`
+  (`src/coach/pingHeartbeat.ts`), doctor's Morning-ping line reports it, a failed morning may be rescued by
+  a login re-run. Weekly brief defers on an outage; `persistWeeklyBriefIfAbsent` refuses an empty snapshot;
+  `npm run weekly:brief -- <sunday>` regenerates a week. `recoverGaps` reports `reauth_needed`, honours the
+  caller's threshold, and the ping always logs the catch-up outcome. Post-swim says "cannot confirm today's
+  sessions (Garmin saw …)" during an outage. Not done here: healthcheck notification dedup (phase 3).
 - **Phase 3 — stop the sleep-split refresh.** Wrap the scheduled jobs in `caffeinate -i` and/or schedule a
   real wake (`pmset repeat wakeorpoweron … 05:58`), let the CLI drain an in-flight refresh before exiting,
   and give the token endpoint POST its own abort/timeout. Verify rotation empirically from the audit lines

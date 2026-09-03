@@ -14,6 +14,7 @@ import { reportStreamsDir, ingestFitFile, formatStreamsReport, formatIngest } fr
 import { diagnoseFtp, formatFtpDiagnosis } from "./insights/ftpSource.js";
 import { richActivities, findingKey } from "./insights/metrics.js";
 import { StateStore } from "./state/store.js";
+import { aieOutage } from "./state/sourceHealth.js";
 import { buildInsights } from "./insights/engine.js";
 import { DecisionLog, suppressedInsightKeys, executedSourceKeys, latestCoachDiscussions, reactionFromLabel, type DecisionRecord } from "./state/decisionLog.js";
 import { buildSetupItems } from "./coach/setupCard.js";
@@ -104,6 +105,12 @@ export function summarizeState(state: AthleteState, today: string = todayIso()):
     daysOld > 0
       ? [`⚠ STALE SNAPSHOT: assembled ${state.assembledAt} — ${daysOld} day${daysOld === 1 ? "" : "s"} before today (${today}). Run \`sync\` (or get_state fresh=true) to refresh.`, ""]
       : [];
+  // Outage cue (spec 11): an all-null AIE snapshot assembled TODAY passed the date check above and was
+  // handed to coaching chats as fresh. Say loudly that the spine was down and the numbers are missing.
+  const outage = aieOutage(state);
+  const outageCue = outage.down
+    ? [`⚠ AI ENDURANCE OFFLINE in this snapshot: every AIE read failed${outage.reauthNeeded ? " (re-authorisation needed — run `npm run auth:aie` on the host)" : ` (${outage.failedTools.join(", ") || "all tools"})`}; last good sync ${outage.since ?? "unknown"}. Plan, load, recovery and nutrition below are MISSING, not zero — do not coach from them. Fix the connection, then run \`sync\`.`, ""]
+    : [];
   // thresholds is a structured field, so spell out the headline markers (FTP, run threshold pace, swim CSS,
   // max HR) explicitly rather than a bare "set" — these are exactly the numbers a coach needs at a glance.
   const tv = state.thresholds.value;
@@ -121,6 +128,7 @@ export function summarizeState(state: AthleteState, today: string = todayIso()):
   const thresholdLine = `  ${"thresholds (ftp/pace)".padEnd(22)} ${thrBits || "—"} [${state.thresholds.source}${state.thresholds.note ? `: ${state.thresholds.note}` : ""}]`;
   return [
     ...staleCue,
+    ...outageCue,
     `AthleteState for ${state.date} (assembled ${state.assembledAt}):`,
     L("planned sessions", state.plannedSessions),
     L("actual activities", state.actualActivities),
@@ -444,7 +452,8 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
         setupHealth: {
           hasApiKey: CoachLLM.hasApiKey(),
           waterTempSet: latestReading(await loadVenue())?.tempC != null,
-          lastSyncAgeHours: (Date.now() - new Date(state.assembledAt).getTime()) / 3_600_000,
+          lastSyncAgeHours: ((o) => (Date.now() - new Date(o.down && o.since ? o.since : state.assembledAt).getTime()) / 3_600_000)(aieOutage(state)),
+          aieOutage: ((o) => (o.down ? { since: o.since, reauthNeeded: o.reauthNeeded } : undefined))(aieOutage(state)),
         },
         liveThresholds: state.thresholds.value ?? undefined,
       });
