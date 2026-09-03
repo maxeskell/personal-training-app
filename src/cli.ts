@@ -1,4 +1,4 @@
-import { AieClient, AIE_READ_TOOLS, AIE_WRITE_TOOLS } from "./mcp/aieClient.js";
+import { AieClient, AIE_READ_TOOLS, AIE_WRITE_TOOLS, ReauthRequiredError } from "./mcp/aieClient.js";
 import { GarminClient } from "./mcp/garminClient.js";
 import { StateStore } from "./state/store.js";
 import { selectDataSource } from "./sources/index.js";
@@ -174,15 +174,21 @@ async function maybeSeasonNudge(state: AthleteState): Promise<void> {
  *  opts into the browser dance; every other context fails fast with a re-auth error instead of hanging. */
 async function cmdAuth(): Promise<void> {
   await withAie(async (aie) => {
+    // "Connected" proves nothing: AI Endurance serves `initialize` + `tools/list` WITHOUT a token and only
+    // 401s a tool call (verified 2026-09-02) — so this used to print success and write no token. One
+    // authenticated read is the test; if it 401s the browser dance runs HERE (the only interactive flow)
+    // and the read is repeated with the fresh token before anything is reported.
+    await aie.ensureAuthorized();
+    console.log("\n✓ AI Endurance authorized — an authenticated read (getUser) succeeded.");
     const tools = await aie.listToolNames();
-    console.log(`\n✓ Connected to AI Endurance — ${tools.length} tools exposed.`);
+    console.log(`  ${tools.length} tools exposed.`);
     const expected = new Set<string>([...AIE_READ_TOOLS, ...AIE_WRITE_TOOLS]);
     const missing = [...expected].filter((t) => !tools.includes(t));
     const extra = tools.filter((t) => !expected.has(t));
     if (missing.length) console.warn(`⚠ expected-but-absent (API drift?): ${missing.join(", ")}`);
     if (extra.length) console.log(`  new/unknown tools: ${extra.join(", ")}`);
     if (!missing.length && !extra.length) console.log("  tool set matches the expected 20. ✓");
-    console.log(`\nTokens cached in ${config.secretsDir} — future runs are non-interactive until expiry.`);
+    console.log(`\nTokens cached in ${config.secretsDir}/aie-tokens.json — future runs are non-interactive until the token is rejected (then re-run this).`);
   }, { interactive: true });
 }
 
@@ -1159,6 +1165,18 @@ async function cmdDoctor(): Promise<void> {
       if (missing.length) checks.push({ name: "AIE tool set", status: "warn", detail: `expected-but-absent: ${missing.join(", ")}` });
       else if (extra.length) checks.push({ name: "AIE tool set", status: "info", detail: `new/unknown tools: ${extra.join(", ")}` });
       else checks.push({ name: "AIE tool set", status: "ok", detail: `all ${tools.length} expected tools present` });
+      // The token-age line can't see a present-but-revoked token, and neither can connect()/tools-list —
+      // AI Endurance serves both without a token (verified 2026-09-02). One real read is the honest check.
+      try {
+        await aie.read("getUser");
+        checks.push({ name: "AI Endurance live read", status: "ok", detail: "getUser answered — the cached token works" });
+      } catch (e) {
+        checks.push(
+          e instanceof ReauthRequiredError
+            ? { name: "AI Endurance live read", status: "fail", detail: "re-auth needed (token missing or rejected) — run `npm run auth:aie`" }
+            : { name: "AI Endurance live read", status: "warn", detail: `failed: ${e instanceof Error ? e.message : String(e)}` },
+        );
+      }
     });
   } catch (e) {
     checks.push({ name: "AIE connection", status: "warn", detail: `could not reach AI Endurance: ${e instanceof Error ? e.message : String(e)}` });

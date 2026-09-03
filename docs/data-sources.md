@@ -30,6 +30,34 @@ The primary assembly path — `buildTodayState()` (orchestrator) and `npm run st
 path; it's routed through the seam in Phase 3b, alongside the first non-AIE adapter, because its
 degrade-on-connect-fail + Garmin fit-sync + weather refresh hold the open clients.)*
 
+## AI Endurance token lifecycle
+
+One OAuth token file, `~/.endurance-coach/aie-tokens.json` (0600), is shared by **every** process that
+talks to AI Endurance: the dashboard and MCP services, the 06:00 ping, the 19:00 post-swim job, CLI runs
+and Claude Code / Desktop sessions. Nothing coordinates them; this is how it behaves, learnt the hard way
+(the 30 Aug 2026 outage — [spec 11](specs/improvements/11-aie-token-loss-and-blind-reauth.md)):
+
+- **Refresh happens only on a 401**, by whichever process hits it first (the MCP SDK has no proactive
+  expiry check). AI Endurance answers `initialize` and `tools/list` **without** a token; only a tool call
+  is refused. So a bare connect never exercises the token — every "is auth OK?" check in this repo
+  (`auth:aie`, `doctor`, `/health?deep=1`) makes one real read (`getUser`) instead.
+- **The refresh token rotates on every use** (MODEL: AI Endurance's token endpoint is
+  Django-OAuth-Toolkit-shaped, whose default is rotate-with-no-grace; the `[aie-oauth] … refresh=<fingerprint>`
+  audit lines in the job logs let you verify it — a changing fingerprint on each save means rotation).
+  A refresh whose reply is lost — a short-lived job suspended by sleep mid-request, then timed out and
+  exited — leaves a dead refresh token on disk; the next refresh anywhere gets `invalid_grant`.
+- **On `invalid_grant` the SDK asks the provider to invalidate the tokens.** The provider **retires** the
+  file to `aie-tokens.revoked-<time>.json` (never `rm`s it) and logs `event=invalidated(tokens)`; the live
+  path is gone, so every headless caller fails fast with `ReauthRequiredError` until a human runs
+  `cd /Users/maxeskell/dev/personal-training-app && npm run auth:aie`. `doctor` lists retired copies.
+- **Saves are atomic** (tmp + rename) and carry `saved_at`; the audit line never contains a token value.
+- **One browser authorization at a time.** The SDK can start a second one mid-dance (it did, from its
+  background event-stream GET — now answered locally with a 405); the provider reuses the listener and
+  keeps the first PKCE verifier so the open tab's code still exchanges.
+
+What is *not* solved here (see the plan in spec 11): a lost-reply rotation cannot be recovered client-side
+— only detected and surfaced — so the scheduled jobs that refresh should not run while the Mac is dozing.
+
 ## TrainingPeaks / Strava / others?
 
 **TrainingPeaks and Strava aren't direct spines here.** TrainingPeaks has **no self-serve personal API**

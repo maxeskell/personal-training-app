@@ -895,9 +895,11 @@ curl https://<tunnel>/health?deep=1     # also probes AI Endurance →  "aie":"o
 ```
 
 That `aie` field is the tell: it separates *the tunnel/server being down* from *AI Endurance needing
-re-auth* — the exact ambiguity that otherwise looks like "the whole connector died." To catch trouble
-**before** Claude does, schedule the check so it alerts you (macOS notification) on a down tunnel or an
-expired token:
+re-auth* — the exact ambiguity that otherwise looks like "the whole connector died." The deep probe makes
+**one authenticated read** (`getUser`): a bare connect proves nothing, because AI Endurance answers
+`initialize` and `tools/list` without a token — a connect-only probe stayed green for ~30 h of the 30 Aug
+2026 outage. To catch trouble **before** Claude does, schedule the check so it alerts you (macOS
+notification) on a down tunnel or a token the server no longer accepts:
 
 ```bash
 cd /path/to/personal-training-app && npm run health-remote                       # one-shot probe of COACH_MCP_PUBLIC_URL
@@ -907,7 +909,12 @@ cd /path/to/personal-training-app && npm run healthcheck:install -- https://<tun
 **Re-auth is now explicit and never hangs.** Only `npm run auth:aie` opens the browser to (re)authorize
 AI Endurance. Every other context — the MCP/dashboard server, cron, Cowork — runs **non-interactively**:
 a missing/expired token fails *fast* with `run npm run auth:aie`, instead of opening a browser nobody can
-see and blocking for minutes (which used to surface in Cowork as a mystery timeout).
+see and blocking for minutes (which used to surface in Cowork as a mystery timeout). `auth:aie` reports
+success **only after an authenticated read succeeds** — that read is what opens the browser when the token
+is missing or rejected — and `npm run doctor` runs the same read as its "AI Endurance live read" line. A
+token the server rejects on refresh is **retired** to `~/.endurance-coach/aie-tokens.revoked-<time>.json`
+(never deleted) with one `[aie-oauth]` audit line in the job's log; see
+[docs/data-sources.md → "AI Endurance token lifecycle"](docs/data-sources.md#ai-endurance-token-lifecycle).
 
 **Tools exposed** (read-first; the write path stays gated):
 

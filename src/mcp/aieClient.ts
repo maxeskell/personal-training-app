@@ -6,7 +6,7 @@ import { redactSecrets } from "../util/redact.js";
 import { retry, RetryableHttpError, looksLikeRetryableHttp } from "../util/retry.js";
 import { FileOAuthClientProvider, ReauthRequiredError } from "./oauthProvider.js";
 
-export { ReauthRequiredError };
+export { ReauthRequiredError, UnauthorizedError };
 
 export interface AieClientOptions {
   /**
@@ -60,6 +60,25 @@ export type AieWriteTool = (typeof AIE_WRITE_TOOLS)[number];
 const WRITE_SET = new Set<string>(AIE_WRITE_TOOLS);
 
 /**
+ * The SDK opens a GET event-stream right after `initialize` (server → client notifications, which nothing
+ * here consumes) and, when THAT request 401s, starts a second OAuth authorization in the background. In the
+ * interactive `auth` flow that meant a second browser tab and a second PKCE verifier racing the real one;
+ * headless it is a wasted discovery round-trip + verifier rewrite on every connect. AI Endurance answers the
+ * GET with 401 (verified 2026-09-02), so answer it locally with the 405 the SDK treats as "no event stream
+ * offered", and pass every other request (tool calls, discovery, the token endpoint) straight through.
+ */
+export function withoutSseGet(serverUrl: string, base: typeof fetch = fetch): typeof fetch {
+  return (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const accept = new Headers(init?.headers).get("accept") ?? "";
+    if ((init?.method ?? "GET").toUpperCase() === "GET" && url === serverUrl && accept.includes("text/event-stream")) {
+      return Promise.resolve(new Response(null, { status: 405, statusText: "Method Not Allowed" }));
+    }
+    return base(input, init);
+  };
+}
+
+/**
  * Thin, auth-aware client for the AI Endurance remote MCP server.
  *
  * Required spine: every read flows through here. Connects over Streamable HTTP
@@ -72,6 +91,9 @@ export class AieClient {
   private readonly interactive: boolean;
   private readonly timeoutMs: number;
   private readonly auth: FileOAuthClientProvider;
+  /** Set once a call on this connection needed re-auth: later calls fail fast instead of repeating the
+   *  SDK's discovery + authorization attempt (and a verifier rewrite) per tool — 16× per assemble. */
+  private reauthSeen = false;
 
   constructor(opts: AieClientOptions = {}) {
     this.interactive = opts.interactive ?? false;
@@ -81,31 +103,58 @@ export class AieClient {
 
   /** Connect, running the interactive OAuth dance only when explicitly allowed (the `auth` flow). */
   async connect(): Promise<void> {
-    this.client = new Client(
-      { name: "endurance-coach", version: "0.1.0" },
-      { capabilities: {} },
-    );
-    this.transport = new StreamableHTTPClientTransport(new URL(config.aie.serverUrl), {
-      authProvider: this.auth,
-    });
-
     try {
-      await this.withTimeout(this.client.connect(this.transport), "connect");
+      await this.open("connect");
     } catch (err) {
       // Non-interactive provider already refused the browser dance — surface it as-is (fast + clean).
       if (err instanceof ReauthRequiredError) throw err;
       if (!(err instanceof UnauthorizedError)) throw err;
       // Token missing/expired. A headless context must never wait on a browser that can't appear.
       if (!this.interactive) throw new ReauthRequiredError();
-      // Interactive CLI (`auth`): the provider opened the browser + loopback. Wait for the human — that
-      // 5-minute wait is intentional and NOT bounded by timeoutMs — then reconnect with the fresh token.
-      const code = await this.auth.waitForCode();
-      await this.transport.finishAuth(code);
-      this.transport = new StreamableHTTPClientTransport(new URL(config.aie.serverUrl), {
-        authProvider: this.auth,
-      });
-      await this.withTimeout(this.client.connect(this.transport), "reconnect");
+      // Interactive CLI (`auth`): the provider opened the browser + loopback. Wait for the human.
+      await this.completeInteractiveAuth();
     }
+  }
+
+  /**
+   * Prove the token actually works with ONE cheap authenticated read. connect() proves nothing: AI Endurance
+   * answers `initialize` and `tools/list` without a token (verified 2026-09-02) and only 401s a tool call —
+   * which is how `auth:aie` could print "connected" while writing no token at all. Interactive (the `auth`
+   * flow): a 401 here opens the browser; this waits for the human, exchanges the code, reconnects and repeats
+   * the read — only that second read counts as authorized. Headless: the ReauthRequiredError surfaces as-is.
+   */
+  async ensureAuthorized(): Promise<void> {
+    try {
+      await this.read("getUser");
+    } catch (err) {
+      if (!(err instanceof UnauthorizedError)) throw err; // ReauthRequiredError (headless) and everything else
+      if (!this.interactive) throw new ReauthRequiredError();
+      await this.completeInteractiveAuth();
+      await this.read("getUser");
+    }
+  }
+
+  /** A fresh SDK Client + transport, connected within the timeout. Overridable in tests (no network). */
+  protected async open(label: "connect" | "reconnect"): Promise<void> {
+    this.reauthSeen = false;
+    this.client = new Client(
+      { name: "endurance-coach", version: "0.1.0" },
+      { capabilities: {} },
+    );
+    this.transport = new StreamableHTTPClientTransport(new URL(config.aie.serverUrl), {
+      authProvider: this.auth,
+      fetch: withoutSseGet(config.aie.serverUrl),
+    });
+    await this.withTimeout(this.client.connect(this.transport), label);
+  }
+
+  /** The human half of the interactive dance: wait for the browser redirect (5 minutes — deliberately NOT
+   *  bounded by timeoutMs), exchange the code for tokens, then reconnect so the session carries them. */
+  private async completeInteractiveAuth(): Promise<void> {
+    const code = await this.auth.waitForCode();
+    await this.requireTransport().finishAuth(code);
+    await this.transport?.close().catch(() => {});
+    await this.open("reconnect");
   }
 
   /** Bound a connect attempt so a hung network call can't stall a flow (mirrors GarminClient). */
@@ -150,6 +199,7 @@ export class AieClient {
     if (isWrite && !opts.allowWrite) {
       throw new Error(`${tool} is a write tool; AI Endurance writes must go through the write gate (callRaw direct-write guard).`);
     }
+    if (this.reauthSeen) throw new ReauthRequiredError();
     // A write is fired exactly once — never retried (a re-issued create/change could double-fire). Reads
     // are idempotent, so a transient 429/5xx is retried with bounded jitter (COACH_RETRY_ATTEMPTS).
     if (isWrite) return this.callOnce(tool, args);
@@ -169,7 +219,11 @@ export class AieClient {
       )) as { isError?: boolean; content?: Array<{ text?: string }> };
     } catch (err) {
       // Auth failures are not transient — surface them as-is so the caller re-auths (never retry/wrap).
-      if (err instanceof ReauthRequiredError || err instanceof UnauthorizedError) throw err;
+      if (err instanceof ReauthRequiredError) {
+        this.reauthSeen = true;
+        throw err;
+      }
+      if (err instanceof UnauthorizedError) throw err;
       // Redact before the error detail reaches MCP output / logs, then flag transient 429/5xx as retryable.
       const msg = redactSecrets(err instanceof Error ? err.message : String(err));
       if (looksLikeRetryableHttp(msg)) throw new RetryableHttpError(`AIE tool ${tool} failed: ${msg}`);
@@ -194,5 +248,10 @@ export class AieClient {
   private require(): Client {
     if (!this.client) throw new Error("AieClient not connected — call connect() first.");
     return this.client;
+  }
+
+  private requireTransport(): StreamableHTTPClientTransport {
+    if (!this.transport) throw new Error("AieClient not connected — call connect() first.");
+    return this.transport;
   }
 }
