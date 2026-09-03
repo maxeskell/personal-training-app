@@ -55,6 +55,10 @@ and Claude Code / Desktop sessions. Nothing coordinates them; this is how it beh
   background event-stream GET — now answered locally with a 405); the provider reuses the listener and
   keeps the first PKCE verifier so the open tab's code still exchanges.
 
+- **Reads are the raw `tools/call` request, not `Client.callTool()`.** AI Endurance declares an
+  `outputSchema` on every tool but answers text-only; the SDK's `callTool()` rejects that on every read
+  (3 Sep 2026). `extractJson` parses `content[].text` and prefers `structuredContent` when present.
+
 What is *not* solved here (see the plan in spec 11): a lost-reply rotation cannot be recovered client-side
 — only detected and surfaced — so the scheduled jobs that refresh should not run while the Mac is dozing.
 

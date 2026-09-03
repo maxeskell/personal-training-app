@@ -243,7 +243,9 @@ fire-only health check), `npm run backfill:install` (history grind).
   `initialize` unauthenticated. Landed 2026-09-03: retire-not-delete + audit line + atomic save in
   `src/mcp/oauthProvider.ts`; `AieClient.ensureAuthorized()` (a real read, used by `auth:aie`, `doctor`
   and `/health?deep=1`); the SDK's background SSE GET answered 405 locally so it can't start a second auth
-  flow. Still open (plan in [spec 11](docs/specs/improvements/11-aie-token-loss-and-blind-reauth.md)): the
+  flow; and — found by that live read the next morning — AIE now declares an `outputSchema` on every tool
+  while answering text-only, which SDK ≥1.30's `callTool()` rejects, so reads go through the raw
+  `tools/call` request (`aieClient.ts callOnce`). Still open (plan in [spec 11](docs/specs/improvements/11-aie-token-loss-and-blind-reauth.md)): the
   dashboard outage banner, the "ping succeeded on empty data" heartbeat, keeping the Mac awake for the
   scheduled jobs, and regenerating the artefacts written blind.
 - **AIE's DFA-α1 fields are opt-in since 2026-08; per-session durability comes from the Detail tools.**

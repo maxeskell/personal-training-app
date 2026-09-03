@@ -33,9 +33,10 @@ test("read() refuses a write tool before the network — the gate is the only wr
  */
 function rig(aie: AieClient, parts: { callTool: (n: number) => Promise<unknown>; code?: string }) {
   let calls = 0;
-  const seen = { finishAuthCode: undefined as string | undefined, reopened: 0 };
+  const seen = { finishAuthCode: undefined as string | undefined, reopened: 0, requests: [] as unknown[] };
   const a = aie as unknown as Record<string, unknown>;
-  a.client = { callTool: () => parts.callTool(++calls) };
+  // The client issues the RAW tools/call request (not Client.callTool) — see the callOnce comment.
+  a.client = { request: (req: unknown) => { seen.requests.push(req); return parts.callTool(++calls); } };
   a.transport = { finishAuth: async (c: string) => { seen.finishAuthCode = c; }, close: async () => {} };
   a.auth = { waitForCode: async () => parts.code ?? "code-1" };
   a.open = async () => { seen.reopened += 1; }; // a real open() would hit the network; keep the fake client
@@ -73,6 +74,20 @@ test("ensureAuthorized (interactive): a read that already works is enough — no
   assert.equal(r.seen.finishAuthCode, undefined);
   assert.equal(r.seen.reopened, 0);
   assert.equal(r.calls(), 1);
+});
+
+test("read() issues a raw tools/call and returns a text-only result even when the tool declares an outputSchema", async () => {
+  // Since ~1 Sep 2026 AIE declares an outputSchema on every tool but answers text-only; Client.callTool()
+  // would throw "did not return structured content" on every read. The raw request must not.
+  const aie = new AieClient({ interactive: false });
+  const r = rig(aie, { callTool: async () => ({ content: [{ type: "text", text: "{\"user_type\":\"Triathlete\"}" }], isError: false }) });
+  const res = (await aie.read("getUser")) as { content: Array<{ text: string }> };
+  assert.equal(res.content[0].text, "{\"user_type\":\"Triathlete\"}");
+  assert.deepEqual(r.seen.requests[0], { method: "tools/call", params: { name: "getUser", arguments: {} } });
+  // An MCP-level tool error (isError) is still surfaced as a throw, never parsed as data.
+  const bad = new AieClient({ interactive: false });
+  rig(bad, { callTool: async () => ({ content: [{ type: "text", text: "boom" }], isError: true }) });
+  await assert.rejects(() => bad.read("getUser"), /returned an error: boom/);
 });
 
 test("withoutSseGet: only the SDK's event-stream GET to the MCP url is answered 405 locally; all else passes through", async () => {

@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
+import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { config } from "../config.js";
 import { redactSecrets } from "../util/redact.js";
 import { retry, RetryableHttpError, looksLikeRetryableHttp } from "../util/retry.js";
@@ -206,15 +207,21 @@ export class AieClient {
     return retry(() => this.callOnce(tool, args), { attempts: config.retry.attempts });
   }
 
-  /** A single bounded, redacted tool call. Wraps the SDK callTool in the per-tool timeout and classifies
-   *  transient HTTP failures as retryable so callRaw's read path can recover from a blip. */
+  /** A single bounded, redacted tool call. Wraps the raw `tools/call` request in the per-tool timeout and
+   *  classifies transient HTTP failures as retryable so callRaw's read path can recover from a blip. */
   private async callOnce(tool: string, args: Record<string, unknown>): Promise<unknown> {
     let res: { isError?: boolean; content?: Array<{ text?: string }> };
     try {
       // Per-tool timeout: connect was already bounded; an individual tool call must be too, or a hung
       // upstream call after connect stalls every read/flow/confirm indefinitely.
+      //
+      // Raw request, NOT Client.callTool(): since ~1 Sep 2026 AI Endurance declares an `outputSchema` on
+      // every tool but still answers with text-only content, and SDK ≥1.30's callTool then throws
+      // "has an output schema but did not return structured content" on EVERY read — a total outage even
+      // with a valid token. The JSON in `content[].text` is what this app has always parsed
+      // (state/payload.ts extractJson, which also prefers structuredContent when a server sends it).
       res = (await this.withTimeout(
-        this.require().callTool({ name: tool, arguments: args }),
+        this.require().request({ method: "tools/call", params: { name: tool, arguments: args } }, CallToolResultSchema),
         `tool ${tool}`,
       )) as { isError?: boolean; content?: Array<{ text?: string }> };
     } catch (err) {
