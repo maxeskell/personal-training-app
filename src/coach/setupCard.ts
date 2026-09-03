@@ -475,7 +475,7 @@ export interface SetupOptions {
   /** Latest research digest (date + file + parsed items) for the "Worth considering" group (drops when stale). */
   researchDigest?: { date: string; file: string; items: ResearchTopic[] };
   /** Tool/integration health signals (computed in the IO layer) → operational "Finish setup" nudges. */
-  setupHealth?: { lastSyncAgeHours?: number; hasApiKey?: boolean; waterTempSet?: boolean };
+  setupHealth?: { lastSyncAgeHours?: number; hasApiKey?: boolean; waterTempSet?: boolean; aieOutage?: { since: string | null; reauthNeeded: boolean } };
   /**
    * Today's live, synced thresholds — used to AUTO-RESOLVE a Finish-setup gap the data already satisfies
    * (a synced swim CSS clears the swim-CSS task), so a value set in AI Endurance picks up on the next sync
@@ -531,6 +531,11 @@ export function buildSetupItems(profile: Profile | undefined, opts: SetupOptions
   const h = opts.setupHealth;
   if (h?.hasApiKey === false) {
     items.push({ key: setupKey("health", "apikey"), label: "Add your ANTHROPIC_API_KEY", why: "unlocks the AI write-ups — readiness, weekly, ask and session feedback", source: "health", group: "finish_setup", route: "in your setup", action: "Add `ANTHROPIC_API_KEY=sk-ant-…` to your .env, then redeploy with `npm run update`. The dashboard, zones and health checks already work without it; this turns on the AI write-ups (readiness, weekly, ask, session feedback).", priority: SETUP_PRIORITY.health });
+  }
+  if (h?.aieOutage) {
+    // The spine is down RIGHT NOW (spec 11) — keyed on source health, not on how old the snapshot is.
+    const o = h.aieOutage;
+    items.push({ key: setupKey("health", "aie"), label: o.reauthNeeded ? "Reconnect AI Endurance" : "AI Endurance reads are failing", why: `nothing has synced since ${o.since ? o.since.slice(0, 16).replace("T", " ") : "an unknown time"} — plan, load and recovery are stale`, source: "health", group: "finish_setup", route: "in your setup", action: o.reauthNeeded ? "On the Mac: `cd <repo> && npm run auth:aie` (opens the browser; prints ✓ authorized only after a real read succeeds), then hit ↻ Sync." : "Hit ↻ Sync; if it keeps failing, run `npm run doctor` and read the “AI Endurance live read” line.", priority: SETUP_PRIORITY.health });
   }
   if (h?.lastSyncAgeHours != null && h.lastSyncAgeHours >= 72) {
     items.push({ key: setupKey("health", "sync"), label: "Sync your training data", why: `last synced ${Math.round(h.lastSyncAgeHours / 24)}d ago — the cards are reading stale data`, source: "health", group: "finish_setup", route: "in your setup", action: "Hit ↻ Sync at the top of the dashboard (it also auto-syncs when the snapshot goes stale). If it keeps failing, refresh your AI Endurance / Garmin auth with `npm run auth:aie`.", priority: SETUP_PRIORITY.health });

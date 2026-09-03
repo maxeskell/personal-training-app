@@ -4,6 +4,8 @@
  * tell a real signal from a black-box tiebreak or a degraded/absent source.
  */
 
+import type { SourcesHealth } from "./sourceHealth.js";
+
 // The stable athlete profile (profile.local.yaml). Aliased `ProfileDoc` to avoid colliding with the
 // getUser-derived `AthleteProfile` identity slot below. Type-only import — no runtime coupling.
 import type { Profile as ProfileDoc } from "../profile/schema.js";
@@ -258,6 +260,10 @@ export interface AthleteState {
   thresholdsBySource?: Partial<Record<Source, DisciplineThresholds>>;
 
   syncGaps: SyncGap[];
+  /** Per-source health of THIS assemble (spec 11): whether the AI Endurance spine answered, which reads
+   *  failed, whether re-auth is needed, and the newest good sync time (carried forward through an outage).
+   *  Absent on snapshots written before 2026-09-03 — consumers use `aieOutage()`, which handles both. */
+  sources?: SourcesHealth;
   readinessVerdict: ReadinessVerdict;
   readinessWhy: string;
   decisions: Decision[];

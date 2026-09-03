@@ -2,6 +2,7 @@ import { config } from "../config.js";
 import { todayIso } from "../util/today.js";
 import { ArchiveStore } from "./store.js";
 import { GarminClient } from "../mcp/garminClient.js";
+import { ReauthRequiredError } from "../mcp/aieClient.js";
 import { withAie } from "../coach/orchestrator.js";
 import { backfillActivities, backfillGarminActivities, backfillGarmin } from "./backfill.js";
 import { syncFitSummaries } from "./fitSync.js";
@@ -53,7 +54,7 @@ export function planGapRecovery(
   return { stale: true, gapDays, from };
 }
 
-export type SourceStatus = "recovered" | "current" | "unreachable" | "disabled" | "error";
+export type SourceStatus = "recovered" | "current" | "unreachable" | "reauth_needed" | "disabled" | "error";
 
 export interface SourceRecovery {
   source: string;
@@ -106,21 +107,23 @@ export async function recoverGaps(opts: {
       const added = await withAie((aie) => backfillActivities(aie, store, aiePlan.from!, today, log));
       sources.push({ source: "AIE activities", gapDays: aiePlan.gapDays, added, status: "recovered" });
     } catch (e) {
-      sources.push({ source: "AIE activities", gapDays: aiePlan.gapDays, added: 0, status: "unreachable", note: reason(e) });
+      // A missing/rejected token is not a transient blip (spec 11): name it, so the ping's notification and
+      // the doctor say "re-auth" rather than "unreachable — will retry".
+      sources.push({ source: "AIE activities", gapDays: aiePlan.gapDays, added: 0, status: e instanceof ReauthRequiredError ? "reauth_needed" : "unreachable", note: reason(e) });
     }
   }
 
   // --- Garmin (optional, degradable) — one connection covers both the daily series and activities/streams. ---
   if (!config.garmin.enabled) {
     sources.push({ source: "Garmin", gapDays: 0, added: 0, status: "disabled" });
-    return finalize(sources);
+    return summarizeRecovery(sources, staleDays);
   }
   const gDailyPlan = planGapRecovery(newestDate(await store.loadGarminDays()), today, staleDays);
   const gActPlan = planGapRecovery(newestDate(await store.loadGarminActivities()), today, staleDays);
   if (!gDailyPlan.stale && !gActPlan.stale) {
     sources.push({ source: "Garmin daily", gapDays: gDailyPlan.gapDays, added: 0, status: "current" });
     sources.push({ source: "Garmin activities+streams", gapDays: gActPlan.gapDays, added: 0, status: "current" });
-    return finalize(sources);
+    return summarizeRecovery(sources, staleDays);
   }
 
   const g = new GarminClient();
@@ -128,7 +131,7 @@ export async function recoverGaps(opts: {
     if (!(await g.connect())) {
       const gapDays = Math.max(gDailyPlan.gapDays, gActPlan.gapDays);
       sources.push({ source: "Garmin", gapDays, added: 0, status: "unreachable", note: g.lastError ?? "connect failed" });
-      return finalize(sources);
+      return summarizeRecovery(sources, staleDays);
     }
     // Activities list + raw streams: size the stream-sync window to the gap so a long outage is covered in
     // one pass, not incrementally over many archive-heal runs. Clamped to a sane [25, 200].
@@ -157,23 +160,29 @@ export async function recoverGaps(opts: {
   } finally {
     await g.close();
   }
-  return finalize(sources);
+  return summarizeRecovery(sources, staleDays);
 }
 
 function reason(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-function finalize(sources: SourceRecovery[]): GapRecoveryResult {
+/** Pure: collapse per-source outcomes into the result + one-line summary. `staleDays` is the caller's
+ *  threshold (it used to silently use the default, so a custom threshold never changed `stillStale`). */
+export function summarizeRecovery(sources: SourceRecovery[], staleDays: number = DEFAULT_RECOVER_STALE_DAYS): GapRecoveryResult {
   const recovered = sources.filter((s) => s.status === "recovered");
-  const stillStale = sources.some((s) => (s.status === "unreachable" || s.status === "error") && s.gapDays > DEFAULT_RECOVER_STALE_DAYS);
+  const failing = (s: SourceRecovery) => s.status === "unreachable" || s.status === "error" || s.status === "reauth_needed";
+  const stillStale = sources.some((s) => failing(s) && s.gapDays > staleDays);
+  const reauth = sources.find((s) => s.status === "reauth_needed");
   const summary = recovered.length
     ? "Recovered " +
       recovered
         .map((s) => `${s.source} +${s.added}${s.streams != null ? ` (+${s.streams} streams)` : ""} over ${s.gapDays}d`)
         .join("; ")
-    : sources.some((s) => s.status === "unreachable" || s.status === "error")
-      ? "Gap detected but source unreachable — will retry next run."
-      : "All sources current — nothing to recover.";
+    : reauth
+      ? `AI Endurance needs re-authorisation (\`npm run auth:aie\` on the host) — ${reauth.source} ${reauth.gapDays}d behind.`
+      : sources.some(failing)
+        ? "Gap detected but source unreachable — will retry next run."
+        : "All sources current — nothing to recover.";
   return { ran: recovered.length > 0, stillStale, sources, summary };
 }

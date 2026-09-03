@@ -3,6 +3,7 @@ import type { GarminClient } from "../mcp/garminClient.js";
 import { StateStore } from "./store.js";
 import { applyBaselines, computeBaselines } from "./baselines.js";
 import { detectSyncGaps } from "./syncGaps.js";
+import { judgeAieReads, carryLastGoodAt } from "./sourceHealth.js";
 import {
   emptyState,
   type ActualActivity,
@@ -83,6 +84,15 @@ export async function assembleState(
       raw[tool] = { error: err instanceof Error ? err.message : String(err) };
     }
   }
+
+  // Per-source health (spec 11): did the spine answer? A carried `lastGoodAt` lets every surface say
+  // "AI Endurance last synced <when>" instead of passing an all-null assemble off as fresh data.
+  const aieJudged = judgeAieReads(raw, AIE_STATE_READS.map(([t]) => t));
+  const priorForCarry = aieJudged.status === "down" ? await store.recent(opts.date, 14).catch(() => [] as AthleteState[]) : [];
+  state.sources = {
+    aie: { ...aieJudged, lastGoodAt: carryLastGoodAt(aieJudged.status, opts.assembledAt, priorForCarry) },
+    garmin: { enabled: !!garmin, ok: false }, // flipped below once Garmin data lands
+  };
 
   // --- Best-effort mapping into typed slots (null where unrecognised) ---
   mapRecovery(state, raw.getRecoveryModel);
@@ -212,6 +222,7 @@ export async function assembleState(
   // platform still reports the value you rejected, use yours instead. Last word, after all source mapping.
   applyMetricOverrides(state, await loadMetricOverrides());
 
+  if (state.sources) state.sources.garmin.ok = raw.garmin != null;
   state.raw = raw;
   return state;
 }

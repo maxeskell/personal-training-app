@@ -1392,3 +1392,38 @@ test("API cost is no longer shown on the dashboard (decluttered — it lives in 
   // `npm run cost` / the MCP `cost` tool. The dashboard never renders a cost card.
   assert.ok(!renderDashboard({ window: [s], decisions: [] }).includes("API cost"));
 });
+
+// ── Outage honesty (spec 11) ─────────────────────────────────────────────────────────────────────────────
+const REAUTH_MSG = "AI Endurance authorization is missing or expired — run `npm run auth:aie` on the host to re-authorize.";
+
+test("renderAieOutageBanner: a snapshot whose AIE reads all failed gets a banner with the re-auth command; a healthy one gets none", async () => {
+  const { renderAieOutageBanner } = await import("../src/coach/dashboard.js");
+  const s = emptyState("2026-09-02", "2026-09-02T19:56:00Z");
+  assert.equal(renderAieOutageBanner(s, false), "", "no raw → no banner");
+  s.raw = { getUser: { error: REAUTH_MSG }, getPlannedWorkouts: { error: REAUTH_MSG }, garmin: {} };
+  const html = renderAieOutageBanner(s, false);
+  assert.match(html, /AI Endurance disconnected/);
+  assert.match(html, /npm run auth:aie/);
+  assert.match(html, /role="alert"/);
+  const shared = renderAieOutageBanner(s, true);
+  assert.match(shared, /re-authorising on the host/);
+  assert.doesNotMatch(shared, /npm run auth:aie/, "share view never shows the host command");
+  // With a carried lastGoodAt the banner names the time.
+  s.sources = { aie: { status: "down", ok: false, failedTools: ["getUser"], reauthNeeded: false, lastGoodAt: "2026-08-29T18:00:00Z" }, garmin: { enabled: true, ok: true } };
+  assert.match(renderAieOutageBanner(s, false), /since <b>/);
+  assert.match(renderAieOutageBanner(s, false), /Reads are failing \(getUser\)/);
+});
+
+test("garminOnlyLines: lists .FIT summaries newer than the last readout, escaped, capped at five", async () => {
+  const { garminOnlyLines } = await import("../src/coach/dashboard.js");
+  const fs = [
+    { activityId: "1", date: "2026-08-28", sport: "Ride", durationS: 1800 },
+    { activityId: "2", date: "2026-09-02", sport: "Ride", durationS: 5520, avgPowerW: 171.4, avgHr: 141 },
+    { activityId: "3", date: "2026-08-30", sport: "Ride<script>", durationS: 4620 },
+  ];
+  const html = garminOnlyLines(fs, "2026-08-29");
+  assert.doesNotMatch(html, /08-28/, "older than the last readout is not 'pending'");
+  assert.match(html, /09-02 Ride — 1h 32m · 171 W avg · 141 bpm avg/);
+  assert.match(html, /Ride&lt;script&gt;/, "sport is escaped");
+  assert.equal(garminOnlyLines([], null), "");
+});

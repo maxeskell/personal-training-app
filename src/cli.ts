@@ -25,7 +25,7 @@ import { renderDashboard } from "./coach/dashboard.js";
 import { buildBriefSnapshot, type BriefSnapshot } from "./coach/dailyBrief.js";
 import { loadPriorBrief, persistBriefIfAbsent } from "./coach/briefStore.js";
 import { buildWeeklySnapshot, diffWeeklySnapshots, mondayOf } from "./coach/weeklyBrief.js";
-import { weeklyBriefDue, weeklyReviewDates, postSwimDue, deepDiveDates } from "./coach/scheduleGates.js";
+import { weeklyBriefDue, weeklyReviewDates, postSwimDue, deepDiveDates, WEEKLY_CATCHUP_DAYS } from "./coach/scheduleGates.js";
 import { persistWeeklyBriefIfAbsent, loadRecentWeeklyBriefs } from "./coach/weeklyBriefStore.js";
 import { draftWeeklyProposals, weeklyProposer } from "./coach/weeklyProposals.js";
 import { latestWeeklyReview, latestResearchDigest, latestSeasonNarrative, latestWeeklyReviewProse } from "./coach/setupSources.js";
@@ -63,6 +63,8 @@ import { runSeasonNarrative } from "./coach/seasonNarrative.js";
 import { loadCareerHistory } from "./coach/careerHistory.js";
 import { helpText } from "./help.js";
 import type { AthleteState } from "./state/types.js";
+import { aieOutage } from "./state/sourceHealth.js";
+import { pingStatusFor, parsePingRecord, pingHeartbeatCheck, type PingRecord } from "./coach/pingHeartbeat.js";
 
 /** `setup` — guided wizard that writes .env (key, units, location, Garmin). See src/setup.ts. */
 async function cmdSetup(): Promise<void> {
@@ -117,20 +119,20 @@ async function pingMarkerPath(): Promise<string> {
   const { join } = await import("node:path");
   return join(process.cwd(), "reports", "last-ping.json");
 }
-async function lastPingOk(): Promise<{ date: string; ts: string } | null> {
+async function lastPing(): Promise<PingRecord | null> {
   try {
     const { readFile } = await import("node:fs/promises");
-    const j = JSON.parse(await readFile(await pingMarkerPath(), "utf8"));
-    return j && typeof j.date === "string" && typeof j.ts === "string" ? j : null;
+    return parsePingRecord(JSON.parse(await readFile(await pingMarkerPath(), "utf8")));
   } catch {
     return null;
   }
 }
-async function recordPingSuccess(date: string): Promise<void> {
+/** Write the heartbeat WITH what the ping ran on (spec 11) — a blind run is recorded as degraded, not ok. */
+async function recordPing(rec: Omit<PingRecord, "ts">): Promise<void> {
   const { mkdir, writeFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
   await mkdir(join(process.cwd(), "reports"), { recursive: true });
-  await writeFile(await pingMarkerPath(), JSON.stringify({ date, ts: new Date().toISOString() }));
+  await writeFile(await pingMarkerPath(), JSON.stringify({ ...rec, ts: new Date().toISOString() }));
 }
 
 /** reports/ marker for the LAST quarterly season-review nudge — keeps the cadence from re-firing daily. */
@@ -403,8 +405,9 @@ async function cmdPing(): Promise<void> {
   if (!requireLLM()) process.exit(1);
   const force = process.argv.includes("--force");
   // Idempotent (ENG-3): a launchd wake or accidental double-fire must not re-notify or re-spend.
-  const prior = await lastPingOk();
-  if (!force && prior && prior.date === todayIso()) {
+  const prior = await lastPing();
+  // A FAILED morning may be rescued by a login re-run (RunAtLoad); an ok/degraded one must not re-spend.
+  if (!force && prior && prior.date === todayIso() && prior.status !== "failed") {
     console.log(`\nMorning ping already ran today (${prior.date}). Use --force to re-run.`);
     return;
   }
@@ -428,7 +431,11 @@ async function cmdPing(): Promise<void> {
     printReadiness(verdict, risk);
     const note = verdict.why.length > 180 ? verdict.why.slice(0, 177) + "…" : verdict.why;
     await notify(`Readiness: ${verdict.verdict.toUpperCase()}`, note);
-    await recordPingSuccess(state.date); // heartbeat for the doctor check
+    // Heartbeat for the doctor check — honest about what it ran on: an all-null AI Endurance assemble is
+    // NOT a success (the 1 Sep 2026 ping was GREEN on Garmin trend alone with every AIE read failed).
+    const hb = pingStatusFor(state);
+    await recordPing({ date: state.date, status: hb.status, failedTools: hb.failedTools.length ? hb.failedTools : undefined });
+    if (hb.status !== "ok") console.warn(`⚠ ping ran with AI Endurance ${hb.status === "reauth_needed" ? "needing re-auth" : "reads failing"} (${hb.failedTools.join(", ")}) — the verdict rests on partial data`);
     // Auto-heal after an outage: readiness still renders on AIE alone, so a broken sync (a crashed Garmin
     // subprocess, an expired token, days offline) is otherwise invisible for weeks. Measure how far each
     // source has fallen behind and, now that it's reachable again, download the missing span. Best-effort —
@@ -436,11 +443,12 @@ async function cmdPing(): Promise<void> {
     // still unreachable with a real gap), so a normal day stays silent.
     try {
       const rec = await recoverGaps({ log: (m) => console.log(`[catch-up] ${m}`) });
+      console.log(`[catch-up] ${rec.summary}`); // always — a silent "stalled" branch hid the 30 Aug 2026 outage
+      for (const s of rec.sources) if (s.status !== "current" && s.status !== "disabled") console.log(`[catch-up]   ${s.source}: ${s.status} (${s.gapDays}d behind)${s.note ? ` — ${s.note}` : ""}`);
       if (rec.ran) {
-        console.log(`[catch-up] ${rec.summary}`);
         await notify("Data gap recovered", rec.summary).catch(() => {});
       } else if (rec.stillStale) {
-        const stuck = rec.sources.filter((s) => s.status === "unreachable" || s.status === "error");
+        const stuck = rec.sources.filter((s) => s.status === "unreachable" || s.status === "error" || s.status === "reauth_needed");
         await notify("Data sync stalled", stuck.map((s) => `${s.source} ${s.gapDays}d behind${s.note ? ` (${s.note})` : ""}`).join("; ")).catch(() => {});
       }
     } catch (e) {
@@ -467,6 +475,7 @@ async function cmdPing(): Promise<void> {
     // signal it broke. Notify with a redacted reason, then re-throw to keep the non-zero exit + log line.
     const reason = redactSecrets(err instanceof Error ? err.message : String(err));
     await notify("Readiness unavailable", reason.slice(0, 180)).catch(() => {});
+    await recordPing({ date: todayIso(), status: "failed", reason: reason.slice(0, 200) }).catch(() => {}); // doctor shows it
     throw err;
   }
 }
@@ -500,7 +509,9 @@ async function cmdDeepDive(): Promise<void> {
  */
 async function cmdPostSwim(): Promise<void> {
   const { state, window } = await buildTodayState();
-  const decision = postSwimDue(state.date, state.actualActivities.value ?? [], await deepDiveDates());
+  const outage = aieOutage(state);
+  const garminSwamToday = outage.down ? (await new ArchiveStore().loadFitSummaries()).some((f) => f.date === state.date && f.sport === "Swim") : undefined;
+  const decision = postSwimDue(state.date, state.actualActivities.value ?? [], await deepDiveDates(), { aieDown: outage.down, garminSwamToday });
   if (!decision.due) {
     console.log(`\n✓ post-swim: nothing to do — ${decision.reason}.`);
     return;
@@ -909,6 +920,13 @@ async function cmdWeekly(): Promise<void> {
 async function runWeeklyBrief(reviewDate?: string): Promise<void> {
   if (!requireLLM()) return; // best-effort inside the ping; never break the morning readiness
   const { state, window } = await buildTodayState();
+  // Data gate (spec 11): a review + frozen snapshot of a week AI Endurance couldn't describe is worse than
+  // none — the 1 Sep 2026 catch-up froze an empty week that the write-once guard then protected.
+  const outage = aieOutage(state);
+  if (outage.down) {
+    console.warn(`[weekly-brief] deferred — AI Endurance offline (${outage.reauthNeeded ? "re-auth needed" : `reads failing: ${outage.failedTools.join(", ")}`}); it retries on a later ping within the ${WEEKLY_CATCHUP_DAYS}d catch-up window`);
+    return;
+  }
   const forDate = reviewDate ?? state.date; // one source for the report date + the snapshot's week
   const engagement = await loadEngagementContext(window);
 
@@ -937,7 +955,10 @@ async function runWeeklyBrief(reviewDate?: string): Promise<void> {
 /** `weekly:brief` — run the full Sunday brief on demand (review + snapshot + gated proposals). */
 async function cmdWeeklyBrief(): Promise<void> {
   if (!requireLLM()) process.exit(1);
-  await runWeeklyBrief();
+  // Optional Sunday to file against (`npm run weekly:brief -- 2026-08-30`): regenerate a week whose brief was
+  // written blind during an outage — move its data/weekly-brief/<monday>.json and report aside first.
+  const forDate = process.argv.slice(3).find((a) => /^\d{4}-\d{2}-\d{2}$/.test(a));
+  await runWeeklyBrief(forDate);
 }
 
 /** `race [name]` — event-specific prep, calibrated to time-to-race. */
@@ -1201,18 +1222,8 @@ async function cmdDoctor(): Promise<void> {
     }
   }
 
-  // Morning-ping heartbeat (PROD-2): surface a silently-failing 06:00 ping.
-  const prior = await lastPingOk();
-  if (!prior) {
-    checks.push({ name: "Morning ping", status: "info", detail: "no successful ping recorded yet (runs after the first `npm run ping`)" });
-  } else {
-    const ageH = (Date.now() - new Date(prior.ts).getTime()) / 3_600_000;
-    checks.push(
-      ageH > 25
-        ? { name: "Morning ping", status: "warn", detail: `last success ${ageH.toFixed(0)}h ago (${prior.date}) — the scheduled ping may be silently failing` }
-        : { name: "Morning ping", status: "ok", detail: `last success ${prior.date} (${ageH.toFixed(0)}h ago)` },
-    );
-  }
+  // Morning-ping heartbeat (PROD-2, spec 11): surface a silently-failing 06:00 ping AND one that ran blind.
+  checks.push({ name: "Morning ping", ...pingHeartbeatCheck(await lastPing(), new Date()) });
 
   const icon = (s: string) => (s === "ok" ? "✓" : s === "warn" ? "⚠" : s === "fail" ? "✗" : "·");
   console.log("\nEndurance Coach — health check:\n");

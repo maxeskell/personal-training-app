@@ -2,6 +2,7 @@ import type { AthleteState, ActualActivity, PlannedSession, ZoneSet, DisciplineT
 import type { DecisionRecord, InsightReaction, CoachDiscussion } from "../state/decisionLog.js";
 import { executedSourceKeys } from "../state/decisionLog.js";
 import type { FitSummary } from "../archive/store.js";
+import { aieOutage } from "../state/sourceHealth.js";
 import { findSessionFeedback, type SessionFeedbackRecord } from "./sessionFeedbackStore.js";
 import { durabilityCardLine } from "../insights/activityDetail.js";
 import type { InsightReport } from "../insights/engine.js";
@@ -167,7 +168,7 @@ export interface DashboardInput {
    * Tool/integration health (computed in the IO layer): drives operational "Finish setup" nudges — a
    * missing API key, a long-stale sync, an unset open-water temperature.
    */
-  setupHealth?: { lastSyncAgeHours?: number; hasApiKey?: boolean; waterTempSet?: boolean };
+  setupHealth?: { lastSyncAgeHours?: number; hasApiKey?: boolean; waterTempSet?: boolean; aieOutage?: { since: string | null; reauthNeeded: boolean } };
   /** Clock for deterministic "as of N days ago" staleness (defaults to Date.now()); injectable in tests. */
   now?: number;
   /**
@@ -978,6 +979,8 @@ function sessionFeedbackOneLine(rec: SessionFeedbackRecord): string | null {
 function renderTodayCard(args: {
   today: AthleteState;
   window: AthleteState[];
+  /** Garmin .FIT summaries — during an AI Endurance outage, what has synced that the readouts can't show yet. */
+  fitSummaries?: FitSummary[];
   insights?: InsightReport;
   hl: Headline | null;
   leadKey?: string;
@@ -1091,7 +1094,11 @@ function renderTodayCard(args: {
     const allDone = todays.length > 0 && todays.every((p) => sessionDoneToday(p.sport ?? ""));
     let anyTodayFuel = false;
     if (todays.length === 0) {
-      todayBlock = `<div class="k" style="margin-bottom:12px">Today — nothing planned (rest day).</div>`;
+      // Unknown ≠ rest: when the plan read failed, say so rather than declaring a rest day (spec 11).
+      const out = aieOutage(today);
+      todayBlock = today.plannedSessions.value == null
+        ? `<div class="k" style="margin-bottom:12px">Today — plan unknown (AI Endurance ${out.down ? "offline" : "plan read failed"}${out.down && out.since ? `; last synced ${escapeHtml(fmtWhen(out.since, false))}` : ""}).</div>`
+        : `<div class="k" style="margin-bottom:12px">Today — nothing planned (rest day).</div>`;
     } else if (allDone) {
       // Session lifecycle: BEFORE you train, Today shows the session + its coach note (the "else" branch
       // below); AFTER — once it's logged — the done-state flips to what the session MEANS for the days ahead.
@@ -1139,10 +1146,18 @@ function renderTodayCard(args: {
     // Yesterday in one line — the verdict from the latest stored session readout; the full card is below.
     const latestFeedback = [...(sessionFeedbacks ?? [])].sort((a, b) => a.date.localeCompare(b.date)).pop();
     const ydLine = latestFeedback ? sessionFeedbackOneLine(latestFeedback) : null;
-    yesterdayBlock = ydLine
-      ? `<div class="k" style="margin-bottom:4px">Last session — ${escapeHtml(latestFeedback!.date.slice(5))} ${escapeHtml(latestFeedback!.sport)}</div>
-      <div style="font-size:14px;color:#444;margin-bottom:2px">${escapeHtml(redact(ydLine))}</div>`
+    // Honesty under an outage (spec 11): a readout from days ago is not "the last session" — say nothing
+    // newer has synced, and list what Garmin has already delivered (.FIT summaries) meanwhile.
+    const out = aieOutage(today);
+    const ageDays = latestFeedback ? daysTo(latestFeedback.date, today.date) : 0;
+    const staleNote = out.down && latestFeedback && ageDays >= 1
+      ? ` <span style="color:#b42318;font-weight:normal">· ${ageDays} day${ageDays === 1 ? "" : "s"} ago — nothing newer has synced (AI Endurance offline${out.since ? ` since ${escapeHtml(fmtWhen(out.since, false))}` : ""})</span>`
       : "";
+    const garminOnly = out.down ? garminOnlyLines(args.fitSummaries ?? [], latestFeedback?.date ?? null) : "";
+    yesterdayBlock = ydLine
+      ? `<div class="k" style="margin-bottom:4px">Last session — ${escapeHtml(latestFeedback!.date.slice(5))} ${escapeHtml(latestFeedback!.sport)}${staleNote}</div>
+      <div style="font-size:14px;color:#444;margin-bottom:2px">${escapeHtml(redact(ydLine))}</div>${garminOnly}`
+      : garminOnly;
   }
 
   // No insights AND the brief off → nothing to show; render no card rather than an empty shell.
@@ -1184,12 +1199,52 @@ function latestWorkout(today: AthleteState): { iso: string; hasTime: boolean } |
   return withTime ? { iso: withTime, hasTime: true } : { iso: maxDay, hasTime: false };
 }
 
+/**
+ * Sessions Garmin has delivered (.FIT summaries) newer than the last stored readout — shown only during an
+ * AI Endurance outage so today's ride isn't invisible. Pure; no plan comparison, no LLM.
+ */
+export function garminOnlyLines(fitSummaries: readonly FitSummary[], afterDate: string | null): string {
+  const newer = fitSummaries
+    .filter((f) => !afterDate || f.date > afterDate)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-5);
+  if (!newer.length) return "";
+  const items = newer.map((f) => {
+    const bits = [
+      f.durationS != null ? hMin(f.durationS / 60) : null,
+      f.avgPowerW != null ? `${Math.round(f.avgPowerW)} W avg` : null,
+      f.avgHr != null ? `${Math.round(f.avgHr)} bpm avg` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return `<li>${escapeHtml(f.date.slice(5))} ${escapeHtml(f.sport)}${bits ? ` — ${escapeHtml(bits)}` : ""}</li>`;
+  });
+  return `<div class="k" style="margin:8px 0 2px">Synced from Garmin, awaiting AI Endurance (no plan comparison or readout yet)</div><ul style="margin:0 0 4px;padding-left:18px;font-size:14px;color:#444">${items.join("")}</ul>`;
+}
+
+/** Top-of-page banner while the AI Endurance spine is down — the one thing the 30 Aug 2026 outage lacked. */
+export function renderAieOutageBanner(today: AthleteState, share: boolean): string {
+  const o = aieOutage(today);
+  if (!o.down) return "";
+  const since = o.since ? `since <b>${escapeHtml(fmtWhen(o.since, true))}</b>` : "and the last good sync is unknown";
+  const why = o.reauthNeeded
+    ? share
+      ? "The connection needs re-authorising on the host."
+      : `Re-authorise on the Mac: <code>cd ${escapeHtml(process.cwd())} &amp;&amp; npm run auth:aie</code>, then hit ↻ Sync.`
+    : `Reads are failing (${escapeHtml(o.failedTools.slice(0, 3).join(", ") || "all tools")})${share ? "." : " — hit ↻ Sync; if it persists, run <code>npm run doctor</code> and read the “AI Endurance live read” line."}`;
+  return `<div class="card" role="alert" style="background:#fdecea;border:1px solid #b42318;color:#5a1a14"><b>⚠ AI Endurance disconnected</b> — nothing has synced ${since}. The plan, sessions, load and recovery below are the last known values or missing, not today's. ${why}</div>`;
+}
+
 /** The readable freshness line shown under the title (replaces the raw ISO "as of …"). */
 function freshnessLine(today: AthleteState): string {
   const updated = new Date(today.assembledAt);
   if (Number.isNaN(updated.getTime())) return `as of ${escapeHtml(today.assembledAt)}`;
   const now = Date.now();
-  let line = `Data last updated <b>${escapeHtml(fmtWhen(today.assembledAt, true))}</b> · ${escapeHtml(fmtSince(now - updated.getTime()))}`;
+  const outage = aieOutage(today);
+  // Under an outage the assemble time is NOT data freshness (spec 11): say when the spine last answered.
+  let line = outage.down
+    ? `Snapshot assembled <b>${escapeHtml(fmtWhen(today.assembledAt, true))}</b> · <b style="color:#b42318">AI Endurance offline</b> — last synced ${outage.since ? `<b>${escapeHtml(fmtWhen(outage.since, true))}</b> · ${escapeHtml(fmtSince(now - new Date(outage.since).getTime()))}` : "<b>unknown</b>"}`
+    : `Data last updated <b>${escapeHtml(fmtWhen(today.assembledAt, true))}</b> · ${escapeHtml(fmtSince(now - updated.getTime()))}`;
   const lw = latestWorkout(today);
   if (lw) {
     const wMs = new Date(lw.iso.length <= 10 ? `${lw.iso}T12:00:00` : lw.iso).getTime();
@@ -1491,11 +1546,12 @@ function autoSync(min){ sync('Data is '+min+' min old — auto-refreshing:'); }
   }
 </div></header>
 <main class="wrap">
+${renderAieOutageBanner(today, !!share)}
 ${share ? `<div class="card sharebanner" style="background:#eef4ff;border:1px solid #cfe0ff;color:#244">🔒 <b>Share view</b> — real race names, exact dates and your location/weather are hidden, the analysis is intact. <a href="?">Exit share view</a></div>` : ""}
 <section id="tab-today" class="tab on">
 
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
-${renderTodayCard({ today, window, insights, hl, leadKey, decisions, garminDays, priorBrief: priorBrief ?? null, weather, fuel: todayFuelCtx, sessionFeedbacks, redact, share, now: now ?? Date.now(), briefEnabled: config.dailyBrief.enabled, postSessionSignal })}
+${renderTodayCard({ today, window, insights, hl, leadKey, decisions, garminDays, priorBrief: priorBrief ?? null, weather, fuel: todayFuelCtx, sessionFeedbacks, fitSummaries, redact, share, now: now ?? Date.now(), briefEnabled: config.dailyBrief.enabled, postSessionSignal })}
 
 ${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks, setupHealth?.hasApiKey, share, redact)}
 ${decideCount > 0 ? `<a class="card nav-link" data-tab="decide" href="#decide" style="display:block;text-decoration:none;color:#c8642d;font-weight:600">📥 ${decideCount} ${decideCount === 1 ? "item" : "items"} waiting on your call${decideNewCount > 0 ? ` · <span style="color:#1558d6">${decideNewCount} new</span>` : ""} →</a>` : ""}

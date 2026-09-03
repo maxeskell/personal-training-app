@@ -48,8 +48,16 @@ export async function loadRecentWeeklyBriefs(limit = 2): Promise<WeeklySnapshot[
   return out;
 }
 
+/** Pure: a snapshot with no sport minutes AND no CTL describes nothing — never freeze it as a week's reference
+ *  (the 1 Sep 2026 blind catch-up wrote exactly that, and the write-once guard then protected it). */
+export function snapshotUsable(snap: WeeklySnapshot): boolean {
+  const mins = Object.values(snap.bySportMin ?? {}).some((m) => typeof m === "number" && m > 0);
+  return mins || (typeof snap.ctl === "number" && Number.isFinite(snap.ctl));
+}
+
 /** Persist this week's snapshot once — the first writer of the week wins, so the diff's reference is stable. */
 export async function persistWeeklyBriefIfAbsent(snap: WeeklySnapshot): Promise<void> {
+  if (!snapshotUsable(snap)) return; // spec 11: an empty week is a data outage, not a week off
   try {
     await mkdir(dir(), { recursive: true });
     const path = file(snap.weekStart);

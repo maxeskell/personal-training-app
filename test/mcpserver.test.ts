@@ -132,3 +132,14 @@ test("listReports/readReport: newest-first listing and a path-traversal guard", 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("summarizeState shouts when the snapshot's AI Endurance reads all failed, even if it was assembled today", async () => {
+  const { summarizeState } = await import("../src/mcpServer.js");
+  const { emptyState } = await import("../src/state/types.js");
+  const s = emptyState("2026-09-02", "2026-09-02T19:56:00Z");
+  s.raw = { getUser: { error: "AI Endurance authorization is missing or expired — run `npm run auth:aie` on the host to re-authorize." }, getPlannedWorkouts: { error: "AI Endurance authorization is missing or expired" } };
+  const out = summarizeState(s, "2026-09-02");
+  assert.match(out, /AI ENDURANCE OFFLINE/);
+  assert.match(out, /auth:aie/);
+  assert.doesNotMatch(out, /STALE SNAPSHOT/, "assembled today — the date check alone would have passed it");
+});

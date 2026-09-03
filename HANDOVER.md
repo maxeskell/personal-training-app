@@ -245,9 +245,12 @@ fire-only health check), `npm run backfill:install` (history grind).
   and `/health?deep=1`); the SDK's background SSE GET answered 405 locally so it can't start a second auth
   flow; and — found by that live read the next morning — AIE now declares an `outputSchema` on every tool
   while answering text-only, which SDK ≥1.30's `callTool()` rejects, so reads go through the raw
-  `tools/call` request (`aieClient.ts callOnce`). Still open (plan in [spec 11](docs/specs/improvements/11-aie-token-loss-and-blind-reauth.md)): the
-  dashboard outage banner, the "ping succeeded on empty data" heartbeat, keeping the Mac awake for the
-  scheduled jobs, and regenerating the artefacts written blind.
+  `tools/call` request (`aieClient.ts callOnce`). Phase 2 (same day): per-source health on every snapshot (`state.sources`, `state/sourceHealth.ts`),
+  the dashboard outage banner + honest header/Today/Last-session text, an MCP `get_state` OFFLINE cue, a
+  ping heartbeat that records degraded/reauth/failed (`coach/pingHeartbeat.ts`, shown by `doctor`), the
+  weekly brief deferring on an outage (and `weekly:brief -- <sunday>` to regenerate one), `catch-up`
+  naming a re-auth, and post-swim saying "cannot confirm" instead of "no swim". Still open (spec 11):
+  keeping the Mac awake for the scheduled jobs and draining an in-flight refresh before a CLI exits.
 - **AIE's DFA-α1 fields are opt-in since 2026-08; per-session durability comes from the Detail tools.**
   The "durability for all workouts" update moved the a1 fields behind a `with_dfa_alpha1: true` request
   flag on the list tools — assemble + backfill pass it (2026-08-25), so aerobic-threshold values flow

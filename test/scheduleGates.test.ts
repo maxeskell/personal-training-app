@@ -86,3 +86,13 @@ test("postSwimDue: today's deep dive already on disk suppresses the job (idempot
 test("postSwimDue: a stale deep dive from another day does not suppress today's", () => {
   assert.equal(postSwimDue(SUN, [act(SUN, "Swim")], ["2026-07-05"]).due, true);
 });
+
+test("postSwimDue: during an AI Endurance outage an empty list is 'cannot confirm', never a confident 'no swim'", () => {
+  const d = postSwimDue("2026-09-01", [], [], { aieDown: true, garminSwamToday: false });
+  assert.equal(d.due, false);
+  assert.match(d.reason, /AI Endurance offline/);
+  assert.match(d.reason, /saw no swim/);
+  assert.match(postSwimDue("2026-09-01", [], [], { aieDown: true, garminSwamToday: true }).reason, /DID see a swim/);
+  // A working spine keeps the old semantics.
+  assert.match(postSwimDue("2026-09-01", [], [], { aieDown: false }).reason, /no swim logged/);
+});

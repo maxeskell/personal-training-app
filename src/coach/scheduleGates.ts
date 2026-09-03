@@ -107,8 +107,14 @@ export function postSwimDue(
   today: string,
   activities: readonly Pick<ActualActivity, "sport" | "date">[],
   deepDiveDates: readonly string[],
+  opts: { aieDown?: boolean; garminSwamToday?: boolean } = {},
 ): PostSwimDecision {
   const swamToday = activities.some((a) => a.date === today && a.sport === "Swim");
+  // "No swim in the list" only means "no swim" when the list came from a working spine (spec 11): during an
+  // AI Endurance outage the list is empty every day — say so, and what Garmin saw, instead of a confident no.
+  if (!swamToday && opts.aieDown) {
+    return { due: false, reason: `AI Endurance offline — cannot confirm today's sessions (Garmin ${opts.garminSwamToday ? "DID see a swim" : "saw no swim"} on ${today}); re-run after re-auth` };
+  }
   if (!swamToday) return { due: false, reason: `no swim logged for ${today}` };
   if (deepDiveDates.includes(today)) return { due: false, reason: `deep dive for ${today} already written` };
   return { due: true, reason: `swim logged ${today} — running the post-swim deep dive` };

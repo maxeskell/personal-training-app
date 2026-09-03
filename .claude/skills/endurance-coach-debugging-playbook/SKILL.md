@@ -69,7 +69,7 @@ Each line is `✓ ok` / `⚠ warn` / `✗ fail` / `· info`. It ends with an `N 
 | Garmin | `disabled (optional…)` or `⚠ token Nd old` | Garmin is optional — treat breakage as "degrade to AIE", not an outage. `>150d` warns; re-run `garmin-mcp-auth` before the ~180d expiry. |
 | AIE tool set | `all N expected tools present` | `⚠ expected-but-absent: …` → AIE changed its tool surface; a read/write tool moved. `· new/unknown tools` is informational. |
 | AIE connection | (absent when OK) | `⚠ could not reach AI Endurance: …` → network/OAuth; see OAuth row below. |
-| Morning ping | `last success YYYY-MM-DD` | `⚠ last success Nh ago` (>25h) → the scheduled 06:00 ping is silently failing; check the `.morning` launchd job. |
+| Morning ping | `last success YYYY-MM-DD` | `⚠ last success Nh ago` (>25h) → the scheduled 06:00 ping is silently failing; check the `.morning` launchd job. `⚠ last ping … ran with AI Endurance needing re-auth / reads failing` → it ran blind (verdict on Garmin trend alone): fix auth, then `npm run ping -- --force`. `⚠ last ping FAILED … <reason>` → e.g. the readiness LLM budget; a login re-run rescues it. |
 
 `doctor` is best-effort: an unreachable AIE warns, it does not fail the whole check.
 

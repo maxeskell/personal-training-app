@@ -30,7 +30,7 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 |---|---|
 | `npm run readiness` | green/amber/red verdict with cited drivers + a wellbeing check |
 | `npm run weekly` | weekly review (load by sport, adherence, trends, next-week focus) → dated report. Prose-only — safe to re-run to tune the wording |
-| `npm run weekly:brief` | the full **Sunday brief** on demand: weekly review + a frozen weekly snapshot (for the Plan tab's week-over-week delta) + ≤3 **gated next-week proposals** on Decide. Runs automatically inside the Sunday `ping`; idempotent |
+| `npm run weekly:brief [YYYY-MM-DD]` | run the full Sunday brief on demand (review + frozen week snapshot + ≤3 gated next-week proposals). The optional Sunday regenerates a specific week — e.g. after an AI Endurance outage wrote it blind (move its `data/weekly-brief/<monday>.json` aside first). Defers, writing nothing, while AI Endurance is down |
 | `npm run race` / `npm run race -- "<name>"` | race-specific prep for the next (or a named) race → report |
 | `npm run ask -- "<question>"` | free-form Q&A over your data + insights |
 | `npm run session` / `npm run session 2026-06-09` | deep feedback on one session (needs its raw `.FIT`; `--force` for summary-only) |
