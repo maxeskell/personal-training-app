@@ -1,8 +1,9 @@
-import { stat } from "node:fs/promises";
+import { stat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { config } from "./config.js";
-import { AieClient, ReauthRequiredError } from "./mcp/aieClient.js";
+import { AieClient, ReauthRequiredError, UnauthorizedError } from "./mcp/aieClient.js";
+import { RETIRED_TOKENS_PREFIX } from "./mcp/oauthProvider.js";
 
 /**
  * Hardening checks (Build Spec §10 M6). File/env-level health — no network. The CLI `doctor`
@@ -28,16 +29,36 @@ async function fileAgeDays(path: string): Promise<number | null> {
 /** Garmin tokens last ~6 months; warn well before expiry so a re-auth never silently breaks a ping. */
 const GARMIN_REAUTH_WARN_DAYS = 150;
 
+/** Basenames of retired token copies in the secrets dir, oldest first. Empty when none / dir absent. */
+async function retiredTokenFiles(dir: string): Promise<string[]> {
+  try {
+    return (await readdir(dir)).filter((f) => f.startsWith(RETIRED_TOKENS_PREFIX)).sort();
+  } catch {
+    return [];
+  }
+}
+
 export async function fileChecks(): Promise<Check[]> {
   const checks: Check[] = [];
 
-  // AI Endurance OAuth (the required spine).
+  // AI Endurance OAuth (the required spine). File presence/age only — a present-but-revoked token looks
+  // identical here; `doctor`'s live "AI Endurance live read" line is the honest check.
   const aieAge = await fileAgeDays(join(config.secretsDir, "aie-tokens.json"));
   checks.push(
     aieAge == null
       ? { name: "AI Endurance auth", status: "fail", detail: "no cached token — run `npm run auth:aie`" }
-      : { name: "AI Endurance auth", status: "ok", detail: `token present (refreshed ${aieAge.toFixed(0)}d ago; auto-refreshes)` },
+      : { name: "AI Endurance auth", status: "ok", detail: `token present (last saved ${aieAge.toFixed(0)}d ago; refreshed on demand)` },
   );
+  // A retired copy means a refresh was rejected (invalid_grant) at that moment — the audit trail of the
+  // token-loss failure mode (see docs/data-sources.md → "AI Endurance token lifecycle").
+  const retired = await retiredTokenFiles(config.secretsDir);
+  if (retired.length) {
+    checks.push({
+      name: "AI Endurance retired tokens",
+      status: "info",
+      detail: `${retired.length} rejected-token cop${retired.length === 1 ? "y" : "ies"} kept (latest ${retired.at(-1)}) — a refresh was refused then; delete them once understood`,
+    });
+  }
 
   // Anthropic key (the LLM core).
   checks.push(
@@ -154,16 +175,32 @@ export function baseHealth(now: Date = new Date()): HealthInfo {
   };
 }
 
-/** Live, non-interactive probe of the AI Endurance spine. Bounded + degradable — never throws. */
-export async function aieHealthProbe(timeoutMs?: number): Promise<AieHealth> {
-  const aie = new AieClient({ interactive: false, timeoutMs });
+/** The slice of AieClient the probe needs — injectable so the probe is unit-testable with no network. */
+export interface AieProbeClient {
+  connect(): Promise<void>;
+  read(tool: "getUser"): Promise<unknown>;
+  close(): Promise<void>;
+}
+
+/**
+ * Live, non-interactive probe of the AI Endurance spine. Bounded + degradable — never throws.
+ * connect() alone is NOT health: AI Endurance answers `initialize` without a token (verified 2026-09-02),
+ * so a connect-only probe read "ok" for ~30 h of the 30 Aug 2026 outage with no token on disk. One
+ * authenticated read (getUser, the cheapest tool) is the actual test.
+ */
+export async function aieHealthProbe(
+  timeoutMs?: number,
+  makeClient: () => AieProbeClient = () => new AieClient({ interactive: false, timeoutMs }),
+): Promise<AieHealth> {
+  const aie = makeClient();
   try {
     await aie.connect();
+    await aie.read("getUser");
     return "ok";
   } catch (err) {
-    return err instanceof ReauthRequiredError ? "reauth_needed" : "unreachable";
+    return err instanceof ReauthRequiredError || err instanceof UnauthorizedError ? "reauth_needed" : "unreachable";
   } finally {
-    await aie.close();
+    await aie.close().catch(() => {});
   }
 }
 

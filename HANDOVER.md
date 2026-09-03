@@ -234,6 +234,18 @@ fire-only health check), `npm run backfill:install` (history grind).
   downloads the missing span the moment the connection returns, notifying on recovery or a still-stuck source.
   Drop the `mcp<2` constraint only when the `garmin_mcp` pin is bumped to a mcp-2.x-compatible commit. See
   [docs/specs/improvements/09-garmin-mcp-dependency-pin.md](docs/specs/improvements/09-garmin-mcp-dependency-pin.md).
+- **AI Endurance token loss is a known, recurring failure (1 Jul, 25 Aug, 30 Aug 2026).** Each time a
+  06:00 `ping` launched inside a ~2 s macOS DarkWake (lid closed), was suspended mid token-refresh, timed
+  out and exited; the rotated refresh token's reply was lost, the on-disk one was dead, and the next refresh
+  (the 20-min healthcheck probe, 12:03 on 30 Aug) got `invalid_grant` — on which the MCP SDK deletes the
+  token file via the provider. The app then kept assembling all-null AIE states with a fresh `assembledAt`
+  for 3 days with no banner, and `auth:aie` / the deep probe could not even see it because AIE answers
+  `initialize` unauthenticated. Landed 2026-09-03: retire-not-delete + audit line + atomic save in
+  `src/mcp/oauthProvider.ts`; `AieClient.ensureAuthorized()` (a real read, used by `auth:aie`, `doctor`
+  and `/health?deep=1`); the SDK's background SSE GET answered 405 locally so it can't start a second auth
+  flow. Still open (plan in [spec 11](docs/specs/improvements/11-aie-token-loss-and-blind-reauth.md)): the
+  dashboard outage banner, the "ping succeeded on empty data" heartbeat, keeping the Mac awake for the
+  scheduled jobs, and regenerating the artefacts written blind.
 - **AIE's DFA-α1 fields are opt-in since 2026-08; per-session durability comes from the Detail tools.**
   The "durability for all workouts" update moved the a1 fields behind a `with_dfa_alpha1: true` request
   flag on the list tools — assemble + backfill pass it (2026-08-25), so aerobic-threshold values flow
