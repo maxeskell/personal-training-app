@@ -104,7 +104,7 @@ This is a genuine strength and safe to state publicly — but state it precisely
 |---|---|---|
 | **Deterministic core** | "The statistical insight layer makes zero LLM calls — same inputs, same outputs." | `docs/insight-engine.md` L127 ("deterministic (no LLM, no cost)"); CLAUDE.md invariant |
 | **Fixture-tested, no network** | "Tests are pure and use fixtures, never the network; you need no account to build, typecheck, or run the suite." | `CONTRIBUTING.md` ("tests are pure and use fixtures, never the network") |
-| **Hermetic suite, green gate** | "N tests, run in seconds, hermetic." Fill N live — don't hardcode; as of 2026-07-04 it's **730 tests / ~6.3 s**. | `cd /Users/maxeskell/dev/personal-training-app && npm test 2>&1 \| tail -5` |
+| **Hermetic suite, green gate** | "N tests, run in seconds, hermetic." Fill N live — don't hardcode; as of 2026-09-03 it's **874 tests / ~8 s**. | `cd /Users/maxeskell/dev/personal-training-app && npm test 2>&1 \| tail -5` |
 | **CI contract** | "typecheck + tests + build run on every PR and on `main`." | `.github/workflows/ci.yml` |
 | **No-account demo** | "A `npm run demo` renders the dashboard on bundled sample data, no account needed." | `package.json` `demo` script; `docs/PRODUCT.md` |
 | **Cost transparency** | "Every LLM call is cost-logged locally (counts + dollars, never prompt text); `npm run cost` shows spend." | `src/llm/costLog.ts`; `npm run cost` |
@@ -174,7 +174,7 @@ Ground truth is the repo, not this file.
 
 | Fact | Re-verify command (run from repo root) |
 |---|---|
-| Test count / green suite (730 / ~6.3 s as of 2026-07-04) | `cd /Users/maxeskell/dev/personal-training-app && npm test 2>&1 \| tail -5` |
+| Test count / green suite (874 / ~8 s as of 2026-09-03) | `cd /Users/maxeskell/dev/personal-training-app && npm test 2>&1 \| tail -5` |
 | "Defer to the platform's ML" is doctrine | `grep -n -i "defer to AI Endurance" /Users/maxeskell/dev/personal-training-app/coach-instructions.md` |
 | Non-goals wording (single-athlete, not SaaS, not medical) | `grep -n -i "non-goal\|multi-tenant\|single athlete\|replacement for a human" /Users/maxeskell/dev/personal-training-app/docs/PRODUCT.md /Users/maxeskell/dev/personal-training-app/README.md` |
 | We consume AIE prediction, don't re-derive it | `grep -n "getPrediction" /Users/maxeskell/dev/personal-training-app/src/coach/racePrep.ts; sed -n '60,70p' /Users/maxeskell/dev/personal-training-app/src/insights/taper.ts` |

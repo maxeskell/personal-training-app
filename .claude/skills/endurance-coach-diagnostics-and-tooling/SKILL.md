@@ -304,7 +304,7 @@ Date-stamped **2026-07-04**. Facts here drift; re-verify with these exact comman
 - **doctor thresholds** (Garmin warn 150d, ping warn 25h): `grep -n "GARMIN_REAUTH_WARN_DAYS\|ageH > 25" src/health.ts src/cli.ts`.
 - **`COACH_DEPLOY_BRANCH` is read by ship.sh (NOT dead):** `grep -n COACH_DEPLOY_BRANCH scripts/ship.sh`.
 - **LLM price defaults** (input $5 / output $25 per MTok): `grep -n "COACH_PRICE_INPUT\|COACH_PRICE_OUTPUT" src/config.ts`.
-- **Test suite green** (context for cost/verify claims — 730 tests / ~6s as of 2026-07-04):
+- **Test suite green** (context for cost/verify claims — 874 tests / ~8s as of 2026-09-03):
   `npm test 2>&1 | tail -5`.
 - **Resolved drift (2026-07-04): the phantom `archive:compact` / `archive-compact` npm script.** No such
   npm script exists — the real one is `npm run backfill:compact` (it runs `tsx src/cli.ts archive-compact`;

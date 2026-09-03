@@ -171,7 +171,7 @@ Run this list before you commit. It mirrors CLAUDE.md and CONTRIBUTING.md and ap
 ```
 
 **Green before commit is literal.** The local gate IS the gate (`npm run ship` re-runs it and aborts on
-red). As of 2026-07-04 the suite is **730 tests, 0 fail, ~6–8s, hermetic (no network)** — verify with
+red). As of 2026-07-04 the suite is **874 tests, 0 fail, ~8s, hermetic (no network)** — verify with
 `npm test 2>&1 | tail -5`.
 
 > **CONTRIBUTING.md drift (known, 2026-07-04):** `CONTRIBUTING.md` §"Definition of done" still says
@@ -281,7 +281,7 @@ commands (run from `/Users/maxeskell/dev/personal-training-app`):
 
 | Fact stated here | Re-verify command |
 |---|---|
-| Test count "730 tests, 0 fail" | `npm test 2>&1 \| tail -5` |
+| Test count "874 tests, 0 fail" | `npm test 2>&1 \| tail -5` |
 | Green gate scripts exist | `npm run typecheck --silent >/dev/null; grep -E '"(test\|typecheck\|ship)":' package.json` |
 | Write gate: only 3 proposable tools | `grep -n 'PROPOSABLE_WRITE_TOOLS' src/guardrails/writeValidators.ts` |
 | 8 tools in `AIE_WRITE_TOOLS`; only-callsite `allowWrite` | `grep -n -A10 'AIE_WRITE_TOOLS = \[' src/mcp/aieClient.ts; grep -rn 'allowWrite: true' src/` |

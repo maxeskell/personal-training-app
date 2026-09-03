@@ -79,7 +79,7 @@ cd /Users/maxeskell/dev/personal-training-app && cp .env.example .env
 cd /Users/maxeskell/dev/personal-training-app && npm run typecheck && npm test
 ```
 
-**✅ Gate check:** typecheck is clean and every test passes (**730 tests, ~6.2s, hermetic/no-network** as of
+**✅ Gate check:** typecheck is clean and every test passes (**874 tests, ~8s, hermetic/no-network** as of
 2026-07-04 — re-verify with the command in Provenance). If either is red, **stop and report** — this gate is
 the project's green-before-commit contract; do not work around it.
 
@@ -217,7 +217,7 @@ The secrets dir defaults to `~/.endurance-coach` and is overridable with `COACH_
 | Command | What it does | Needs |
 |---|---|---|
 | `npm install` | install deps (Node ≥ 20) | Node ≥ 20 |
-| `npm run typecheck && npm test` | the green gate (typecheck + 730 hermetic tests) | nothing |
+| `npm run typecheck && npm test` | the green gate (typecheck + 874 hermetic tests) | nothing |
 | `npm run demo` | dashboard on bundled sample data | nothing |
 | `npm run setup` | interactive `.env` wizard | a TTY |
 | `npm run auth:aie` | one-time AIE OAuth (host-only, browser) | AIE account + browser |
@@ -238,7 +238,7 @@ The secrets dir defaults to `~/.endurance-coach` and is overridable with `COACH_
 # Node engine requirement (expect: "node": ">=20")
 cd /Users/maxeskell/dev/personal-training-app && node -e "console.log(require('./package.json').engines)"
 
-# Test count + hermetic pass (expect ~730 pass, ~6s, 0 fail as of 2026-07-04)
+# Test count + hermetic pass (expect ~874 pass, ~8s, 0 fail as of 2026-09-03)
 cd /Users/maxeskell/dev/personal-training-app && npm test 2>&1 | tail -6
 
 # esbuild pinned version + audit clean (expect 0.28.1 and "found 0 vulnerabilities")

@@ -246,11 +246,11 @@ grep -n "readonly model\|4096-token cache" src/llm/client.ts
 # Garmin wall-clock budget default (expect 90000):
 grep -n "refreshBudgetMs\|GARMIN_REFRESH_BUDGET_MS" src/config.ts
 
-# Suite is green + the count these docs cite (expect 730 as of 2026-07-04; timing varies):
+# Suite is green + the count these docs cite (expect 874 as of 2026-09-03; timing varies):
 npm test 2>&1 | tail -6
 ```
 
-Volatile facts to re-check specifically: **test count 730** (2026-07-04), **model `claude-opus-4-8`**,
+Volatile facts to re-check specifically: **test count 874** (2026-09-03), **model `claude-opus-4-8`**,
 **Garmin budget 90000 ms**, **`PROPOSAL_TTL_DAYS` 7 / `MAX_FUTURE_DAYS` 365**, the **8 write tools / 3
 proposable tools** split, and the **prompt-cache-is-a-no-op** claim (flips to active once the system prompt
 exceeds 4096 tokens). Line-number citations (`schema.ts:218`, `aieClient.ts:41`, `writeValidators.ts:15`)
