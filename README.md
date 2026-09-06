@@ -714,7 +714,7 @@ For the one-off HTML or a PDF, use `npm run dashboard -- --share`.
 **Career & PBs (Performance tab, also standalone at `/career`):** folded into the **Performance** tab — the *long view* —
 your **race history** (date · event/location · your recorded performance, with an expandable per-race
 **splits** table and an optional hand-authored **finishing position** — e.g. "19th overall · 1st of 8 AG" —
-from the official results), your **lifetime bests vs current form** side by side (all-time / last 90 days / season,
+from the official results — paste it straight off the results page with `npm run race:result -- --date YYYY-MM-DD --type "Olympic triathlon" --event "…"`, which stores the official finish, placing and leg/transition times against that date and, on the next dashboard render, lets the race-model track record judge the frozen pre-race prediction against it), your **lifetime bests vs current form** side by side (all-time / last 90 days / season,
 per sport: fastest at each distance, longest, best power — plus a **Triathlon** row with your fastest finish at
 each standard distance, **Sprint / Standard / 70.3 / Full**, from your recorded race results; a bike-leg trace
 or a non-standard distance is never counted as a finish), and an overlaid **power curve** — an **all-time**

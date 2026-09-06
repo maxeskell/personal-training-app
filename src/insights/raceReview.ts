@@ -64,6 +64,19 @@ export interface CareerRaceLike {
 
 const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
+/**
+ * Do a prediction leg and an official split describe the same leg? Exact match first; otherwise the
+ * leading word — the model labels legs with their distance ("Swim 1500 m", "Bike 40 km") while the
+ * career splits (FIT-derived or pasted from the results page) are bare ("Swim", "Bike", "T1").
+ */
+export function legMatches(a: string, b: string): boolean {
+  const na = norm(a);
+  const nb = norm(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  return na.split(" ")[0] === nb.split(" ")[0];
+}
+
 export function raceKey(date: string, race: string): string {
   return `${date.slice(0, 10)}|${norm(race)}`;
 }
@@ -123,7 +136,7 @@ export function buildReview(pred: RacePredictionRecord, race: CareerRaceLike, re
   if (officialSec == null || officialSec <= 0) return null;
   const officialSplits = race.result?.splits ?? [];
   const legs = pred.legs.map((leg) => {
-    const match = officialSplits.find((s) => norm(s.label ?? "") === norm(leg.label));
+    const match = officialSplits.find((s) => legMatches(s.label ?? "", leg.label));
     const sec = match ? parseResultSeconds(match.time, leg.splitSec) : null;
     return { label: leg.label, predictedSec: leg.splitSec, officialSec: sec, deltaSec: sec != null ? leg.splitSec - sec : null };
   });

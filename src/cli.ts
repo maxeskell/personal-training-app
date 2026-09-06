@@ -380,6 +380,69 @@ async function cmdIngestFit(): Promise<void> {
 }
 
 /**
+ * `race-result` — paste an OFFICIAL result (the block off the timing company's results page) into the
+ * career history, keyed by race date. Reads the block from `--file <path>` or stdin; `--date` and `--type`
+ * are required, `--event` / `--location` / `--sport` optional; `--dry-run` prints without writing. The
+ * career file's other sections (bests, power curve, trajectory) are left byte-for-byte alone — only the
+ * `races` array changes, atomically. Deterministic, no LLM, no network; nothing is scraped.
+ */
+async function cmdRaceResult(): Promise<void> {
+  const { parseOfficialResult, raceFromOfficial, mergeRaceIntoHistory, formatImport } = await import("./coach/raceResultImport.js");
+  const { careerHistoryPath, parseCareerHistory } = await import("./coach/careerHistory.js");
+  const { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync } = await import("node:fs");
+  const { dirname } = await import("node:path");
+  const argv = process.argv.slice(3);
+  const opt = (name: string): string | undefined => {
+    const i = argv.indexOf(`--${name}`);
+    return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : undefined;
+  };
+  const usage =
+    '\nUsage: npm run race:result -- --date YYYY-MM-DD --type "Olympic triathlon" [--event "Alderford Triathlon"] [--location "Alderford Lake, Whitchurch"] [--sport triathlon] [--file results.txt] [--dry-run]\n' +
+    "       (the pasted results block comes from --file, or on stdin: `pbpaste | npm run race:result -- --date … --type …`)\n";
+  const date = opt("date");
+  const type = opt("type");
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !type) {
+    console.error(usage);
+    process.exit(1);
+  }
+  const file = opt("file");
+  let text: string;
+  try {
+    text = file ? readFileSync(file, "utf8") : readFileSync(0, "utf8");
+  } catch (e) {
+    console.error(`\nCouldn't read the results block (${file ?? "stdin"}): ${(e as Error).message}\n${usage}`);
+    process.exit(1);
+  }
+  const parsed = parseOfficialResult(text);
+  if (!parsed) {
+    console.error("\nNo finish time found in the pasted block — it needs a line like `38  Jane Doe  02:42:11.9  FIN` or `Time: 2:42:12`.\n" + usage);
+    process.exit(1);
+  }
+  const race = raceFromOfficial({ date, type, event: opt("event"), location: opt("location"), sport: opt("sport") }, parsed);
+  const path = careerHistoryPath();
+  // Keep every section the career build wrote (bests / power curve / trajectory) untouched — only `races` moves.
+  let rawDoc: Record<string, unknown> = {};
+  if (existsSync(path)) {
+    try {
+      rawDoc = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    } catch {
+      console.error(`\n${path} exists but isn't valid JSON — fix or move it first (nothing written).\n`);
+      process.exit(1);
+    }
+  }
+  const outcome = mergeRaceIntoHistory(parseCareerHistory(JSON.stringify(rawDoc)), race);
+  const dryRun = argv.includes("--dry-run");
+  if (!dryRun) {
+    const next = { ...rawDoc, generatedAt: rawDoc.generatedAt ?? todayIso(), races: outcome.history.races };
+    mkdirSync(dirname(path), { recursive: true });
+    const tmp = `${path}.tmp`;
+    writeFileSync(tmp, JSON.stringify(next, null, 2) + "\n");
+    renameSync(tmp, path);
+  }
+  console.log("\n" + formatImport(parsed, outcome, path, dryRun).join("\n") + "\n");
+}
+
+/**
  * `ftp-check` — bike-FTP source diagnostic: configured FTP vs Garmin's power-duration estimate, the gap,
  * recent power coverage, and how to resolve a gap with power rides. Read-only; reads the last snapshot
  * (run `npm run state` / the `sync` tool first to refresh). Deterministic, no LLM.
@@ -1266,6 +1329,7 @@ const commands: Record<string, () => Promise<void>> = {
   state: cmdState,
   splits: cmdSplits,
   "ingest-fit": cmdIngestFit,
+  "race-result": cmdRaceResult,
   "ftp-check": cmdFtpCheck,
   readiness: cmdReadiness,
   ping: cmdPing,
@@ -1342,6 +1406,7 @@ if (!run) {
   console.log("  archive-compact  de-duplicate the archive files in place (one record per date/id)");
   console.log("  probe      capture live Garmin tool surface + AIE run/ride samples + new-field hunt (durability/decoupling/power_is_from_hr) → reports/");
   console.log("  fit-sync [n]  download recent Garmin run/ride .FIT files (get_activity_fit_data) → streams dir");
+  console.log("  race-result --date … --type …  paste an official race result (finish, placing, leg splits) into your career history; nothing scraped");
   console.log("  catch-up      auto-recover any missing data after an outage — backfills each source's gap to today");
   console.log('  decisions [pending | retro <id> "<note>"]   view log / pending / add retrospective');
   console.log("  (LLM flows need ANTHROPIC_API_KEY)");
