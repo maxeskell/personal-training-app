@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildReview,
+  legMatches,
   newReviews,
   parseResultSeconds,
   predictionFromPlan,
@@ -117,4 +118,41 @@ test("newReviews: reviews exactly the races that finished, once — matched by e
   assert.equal(fresh[0].key, raceKey("2026-09-06", "Alderford Standard"));
   // Idempotent: an existing review key is never re-emitted.
   assert.equal(newReviews(preds, races, new Set([fresh[0].key]), "x").length, 0);
+});
+
+test("legMatches / buildReview: model legs carry distances, career splits are bare — they still join by discipline", () => {
+  assert.ok(legMatches("Swim 1500 m", "Swim"));
+  assert.ok(legMatches("Bike 40 km", "bike"));
+  assert.ok(legMatches("T1", "T1"));
+  assert.ok(!legMatches("Bike 40 km", "Run"));
+  assert.ok(!legMatches("", "Swim"));
+  const p = pred({
+    legs: [
+      { label: "Swim 1500 m", splitSec: 1800 },
+      { label: "T1", splitSec: 180 },
+      { label: "Bike 40 km", splitSec: 4500 },
+      { label: "T2", splitSec: 120 },
+      { label: "Run 10 km", splitSec: 2700 },
+    ],
+  });
+  const race: CareerRaceLike = {
+    date: "2026-09-06",
+    result: {
+      time: "2:42:12",
+      splits: [
+        { label: "Swim", time: "35:58" },
+        { label: "T1", time: "2:51" },
+        { label: "Bike", time: "1:15:50" },
+        { label: "T2", time: "1:07" },
+        { label: "Run", time: "46:26" },
+      ],
+    },
+  };
+  const r = buildReview(p, race, "2026-09-07T08:00:00Z");
+  assert.ok(r);
+  assert.equal(r.officialSec, 2 * 3600 + 42 * 60 + 12);
+  assert.deepEqual(
+    r.legs.map((l) => [l.label, l.officialSec]),
+    [["Swim 1500 m", 35 * 60 + 58], ["T1", 171], ["Bike 40 km", 3600 + 15 * 60 + 50], ["T2", 67], ["Run 10 km", 46 * 60 + 26]],
+  );
 });
