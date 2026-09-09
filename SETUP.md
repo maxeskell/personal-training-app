@@ -437,6 +437,10 @@ notes: "raise the year's floor, not the week's ceiling; defend consistency"
 
 - The **active phase** is the first whose `until` is still ahead. `ctl_target` is **text** (e.g. `"55"` or
   `"55-60"`) — a numeric CTL would be rejected by the no-live-numbers guard, exactly like a race `target_time`.
+- **Race course overrides.** If an event isn't the format's standard course (a **400 m pool-swim** sprint
+  rather than 750 m open water, a 21.5 km bike), add `swim_m` / `bike_km` / `run_km` to that race in
+  `races[]` so the race-splits model and its target check use the real distances. Course facts, not live
+  numbers — the guard allows them.
 - Everything's optional: with no `season_plan` the page still shows your CTL, trajectory and lever checklist,
   and explains how to add the plan. See `profile.example.yaml` → `season_plan` and
   `docs/specs/Season_Arc_Spec.md`.

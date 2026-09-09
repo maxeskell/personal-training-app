@@ -78,10 +78,14 @@ export interface ProfileRaceTargetLite {
   name?: string | null;
   date?: string | null;
   target_time?: string | null;
+  /** Course overrides (metres / km) when the event isn't the format's standard distances. */
+  swim_m?: number | null;
+  bike_km?: number | null;
+  run_km?: number | null;
 }
 
 /**
- * SYNC, best-effort read of just the profile's races (name/date/target_time) — for the deterministic
+ * SYNC, best-effort read of just the profile's races (name/date/target_time + course overrides) — for the deterministic
  * flows (the insight engine's target gate, race-prep) that can't await. Same resolution order as
  * {@link loadProfile}; returns [] on ANY failure (no profile, bad YAML, failed validation) — the gate
  * simply doesn't run. Callers pass the result in (BuildOptions.profileRaces / runRacePrep's param);
@@ -100,7 +104,14 @@ export function loadProfileRacesSync(): ProfileRaceTargetLite[] {
     }
     try {
       const profile = validateProfile(parseYaml(text));
-      return (profile.races ?? []).map((r) => ({ name: r.name, date: r.date, target_time: r.target_time }));
+      return (profile.races ?? []).map((r) => ({
+        name: r.name,
+        date: r.date,
+        target_time: r.target_time,
+        swim_m: r.swim_m,
+        bike_km: r.bike_km,
+        run_km: r.run_km,
+      }));
     } catch {
       return []; // present but invalid: mirror loadProfileSafe (no silent fallback to the example)
     }

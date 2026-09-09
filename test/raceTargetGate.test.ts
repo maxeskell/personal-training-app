@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseTargetSeconds, targetForPlan, checkTargetAgainstPlan, triPerformanceFromState, gatePromptBlock } from "../src/insights/raceTargetGate.js";
+import { parseTargetSeconds, targetForPlan, checkTargetAgainstPlan, courseForRace, triPerformanceFromState, gatePromptBlock } from "../src/insights/raceTargetGate.js";
 import { estimateTriSplits, type RaceSplitPlan } from "../src/insights/splits.js";
 import { emptyState } from "../src/state/types.js";
 
@@ -113,4 +113,43 @@ test("gatePromptBlock: implausible targets demand the report LEAD with the discr
   const noTarget = gatePromptBlock(p, undefined);
   assert.match(noTarget, /No athlete target found/);
   assert.equal(gatePromptBlock(null, "sub 2:00"), "");
+});
+
+test("courseForRace + estimateTriSplits: a 400 m POOL-swim sprint is modelled as one, and the target check flips (Warwick 2026)", () => {
+  // Warwick sprint 2026: 400 m pool swim, 20 km bike, 5 km run. Modelled as the standard 750 m open-water
+  // sprint, a 1:05-1:09 target read as "implausible" — off a ~6 min swim that doesn't exist in the event.
+  const races = [{ name: "Warwick Triathlon", date: "2026-10-04", target_time: "1:05-1:09", swim_m: 400 }];
+  const perf = { cssSecPer100: 113, ftpW: 225, runPredictions: { "5K": 1370 as number }, riderWeightKg: 71 };
+  const std = estimateTriSplits("Warwick Sprint", "sprint", perf, "unknown", "2026-10-04")!;
+  const course = courseForRace({ race: "Warwick Sprint", date: "2026-10-04" }, races);
+  assert.deepEqual(course, { swimM: 400 });
+  const pool = estimateTriSplits("Warwick Sprint", "sprint", perf, "unknown", "2026-10-04", course)!;
+  assert.equal(pool.segments[0].label, "Swim 400 m");
+  assert.equal(std.segments[0].label, "Swim 750 m");
+  // The 350 m at CSS comes off the total (±1 s of cumulative rounding); nothing else moves.
+  assert.ok(Math.abs(std.predictedSec - pool.predictedSec - 3.5 * 113) <= 1, `swim delta ${std.predictedSec - pool.predictedSec}s`);
+  assert.equal(std.segments[2].target, pool.segments[2].target, "bike untouched (splits are diffs of rounded cumulatives, so compare the pacing target)");
+  assert.equal(std.segments[4].target, pool.segments[4].target, "run untouched");
+  assert.equal(pool.distanceKm, 25.4);
+  assert.match(pool.strategy, /Course from your profile: swim 400 m \(standard 750 m\)/);
+  assert.match(std.strategy, /Standard Sprint course assumed \(750 m \/ 20 km \/ 5 km\)/, "the standard plan nudges toward the profile field");
+  // Same range basis on both → the verdict is decided by the swim distance alone.
+  for (const p of [std, pool]) {
+    p.worstSec = p.predictedSec;
+    p.bestSec = Math.round(p.predictedSec * 0.97);
+  }
+  assert.equal(checkTargetAgainstPlan("1:05-1:09", std)?.verdict, "implausible");
+  assert.notEqual(checkTargetAgainstPlan("1:05-1:09", pool)?.verdict, "implausible", "on the real course the target is no longer beyond the model");
+});
+
+test("courseForRace: no profile race, or a race with no overrides → undefined (standard course)", () => {
+  const races = [
+    { name: "Alderford", date: "2026-09-06", target_time: "sub 2:20" },
+    { name: "Long Bike Tri", date: "2027-05-01", bike_km: 22.5, run_km: 5.2 },
+  ];
+  assert.equal(courseForRace({ race: "Alderford Triathlon", date: "2026-09-06" }, races), undefined);
+  assert.equal(courseForRace({ race: "Unknown", date: "2030-01-01" }, races), undefined);
+  assert.deepEqual(courseForRace({ race: "Long Bike Tri", date: "2027-05-01" }, races), { bikeKm: 22.5, runKm: 5.2 });
+  // A course override on a race WITHOUT a target still matches (the target filter only applies to targetForPlan).
+  assert.equal(targetForPlan({ race: "Long Bike Tri", date: "2027-05-01", distanceKm: 0, predictedSec: 0, strategy: "", segments: [] }, races), undefined);
 });

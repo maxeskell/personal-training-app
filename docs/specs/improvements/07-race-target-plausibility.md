@@ -18,6 +18,13 @@ legs it modelled**; two things failed around it, and both are now fixed:
    in (`loadProfileRacesSync`) so the engine stays hermetic. The golden regression from this spec's
    acceptance is in `test/raceTargetGate.test.ts`: Birmingham's race-morning inputs predict within
    4% of the actual 2:39:12 and flag "sub 2:00" implausible.
+3. **Course overrides (2026-09-09).** The model assumed each format's standard distances, so a
+   **400 m pool-swim** sprint (Warwick 2026) was booked as 750 m open water and its 1:05-1:09 target
+   read "implausible" off ~6 min of swim that doesn't exist in the event — the gate crying wolf, which
+   is how a gate stops being read. Profile `races[].swim_m / bike_km / run_km` now override the leg
+   distances (effort factors stay the format's); `courseForRace` matches plan→race the same way as the
+   target lookup, and both the dashboard card and `race_prep` build the plan on the real course. The
+   pacing line names the course it assumed and, when standard, how to correct it.
 
 **Post-race hook: BUILT (same day, evening).** `src/insights/raceReview.ts` (pure) +
 `src/state/raceModelLog.ts` (disk): on every dashboard render the latest **complete, pre-race** splits

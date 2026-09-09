@@ -4,7 +4,7 @@ import { classifyRace, deriveSeasonShape, liveGoals, athleteContext, type RaceKi
 import { triTypeOf } from "../insights/engine.js";
 import { estimateTriSplits } from "../insights/splits.js";
 import { loadSessionDecays } from "../insights/fit.js";
-import { gatePromptBlock, targetForPlan, triPerformanceFromState, type ProfileRaceTarget } from "../insights/raceTargetGate.js";
+import { courseForRace, gatePromptBlock, targetForPlan, triPerformanceFromState, type ProfileRaceTarget } from "../insights/raceTargetGate.js";
 
 interface Goal {
   event_name?: string;
@@ -92,12 +92,14 @@ export async function runRacePrep(
   let gateBlock = "";
   const triKind = triTypeOf(race.event_name ?? "", race.event_type);
   if (triKind) {
+    const raceDate = race.event_date ? String(race.event_date).slice(0, 10) : undefined;
     const plan = estimateTriSplits(
       race.event_name ?? "race",
       triKind,
       triPerformanceFromState(today, loadSessionDecays()),
       "unknown",
-      race.event_date ? String(race.event_date).slice(0, 10) : undefined,
+      raceDate,
+      courseForRace({ race: race.event_name ?? "race", date: raceDate }, profileRaces),
     );
     if (plan) {
       // Target source order: the athlete's profile target, else the AI Endurance goal's target seconds.

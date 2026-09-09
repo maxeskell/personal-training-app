@@ -46,6 +46,12 @@ export const RaceSchema = z
     // "middle" is the standard UK term for a 70.3 (1.9/90/21.1) — a first-class distance, not "other".
     distance: z.enum(["sprint", "olympic", "70.3", "middle", "ironman", "other"]).nullable().optional(),
     target_time: optStr, // a TARGET like "sub 2:00" — never a live number
+    // COURSE overrides — fixed facts about the event, not live numbers: a pool-swim sprint is 400 m, not
+    // the standard 750 m the splits model otherwise assumes (Warwick 2026 read as "implausible" for a
+    // 6-minute swim that doesn't exist). Leave out to take the format's standard distances.
+    swim_m: z.number().positive().nullable().optional(),
+    bike_km: z.number().positive().nullable().optional(),
+    run_km: z.number().positive().nullable().optional(),
     note: optStr,
   })
   .passthrough();

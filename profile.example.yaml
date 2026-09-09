@@ -210,6 +210,14 @@ races:
     date:                   # YYYY-MM-DD
     distance:               # sprint | olympic | 70.3 | middle | ironman | other  (middle = UK term for a 70.3)
     target_time:            # e.g. "sub 2:00"
+    # Course overrides (optional) — the event's REAL distances when they differ from the format's
+    # standard course (sprint 750 m / 20 km / 5 km, olympic 1500/40/10, 70.3 1900/90/21.1, ironman
+    # 3800/180/42.2). A pool-swim sprint is typically 400 m: without `swim_m: 400` the race-splits
+    # model books a 750 m open-water swim and the target check wrongly calls your target implausible.
+    # These are fixed facts about the course, not live numbers — the guard allows them.
+    swim_m:                 # e.g. 400
+    bike_km:                # e.g. 21.5
+    run_km:                 # e.g. 5.2
     note:
 
 # Multi-season strategic plan — the arc the /season page grades you against (rebuild → 70.3 → Ironman).
