@@ -99,9 +99,16 @@ function flag(x: unknown): boolean | undefined {
   return undefined;
 }
 
+/** AIE `getOtherActivity` rows that are a hike/walk/ruck — the one "other" sport with an endurance readout. */
+export const HIKE_TYPE_RE = /hik|walk|ruck|trek/i;
+
 export interface RichActivity {
   date: string;
-  sport: "Run" | "Ride" | "Swim";
+  sport: "Run" | "Ride" | "Swim" | "Hike";
+  /** The activity's own name (e.g. "Gwynedd Rucking") — AIE carries it on the other-activity list. */
+  name?: string;
+  distanceKm?: number;
+  elevationGainM?: number;
   /** AIE's activity id (on summaries since 2026-08) — the join key for the Detail tools + setActivityFlags. */
   id?: number;
   ess?: number;
@@ -137,6 +144,9 @@ export function mapRichActivity(a: Record<string, unknown>, sport: RichActivity[
   return {
     date: String(a.activity_date_local ?? a.activity_date ?? "").slice(0, 10),
     sport,
+    name: typeof a.activity_name === "string" && a.activity_name.trim() ? a.activity_name.trim() : undefined,
+    distanceKm: (num(a.distance_in_km) ?? 0) > 0 ? num(a.distance_in_km) : undefined,
+    elevationGainM: (num(a.elevation_gain) ?? 0) > 0 ? Math.round(num(a.elevation_gain)!) : undefined,
     id: num(a.id),
     ess: num(a.external_stress_score),
     avwatts: num(a.activity_avwatts),
@@ -164,6 +174,10 @@ export function richActivities(raw: Record<string, unknown> | undefined): RichAc
   grab("getRunningActivity", "Run");
   grab("getCyclingActivity", "Ride");
   grab("getSwimmingActivity", "Swim");
+  // Hikes ride on the other-activity list (2026-09-09): only the hike/walk/ruck rows join the readout
+  // pipeline — strength, climbing and race transitions carry nothing a session dive can read.
+  const other = (raw?.getOtherActivity as { activities?: unknown[] } | undefined)?.activities ?? [];
+  for (const a of other as Record<string, unknown>[]) if (HIKE_TYPE_RE.test(String(a.activity_type ?? ""))) out.push(mapRichActivity(a, "Hike"));
   return out.filter((a) => a.date);
 }
 

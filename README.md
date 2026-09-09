@@ -321,9 +321,13 @@ Deep feedback is **generated automatically at sync for every session** (no butto
 the dashboard's **Last session** card shows it **inline** (rendering a stored readout makes no LLM call),
 and the history is kept for later analysis (`data/session-feedback.jsonl`). When the latest session has no
 stored readout yet, the card fetches one on page load (see below) rather than showing a static placeholder.
-The deep dive covers **run, ride and swim** (the sports with a raw .FIT pipeline); a hike, strength session
-or climb logged since the card's session is **named under it** (*"Since then: …"*) so the card never hides
-what you actually did last. Generation is best-effort and cost-aware: it runs
+The deep dive covers **run, ride, swim and hike** (the sports with a raw .FIT pipeline — `fit-sync` pulls
+hiking/walking/rucking streams too); a strength session or climb logged since the card's session is
+**named under it** (*"Since then: …"*) so the card never hides what you actually did last. **A hike is read
+on its own terms:** no power, no DFA-α1, and speed÷HR "decoupling" follows the gradient rather than fitness,
+so the model is told to judge it by HR against zones, HR drift over hours on feet, distance and elevation
+gain, its stress against your **prior hikes** (the comparable norm is same-sport), and where it sits in a
+run of consecutive days — never by pace or efficiency. Generation is best-effort and cost-aware: it runs
 once per session after `fit-sync` has pulled the raw **.FIT** (so it's a real deep dive), is API-key-gated,
 cost-logged, and capped per sync; a session without its .FIT yet is picked up on a later sync (skipped
 cheaply, no tokens). Since each session generated is one LLM call, **`COACH_AUTO_SESSION_FEEDBACK`** throttles
@@ -652,7 +656,8 @@ stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and 
   than "indoor", shows in the 7-day load table, and moves the header's *Latest ingested workout* line. When
   anything has been logged **after** the last deep readout (a hike has no .FIT dive — those cover run, ride
   and swim), the last-session line adds *"Since then: 09-09 Hike · Gwynedd Rucking · 3h 49m · 11.7 km ·
-  +1047 m …"* rather than passing a days-old ride off as your latest session. It makes **no LLM
+  +1047 m …"* rather than passing a days-old ride off as your latest session; a hike then gets its own deep
+  readout at the next sync like any run or ride. It makes **no LLM
   call** — a *view* over the same engine — and stays short when nothing moved. The since-yesterday diff is
   powered by a tiny per-day snapshot under `data/brief/` (gitignored). `COACH_DAILY_BRIEF=false` drops the
   brief sections, leaving the plain readiness card.

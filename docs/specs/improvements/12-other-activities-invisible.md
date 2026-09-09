@@ -1,6 +1,7 @@
 # 12 — Hikes, strength and other activities were invisible to the app (9 Sep 2026)
 
-**Status:** ✓ landed 2026-09-09 · **Opened:** 2026-09-09 · **Owner:** Max
+**Status:** ✓ phase 1 landed 2026-09-09 (ingest + honest surfaces); ✓ phase 2 same evening (a hike gets the
+deep session readout) · **Opened:** 2026-09-09 · **Owner:** Max
 
 ## Symptom
 
@@ -52,12 +53,43 @@ classifiers), `test/weather.test.ts` (hike verdict + done), `test/dashboard.test
 line ignores a stray transition, load row, "Since then" on both surfaces and its absence when nothing is
 newer).
 
+## Phase 2 — the hike readout (same day, on request: "deep analyse all three hikes")
+
+Phase 1 named a hike but couldn't analyse it. Phase 2 puts a hike through the same deep-dive pipeline as a
+run or ride, without pretending it *is* one:
+
+1. **`richActivities` reads the hike rows** of `getOtherActivity` (`HIKE_TYPE_RE`: hiking/walking/rucking/
+   trekking) as sport `Hike`, carrying `name`, `distanceKm`, `elevationGainM`. Strength, climbing and
+   transitions stay out of the readout pipeline (nothing a session dive can read). Every consumer of the
+   rich list is sport-filtered (run ramp, EF/durability/threshold trends, FTP diagnosis) except the daily
+   ESS sum for the sleep→load correlation — where a hike's stress *should* count.
+2. **`fit-sync` pulls hike `.FIT` streams** (`isStreamCandidate` + `sportOf` know hiking/walking/rucking),
+   so the auto-feedback at sync — which only generates once the raw stream is local — picks hikes up, and
+   the `.FIT` decay joins a hike whether the watch tagged it hiking (17) or walking (11).
+3. **The model reads a hike on its own terms.** `buildSessionContext` emits a HIKE block instead of the
+   power-efficiency / DFA-α1 lines: judge it by HR vs zones, HR drift late-vs-early (the durability signal
+   on feet), ESS against the athlete's *hike* norm (`comparable` is same-sport, so the three Gwynedd days
+   norm against each other), distance + elevation gain, and consecutive-day accumulation. Speed÷HR
+   decoupling is reported but explicitly labelled terrain-driven; run dynamics (GCT etc.) are not read; the
+   absent DFA/power fields are declared absent so the model doesn't flag them as a data gap. No Detail
+   durability fetch is attempted (no AIE Detail tool for a hike).
+4. **Surfaces:** the Last-session card and switcher now include hikes; the dashboard `/session-feedback`
+   route accepts `sport=Hike`; the "Since then" note treats a hike as readout-pending rather than
+   un-analysable.
+
+Tests: `test/richActivity.test.ts` (hike rows in, strength/climb/transition out), `test/fitsync.test.ts`
+(hiking/walking are stream candidates), `test/session.test.ts` (latest hike picked, prior hikes form the
+norm, hiking- and walking-tagged decays join, the HIKE context block and the absent power/GCT lines).
+
+**Reading the three Gwynedd days honestly.** Three consecutive ~3.8 h hikes at ESS 152/178/178 on a CTL
+of ~31 is roughly double the athlete's normal daily stress three days running; the readouts should say so
+in the light of the TSB on each day, and the coach should treat the block as a load event, not three easy
+walks. That is what the HIKE block asks the model to do.
+
 ## Deliberately NOT done
 
-- **No deep readout for hikes/strength.** `fit-sync` still pulls `.FIT` files for run/ride/swim/multisport
-  only, and the biomechanics/power-curve parsers are built for those. Extending the dive to hiking would
-  mean a new parser path and a new prompt; the honest "named, not analysed" note is the right end state
-  until that is wanted.
+- **Strength / climbing readouts.** Nothing in a strength or bouldering `.FIT` maps onto this pipeline's
+  signals; they stay named-not-analysed.
 - **AIE's load model was never wrong.** `getRecoveryModel` already included the walks' stress; nothing about
   CTL/ATL/TSB changes here (rule 7.2: never re-derive the load science).
 

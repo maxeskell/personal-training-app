@@ -1483,7 +1483,8 @@ test("Last session: activities logged after the latest readout are named ('Since
   const notes = html.match(/Since then: [^<]*/g) ?? [];
   assert.equal(notes.length, 2, "Today's last-session line AND the Last-session card both say what came after");
   assert.match(notes[0], /09-09 Hike · Gwynedd Rucking · 3h 49m · 11\.7 km · \+1047 m; 09-08 Hike[^;]*; 09-07 Hike/);
-  assert.match(html, /no deep readout — that needs a raw \.FIT and covers run, ride and swim/);
+  // Hikes are readout-able (fit-sync pulls their .FIT since 2026-09-09) — the note says one is pending, not impossible.
+  assert.match(html, /no readout yet — hit ↻ Sync, or open it from the session switcher below/);
   assert.match(html, /Last session — 2026-09-06 Ride/, "the deep-readout card is still the ride (the only sport with a .FIT dive)");
 
   // Pure helpers: newest-first, exclusive of the readout date, capped; a missing bit is omitted, never 0.

@@ -309,8 +309,8 @@ async function latestInsights() {
 
 type LatestInsights = NonNullable<Awaited<ReturnType<typeof latestInsights>>>;
 type SessionFeedbackResult = { status: string; markdown: string; deep?: boolean };
-type SessionSport = "Run" | "Ride" | "Swim";
-const SESSION_SPORTS: readonly SessionSport[] = ["Run", "Ride", "Swim"];
+type SessionSport = "Run" | "Ride" | "Swim" | "Hike";
+const SESSION_SPORTS: readonly SessionSport[] = ["Run", "Ride", "Swim", "Hike"];
 /** Validate a request's `sport` field; anything else → undefined (fall back to the day's longest activity). */
 function parseSport(v: unknown): SessionSport | undefined {
   return SESSION_SPORTS.includes(v as SessionSport) ? (v as SessionSport) : undefined;

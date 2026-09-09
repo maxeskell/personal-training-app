@@ -49,6 +49,10 @@ export interface ComparableContext {
 export interface SessionDetail {
   date: string;
   sport: RichActivity["sport"];
+  /** The activity's own name (AIE carries it on the other-activity list; null elsewhere). */
+  name: string | null;
+  distanceKm: number | null;
+  elevationGainM: number | null;
   /** Session start, unix seconds (UTC) — from the .FIT stream; null when no stream. Formatted to local for display. */
   startTimeS: number | null;
   durationMin: number | null;
@@ -138,7 +142,8 @@ export interface SessionRef {
 
 /** Does a .FIT decay's raw sport name (e.g. "cycling") match a RichActivity sport ("Ride")? */
 function decayMatchesSport(decaySport: string, sport: RichActivity["sport"]): boolean {
-  const tokens = sport === "Ride" ? ["ride", "cycl", "bike"] : [sport.toLowerCase()];
+  // A hike's .FIT is tagged hiking (17) or walking (11) by the watch; a ruck usually lands as hiking.
+  const tokens = sport === "Ride" ? ["ride", "cycl", "bike"] : sport === "Hike" ? ["hik", "walk", "ruck", "trek"] : [sport.toLowerCase()];
   return tokens.some((t) => decaySport.toLowerCase().includes(t));
 }
 
@@ -206,6 +211,9 @@ export function assembleSession(state: AthleteState, insights: InsightReport | u
   return {
     date: target.date,
     sport: target.sport,
+    name: target.name ?? null,
+    distanceKm: target.distanceKm ?? null,
+    elevationGainM: target.elevationGainM ?? null,
     startTimeS: decay?.startTimeS ?? null,
     durationMin: target.movingSec ? Math.round(target.movingSec / 60) : null,
     avgPowerW: target.avwatts != null ? Math.round(target.avwatts) : null,
@@ -240,14 +248,32 @@ function relevantFindings(insights: InsightReport, sport: string): string[] {
 export function buildSessionContext(d: SessionDetail, state: AthleteState, insights: InsightReport | undefined): string {
   const c = d.comparable;
   const efVsNorm = d.ef != null && c.efMean != null ? `${(((d.ef - c.efMean) / c.efMean) * 100).toFixed(1)}% vs ${c.efMean}` : "—";
+  const isHike = d.sport === "Hike";
   const lines: string[] = [
-    `SESSION (${d.date}, ${d.sport}) [provenance: ai-endurance unless noted]:`,
+    `SESSION (${d.date}, ${d.sport}${d.name ? ` — "${d.name}"` : ""}) [provenance: ai-endurance unless noted]:`,
     `- Duration ${fmt(d.durationMin)}min, avg power ${fmt(d.avgPowerW)}W, avg HR ${fmt(d.avgHr)}bpm, ESS ${fmt(d.ess, 1)}`,
-    `- Efficiency (power÷HR) ${fmt(d.ef, 3)} (${efVsNorm} vs your last ${c.n} ${d.sport.toLowerCase()} sessions)`,
-    `- Durability (DFA-α1) ${fmt(d.durabilityPct)}% (norm ${fmt(c.durabilityMean)}%), aerobic threshold ${fmt(d.aerThrHr)}bpm / ${fmt(d.aerThrW)}W`,
-    `- That day's form: TSB ${fmt(d.tsbOnDay)}, CTL ${fmt(d.ctlOnDay)} ${d.tsbOnDay != null && d.tsbOnDay < -10 ? "(deep in fatigue — read output in that light)" : ""}`,
-    `- Comparable norm: ESS ${fmt(c.essMean, 1)}, duration ${fmt(c.durMinMean)}min`,
   ];
+  if (d.distanceKm != null || d.elevationGainM != null) {
+    lines.push(`- Distance ${fmt(d.distanceKm, 1)}km, elevation gain ${fmt(d.elevationGainM)}m`);
+  }
+  if (isHike) {
+    // A hike is read on its own terms: no power, no DFA-α1, and speed÷HR "efficiency" is meaningless on a
+    // climb — the honest signals are HR against the aerobic zones, HR drift over hours on feet, the day's
+    // stress against the athlete's own hike norm, and where it sits in a run of consecutive days.
+    lines.push(
+      `- HIKE: read this as long aerobic time on feet, not a run. Judge it by avg HR vs zones, HR drift late vs early, ESS ${fmt(d.ess, 1)} against the hike norm ${fmt(c.essMean, 1)} (n=${c.n}), elevation, and consecutive-day accumulation — NOT by power, pace or efficiency.`,
+      `- No DFA-α1 / durability fields exist for a hike; do not flag them as missing data.`,
+      `- Comparable norm (prior hikes): ESS ${fmt(c.essMean, 1)}, duration ${fmt(c.durMinMean)}min`,
+      `- That day's form: TSB ${fmt(d.tsbOnDay)}, CTL ${fmt(d.ctlOnDay)} ${d.tsbOnDay != null && d.tsbOnDay < -10 ? "(deep in fatigue — read output in that light)" : ""}`,
+    );
+  } else {
+    lines.push(
+      `- Efficiency (power÷HR) ${fmt(d.ef, 3)} (${efVsNorm} vs your last ${c.n} ${d.sport.toLowerCase()} sessions)`,
+      `- Durability (DFA-α1) ${fmt(d.durabilityPct)}% (norm ${fmt(c.durabilityMean)}%), aerobic threshold ${fmt(d.aerThrHr)}bpm / ${fmt(d.aerThrW)}W`,
+      `- That day's form: TSB ${fmt(d.tsbOnDay)}, CTL ${fmt(d.ctlOnDay)} ${d.tsbOnDay != null && d.tsbOnDay < -10 ? "(deep in fatigue — read output in that light)" : ""}`,
+      `- Comparable norm: ESS ${fmt(c.essMean, 1)}, duration ${fmt(c.durMinMean)}min`,
+    );
+  }
   if (d.sessionsOnDate > 1) {
     const sameSportNote = d.sameSportOnDate > 1 ? ` (${d.sameSportOnDate} ${d.sport.toLowerCase()}s — this is the ${fmt(d.durationMin)}min one)` : "";
     lines.push(`- NOTE: ${d.sessionsOnDate} sessions on ${d.date}${sameSportNote}; this readout covers this ${d.sport} only.`);
@@ -279,6 +305,14 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
       }
       lines.push(
         `- Stroke-rate fade ${fmt(dy.cadenceDropPct, 1)}%, HR drift ${fmt(dy.hrDriftPct, 1)}%, aerobic decoupling ${fmt(dy.decouplingPct, 1)}% — ALL computed over active swimming only (rests/floats excluded), so they reflect the swim, not pauses. Don't read these as whole-clock numbers.`,
+      );
+    } else if (isHike) {
+      // Decoupling is speed÷HR here (no power): on climbs and descents it tracks the terrain, not the
+      // athlete — say so, and hand the model the HR drift and cadence (step-rate) fade instead.
+      lines.push(
+        `- HR drift ${fmt(dy.hrDriftPct, 1)}% (late vs early quartile) — the durability signal for a hike`,
+        `- Cadence (step-rate) drop ${fmt(dy.cadenceDropPct, 1)}%`,
+        `- Aerobic decoupling ${fmt(dy.decouplingPct, 1)}% is speed÷HR on hilly terrain — it follows the gradient profile, not fitness; do not read it as aerobic fade`,
       );
     } else {
       lines.push(

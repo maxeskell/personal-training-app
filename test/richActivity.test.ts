@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mapRichActivity, durabilityTrend, efTrend, thresholdTrend, type RichActivity } from "../src/insights/metrics.js";
+import { mapRichActivity, richActivities, durabilityTrend, efTrend, thresholdTrend, type RichActivity } from "../src/insights/metrics.js";
 
 /**
  * The AIE summary payload has three eras, all pinned here (spec 10):
@@ -133,4 +133,27 @@ test("trends stay well-behaved on an all-new-shape window (no value fields at al
   const t = durabilityTrend(acts, "Ride");
   assert.equal(t.recent, null);
   assert.equal(t.n, 0);
+});
+
+test("richActivities: hikes on the other-activity list join the readout pipeline; strength, climbing and transitions don't", () => {
+  const acts = richActivities({
+    getRunningActivity: { activities: [{ activity_date_local: "2026-09-05", activity_avhr: 150, activity_movingtime: 1800 }] },
+    getOtherActivity: {
+      activities: [
+        { activity_name: "Gwynedd Rucking", activity_type: "hiking", activity_date_local: "2026-09-09T09:26:27Z", activity_movingtime: 13711.63, activity_avhr: 124, external_stress_score: 178, elevation_gain: 1047, distance_in_km: 11.74, id: 2477472 },
+        { activity_name: "Shropshire Multisport", activity_type: "transition", activity_date_local: "2026-09-06T09:33:05Z", activity_movingtime: 88, id: 1 },
+        { activity_name: "Bouldering", activity_type: "rock_climbing", activity_date_local: "2026-09-01T12:40:53Z", activity_movingtime: 3793, distance_in_km: null, id: 2 },
+        { activity_name: "Shoulder Rehab", activity_type: "strength_training", activity_date_local: "2026-08-20T20:41:56Z", activity_movingtime: 1684, id: 3 },
+      ],
+    },
+  });
+  assert.deepEqual(acts.map((a) => `${a.date} ${a.sport}`), ["2026-09-05 Run", "2026-09-09 Hike"]);
+  const hike = acts[1];
+  assert.equal(hike.name, "Gwynedd Rucking");
+  assert.equal(hike.distanceKm, 11.74);
+  assert.equal(hike.elevationGainM, 1047);
+  assert.equal(hike.ess, 178);
+  assert.equal(hike.avhr, 124);
+  assert.equal(hike.id, 2477472);
+  assert.equal(hike.avwatts, undefined, "no power on a hike — stays absent, never 0");
 });

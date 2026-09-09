@@ -14,7 +14,7 @@ import { mapActivityDurability, type DurabilityFetcher } from "../insights/activ
  */
 export function aieDurabilityFetcher(): DurabilityFetcher {
   return async (sport, id) => {
-    if (sport === "Swim") return null;
+    if (sport !== "Run" && sport !== "Ride") return null; // no Detail tool for a swim or a hike
     try {
       return await withAie(async (aie) => {
         const tool = sport === "Run" ? "getRunningActivityDetail" : "getCyclingActivityDetail";

@@ -61,16 +61,18 @@ export async function downloadFitStream(g: GarminClient, activityId: string, dir
 
 const num = (x: unknown): number | undefined =>
   typeof x === "number" && Number.isFinite(x) ? x : typeof x === "string" && x.trim() && Number.isFinite(Number(x)) ? Number(x) : undefined;
-const sportOf = (s: string): string => (/cycl|bike|ride/i.test(s) ? "Ride" : /run/i.test(s) ? "Run" : /swim/i.test(s) ? "Swim" : s);
+const sportOf = (s: string): string =>
+  /cycl|bike|ride/i.test(s) ? "Ride" : /run/i.test(s) ? "Run" : /swim/i.test(s) ? "Swim" : /hik|walk|ruck|trek/i.test(s) ? "Hike" : s;
 
 /**
- * Garmin activity types whose raw .FIT we pull: the three endurance sports PLUS multisport races
+ * Garmin activity types whose raw .FIT we pull: the three endurance sports, hikes/walks/rucks (2026-09-09:
+ * the hill-walk readout), PLUS multisport races
  * (typeKey "multi_sport" — a triathlon/duathlon lands as ONE parent activity). Multisport was previously
  * filtered out here, which silently dropped RACE-DAY streams — the one day granular data matters most —
  * and read as a clean "0 fetched; 0 failed". Exported for tests.
  */
 export function isStreamCandidate(type: string): boolean {
-  return /run|cycl|bike|ride|swim|multi_?sport|triathlon|duathlon/.test(type);
+  return /run|cycl|bike|ride|swim|hik|walk|ruck|trek|multi_?sport|triathlon|duathlon/.test(type);
 }
 
 /** Multisport parents get their RAW stream only: get_activity_fit_data's single-session summary can't

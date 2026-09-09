@@ -1190,8 +1190,8 @@ function renderTodayCard(args: {
  */
 /**
  * Logged activities newer than `afterDate` (exclusive; null = all), newest first — the honest "since your
- * last readout" list. The deep session readout needs a raw .FIT and covers run/ride/swim, so a hike, a
- * strength session or a climb never gets one: before 2026-09-09 those weren't even ingested, and the
+ * last readout" list. The deep session readout needs a raw .FIT and covers run/ride/swim/hike, so a
+ * strength session or a climb never gets one: before 2026-09-09 hikes weren't even ingested, and the
  * dashboard kept calling a days-old ride "your last session" through three days of hill walking. Pure.
  */
 export function activitiesSince(today: AthleteState, afterDate: string | null, limit = 3): ActualActivity[] {
@@ -1215,10 +1215,10 @@ export function activityOneLine(a: ActualActivity): string {
 function newerActivitiesNote(today: AthleteState, afterDate: string | null, redact: (s: string) => string = (s) => s): string {
   const newer = activitiesSince(today, afterDate);
   if (!newer.length) return "";
-  const readoutable = newer.some((a) => a.sport === "Run" || a.sport === "Ride" || a.sport === "Swim");
+  const readoutable = newer.some((a) => a.sport === "Run" || a.sport === "Ride" || a.sport === "Swim" || a.sport === "Hike");
   const why = readoutable
     ? "no readout yet — hit ↻ Sync, or open it from the session switcher below"
-    : "no deep readout — that needs a raw .FIT and covers run, ride and swim";
+    : "no deep readout — that needs a raw .FIT and covers run, ride, swim and hike";
   return `<div class="k" style="margin-top:4px">Since then: ${newer.map((a) => escapeHtml(redact(activityOneLine(a)))).join("; ")} <span class="muted">(${why})</span></div>`;
 }
 
