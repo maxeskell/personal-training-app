@@ -281,3 +281,12 @@ test("the loader degrades (safe→null) and fails loud (clear message, no stack 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("race course overrides (swim_m / bike_km / run_km) validate as course facts — the live-number guard leaves them alone", () => {
+  const withCourse = { schema_version: 1, identity: {}, races: [{ name: "Warwick Triathlon", date: "2026-10-04", distance: "sprint", swim_m: 400, bike_km: 20, run_km: 5 }] };
+  assert.doesNotThrow(() => validateProfile(withCourse));
+  assert.equal(validateProfile(withCourse).races?.[0].swim_m, 400);
+  // Distances must be positive numbers.
+  assert.throws(() => validateProfile({ ...withCourse, races: [{ name: "x", swim_m: -400 }] }));
+  assert.throws(() => validateProfile({ ...withCourse, races: [{ name: "x", swim_m: "400 m" }] }));
+});

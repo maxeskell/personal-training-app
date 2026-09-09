@@ -15,13 +15,17 @@
  */
 
 import type { AthleteState } from "../state/types.js";
-import type { RaceSplitPlan, TargetCheck, TriPerformance } from "./splits.js";
+import type { RaceSplitPlan, TargetCheck, TriCourse, TriPerformance } from "./splits.js";
 
 /** The slice of a profile race the gate needs (mirrors profile schema `races[]` — structurally typed). */
 export interface ProfileRaceTarget {
   name?: string | null;
   date?: string | null;
   target_time?: string | null;
+  /** Course overrides — e.g. `swim_m: 400` for a pool-swim sprint. Absent → the format's standard course. */
+  swim_m?: number | null;
+  bike_km?: number | null;
+  run_km?: number | null;
 }
 
 function clock(sec: number): string {
@@ -57,30 +61,49 @@ export function parseTargetSeconds(label: string, referenceSec?: number): { minS
 const norm = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 /**
- * The athlete's own target for a plan's race. Exact DATE match wins — race names drift between
+ * The profile race that belongs to a (name, date) pair. Exact DATE match wins — race names drift between
  * sources (AI Endurance's goal was literally "Birmingham Triahtlon" while the profile said
  * "Birmingham Triathlon", so name matching alone would have missed the A-race). Fallbacks: name
  * containment either way, then a shared leading word (≥5 chars, so "Alderford"-style one-worders match).
  */
-export function targetForPlan(plan: RaceSplitPlan, races: ProfileRaceTarget[]): string | undefined {
-  const withTargets = races.filter((r) => r.target_time);
-  const planDate = plan.date?.slice(0, 10);
+export function profileRaceFor<R extends ProfileRaceTarget>(race: { race: string; date?: string | null }, races: R[]): R | undefined {
+  const planDate = race.date?.slice(0, 10);
   if (planDate) {
-    const byDate = withTargets.find((r) => r.date && String(r.date).slice(0, 10) === planDate);
-    if (byDate) return byDate.target_time!;
+    const byDate = races.find((r) => r.date && String(r.date).slice(0, 10) === planDate);
+    if (byDate) return byDate;
   }
-  const pn = norm(plan.race);
-  const byName = withTargets.find((r) => {
+  const pn = norm(race.race);
+  const byName = races.find((r) => {
     const rn = norm(r.name ?? "");
     return rn && (pn.includes(rn) || rn.includes(pn));
   });
-  if (byName) return byName.target_time!;
+  if (byName) return byName;
   const lead = pn.split(" ")[0] ?? "";
   if (lead.length >= 5) {
-    const byLead = withTargets.find((r) => norm(r.name ?? "").split(" ")[0] === lead);
-    if (byLead) return byLead.target_time!;
+    const byLead = races.find((r) => norm(r.name ?? "").split(" ")[0] === lead);
+    if (byLead) return byLead;
   }
   return undefined;
+}
+
+/** The athlete's own target for a plan's race (see {@link profileRaceFor} for the matching order). */
+export function targetForPlan(plan: RaceSplitPlan, races: ProfileRaceTarget[]): string | undefined {
+  return profileRaceFor(plan, races.filter((r) => r.target_time))?.target_time ?? undefined;
+}
+
+/**
+ * The athlete's course overrides for a race (profile `races[].swim_m / bike_km / run_km`), or undefined
+ * when the profile says nothing — the splits model then assumes the format's standard distances. This is
+ * what lets a 400 m POOL-swim sprint be modelled as one instead of the 750 m open-water default.
+ */
+export function courseForRace(race: { race: string; date?: string | null }, races: ProfileRaceTarget[]): TriCourse | undefined {
+  const r = profileRaceFor(race, races);
+  if (!r) return undefined;
+  const course: TriCourse = {};
+  if (r.swim_m != null && r.swim_m > 0) course.swimM = r.swim_m;
+  if (r.bike_km != null && r.bike_km > 0) course.bikeKm = r.bike_km;
+  if (r.run_km != null && r.run_km > 0) course.runKm = r.run_km;
+  return Object.keys(course).length ? course : undefined;
 }
 
 /**

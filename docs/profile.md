@@ -71,7 +71,7 @@ yet, it **degrades cleanly** to the full manual flow (and says so), never crashi
 |---|---|
 | `identity.name`, `identity.sex` | **AI Endurance** `getUser` (sex normalised to the `male/female/other` enum) |
 | `identity.units`, `identity.timezone` | your **`.env`** (`COACH_UNITS` mapped to `metric`/`imperial`; `COACH_TZ`) |
-| `races[]` | **AI Endurance** goal calendar — *all upcoming* races, soonest first, with priority, an inferred distance and a readable `target_time` (e.g. `sub 5:00:00`) |
+| `races[]` | **AI Endurance** goal calendar — *all upcoming* races, soonest first, with priority, an inferred distance and a readable `target_time` (e.g. `sub 5:00:00`). Optional per-race **course overrides** (`swim_m` / `bike_km` / `run_km`, e.g. `swim_m: 400` for a pool-swim sprint) are yours to add — the race-splits model and target check use them instead of the format's standard distances |
 | `availability.weekly_hours` | **MODEL estimate** from your recent training volume (see below) |
 | `identity.date_of_birth` | **Garmin** `get_user_profile` (`birthDate`) when Garmin is enabled — else **asked** (AI Endurance exposes `age`, not DOB) |
 | `identity.height_cm` | **Garmin** `get_user_profile` (`height`, normalised to cm) when Garmin is enabled — else left blank/hand-edited |

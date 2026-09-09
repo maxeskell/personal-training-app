@@ -243,6 +243,17 @@ export interface TriPerformance {
   riderWeightKg?: number;
 }
 
+/**
+ * Per-race COURSE overrides from the athlete's profile (`races[].swim_m / bike_km / run_km`) — the event's
+ * actual distances when they differ from the format's standard course (a pool-swim sprint is 400 m, not
+ * 750 m; some "sprints" run a 21 km bike). Effort factors stay those of the format.
+ */
+export interface TriCourse {
+  swimM?: number;
+  bikeKm?: number;
+  runKm?: number;
+}
+
 /** Per-format leg distances + standard age-group race-effort factors. */
 const TRI: Record<
   TriRaceType,
@@ -310,8 +321,16 @@ export function estimateTriSplits(
   perf: TriPerformance,
   durability: DurabilityState,
   date?: string,
+  course?: TriCourse,
 ): RaceSplitPlan | null {
-  const c = TRI[type];
+  const std = TRI[type];
+  // The format supplies the effort factors; the profile may override the DISTANCES (a 400 m pool swim).
+  const c = { ...std, swimM: course?.swimM ?? std.swimM, bikeKm: course?.bikeKm ?? std.bikeKm, runKm: course?.runKm ?? std.runKm };
+  const courseNote = [
+    c.swimM !== std.swimM ? `swim ${c.swimM} m (standard ${std.swimM} m)` : "",
+    c.bikeKm !== std.bikeKm ? `bike ${c.bikeKm} km (standard ${std.bikeKm} km)` : "",
+    c.runKm !== std.runKm ? `run ${c.runKm} km (standard ${std.runKm} km)` : "",
+  ].filter(Boolean);
   const cssPace = perf.cssSecPer100 != null && perf.cssSecPer100 > 0 ? perf.cssSecPer100 : undefined;
   const owPace = perf.recentOpenWaterPaceSecPer100 != null && perf.recentOpenWaterPaceSecPer100 > 0 ? perf.recentOpenWaterPaceSecPer100 : undefined;
   const hasSwim = cssPace != null || owPace != null;
@@ -378,6 +397,8 @@ export function estimateTriSplits(
       pace = perf.runThresholdPaceSecPerKm! * c.runThresholdFactor;
       basis.push(`run at threshold pace ${pctOver(c.runThresholdFactor) || "±0%"}`);
     }
+    // The run prediction is for the format's standard distance (5K/10K/…); a non-standard run leg is paced
+    // at that per-km pace over the actual distance — fine for the small deviations real courses carry.
     push(`Run ${c.runKm} km`, c.runKm, pace * c.runKm, `${clock(pace)}/km`);
   } else {
     missing.push("run (no prediction or threshold pace)");
@@ -389,7 +410,13 @@ export function estimateTriSplits(
       : durability === "slipping"
         ? "Durability is slipping — open the run conservatively and protect against the late fade."
         : "Open the run conservatively until your durability trend firms up.";
-  const strategy = `${c.label}-distance plan from your current numbers: ${basis.join("; ")}. Transitions are fixed estimates.${bikeSensitivity} ${runAdvice}${
+  // Say which course was modelled: the profile's override, or the standard one plus how to correct it —
+  // the in-app nudge for the profile field (a pool-swim sprint modelled as 750 m open water reads as a
+  // ~6 min swim that doesn't exist, and the target check then wrongly calls the target implausible).
+  const courseLine = courseNote.length
+    ? ` Course from your profile: ${courseNote.join(", ")}.`
+    : ` Standard ${c.label} course assumed (${std.swimM} m / ${std.bikeKm} km / ${std.runKm} km) — set swim_m / bike_km / run_km on the race in your profile if the event differs (e.g. a 400 m pool swim).`;
+  const strategy = `${c.label}-distance plan from your current numbers: ${basis.join("; ")}. Transitions are fixed estimates.${courseLine}${bikeSensitivity} ${runAdvice}${
     missing.length ? ` No estimate for ${missing.join(", ")}.` : ""
   }`;
 

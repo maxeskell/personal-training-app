@@ -191,7 +191,10 @@ and Garmin, and a schema guard rejects any live number that strays into the prof
 - **What this app can't set for you.** This connector is **read-only to AI Endurance**, so it can't
   write your **swim CSS or FTP** there — set those directly in the AI Endurance app. The profile's
   `ai_endurance_todo` block is a reminder, not a write path. (Race *target times* aren't on it — AIE has
-  no field for them; they live in `races[].target_time` and the coach reads them from the profile.) It
+  no field for them; they live in `races[].target_time` and the coach reads them from the profile. If an
+  event's **course** isn't the format's standard one — a **400 m pool-swim** sprint, a 21.5 km bike — set
+  `races[].swim_m` / `bike_km` / `run_km` and the race-splits model and its target check use the real
+  distances.) It
   *can* now **compute** your swim CSS from a 400/200 test (the `splits` tool / `npm run splits`) and
   recommend the number — with a maximal-effort confidence check — but applying it stays your manual step.
 - **A "Set up & improve" card on the dashboard.** A small, deterministic (no-AI) action hub in three
@@ -590,7 +593,11 @@ projection (the dashboard stays decluttered — cost lives in `npm run cost` / t
     **recent open-water pace** from the `.FIT` streams when CSS is unset — a rough MODEL, labelled as
     such), bike from FTP at the format's standard intensity (power → flat-course speed via a physics
     model), run from your standalone Garmin run prediction with an off-the-bike penalty (threshold-pace
-    fallback), plus fixed transition estimates. A leg with no usable input at all is named as missing,
+    fallback), plus fixed transition estimates. Leg **distances** are the format's standard course
+    (sprint 750 m / 20 km / 5 km, …) unless the profile race carries `swim_m` / `bike_km` / `run_km`
+    overrides — a **400 m pool-swim** sprint is then modelled as one, and the card's pacing line says
+    which course it assumed (Warwick 2026 read as "implausible" off a 750 m swim that wasn't in the
+    event). A leg with no usable input at all is named as missing,
     never invented — and the headline total then carries a loud **"⚠ not a full-race time"** warning
     rather than reading as a race prediction (an Olympic plan once shipped a headline "2:10" that
     silently excluded the whole ~30 min swim).

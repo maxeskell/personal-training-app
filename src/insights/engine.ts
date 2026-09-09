@@ -29,7 +29,7 @@ import { trainingStatusFinding, hrvStatusFinding, enduranceScoreFinding, powerCu
 import { garminTrendFindings } from "./garminTrends.js";
 import { analyseHeat, heatFinding } from "./heat.js";
 import { finiteNums, slope } from "./stats.js";
-import { triPerformanceFromState, targetForPlan, checkTargetAgainstPlan, type ProfileRaceTarget } from "./raceTargetGate.js";
+import { triPerformanceFromState, targetForPlan, checkTargetAgainstPlan, courseForRace, type ProfileRaceTarget } from "./raceTargetGate.js";
 import { engagementFindings, type EngagementContext } from "./engagement.js";
 import type { FitSummary } from "../archive/store.js";
 
@@ -508,7 +508,9 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
     .map((p) => {
       const tri = triTypeOf(p.race, p.eventType);
       if (tri) {
-        return estimateTriSplits(p.race, tri, triPerf, durState, p.date);
+        // The profile may override the course distances (races[].swim_m / bike_km / run_km) — a 400 m
+        // pool-swim sprint is modelled as one, not as the 750 m open-water default.
+        return estimateTriSplits(p.race, tri, triPerf, durState, p.date, courseForRace({ race: p.race, date: p.date }, opts?.profileRaces ?? []));
       }
       const km = runDistanceKm(p.race);
       return km && p.predictedSec != null ? estimateRunSplits(p.race, km, p.predictedSec, durState, p.date) : null;
