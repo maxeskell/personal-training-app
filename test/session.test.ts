@@ -275,3 +275,59 @@ test("isLastSessionQuestion: routes recency+session-noun questions, leaves gener
     assert.equal(isLastSessionQuestion(q), false, q);
   }
 });
+
+// ---------- Hikes get a readout of their own (2026-09-09) ----------
+
+function stateWithHikes() {
+  const s = emptyState("2026-09-09", new Date().toISOString());
+  s.raw = {
+    getCyclingActivity: { activities: [{ activity_date_local: "2026-09-06", activity_avwatts: 187, activity_avhr: 149, activity_movingtime: 4500, external_stress_score: 88, id: 10 }] },
+    getOtherActivity: {
+      activities: [
+        { activity_name: "Gwynedd Rucking", activity_type: "hiking", activity_date_local: "2026-09-09T09:26:27Z", activity_movingtime: 13711, activity_avhr: 124, external_stress_score: 178, elevation_gain: 1047, distance_in_km: 11.74, id: 2477472 },
+        { activity_name: "Gwynedd Rucking", activity_type: "hiking", activity_date_local: "2026-09-08T08:54:16Z", activity_movingtime: 13845, activity_avhr: 124, external_stress_score: 178, elevation_gain: 982, distance_in_km: 12.31, id: 2472469 },
+        { activity_name: "Gwynedd Hiking", activity_type: "hiking", activity_date_local: "2026-09-07T09:27:57Z", activity_movingtime: 14026, activity_avhr: 112, external_stress_score: 152, elevation_gain: 806, distance_in_km: 15.95, id: 2468230 },
+        { activity_name: "Shropshire Multisport", activity_type: "transition", activity_date_local: "2026-09-06T09:33:05Z", activity_movingtime: 88, id: 11 },
+      ],
+    },
+  };
+  return s;
+}
+
+test("assembleSession: the latest hike is the session; prior hikes form its norm; the .FIT decay joins by hiking/walking tags", () => {
+  const decays: SessionDecay[] = [
+    { activityId: "2477472", date: "2026-09-09", sport: "Hike", startTimeS: 1789000000, durationMin: 229, cadenceDropPct: -4.2, gctRisePct: null, voRisePct: null, hrDriftPct: 6.1, decouplingPct: 22.5, avgTempC: 14.2, avgPowerW: null, avgHr: 124, avgVerticalRatioPct: null, avgStepLengthMm: null, avgGctBalancePct: null, avgLrBalancePct: null, normalizedPowerW: null, swim: null },
+  ];
+  const d = assembleSession(stateWithHikes(), undefined, { decays })!;
+  assert.equal(d.sport, "Hike");
+  assert.equal(d.date, "2026-09-09");
+  assert.equal(d.name, "Gwynedd Rucking");
+  assert.equal(d.distanceKm, 11.74);
+  assert.equal(d.elevationGainM, 1047);
+  assert.equal(d.durationMin, 229);
+  assert.equal(d.avgPowerW, null, "no power on a hike");
+  assert.equal(d.ef, null, "no power ⇒ no efficiency, never a fabricated one");
+  assert.equal(d.comparable.n, 2, "the two earlier hikes are the comparable norm — not the ride");
+  assert.equal(d.comparable.essMean, 165); // (178 + 152) / 2
+  assert.ok(d.decay, "a hiking-tagged .FIT decay joins the hike");
+  assert.equal(d.sessionsOnDate, 1, "the race transition is not a session");
+
+  // A specific earlier hike can be named by date, and a Walk-tagged .FIT (sport 11) still joins.
+  const walkDecay: SessionDecay[] = [{ ...decays[0], activityId: "2468230", date: "2026-09-07", sport: "Walk", durationMin: 234 }];
+  const d7 = assembleSession(stateWithHikes(), undefined, { date: "2026-09-07", decays: walkDecay })!;
+  assert.equal(d7.name, "Gwynedd Hiking");
+  assert.ok(d7.decay, "a Walk-tagged .FIT joins a hike too");
+  assert.equal(d7.comparable.n, 0, "no hike before the first one");
+
+  // The model is told to read a hike on its own terms — and NOT to flag the power/DFA fields as missing.
+  const ctx = buildSessionContext(d, stateWithHikes(), undefined);
+  assert.match(ctx, /SESSION \(2026-09-09, Hike — "Gwynedd Rucking"\)/);
+  assert.match(ctx, /Distance 11\.7km, elevation gain 1047m/);
+  assert.match(ctx, /HIKE: read this as long aerobic time on feet/);
+  assert.match(ctx, /ESS 178\.0 against the hike norm 165\.0 \(n=2\)/);
+  assert.match(ctx, /No DFA-α1 \/ durability fields exist for a hike/);
+  assert.doesNotMatch(ctx, /Efficiency \(power÷HR\)/, "the power-efficiency line is not emitted for a hike");
+  assert.match(ctx, /HR drift 6\.1% \(late vs early quartile\) — the durability signal for a hike/);
+  assert.match(ctx, /decoupling 22\.5% is speed÷HR on hilly terrain/);
+  assert.doesNotMatch(ctx, /GCT rise/, "run dynamics are not read on a hike");
+});

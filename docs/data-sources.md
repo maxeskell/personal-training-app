@@ -39,7 +39,9 @@ the **four** activity lists — `getRunningActivity`, `getCyclingActivity`, `get
 — hiking, rucking, strength, climbing, plus the seconds-long **transitions** of a multisport race — and is
 mapped by its `activity_type`: `hiking`/`walking`/`rucking` → `Hike`, `strength_training`/`training` →
 `Strength`, transitions **dropped**, anything else → `Other`. Each actual keeps AIE's `activity_type`,
-`activity_name`, moving time, distance, elevation gain and external stress score. It was added on 2026-09-09
+`activity_name`, moving time, distance, elevation gain and external stress score. The hike rows also join the
+deep-readout pipeline (`richActivities` → session feedback, with `fit-sync` pulling their `.FIT`); strength and
+climbing are ingested and shown but not analysed. It was added on 2026-09-09
 after three hill-walk days never reached the app (see
 [spec 12](specs/improvements/12-other-activities-invisible.md)). The AIE load model (`getRecoveryModel`) had
 already counted them — only the activities themselves were missing.

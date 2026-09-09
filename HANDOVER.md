@@ -274,8 +274,9 @@ fire-only health check), `npm run backfill:install` (history grind).
   (TSB −50) had counted them. Fixed by reading the list in the spine (`AIE_STATE_READS`), typing the
   actuals (`Hike`/`Strength`/`Other`; transitions dropped), an on-foot weather verdict for hikes, title-based
   planned-sport classification, and a "Since then: …" note under any readout older than the newest logged
-  activity. The **deep session readout stays run/ride/swim** (it needs the .FIT pipeline; `fit-sync` still
-  filters to those types) — a hike is named, not analysed. Spec:
+  activity. Phase 2 (same evening) put **hikes through the deep session readout** — `richActivities` +
+  `fit-sync` know hiking/walking/rucking, and the session context reads a hike by HR drift, elevation and
+  its own hike norm rather than power/pace; strength and climbing stay named, not analysed. Spec:
   [docs/specs/improvements/12-other-activities-invisible.md](docs/specs/improvements/12-other-activities-invisible.md).
 - **Concurrent writes.** State writes are atomic (temp + `rename`) AND serialized by a cross-process
   lock (`proper-lockfile` on the state dir), so the dashboard autosync and a cron `update` can't

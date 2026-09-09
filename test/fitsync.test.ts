@@ -154,6 +154,8 @@ test("syncFitSummaries: a multisport race day downloads its raw stream but adds 
     assert.equal(isStreamCandidate("multi_sport"), true);
     assert.equal(isStreamCandidate("cycling"), true);
     assert.equal(isStreamCandidate("strength_training"), false);
+    assert.equal(isStreamCandidate("hiking"), true, "hikes get their .FIT pulled (2026-09-09: the hill-walk readout)");
+    assert.equal(isStreamCandidate("walking"), true);
     assert.equal(isMultisportType("multi_sport"), true);
     assert.equal(isMultisportType("cycling"), false);
 

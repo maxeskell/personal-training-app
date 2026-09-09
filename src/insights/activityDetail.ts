@@ -54,7 +54,7 @@ export interface ActivityDurability {
 }
 
 /** Injected into the session flow so tests stay hermetic — the live impl is `aieDurabilityFetcher()`. */
-export type DurabilityFetcher = (sport: "Run" | "Ride" | "Swim", id: number) => Promise<ActivityDurability | null>;
+export type DurabilityFetcher = (sport: "Run" | "Ride" | "Swim" | "Hike", id: number) => Promise<ActivityDurability | null>;
 
 function num(x: unknown): number | null {
   const n = typeof x === "number" ? x : typeof x === "string" ? Number(x) : NaN;

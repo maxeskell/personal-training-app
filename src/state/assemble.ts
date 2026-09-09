@@ -17,7 +17,7 @@ import {
   type Source,
 } from "./types.js";
 import { deriveZones } from "../insights/zones.js";
-import { loadModel } from "../insights/metrics.js";
+import { HIKE_TYPE_RE, loadModel } from "../insights/metrics.js";
 import { parseClock } from "../insights/sessionSplits.js";
 import { applyMetricOverrides, loadMetricOverrides } from "./metricOverrides.js";
 import { config } from "../config.js";
@@ -68,7 +68,7 @@ export function plannedSport(actType: unknown, title: unknown): NonNullable<Plan
 export function otherActivitySport(activityType: unknown): ActualActivity["sport"] | null {
   const t = String(activityType ?? "").toLowerCase();
   if (/transition/.test(t)) return null;
-  if (/hik|walk|ruck|trek/.test(t)) return "Hike";
+  if (HIKE_TYPE_RE.test(t)) return "Hike";
   if (/strength|training|gym|fitness_equipment/.test(t)) return "Strength";
   return "Other";
 }
