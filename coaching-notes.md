@@ -12,9 +12,8 @@
 > the MCP and the gitignored profile aren't reachable.
 
 ## To do
-- [ ] **Flip creatine to `active` on 7 Sep (day after Alderford).** Decision 19 Aug: start 3–5 g/day
-      post-race so the +1–2% water weight doesn't ride into the A-race — the supplements card's
-      `proposed` entry carries the full note; this line is the trigger to flip it.
+- [x] **Creatine flipped to `active` — DONE 9 Sep 2026 (started 3 days later than the 7 Sep plan;
+      no loading phase, 3–5 g/day). Profile entry carries `started: 2026-09-09`.**
 - [ ] **Run form — standing cues for every run + brick (from Birmingham race photos, 13 Jul 2026).**
       Surface these in run and brick session prep until habitual — the crossover is worst in the first km
       off the bike. (1) **Arm carriage:** hands cross the body's midline across the chest in nearly every
@@ -109,14 +108,21 @@
         recovery-model orthopedic run 70 / bike 77. The state-store CTL/ATL/TSB series across this window
         (CTL 58 → 25 → 31, TSB −25 on race morning, −50 by 9 Sep with no logged sessions) is a windowing
         ARTEFACT, not physiology — don't read a taper verdict off it; fix or ignore (to-do below).
-      - **Open with Max (change the conclusions):** (1) swim account — sighting/course laps/chop/drafting,
-        goggles or wetsuit trouble, cold; (2) what ate T1 beyond the exit run; (3) gut + fuelling; (4) 3rd in
-        AG's time (gap to the podium); (5) has the strap FTP test happened (nothing logged 7–9 Sep);
-        (6) creatine started 7 Sep? (profile still `proposed`).
-      - **Consequences (provisional):** winter emphasis = open-water SKILLS + swim frequency over bike
-        fitness (swim −6 min, bike +3.5 min this season); the FTP test stays the next action — race NP 196
-        with HR in reserve says nothing about 225 (AIE's DFA-α1 threshold read on the race ride: 202 W
-        cluster / 227 W ramp). Warwick (4 Oct, pool sprint) needs no open-water fix.
+      - **Max's account (9 Sep):** swim course had loads of turns, breathed every 2nd stroke instead of
+        every 3rd, and it FELT hard (at HR 142 — perceived effort, not cardiac load: rhythm/breathing +
+        momentum lost at every buoy, on two open-water swims since Birmingham). T1 = wetsuit removal +
+        putting shoes on (the flying-mount / shoes-on-pedals drill wasn't in play). Gut: great — the
+        ~60 g/h liquid-led template is banked twice now. **Podium gap: 3rd in AG went 2:39:49 — 2:23
+        ahead.** Leg-by-leg (Max − 3rd): swim +4:04, T1 −1:41, bike +3:55, T2 −0:57, run −2:58. The
+        podium was lost on swim AND bike in equal measure; transitions + run won 5:36 of it back.
+        Strap FTP test: NOT done and NOT in the plan through 18 Sep (no test session scheduled).
+      - **Consequences (agreed 9 Sep):** (1) winter emphasis = open-water SKILLS (buoy turns, breathing
+        every 2 as the OW default, sighting cadence) + swim frequency, over bike fitness — the plan's
+        12 Sep "Open Water Simulation Set" is the first rep; (2) the bike was ridden with a podium's worth
+        in hand — the strap FTP test is the next action and needs SCHEDULING (propose→confirm into AIE);
+        race NP 196 at HR 149/156 says nothing about 225 (DFA-α1 on the race ride: 202 W cluster /
+        227 W ramp); (3) T1 fix = shoes on the pedals + flying mount + suit to the waist on the exit run,
+        rehearsed before Warwick (4 Oct, pool sprint — no open-water problem there).
 - [ ] **Load series artefact.** `data/state/*.json` CTL/ATL/TSB is unusable across 15 Aug–9 Sep (CTL
       moves 20+ points in days; ATL 97 on 9 Sep with no sessions). Likely a short assembly window after
       the 3 Sep token outage rather than AIE's own numbers — check the source before trusting TSB again.
