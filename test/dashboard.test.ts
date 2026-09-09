@@ -14,7 +14,7 @@ process.env.FIT_STREAMS_DIR = mkdtempSync(joinPath(tmpdir(), "coach-dashtest-"))
 import { emptyState } from "../src/state/types.js";
 import { todayIso } from "../src/util/today.js";
 import { buildInsights } from "../src/insights/engine.js";
-import { renderDashboard, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, aieGapKeyFromSetupKey, parseResearchItems, parseActionBullets, mdLite, commonTrailingSentences, sessionFeedbackCardState, renderResearchDigestPage, clockHM } from "../src/coach/dashboard.js";
+import { renderDashboard, activitiesSince, activityOneLine, ftpEstimateGapNote, trendsHeading, renderSetupImprove, buildSetupItems, aieTodoCopy, aieGapKeyFromSetupKey, parseResearchItems, parseActionBullets, mdLite, commonTrailingSentences, sessionFeedbackCardState, renderResearchDigestPage, clockHM } from "../src/coach/dashboard.js";
 import { parseOpenItem } from "../src/coach/setupCard.js";
 import { redactRaceNames } from "../src/coach/dashboardHelpers.js";
 import type { ProfileQuestion } from "../src/profile/questions.js";
@@ -1426,4 +1426,79 @@ test("garminOnlyLines: lists .FIT summaries newer than the last readout, escaped
   assert.match(html, /09-02 Ride — 1h 32m · 171 W avg · 141 bpm avg/);
   assert.match(html, /Ride&lt;script&gt;/, "sport is escaped");
   assert.equal(garminOnlyLines([], null), "");
+});
+
+// ---------- Hikes / strength reach Today, the freshness line and the last-session note (2026-09-09) ----------
+
+test("Today: a planned hike is marked done by a logged hike; the freshness line names the hike, not the older ride", () => {
+  const today = "2026-09-09";
+  const s = emptyState(today, new Date().toISOString());
+  s.plannedSessions = { value: [{ date: today, sport: "Hike", durationMin: 120, title: "Hill Walking" }], source: "ai-endurance" };
+  s.actualActivities = {
+    value: [
+      { date: "2026-09-06", sport: "Ride", durationMin: 75, distanceKm: 38.2 },
+      { date: today, sport: "Hike", type: "hiking", name: "Gwynedd Rucking", durationMin: 229, distanceKm: 11.74, elevationGainM: 1047, ess: 178 },
+    ],
+    source: "ai-endurance",
+  };
+  s.raw = {
+    getCyclingActivity: { activities: [{ activity_date_local: "2026-09-06T08:18:00Z", activity_movingtime: 4500, activity_avwatts: 187, activity_avhr: 149 }] },
+    getOtherActivity: {
+      activities: [
+        { activity_name: "Gwynedd Rucking", activity_type: "hiking", activity_date_local: "2026-09-09T09:26:27Z", activity_movingtime: 13711 },
+        { activity_name: "Shropshire Multisport", activity_type: "transition", activity_date_local: "2026-09-10T09:33:05Z", activity_movingtime: 88 }, // a stray future-dated T2 must not win
+      ],
+    },
+  };
+  const html = renderDashboard({ window: [s], decisions: [], setupHealth: { hasApiKey: true, waterTempSet: true, lastSyncAgeHours: 1 } });
+  assert.match(html, /You're done for today/, "the logged hike completes the planned walk");
+  assert.match(html, /Latest ingested workout <b>[^<]*9 Sep 2026/, "the hike is the latest workout, not the 6 Sep ride");
+  assert.doesNotMatch(html, /Latest ingested workout <b>[^<]*10 Sep/, "a transition is not a workout");
+  // The 7-day load table gains a Hike row with the walk's time and distance.
+  assert.match(html, /<tr><td>Hike<\/td><td>1<\/td><td>3h 49m<\/td><td>11\.7 km<\/td><\/tr>/);
+});
+
+test("Last session: activities logged after the latest readout are named ('Since then'), never hidden behind a days-old ride", () => {
+  const today = "2026-09-09";
+  const s = emptyState(today, new Date().toISOString());
+  s.actualActivities = {
+    value: [
+      { date: "2026-09-06", sport: "Ride", durationMin: 75, distanceKm: 38.2 },
+      { date: "2026-09-07", sport: "Hike", name: "Gwynedd Hiking", durationMin: 234, distanceKm: 15.95, elevationGainM: 806 },
+      { date: "2026-09-08", sport: "Hike", name: "Gwynedd Rucking", durationMin: 231, distanceKm: 12.31, elevationGainM: 982 },
+      { date: today, sport: "Hike", name: "Gwynedd Rucking", durationMin: 229, distanceKm: 11.74, elevationGainM: 1047 },
+    ],
+    source: "ai-endurance",
+  };
+  s.raw = { getCyclingActivity: { activities: [{ activity_date_local: "2026-09-06T08:18:00Z", activity_movingtime: 4500, activity_avwatts: 187, activity_avhr: 149 }] } };
+  const ins = buildInsights(s, undefined, {});
+  const html = renderDashboard({
+    window: [s],
+    decisions: [],
+    insights: ins,
+    sessionFeedbacks: [{ schemaVersion: 1, date: "2026-09-06", sport: "Ride", deep: true, generatedAt: new Date().toISOString(), costUsd: 0.2, markdown: "# Session feedback — 2026-09-06 Ride\n\n## Verdict\nA-race bike leg, executed close to your ceiling." }],
+    setupHealth: { hasApiKey: true, waterTempSet: true, lastSyncAgeHours: 1 },
+  });
+  // Both the Today line and the Last-session card carry the note, newest first, with the honest reason.
+  const notes = html.match(/Since then: [^<]*/g) ?? [];
+  assert.equal(notes.length, 2, "Today's last-session line AND the Last-session card both say what came after");
+  assert.match(notes[0], /09-09 Hike · Gwynedd Rucking · 3h 49m · 11\.7 km · \+1047 m; 09-08 Hike[^;]*; 09-07 Hike/);
+  assert.match(html, /no deep readout — that needs a raw \.FIT and covers run, ride and swim/);
+  assert.match(html, /Last session — 2026-09-06 Ride/, "the deep-readout card is still the ride (the only sport with a .FIT dive)");
+
+  // Pure helpers: newest-first, exclusive of the readout date, capped; a missing bit is omitted, never 0.
+  const since = activitiesSince(s, "2026-09-06", 2);
+  assert.deepEqual(since.map((a) => a.date), ["2026-09-09", "2026-09-08"]);
+  assert.equal(activitiesSince(s, "2026-09-09").length, 0, "nothing after the newest → no note");
+  assert.equal(activityOneLine({ date: "2026-09-01", sport: "Other", name: "Bouldering", durationMin: 63 }), "09-01 Other · Bouldering · 1h 03m");
+  // A readout for the newest activity → Today's line goes quiet; the Last-session card (still the ride — the
+  // only sport with a .FIT dive) keeps naming what came after it, so the two never disagree about recency.
+  const quiet = renderDashboard({
+    window: [s],
+    decisions: [],
+    insights: ins,
+    sessionFeedbacks: [{ schemaVersion: 1, date: today, sport: "Hike", deep: false, generatedAt: new Date().toISOString(), costUsd: 0.1, markdown: "# Session feedback — 2026-09-09 Hike\n\n## Verdict\nLong day out." }],
+    setupHealth: { hasApiKey: true, waterTempSet: true, lastSyncAgeHours: 1 },
+  });
+  assert.equal((quiet.match(/Since then: /g) ?? []).length, 1, "only the ride card's note remains");
 });

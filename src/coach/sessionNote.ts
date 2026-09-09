@@ -33,11 +33,11 @@ const RECOVERY_RE = /(recovery|shakeout|easy spin|technique|drills|mobility)/i;
 
 /**
  * Build the coach note for one planned session against today's state + insights. Pure. Returns null when
- * the sport carries no execution intent (Strength/Other).
+ * the sport carries no execution intent (Strength/Hike/Other).
  */
 export function nextSessionNote(session: PlannedSession, report: InsightReport | undefined, state: AthleteState): SessionNote | null {
   const sport = session.sport ?? "Other";
-  if (sport === "Strength" || sport === "Other") return null;
+  if (sport === "Strength" || sport === "Other" || sport === "Hike") return null;
 
   const title = (session.title ?? "").trim();
   const intensity = inferIntensity(title, sport);

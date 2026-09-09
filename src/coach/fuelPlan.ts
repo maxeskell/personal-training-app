@@ -379,7 +379,7 @@ export interface WeekFuelContext {
 /** Build a fuel plan for each upcoming planned session (deterministic). */
 export function buildWeekFuelPlans(sessions: PlannedSession[], ctx: WeekFuelContext): FuelPlan[] {
   return sessions
-    .filter((s) => s.sport !== "Strength") // strength fuelling is a different (and quieter) story — skip for now
+    .filter((s) => s.sport !== "Strength") // strength fuelling is a different (and quieter) story — skip for now (a hike keeps its plan: hours on foot)
     .map((s) =>
       planFuel({
         date: s.date.slice(0, 10),

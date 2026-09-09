@@ -10,6 +10,7 @@ import {
   type AthleteState,
   type DisciplineThresholds,
   type NutritionTargets,
+  type PlannedSession,
   type PowerCurveSignals,
   type RacePredictionSignals,
   type RecoveryModel,
@@ -34,13 +35,43 @@ import { extractJson, garminInner, asNumber, lastNum, lastVal, lastEl, daysAgoIs
 // tested). Re-export the two public ones so existing importers (cli, fitSync, backfill) are unaffected.
 export { extractJson, garminInner };
 
-const SPORT_FROM_ACT: Record<string, "Ride" | "Run" | "Swim" | "Strength" | "Other"> = {
+const SPORT_FROM_ACT: Record<string, PlannedSession["sport"]> = {
   Ride: "Ride",
   Run: "Run",
   Swim: "Swim",
   Bike: "Ride",
   Strength: "Strength",
 };
+/** Planned sessions AIE files under a generic act_type: classify from the type/title words instead. */
+const HIKE_RE = /\b(hik\w*|walk\w*|ruck\w*|trek\w*)\b/i;
+const STRENGTH_RE = /\b(strength|gym|rehab|core|mobility|yoga|pilates|s&c)\b/i;
+
+/**
+ * Sport for a planned workout: AIE's act_type first, then the title/type words (a "Hill Walking" or
+ * "Shoulder Rehab" filed as a generic type would otherwise land as "Other" — unfuellable, never "done").
+ * Exported for tests.
+ */
+export function plannedSport(actType: unknown, title: unknown): NonNullable<PlannedSession["sport"]> {
+  const t = String(actType ?? "");
+  const known = SPORT_FROM_ACT[t];
+  if (known) return known;
+  const words = `${t} ${String(title ?? "")}`;
+  if (HIKE_RE.test(words)) return "Hike";
+  if (STRENGTH_RE.test(words)) return "Strength";
+  return "Other";
+}
+
+/**
+ * Sport for an AIE `getOtherActivity` row from its `activity_type` (Garmin's type key). Transitions (T1/T2
+ * of a multisport race, seconds long) are noise, not sessions → null (skipped). Exported for tests.
+ */
+export function otherActivitySport(activityType: unknown): ActualActivity["sport"] | null {
+  const t = String(activityType ?? "").toLowerCase();
+  if (/transition/.test(t)) return null;
+  if (/hik|walk|ruck|trek/.test(t)) return "Hike";
+  if (/strength|training|gym|fitness_equipment/.test(t)) return "Strength";
+  return "Other";
+}
 
 export interface AssembleOptions {
   date: string;
@@ -61,6 +92,7 @@ export const AIE_STATE_READS: ReadonlyArray<[AieReadTool, Record<string, unknown
   ["getRunningActivity", { with_dfa_alpha1: true }],
   ["getCyclingActivity", { with_dfa_alpha1: true }],
   ["getSwimmingActivity", {}],
+  ["getOtherActivity", {}], // hiking / rucking / strength / climbing — invisible before 2026-09-09 (three hill-walk days never reached the app)
   ["getRecoveryModel", {}],
   ["getPlanProgress", {}],
   ["getPrediction", {}],
@@ -730,7 +762,7 @@ function mapPlanned(payload: unknown): AthleteState["plannedSessions"]["value"] 
     date: String(get(w, "date") ?? ""),
     title: typeof get(w, "title") === "string" ? (get(w, "title") as string) : undefined,
     type: typeof get(w, "act_type") === "string" ? (get(w, "act_type") as string) : undefined,
-    sport: SPORT_FROM_ACT[String(get(w, "act_type"))] ?? "Other",
+    sport: plannedSport(get(w, "act_type"), get(w, "title")),
     durationMin: asNumber(get(w, "duration_seconds")) != null
       ? Math.round(asNumber(get(w, "duration_seconds"))! / 60)
       : undefined,
@@ -756,23 +788,35 @@ function activityDistanceKm(a: unknown, sport: ActualActivity["sport"]): number 
   return undefined;
 }
 
-function collectActivities(raw: Record<string, unknown>): ActualActivity[] {
+/** Exported for tests: the four AIE activity lists → typed actuals (transitions dropped). */
+export function collectActivities(raw: Record<string, unknown>): ActualActivity[] {
   const out: ActualActivity[] = [];
-  const push = (payload: unknown, sport: ActualActivity["sport"]) => {
+  const push = (payload: unknown, sportOf: (a: unknown) => ActualActivity["sport"] | null) => {
     const arr = Array.isArray(get(payload, "activities")) ? (get(payload, "activities") as unknown[]) : [];
     for (const a of arr) {
+      const sport = sportOf(a);
+      if (!sport) continue;
       const movingSec = asNumber(get(a, "activity_movingtime"));
+      const name = get(a, "activity_name");
+      const type = get(a, "activity_type");
+      const elev = asNumber(get(a, "elevation_gain"));
+      const ess = asNumber(get(a, "external_stress_score"));
       out.push({
         activityId: String(get(a, "activity_id") ?? get(a, "id") ?? ""),
         date: String(get(a, "activity_date_local") ?? get(a, "activity_date") ?? "").slice(0, 10),
         sport,
+        type: typeof type === "string" ? type : undefined,
+        name: typeof name === "string" && name.trim() ? name.trim() : undefined,
         durationMin: movingSec != null ? Math.round(movingSec / 60) : undefined,
         distanceKm: activityDistanceKm(a, sport),
+        elevationGainM: elev != null && elev > 0 ? Math.round(elev) : undefined,
+        ess: ess != null ? ess : undefined,
       });
     }
   };
-  push(raw.getRunningActivity, "Run");
-  push(raw.getCyclingActivity, "Ride");
-  push(raw.getSwimmingActivity, "Swim");
+  push(raw.getRunningActivity, () => "Run");
+  push(raw.getCyclingActivity, () => "Ride");
+  push(raw.getSwimmingActivity, () => "Swim");
+  push(raw.getOtherActivity, (a) => otherActivitySport(get(a, "activity_type")));
   return out;
 }
