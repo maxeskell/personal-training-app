@@ -355,7 +355,8 @@ cd /Users/maxeskell/dev/personal-training-app && npm run career:build -- \
   Sync / `npm run fit-sync` puts them there automatically) and/or point `--fit-dir` at your archive. With
   no ride `.FIT`s, the power curve simply won't appear.
 - **Add an official result without touching JSON:** copy your row + splits off the timing company's results
-  page into a file (or the clipboard) and run
+  page into a file (or the clipboard) — either the results **table** (the `Pos / Name / A/G Pos / Swim / T1 /
+  Cycle / T2 / Run / Time / Status` header row plus your row) or the vertical `Key: value` block — and run
   `cd /Users/maxeskell/dev/personal-training-app && pbpaste | npm run race:result -- --date 2026-09-06 --type "Olympic triathlon" --event "Alderford Triathlon"`
   (`--file results.txt` instead of `pbpaste`, `--location "…"` to confirm the venue, `--dry-run` to preview).
   Copy the results block **last**: copying the command from a chat or this page overwrites the clipboard, and
