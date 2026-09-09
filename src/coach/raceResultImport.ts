@@ -150,6 +150,36 @@ export function parseOfficialResult(text: string): OfficialResult | null {
   };
 }
 
+/**
+ * Why `parseOfficialResult` found nothing — for the CLI's error, so a failed paste explains itself instead
+ * of just saying "no finish time". The commonest miss on a Mac: copying the *command* from a chat/README
+ * overwrites the clipboard, so `pbpaste` feeds the command back in rather than the results block.
+ */
+export function describeUnparsedInput(text: string): string[] {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (!lines.length) {
+    return [
+      "Nothing arrived on the input: the clipboard/file was empty (or held an image, not text).",
+      "Copy your results row + splits again, then re-run — or write them to a file and pass --file.",
+    ];
+  }
+  const out: string[] = [];
+  if (lines.some((l) => /race:result|race-result|pbpaste/.test(l))) {
+    out.push(
+      "The input was the race:result command itself, not a results block — copying the command overwrote the clipboard.",
+      "Copy the results block LAST (after the command is already in the terminal), or save it to a file and pass --file.",
+    );
+  } else {
+    out.push("Nothing in the input looked like a finish clock (H:MM:SS or MM:SS). This is what arrived:");
+  }
+  const preview = lines.slice(0, 5).map((l) => `  │ ${l.length > 100 ? `${l.slice(0, 97)}…` : l}`);
+  if (lines.length > 5) preview.push(`  │ … (${lines.length - 5} more line${lines.length - 5 === 1 ? "" : "s"})`);
+  return out.concat(preview);
+}
+
 const ordinal = (n: number): string => {
   const s = ["th", "st", "nd", "rd"];
   const v = n % 100;
