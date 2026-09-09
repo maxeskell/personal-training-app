@@ -85,6 +85,13 @@
 - [ ] **(agreed 11 Jul) T1 drills before Alderford (6 Sep).** Birmingham T1: **69 s of 141 stationary** + a 185 m
       transition run. Rehearse suit-half-down-before-the-rack + flying mount — 20–30 s available.
       T2 was clean (39 s watch-side) — keep the flying dismount as-is.
+- [ ] **Alderford (6 Sep 2026) debrief — OPEN.** Import the official result on the Mac first
+      (`npm run race:result --file …`, see SETUP step 6a); the dashboard's "Model track record" line then
+      scores the frozen 2:34–2:38 prediction. First read from the results page alone (no FIT data yet): the
+      miss is the swim; bike and run beat Birmingham; T1 was slower despite the drills above. To settle in
+      Claude Code on the Mac with the race `.FIT`s: (1) watch swim distance + conditions/sighting,
+      (2) bike NP and whether it was ridden to 225 or the 200 W plan, (3) what ate T1, (4) run feel + gut in
+      the first km, (5) gap to 3rd in AG. Outcomes feed the FTP-test and winter swim-vs-bike questions.
 - [x] **Pull the Results Base field splits — DONE (by Max, before 19 Aug 2026; finding not retained).**
       The pull happened but which leg separates 19th from the top 10 wasn't logged. If the winter
       swim-vs-bike emphasis question needs the number, re-pull post-season — it's 10 minutes.

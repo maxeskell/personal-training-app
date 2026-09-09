@@ -24,7 +24,9 @@ legs it modelled**; two things failed around it, and both are now fixed:
 plan per upcoming race is frozen into `data/race-predictions.json` (latest pre-race snapshot wins;
 plans with `missingLegs` or computed after race day are refused — a partial total is not a race time,
 and post-race inputs would leak an updated FTP into the "prediction"). Once career history carries the
-official result (matched by exact date), the frozen prediction is reviewed **once** — total + per-leg
+official result (matched by exact date; `npm run race:result` pastes it in off the timing page, and the per-leg
+join tolerates the model's `Swim 1500 m` vs the career file's bare `Swim` labels, `legMatches`), the frozen
+prediction is reviewed **once** — total + per-leg
 deltas, error %, and whether the official time fell inside the model's [best, worst] band — appended
 to `data/race-reviews.jsonl`, and the race-splits card renders the running **"Model track record"**
 line. Tests: `test/raceReview.test.ts` (freeze/refuse rules, upsert guard, review joins, idempotence).
