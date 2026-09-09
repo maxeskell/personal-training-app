@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   clockFromSeconds,
+  describeUnparsedInput,
   formatImport,
   inferSport,
   mergeRaceIntoHistory,
@@ -200,4 +201,20 @@ test("formatImport: names what was written, shows the rounding, and never claims
   const wet = formatImport(parsed, mergeRaceIntoHistory(null, race), "/x/career-history.json", false).join("\n");
   assert.match(wet, /^Added Example Lake Triathlon/);
   assert.match(wet, /Model track record/);
+});
+
+test("describeUnparsedInput: names an empty paste, a clipboard that held the command, or shows what arrived", () => {
+  assert.match(describeUnparsedInput("").join("\n"), /clipboard\/file was empty/);
+  assert.match(describeUnparsedInput("  \n\n").join("\n"), /clipboard\/file was empty/);
+  const cmd = describeUnparsedInput('pbpaste | npm run race:result -- --date 2026-09-06 --type "Olympic triathlon"').join("\n");
+  assert.match(cmd, /command itself/);
+  assert.match(cmd, /--file/);
+  assert.match(cmd, /│ pbpaste \| npm run race:result/);
+  const junk = describeUnparsedInput(Array.from({ length: 8 }, (_, i) => `line ${i + 1}`).join("\n")).join("\n");
+  assert.match(junk, /looked like a finish clock/);
+  assert.match(junk, /│ line 5/);
+  assert.doesNotMatch(junk, /│ line 6/);
+  assert.match(junk, /3 more lines/);
+  // Long lines are clipped so a stray page dump doesn't flood the terminal.
+  assert.match(describeUnparsedInput("x".repeat(200)).join("\n"), /x{97}…$/m);
 });

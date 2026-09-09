@@ -358,6 +358,9 @@ cd /Users/maxeskell/dev/personal-training-app && npm run career:build -- \
   page into a file (or the clipboard) and run
   `cd /Users/maxeskell/dev/personal-training-app && pbpaste | npm run race:result -- --date 2026-09-06 --type "Olympic triathlon" --event "Alderford Triathlon"`
   (`--file results.txt` instead of `pbpaste`, `--location "…"` to confirm the venue, `--dry-run` to preview).
+  Copy the results block **last**: copying the command from a chat or this page overwrites the clipboard, and
+  `pbpaste` then feeds the command back in ("No finish time found", with the error showing what arrived).
+  When in doubt, save the block to a file and pass `--file` — it doesn't depend on the clipboard.
   It upserts that date's race — official finish, placing and Swim/T1/Bike/T2/Run times — and leaves the
   bests, power curve and any FIT-derived HR/power on matching legs alone. Nothing is scraped: you paste it.
 - Set `COACH_CAREER_PATH` if you keep the file somewhere other than `data/career-history.json`.

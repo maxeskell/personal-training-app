@@ -387,7 +387,7 @@ async function cmdIngestFit(): Promise<void> {
  * `races` array changes, atomically. Deterministic, no LLM, no network; nothing is scraped.
  */
 async function cmdRaceResult(): Promise<void> {
-  const { parseOfficialResult, raceFromOfficial, mergeRaceIntoHistory, formatImport } = await import("./coach/raceResultImport.js");
+  const { parseOfficialResult, raceFromOfficial, mergeRaceIntoHistory, formatImport, describeUnparsedInput } = await import("./coach/raceResultImport.js");
   const { careerHistoryPath, parseCareerHistory } = await import("./coach/careerHistory.js");
   const { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync } = await import("node:fs");
   const { dirname } = await import("node:path");
@@ -415,7 +415,12 @@ async function cmdRaceResult(): Promise<void> {
   }
   const parsed = parseOfficialResult(text);
   if (!parsed) {
-    console.error("\nNo finish time found in the pasted block — it needs a line like `38  Jane Doe  02:42:11.9  FIN` or `Time: 2:42:12`.\n" + usage);
+    console.error(
+      "\nNo finish time found in the pasted block — it needs a line like `38  Jane Doe  02:42:11.9  FIN` or `Time: 2:42:12`.\n" +
+        describeUnparsedInput(text).join("\n") +
+        "\n" +
+        usage,
+    );
     process.exit(1);
   }
   const race = raceFromOfficial({ date, type, event: opt("event"), location: opt("location"), sport: opt("sport") }, parsed);
