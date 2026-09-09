@@ -64,6 +64,55 @@ test("parseOfficialResult: reads the finish row, placings, age group and the fiv
   assert.equal(positionLabel(r), "38th overall · 4th of 18 AG (45–49)");
 });
 
+// The same page copied as a TABLE: header row + the athlete's row, with the page's leading filler column
+// (`-`) that the header doesn't carry, then the Key: value block underneath. Tab-separated as pasted.
+const TABLE_PASTE = `\tPos\tName\tA/G Pos\tSwim\tT1\tCycle\tT2\tRun\tTime\tStatus
+-\t38\tJane Doe\t4/18\t00:35:58.4\t00:02:50.8\t01:15:50.0\t00:01:06.5\t00:46:26.3\t02:42:11.9\tFIN
+Race No: 71
+Category: Open
+Finish Status: Finished
+A/G Category: I
+A/G Pos: 4/18
+Age Group: Ages 45 - 49
+Age: 45
+Team: Example CC
+`;
+
+test("parseOfficialResult: a header+row results table reads every column — finish is the Time column, not the first clock", () => {
+  const r = parseOfficialResult(TABLE_PASTE);
+  assert.ok(r);
+  assert.equal(r.time, "2:42:12");
+  assert.equal(r.timeRaw, "02:42:11.9");
+  assert.equal(r.overallPos, 38);
+  assert.equal(r.agPos, 4);
+  assert.equal(r.agTotal, 18);
+  assert.equal(r.ageGroup, "45–49");
+  assert.equal(r.finishStatus, "Finished");
+  assert.equal(r.team, "Example CC");
+  assert.deepEqual(
+    r.legs.map((l) => `${l.label} ${l.time}`),
+    ["Swim 35:58", "T1 2:51", "Bike 1:15:50", "T2 1:07", "Run 46:26"],
+  );
+  assert.equal(positionLabel(r), "38th overall · 4th of 18 AG (45–49)");
+});
+
+test("parseOfficialResult: a bare row carrying all the clocks takes the largest as the finish and skips a leading filler cell", () => {
+  const r = parseOfficialResult("-\t38\tJane Doe\t4/18\t00:35:58.4\t00:02:50.8\t01:15:50.0\t00:01:06.5\t00:46:26.3\t02:42:11.9\tFIN\nA/G Pos: 4/18");
+  assert.ok(r);
+  assert.equal(r.time, "2:42:12");
+  assert.equal(r.overallPos, 38);
+  // Without a header the leg columns can't be named, so no legs are invented.
+  assert.deepEqual(r.legs, []);
+});
+
+test("parseOfficialResult: a space-separated table (page copied as plain text) aligns the same way", () => {
+  const r = parseOfficialResult("Pos   Name        Time        Status\n112   Jane Doe    1:45:30     FIN");
+  assert.ok(r);
+  assert.equal(r.time, "1:45:30");
+  assert.equal(r.overallPos, 112);
+  assert.equal(r.finishStatus, "FIN");
+});
+
 test("parseOfficialResult: a run result with only a Time: field and no legs still parses; junk is null", () => {
   const r = parseOfficialResult("Position: 112\nTime: 1:45:30\nCategory: MV45");
   assert.ok(r);

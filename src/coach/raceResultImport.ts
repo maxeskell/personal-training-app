@@ -12,9 +12,12 @@
  *
  * Everything in this module is PURE (parse + merge); the CLI (`race-result`) does the one file read /
  * atomic write. Tolerant of results-page formatting: any `Key: value` line is read, leg keys are
- * matched loosely (Swim / T1 / Cycle|Bike / T2 / Run), and the finish line (`38  Jane Doe  02:42:11.9  FIN`)
- * is picked out wherever it sits. Official tenths are rounded to the second (the career page shows
- * whole seconds everywhere; the tenth is kept in the summary line so nothing is silently lost).
+ * matched loosely (Swim / T1 / Cycle|Bike / T2 / Run), a tab-separated results TABLE (a header row
+ * `Pos  Name  A/G Pos  Swim  T1  Cycle  T2  Run  Time  Status` followed by the athlete's row) is read
+ * column-by-column, and a bare finish line (`38  Jane Doe  02:42:11.9  FIN`) is picked out wherever it
+ * sits — when a row carries several clocks the largest is the finish (legs are always shorter). Official
+ * tenths are rounded to the second (the career page shows whole seconds everywhere; the tenth is kept in
+ * the summary line so nothing is silently lost).
  */
 
 import type { CareerHistory, Race, RaceResult, RaceSplit } from "./careerHistory.js";
@@ -73,6 +76,36 @@ export function clockFromSeconds(sec: number): string {
 }
 
 const CLOCK = /\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?/;
+const CLOCK_ALL = /\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?/g;
+
+/** Split a pasted table line into cells: tabs, or runs of 2+ spaces (a page copied as plain text). */
+const cells = (line: string): string[] => line.split(/\t| {2,}/).map((c) => c.trim());
+
+/** Header cells that name the finish clock column. */
+const TIME_HEADER = /^(time|finish|finish time|chip time|gun time|total|overall time)$/i;
+
+/**
+ * A results-table header row: 3+ cells, none a clock, at least one naming the finish column or a leg
+ * (`Pos  Name  A/G Pos  Swim  T1  Cycle  T2  Run  Time  Status`).
+ */
+function isTableHeader(line: string): string[] | null {
+  const c = cells(line).filter(Boolean);
+  if (c.length < 3) return null;
+  if (c.some((x) => CLOCK.test(x))) return null;
+  const named = c.some((x) => TIME_HEADER.test(x) || LEG_KEYS.some((k) => k.match.test(x)));
+  return named ? c : null;
+}
+
+/**
+ * Align the athlete's row under a header. Pages prefix the row with a filler column (a `-`, a star, an
+ * empty cell) the header doesn't carry, so extra LEADING cells are dropped — the row's tail (… Time,
+ * Status) lines up with the header's tail. Pads a short row so every header still gets a cell.
+ */
+function alignRow(header: string[], row: string[]): string[] {
+  const extra = row.length - header.length;
+  const trimmed = extra > 0 ? row.slice(extra) : row;
+  return header.map((_, i) => trimmed[i] ?? "");
+}
 
 /**
  * Parse a pasted results block. Returns null when no finish clock can be found (the one thing a result
@@ -87,7 +120,30 @@ export function parseOfficialResult(text: string): OfficialResult | null {
   const legs: RaceSplit[] = [];
   let finish: { raw: string; sec: number; pos?: number } | undefined;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // A results table: a header row followed by the athlete's row — each column becomes a field
+    // (legs to `legs`, everything else keyed by its header, so `Pos` / `A/G Pos` / `Time` / `Status`
+    // read exactly like the `Key: value` lines below).
+    const header = isTableHeader(line);
+    const next = lines[i + 1];
+    if (header && next && CLOCK.test(next)) {
+      const row = alignRow(header, cells(next));
+      header.forEach((h, col) => {
+        const value = row[col];
+        if (!value) return;
+        const leg = LEG_KEYS.find((k) => k.match.test(h));
+        if (leg) {
+          const sec = officialClockToSeconds(value);
+          if (sec != null) legs.push({ label: leg.label, time: clockFromSeconds(sec) });
+          return;
+        }
+        const key = h.toLowerCase().replace(/\s+/g, " ");
+        if (!fields.has(key)) fields.set(key, value);
+      });
+      i++;
+      continue;
+    }
     const kv = line.match(/^([A-Za-z][A-Za-z0-9 /]*?)\s*:\s*(.+)$/);
     if (kv) {
       const key = kv[1].trim();
@@ -101,22 +157,25 @@ export function parseOfficialResult(text: string): OfficialResult | null {
       fields.set(key.toLowerCase().replace(/\s+/g, " "), value);
       continue;
     }
-    // The finish line: "<pos>  <name>  <clock>  <status>" — any line carrying a full H:MM:SS clock and no
-    // key. The first such line wins (a results page lists the athlete once).
+    // The finish line: "<pos>  <name>  <clock>  <status>" — any line carrying a clock and no key. The
+    // first such line wins (a results page lists the athlete once). A row that also carries the leg
+    // clocks (`- 38 Jane Doe 4/18 00:35:58.4 … 02:42:11.9 FIN`) takes the LARGEST as the finish, and the
+    // position is the first whole-number cell (a leading `-` / star filler column is skipped).
     if (!finish) {
-      const clock = line.match(CLOCK);
-      if (clock) {
-        const sec = officialClockToSeconds(clock[0]);
-        if (sec != null) {
-          const pos = line.match(/^(\d{1,4})\b/);
-          finish = { raw: clock[0], sec, pos: pos ? Number(pos[1]) : undefined };
-        }
+      const clocks = (line.match(CLOCK_ALL) ?? [])
+        .map((raw) => ({ raw, sec: officialClockToSeconds(raw) }))
+        .filter((c): c is { raw: string; sec: number } => c.sec != null);
+      if (clocks.length) {
+        const best = clocks.reduce((a, b) => (b.sec > a.sec ? b : a));
+        const posCell = cells(line).find((c) => /^\d{1,4}$/.test(c));
+        finish = { raw: best.raw, sec: best.sec, pos: posCell ? Number(posCell) : undefined };
       }
     }
   }
-  // Some pages print the finish as a "Time:"/"Finish:"/"Overall:" field instead of a results row.
+  // Some pages print the finish as a "Time:"/"Finish:"/"Overall:" field (or a `Time` table column)
+  // instead of a bare results row.
   if (!finish) {
-    for (const key of ["time", "finish", "finish time", "overall", "total", "chip time", "gun time"]) {
+    for (const key of ["time", "finish", "finish time", "overall", "overall time", "total", "chip time", "gun time"]) {
       const v = fields.get(key);
       const sec = v ? officialClockToSeconds(v) : null;
       if (v && sec != null) {

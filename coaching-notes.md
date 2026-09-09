@@ -85,9 +85,10 @@
 - [ ] **(agreed 11 Jul) T1 drills before Alderford (6 Sep).** Birmingham T1: **69 s of 141 stationary** + a 185 m
       transition run. Rehearse suit-half-down-before-the-rack + flying mount — 20–30 s available.
       T2 was clean (39 s watch-side) — keep the flying dismount as-is.
-- [ ] **Alderford (6 Sep 2026) debrief — OPEN.** Import the official result on the Mac first
-      (`npm run race:result --file …`, see SETUP step 6a); the dashboard's "Model track record" line then
-      scores the frozen 2:34–2:38 prediction. First read from the results page alone (no FIT data yet): the
+- [ ] **Alderford (6 Sep 2026) debrief — OPEN.** Official result imported 9 Sep (2:42:12, 38th overall,
+      4th of 18 AG 45–49; Swim 35:58 · T1 2:51 · Bike 1:15:50 · T2 1:07 · Run 46:26) — it now sits on the
+      career page and the dashboard's "Model track record" line scores the frozen 2:34–2:38 prediction
+      (missed by ~4 min). First read from the results page alone (no FIT data yet): the
       miss is the swim; bike and run beat Birmingham; T1 was slower despite the drills above. To settle in
       Claude Code on the Mac with the race `.FIT`s: (1) watch swim distance + conditions/sighting,
       (2) bike NP and whether it was ridden to 225 or the 200 W plan, (3) what ate T1, (4) run feel + gut in
