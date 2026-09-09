@@ -23,6 +23,37 @@ export interface SeasonArcInput {
   ctlSeries?: CtlPoint[];
   career?: CareerHistory | null;
   profile?: Profile;
+  /** Live per-activity volume from the local archive (see archiveVolume.ts) — fills the years the
+   *  career file's trajectory stops short of, and feeds the current-year projection. Optional. */
+  archive?: ArchiveVolume;
+}
+
+/** One activity's contribution to annual volume — the minimal shape the long arc needs. */
+export interface VolumeActivity {
+  date: string; // YYYY-MM-DD
+  hours: number;
+  km?: number;
+}
+export interface ArchiveVolume {
+  /** Garmin activities: elapsed time, ALL sports — the same basis as the TrainingPeaks years. Preferred. */
+  garmin: VolumeActivity[];
+  /** AI Endurance swim/bike/run moving time — the fallback for a year Garmin doesn't cover. */
+  aie: VolumeActivity[];
+}
+
+/** The current year's finish-line estimate — a MODEL, labelled as such wherever it's shown. */
+export interface YearProjection {
+  year: number;
+  ytdHours: number;
+  throughDate: string; // the `today` the year-to-date figure runs to
+  daysElapsed: number;
+  daysInYear: number;
+  /** MODEL: year-to-date ÷ days elapsed × days in the year ("if the rest of the year looks like the average so far"). */
+  atYearPace: number;
+  /** MODEL: year-to-date + the last `recentWindowDays`' daily rate × days remaining ("if it looks like the last 8 weeks").
+   *  Only when the year came from activity-level archive data. */
+  atRecentPace?: number;
+  recentWindowDays: number;
 }
 
 export interface SeasonPhaseView {
@@ -54,6 +85,8 @@ export interface SeasonArcReport {
   peakYear?: YearStat; // biggest-volume year — the benchmark
   currentYear?: YearStat; // this season's volume so far
   trajectory?: YearStat[]; // full year-by-year arc (for the bar view)
+  /** Where the current year would land if training continues — a MODEL (two pace bases). */
+  currentYearProjection?: YearProjection;
   consistencyNote?: string;
   levers: Lever[];
   focus?: string;
@@ -74,15 +107,90 @@ export function seasonReportText(r: SeasonArcReport): string {
   }
   lines.push(`- Chronic load (MODEL): CTL now ${r.ctlNow != null ? Math.round(r.ctlNow) : "—"}, trend ${r.ctlTrend ?? "—"}, target ${r.ctlTarget ?? "—"}, gap ${r.ctlGap != null ? (r.ctlGap >= 0 ? `+${r.ctlGap}` : r.ctlGap) : "—"}`);
   if (r.trajectory?.length) {
-    const arc = r.trajectory.map((y) => `${y.year}:${y.hours ?? 0}h`).join(" ");
+    const arc = r.trajectory.map((y) => `${y.year}:${y.hours ?? 0}h${y.partial ? " (to date)" : ""}`).join(" ");
     lines.push(`- Long arc (annual hours): ${arc}`);
     if (r.peakYear) lines.push(`- Peak year: ${r.peakYear.year} (${r.peakYear.hours}h). ${r.consistencyNote ?? ""}`.trim());
+    const p = r.currentYearProjection;
+    if (p) {
+      lines.push(
+        `- This year (MODEL): ${p.ytdHours}h to ${p.throughDate} (day ${p.daysElapsed} of ${p.daysInYear}) → ~${p.atYearPace}h at this year's average pace` +
+          (p.atRecentPace != null ? `, ~${p.atRecentPace}h at the last ${Math.round(p.recentWindowDays / 7)} weeks' pace` : ""),
+      );
+    }
+    const live = r.trajectory.filter((y) => y.source);
+    if (live.length) lines.push(`- Years from ${live[0].year} are summed live from the local archive (${live.map((y) => y.source).filter((s, i, a) => a.indexOf(s) === i).join(" / ")}); earlier years from the TrainingPeaks export.`);
   }
   lines.push("- Structural levers:");
   for (const l of r.levers) lines.push(`    · ${l.name} [${l.status}]: ${l.note}`);
   lines.push(`- Risk flags: ${r.flags.length ? r.flags.join(" | ") : "none"}`);
   if (r.focus) lines.push(`- Deterministic focus: ${r.focus}`);
   return lines.join("\n");
+}
+
+/** Same sanity cap as scripts/build-career-history.ts (1200 min): a corrupt multi-day file must not inflate a year. */
+const MAX_ACTIVITY_HOURS = 20;
+/** Trailing window for the "recent pace" projection basis. */
+const RECENT_PACE_DAYS = 56;
+
+function sumByYear(acts: VolumeActivity[]): Map<number, { hours: number; km: number }> {
+  const out = new Map<number, { hours: number; km: number }>();
+  for (const a of acts) {
+    const year = Number(a.date.slice(0, 4));
+    if (!Number.isFinite(year) || !(a.hours > 0) || a.hours >= MAX_ACTIVITY_HOURS) continue;
+    const d = out.get(year) ?? { hours: 0, km: 0 };
+    d.hours += a.hours;
+    if (a.km != null && a.km > 0 && a.km < 2000) d.km += a.km;
+    out.set(year, d);
+  }
+  return out;
+}
+
+/**
+ * The career file's trajectory (TrainingPeaks-built, stops where that export stopped) + every LATER year
+ * summed live from the archive. Only MISSING years are filled — a year the career file already has is left
+ * as the record of record. Garmin first (all sports, elapsed), AI Endurance as the fallback; the year in
+ * progress is marked `partial`. Pure; sorted by year.
+ */
+export function fillTrajectory(trajectory: YearStat[], archive: ArchiveVolume | undefined, today: string): YearStat[] {
+  const curYear = Number(today.slice(0, 4));
+  const out: YearStat[] = trajectory.map((y) => (y.year === curYear ? { ...y, partial: true } : { ...y }));
+  const have = new Set(out.map((y) => y.year));
+  const sources: Array<[NonNullable<YearStat["source"]>, VolumeActivity[]]> = [
+    ["garmin", archive?.garmin ?? []],
+    ["ai-endurance", archive?.aie ?? []],
+  ];
+  for (const [source, acts] of sources) {
+    for (const [year, v] of sumByYear(acts)) {
+      if (have.has(year) || year < 2000 || year > curYear) continue;
+      have.add(year);
+      out.push({ year, hours: Math.round(v.hours), km: Math.round(v.km), source, partial: year === curYear });
+    }
+  }
+  return out.sort((a, b) => a.year - b.year);
+}
+
+/**
+ * Where the year in progress lands if training continues — a MODEL on two bases: this year's average daily
+ * pace, and (when activity-level data exists for the year's source) the last 8 weeks' pace. Undefined until
+ * two weeks of the year have passed, and for a complete year. Pure.
+ */
+export function projectYear(cur: YearStat | undefined, archive: ArchiveVolume | undefined, today: string): YearProjection | undefined {
+  if (!cur?.partial || !(cur.hours != null && cur.hours > 0)) return undefined;
+  const year = cur.year;
+  const t = Date.parse(`${today.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(t)) return undefined;
+  const daysElapsed = Math.floor((t - Date.UTC(year, 0, 1)) / 86_400_000) + 1;
+  const daysInYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 366 : 365;
+  if (daysElapsed < 14 || daysElapsed >= daysInYear) return undefined;
+  const atYearPace = Math.round((cur.hours / daysElapsed) * daysInYear);
+  let atRecentPace: number | undefined;
+  const acts = cur.source === "garmin" ? archive?.garmin : cur.source === "ai-endurance" ? archive?.aie : undefined;
+  if (acts?.length) {
+    const from = new Date(t - RECENT_PACE_DAYS * 86_400_000).toISOString().slice(0, 10);
+    const recent = acts.filter((a) => a.date > from && a.date <= today && a.hours > 0 && a.hours < MAX_ACTIVITY_HOURS).reduce((s, a) => s + a.hours, 0);
+    atRecentPace = Math.round(cur.hours + (recent / RECENT_PACE_DAYS) * (daysInYear - daysElapsed));
+  }
+  return { year, ytdHours: cur.hours, throughDate: today.slice(0, 10), daysElapsed, daysInYear, atYearPace, atRecentPace, recentWindowDays: RECENT_PACE_DAYS };
 }
 
 function daysBetween(from: string, to: string): number | undefined {
@@ -197,10 +305,11 @@ export function buildSeasonArc(input: SeasonArcInput): SeasonArcReport {
   const trend = ctlTrend(input.ctlSeries);
   const ctlGap = ctlNow != null && ctlTarget != null ? Math.round((ctlNow - ctlTarget) * 10) / 10 : undefined;
 
-  const trajectory = career?.trajectory ?? [];
+  const trajectory = fillTrajectory(career?.trajectory ?? [], input.archive, today);
   const peakYear = trajectory.reduce<YearStat | undefined>((best, y) => ((y.hours ?? 0) > (best?.hours ?? 0) ? y : best), undefined);
   const curYearNum = Number(today.slice(0, 4));
   const currentYear = trajectory.find((y) => y.year === curYearNum);
+  const currentYearProjection = projectYear(currentYear, input.archive, today);
 
   // Consistency: last COMPLETE year vs the all-time peak (the cliff signal).
   const complete = trajectory.filter((y) => y.year < curYearNum);
@@ -246,6 +355,7 @@ export function buildSeasonArc(input: SeasonArcInput): SeasonArcReport {
     peakYear,
     currentYear,
     trajectory: trajectory.length ? trajectory : undefined,
+    currentYearProjection,
     consistencyNote,
     levers,
     focus,

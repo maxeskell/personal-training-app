@@ -1,7 +1,7 @@
 import { escapeHtml } from "../util/html.js";
 import { pageShell } from "./shell.js";
 import { mdProse, ageDaysFrom } from "./dashboardHelpers.js";
-import type { SeasonArcReport, Lever, CtlPoint } from "./seasonArc.js";
+import type { SeasonArcReport, Lever, CtlPoint, YearProjection } from "./seasonArc.js";
 import type { YearStat } from "./careerHistory.js";
 
 /** A persisted coach-prose report surfaced read-only on this page (markdown + its YYYY-MM-DD date). */
@@ -48,15 +48,38 @@ function countdown(days: number | undefined): string {
   return `~${Math.round(days / 30)} months`;
 }
 
-function trajectoryBars(traj: YearStat[], peakYear: number | undefined, curYear: number): string {
-  const max = Math.max(1, ...traj.map((y) => y.hours ?? 0));
+function trajectoryBars(traj: YearStat[], peakYear: number | undefined, curYear: number, proj?: YearProjection): string {
+  // The projected finish can exceed the peak, so it scales the track too (else the tail would clip).
+  const max = Math.max(1, ...traj.map((y) => y.hours ?? 0), proj?.atYearPace ?? 0);
   return traj
     .map((y) => {
-      const pct = Math.round(((y.hours ?? 0) / max) * 100);
+      const hours = y.hours ?? 0;
+      const pct = Math.round((hours / max) * 100);
       const cls = y.year === peakYear ? "fill peak" : y.year === curYear ? "fill cur" : "fill";
-      return `<div class="bar"><span class="yr">${String(y.year).slice(2)}</span><span class="track"><span class="${cls}" style="width:${pct}%"></span></span><span class="val">${y.hours ?? 0}h</span></div>`;
+      // The year in progress: solid = year-to-date, faint tail = the MODEL projection on this year's average pace.
+      const tail = proj && y.year === proj.year && proj.atYearPace > hours ? `<span class="fill proj" style="width:${Math.round(((proj.atYearPace - hours) / max) * 100)}%"></span>` : "";
+      const val = proj && y.year === proj.year ? `${hours}h → ~${proj.atYearPace}h` : `${hours}h`;
+      return `<div class="bar"><span class="yr">${String(y.year).slice(2)}${y.partial ? "*" : ""}</span><span class="track"><span class="${cls}" style="width:${pct}%"></span>${tail}</span><span class="val">${val}</span></div>`;
     })
     .join("");
+}
+
+/** The long-arc card's footnote: what the colours mean, what the year-to-date bar and its tail are, and where each span of years comes from. */
+function trajectoryNote(traj: YearStat[], proj?: YearProjection): string {
+  const parts = ["Green = your peak year · orange = this year"];
+  if (proj) {
+    const recent = proj.atRecentPace != null ? ` (~${proj.atRecentPace}h at the last ${Math.round(proj.recentWindowDays / 7)} weeks' pace)` : "";
+    parts[0] += ` to date (*${proj.ytdHours}h to ${proj.throughDate}) — the faint tail is a MODEL: ~${proj.atYearPace}h if the rest of the year matches this year's average pace${recent}`;
+  } else if (traj.some((y) => y.partial)) {
+    parts[0] += " (*year to date)";
+  }
+  const live = traj.filter((y) => y.source);
+  if (live.length) {
+    const names = live.map((y) => (y.source === "garmin" ? "Garmin archive (all sports, elapsed time)" : "AI Endurance archive (swim/bike/run, moving time)")).filter((s, i, a) => a.indexOf(s) === i);
+    parts.push(`${live[0].year} onward is summed live from your ${names.join(" / ")}; earlier years from the TrainingPeaks export.`);
+  }
+  parts.push("Raising the floor of an average year beats any single big block");
+  return parts.map((s) => s.replace(/\.$/, "")).join(". ") + ".";
 }
 
 /**
@@ -214,8 +237,8 @@ export function renderSeasonInner(report: SeasonArcReport, share = false, prose?
   const traj = r.trajectory && r.trajectory.length
     ? `<div class="card"><h2>The long arc (annual hours)</h2>
         ${r.consistencyNote ? `<div class="sub" style="margin:-4px 0 10px">${escapeHtml(r.consistencyNote)}</div>` : ""}
-        ${trajectoryBars(r.trajectory, r.peakYear?.year, curYear)}
-        <div class="sub" style="margin:8px 0 0">Green = your peak year · orange = this year. Raising the floor of an average year beats any single big block.</div></div>`
+        ${trajectoryBars(r.trajectory, r.peakYear?.year, curYear, r.currentYearProjection)}
+        <div class="sub" style="margin:8px 0 0">${escapeHtml(trajectoryNote(r.trajectory, r.currentYearProjection))}</div></div>`
     : "";
 
   const levers = r.levers.length

@@ -97,6 +97,10 @@ export interface YearStat {
   year: number;
   hours?: number;
   km?: number;
+  /** True for the year in progress — its hours are year-to-date, not a full-year total. */
+  partial?: boolean;
+  /** Set when the year was summed live from the local archive (not the TrainingPeaks-built file). */
+  source?: "garmin" | "ai-endurance";
 }
 
 export interface CareerHistory {

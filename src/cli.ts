@@ -63,6 +63,7 @@ import { renderQuestionsText, renderQuestionsMarkdown } from "./profile/question
 import { buildSeasonArc, seasonReportText } from "./coach/seasonArc.js";
 import { runSeasonNarrative } from "./coach/seasonNarrative.js";
 import { loadCareerHistory } from "./coach/careerHistory.js";
+import { loadArchiveVolume } from "./coach/archiveVolume.js";
 import { helpText } from "./help.js";
 import type { AthleteState } from "./state/types.js";
 import { aieOutage } from "./state/sourceHealth.js";
@@ -625,6 +626,7 @@ async function cmdSeason(): Promise<void> {
     ctlSeries,
     career,
     profile: state.profile,
+    archive: await loadArchiveVolume(),
   });
   if (!CoachLLM.hasApiKey()) {
     console.log("\n" + seasonReportText(report) + "\n\n(no ANTHROPIC_API_KEY — deterministic digest only; set it for the strategic narrative. The /season page shows this same report.)\n");
@@ -805,6 +807,7 @@ async function cmdDashboard(): Promise<void> {
       ctlSeries,
       career,
       profile,
+      archive: await loadArchiveVolume(),
     });
     const [narrative, weekly] = await Promise.all([latestSeasonNarrative(), latestWeeklyReviewProse()]);
     seasonProse = { narrative, weekly };

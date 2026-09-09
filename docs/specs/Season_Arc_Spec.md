@@ -34,7 +34,7 @@ the multi-season risk* — grounded in the athlete's **own** numbers, not generi
 |---|---|
 | Multi-year plan (horizon goal, dated phases + CTL targets, per-phase focus) | `profile.season_plan` (gitignored, user-authored) |
 | Current chronic load + trend | `AthleteState.load.ctl` now + `StateStore.series()` over a window |
-| Historical benchmark (year-by-year hours/km — the 2013 peak, the 2019 trough) | `career-history.json` → new `trajectory` block (built by `build-career-history.mjs`) |
+| Historical benchmark (year-by-year hours/km — the 2013 peak, the 2019 trough) | `career-history.json` → `trajectory` block (built by `scripts/build-career-history.ts` from the TrainingPeaks CSV) **+** every later year summed live at render time from `data/archive/` by `coach/archiveVolume.ts` (Garmin activities first — elapsed time, all sports, the same basis as the TP years: 2023 221h vs 225h, 2024 202h vs 203h — AI Endurance swim/bike/run moving time as the fallback). Only years the file LACKS are filled; the year in progress is marked `partial` |
 | Lifetime PBs vs current, race log | `career-history.json` (already built) |
 | Structural-lever context (strength/wk, medication, biomechanics, bloods age) | `profile` |
 
@@ -47,7 +47,15 @@ Pure function → `SeasonArcReport`, every section degrading independently to "�
    active phase's `ctl_target`; and, if `trajectory` is present, where today's CTL/volume sits vs the
    athlete's **all-time peak year** and recent years. The headline number to hold over years.
 3. **Consistency** — from `trajectory`: a simple ratio of recent annual volume to the rolling baseline, with
-   a **cliff flag** when it drops hard (the 2017→20 pattern). The single biggest multi-season risk.
+   a **cliff flag** when it drops hard (the 2017→20 pattern). The single biggest multi-season risk. Benchmarks
+   the last **complete** year, so a live-filled year counts once it has ended.
+3b. **Current-year projection** (`projectYear`, a MODEL, labelled as such in the card, the digest and the
+   narrative's grounding) — where the year in progress lands if training continues, on two bases:
+   *year-to-date ÷ days elapsed × days in the year* ("this year's average pace") and, when activity-level
+   archive data backs the year, *year-to-date + the last 56 days' daily rate × days remaining* ("the last
+   8 weeks' pace"). Undefined for the first fortnight of a year and for a complete year. The card draws the
+   year-to-date as the solid orange bar and the average-pace projection as a faint tail (the track rescales if
+   the projection beats the peak); the footnote states both numbers and where each span of years comes from.
 4. **Lever checklist** — one honest line each, derived from real fields:
    - *Swim* — is there any recent swim / a swim PB? (the named blind spot)
    - *Strength* — `health.strength_sessions_per_week` vs a 2–3×/wk target (lean mass/bone on a GLP-1)

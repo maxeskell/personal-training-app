@@ -132,9 +132,9 @@ code{background:#f4f1ea;border-radius:4px;padding:0 4px;font-size:13px}
 .season-inner .lever .nm{font-weight:600;min-width:96px}
 .season-inner .bar{display:flex;align-items:center;gap:8px;font-size:12px;margin:3px 0}
 .season-inner .bar .yr{width:34px;color:#777;font-variant-numeric:tabular-nums}
-.season-inner .bar .track{flex:1;background:#f0ede5;border-radius:3px;overflow:hidden;height:12px}
-.season-inner .bar .fill{display:block;height:12px;border-radius:3px;background:#bcae90}.season-inner .bar .fill.peak{background:#2e7d57}.season-inner .bar .fill.cur{background:#c8642d}
-.season-inner .bar .val{width:46px;text-align:right;color:#666;font-variant-numeric:tabular-nums}
+.season-inner .bar .track{flex:1;display:flex;background:#f0ede5;border-radius:3px;overflow:hidden;height:12px}
+.season-inner .bar .fill{display:block;height:12px;border-radius:3px;background:#bcae90}.season-inner .bar .fill.peak{background:#2e7d57}.season-inner .bar .fill.cur{background:#c8642d}.season-inner .bar .fill.proj{background:#c8642d;opacity:.28;border-radius:0 3px 3px 0}
+.season-inner .bar .val{min-width:46px;text-align:right;color:#666;font-variant-numeric:tabular-nums;white-space:nowrap}
 .season-inner .flag{background:#fdf3f2;border-left:3px solid #c0392b;border-radius:5px;padding:7px 11px;margin:6px 0;font-size:14px}
 .season-inner .focus{background:#eef4ff;border-left:3px solid #1558d6;border-radius:5px;padding:10px 13px;font-size:15px;font-weight:500}
 .season-inner .prose{font-size:14px;color:#333;line-height:1.6}.season-inner .prose b{color:#222}
