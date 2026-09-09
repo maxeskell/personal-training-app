@@ -206,6 +206,15 @@ function rideVerdict(
 }
 
 function runVerdict(p: PlannedSession, day: DayForecast): SessionVerdict {
+  return onFootVerdict(p, day, "Run", "runnable in any weather");
+}
+
+/** A hike/walk is on foot outdoors: the run rules (thunder, ice, heat) apply — it is not an "indoor" session. */
+function hikeVerdict(p: PlannedSession, day: DayForecast): SessionVerdict {
+  return onFootVerdict(p, day, "Hike", "walkable in any weather");
+}
+
+function onFootVerdict(p: PlannedSession, day: DayForecast, sport: "Run" | "Hike", fine: string): SessionVerdict {
   const notes: string[] = [];
   let verdict: WeatherVerdict = "good";
   if (thundery(day)) {
@@ -217,7 +226,7 @@ function runVerdict(p: PlannedSession, day: DayForecast): SessionVerdict {
     verdict = "marginal";
     notes.push("possible ice underfoot early");
   }
-  return { date: day.date, sport: "Run", title: p.title, verdict, reason: notes.join("; ") || "runnable in any weather" };
+  return { date: day.date, sport, title: p.title, verdict, reason: notes.join("; ") || fine };
 }
 
 function swimVerdict(p: PlannedSession, day: DayForecast, opts: AssessOpts): SessionVerdict {
@@ -274,6 +283,7 @@ export function assessWeek(planned: PlannedSession[], fc: Forecast, opts: Assess
     if (p.sport === "Ride") v = rideVerdict(p, day, shown, road, opts, now);
     else if (p.sport === "Run") v = runVerdict(p, day);
     else if (p.sport === "Swim") v = swimVerdict(p, day, opts);
+    else if (p.sport === "Hike") v = hikeVerdict(p, day);
     else
       // Indoor/unknown sessions are listed (not silently dropped) so the card mirrors the full week.
       v = {

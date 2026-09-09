@@ -526,10 +526,13 @@ function renderLastSession(
   const switcher = share ? "" : renderSessionSwitcher(listRecentSessions(today, insights?.sessionDecays ?? []), d);
   const startClock = clockHM(d.startTimeS);
   const when = `${d.date}${startClock ? ` ${startClock}` : ""}`;
+  // This card is the latest run/ride/swim with a readout; anything logged since (hikes, strength) is named.
+  const newerNote = newerActivitiesNote(today, d.date, redact);
   return `<div class="card"><h2>Last session — ${escapeHtml(when)} ${escapeHtml(d.sport)}</h2>
     <div style="font-size:14px;margin-bottom:6px">${escapeHtml(bits)}</div>
     ${planLine}
     ${multiNote}
+    ${newerNote}
     ${feedback}
     ${bridge}
     ${switcher}
@@ -1154,10 +1157,13 @@ function renderTodayCard(args: {
       ? ` <span style="color:#b42318;font-weight:normal">· ${ageDays} day${ageDays === 1 ? "" : "s"} ago — nothing newer has synced (AI Endurance offline${out.since ? ` since ${escapeHtml(fmtWhen(out.since, false))}` : ""})</span>`
       : "";
     const garminOnly = out.down ? garminOnlyLines(args.fitSummaries ?? [], latestFeedback?.date ?? null) : "";
+    // Newer logged activities than that readout (a hike, a strength session — anything without a deep dive)
+    // are named here, so a stale "Last session" line can never pass for the latest thing you did.
+    const newerNote = newerActivitiesNote(today, latestFeedback?.date ?? null, redact);
     yesterdayBlock = ydLine
       ? `<div class="k" style="margin-bottom:4px">Last session — ${escapeHtml(latestFeedback!.date.slice(5))} ${escapeHtml(latestFeedback!.sport)}${staleNote}</div>
-      <div style="font-size:14px;color:#444;margin-bottom:2px">${escapeHtml(redact(ydLine))}</div>${garminOnly}`
-      : garminOnly;
+      <div style="font-size:14px;color:#444;margin-bottom:2px">${escapeHtml(redact(ydLine))}</div>${newerNote}${garminOnly}`
+      : newerNote + garminOnly;
   }
 
   // No insights AND the brief off → nothing to show; render no card rather than an empty shell.
@@ -1182,12 +1188,47 @@ function renderTodayCard(args: {
  * else fall back to the typed actualActivities date. Returns the datetime/date string + whether it
  * carried a time (AI Endurance exposes date only; Garmin/.FIT can carry a time).
  */
+/**
+ * Logged activities newer than `afterDate` (exclusive; null = all), newest first — the honest "since your
+ * last readout" list. The deep session readout needs a raw .FIT and covers run/ride/swim, so a hike, a
+ * strength session or a climb never gets one: before 2026-09-09 those weren't even ingested, and the
+ * dashboard kept calling a days-old ride "your last session" through three days of hill walking. Pure.
+ */
+export function activitiesSince(today: AthleteState, afterDate: string | null, limit = 3): ActualActivity[] {
+  return (today.actualActivities.value ?? [])
+    .filter((a) => a.date && (afterDate == null || a.date.slice(0, 10) > afterDate.slice(0, 10)))
+    .sort((a, b) => b.date.localeCompare(a.date) || (b.durationMin ?? 0) - (a.durationMin ?? 0))
+    .slice(0, limit);
+}
+
+/** One activity as "09-09 Hike · Gwynedd Rucking · 3:48 · 11.7 km · +1047 m" (missing bits omitted, never 0). */
+export function activityOneLine(a: ActualActivity): string {
+  const bits = [`${a.date.slice(5, 10)} ${a.sport}`];
+  if (a.name) bits.push(a.name);
+  if (a.durationMin) bits.push(hMin(a.durationMin));
+  if (a.distanceKm && a.distanceKm > 0) bits.push(`${a.distanceKm.toFixed(1)} km`);
+  if (a.elevationGainM) bits.push(`+${a.elevationGainM} m`);
+  return bits.join(" · ");
+}
+
+/** The "since then" note under a Last-session readout — "" when nothing newer has been logged. */
+function newerActivitiesNote(today: AthleteState, afterDate: string | null, redact: (s: string) => string = (s) => s): string {
+  const newer = activitiesSince(today, afterDate);
+  if (!newer.length) return "";
+  const readoutable = newer.some((a) => a.sport === "Run" || a.sport === "Ride" || a.sport === "Swim");
+  const why = readoutable
+    ? "no readout yet — hit ↻ Sync, or open it from the session switcher below"
+    : "no deep readout — that needs a raw .FIT and covers run, ride and swim";
+  return `<div class="k" style="margin-top:4px">Since then: ${newer.map((a) => escapeHtml(redact(activityOneLine(a)))).join("; ")} <span class="muted">(${why})</span></div>`;
+}
+
 function latestWorkout(today: AthleteState): { iso: string; hasTime: boolean } | null {
   const raw = today.raw ?? {};
   const candidates: string[] = [];
-  for (const key of ["getRunningActivity", "getCyclingActivity", "getSwimmingActivity"]) {
+  for (const key of ["getRunningActivity", "getCyclingActivity", "getSwimmingActivity", "getOtherActivity"]) {
     const arr = (raw[key] as { activities?: Record<string, unknown>[] } | undefined)?.activities ?? [];
     for (const a of arr) {
+      if (/transition/i.test(String(a.activity_type ?? ""))) continue; // T1/T2 of a race — not a workout
       const s = String(a.activity_date_local ?? a.activity_date ?? a.start_date_local ?? "").trim();
       if (s) candidates.push(s);
     }

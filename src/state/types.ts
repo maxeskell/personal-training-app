@@ -29,16 +29,24 @@ export interface PlannedSession {
   date: string;
   title?: string;
   type?: string;
-  sport?: "Ride" | "Run" | "Swim" | "Strength" | "Other";
+  sport?: "Ride" | "Run" | "Swim" | "Hike" | "Strength" | "Other";
   durationMin?: number;
 }
 
 export interface ActualActivity {
   activityId?: string;
   date: string;
-  sport: "Ride" | "Run" | "Swim" | "Other";
+  /** Hike/Strength/Other come from AIE's `getOtherActivity` (hiking, rucking, strength, climbing…). */
+  sport: "Ride" | "Run" | "Swim" | "Hike" | "Strength" | "Other";
+  /** AIE's raw `activity_type` (e.g. "hiking", "strength_training") — kept for the honest label. */
+  type?: string;
+  /** The activity's own name (e.g. "Gwynedd Rucking") when AIE carries one. */
+  name?: string;
   durationMin?: number;
   distanceKm?: number;
+  elevationGainM?: number;
+  /** AIE external stress score for the activity, when reported. */
+  ess?: number;
 }
 
 /** Load model from AI Endurance (it owns these — we never recompute). */

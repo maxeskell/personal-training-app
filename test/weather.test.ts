@@ -287,3 +287,18 @@ test("dashboard omits the card cleanly when no forecast is available", () => {
   const html = renderDashboard({ window: [s], decisions: [] });
   assert.ok(!html.includes("Week ahead — plan vs weather"));
 });
+
+test("a planned hike is judged outdoors on the on-foot rules (never 'indoor') and is marked done by a logged hike", () => {
+  const plan: PlannedSession[] = [...PLAN, { date: "2026-06-10", sport: "Hike", title: "Hill Walking", durationMin: 120 }];
+  const w = assessWeek(plan, stormyWeek(), OPTS, [{ date: "2026-06-10", sport: "Hike", durationMin: 229, name: "Gwynedd Rucking" }]);
+  const hike = w.sessions.find((s) => s.sport === "Hike")!;
+  assert.ok(hike, "the hike is listed");
+  assert.notEqual(hike.verdict, "indoor");
+  assert.equal(hike.verdict, "good");
+  assert.match(hike.reason, /walkable in any weather/);
+  assert.equal(hike.done, true, "a logged hike that day marks the planned walk done");
+  // The thunderstorm day (06-11) still flags for an on-foot session.
+  const stormHike = assessWeek([{ date: "2026-06-11", sport: "Hike", title: "Ridge walk" }], stormyWeek(), OPTS).sessions[0];
+  assert.equal(stormHike.verdict, "marginal");
+  assert.match(stormHike.reason, /thunder/i);
+});

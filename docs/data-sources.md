@@ -30,6 +30,24 @@ The primary assembly path — `buildTodayState()` (orchestrator) and `npm run st
 path; it's routed through the seam in Phase 3b, alongside the first non-AIE adapter, because its
 degrade-on-connect-fail + Garmin fit-sync + weather refresh hold the open clients.)*
 
+## What the AI Endurance spine reads
+
+`AIE_STATE_READS` (`src/state/assemble.ts`) is the per-assemble read list: `getUser`, `getPlannedWorkouts`,
+the **four** activity lists — `getRunningActivity`, `getCyclingActivity`, `getSwimmingActivity` and
+`getOtherActivity` — then `getRecoveryModel`, `getPlanProgress`, `getPrediction`, `getNutritionModel`,
+`getRaceGoalEvent`. `getOtherActivity` (AIE MCP v1.2.0, 2026-08-25) carries everything that isn't run/ride/swim
+— hiking, rucking, strength, climbing, plus the seconds-long **transitions** of a multisport race — and is
+mapped by its `activity_type`: `hiking`/`walking`/`rucking` → `Hike`, `strength_training`/`training` →
+`Strength`, transitions **dropped**, anything else → `Other`. Each actual keeps AIE's `activity_type`,
+`activity_name`, moving time, distance, elevation gain and external stress score. It was added on 2026-09-09
+after three hill-walk days never reached the app (see
+[spec 12](specs/improvements/12-other-activities-invisible.md)). The AIE load model (`getRecoveryModel`) had
+already counted them — only the activities themselves were missing.
+
+Planned sessions get their sport from AIE's `act_type` first, then from the title words when the type is
+generic ("Hill Walking" → `Hike`, "Shoulder Rehab" → `Strength`), so they can be marked done, weather-judged
+on the right rules, and (for strength) not handed a fuelling plan.
+
 ## AI Endurance token lifecycle
 
 One OAuth token file, `~/.endurance-coach/aie-tokens.json` (0600), is shared by **every** process that

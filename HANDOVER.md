@@ -267,6 +267,16 @@ fire-only health check), `npm run backfill:install` (history grind).
   here requests them. v1.2.0's four new tools are registered (`getOtherActivity` +
   `analyzeActivityStream` as reads; `createRideRunWorkoutByIntensity` + `changeWorkoutIntensity` gated
   as writes, NOT proposable); `setActivityFlags` stays registered, gated, not proposable.
+- **Non-run/ride/swim activities were invisible until 2026-09-09.** `getOtherActivity` was registered on
+  2026-08-25 but never read, so three consecutive hill-walk days (7–9 Sep, ~3.8 h and ESS ~150–180 each)
+  left the dashboard saying "Last session — 09-06 Ride" under a fresh "Data last updated", the planned
+  "Hill Walking" never went ✓ done, and the freshness line stuck on Sunday — while AIE's own load model
+  (TSB −50) had counted them. Fixed by reading the list in the spine (`AIE_STATE_READS`), typing the
+  actuals (`Hike`/`Strength`/`Other`; transitions dropped), an on-foot weather verdict for hikes, title-based
+  planned-sport classification, and a "Since then: …" note under any readout older than the newest logged
+  activity. The **deep session readout stays run/ride/swim** (it needs the .FIT pipeline; `fit-sync` still
+  filters to those types) — a hike is named, not analysed. Spec:
+  [docs/specs/improvements/12-other-activities-invisible.md](docs/specs/improvements/12-other-activities-invisible.md).
 - **Concurrent writes.** State writes are atomic (temp + `rename`) AND serialized by a cross-process
   lock (`proper-lockfile` on the state dir), so the dashboard autosync and a cron `update` can't
   interleave to last-writer-wins; `load()` also shape-guards each slot, dropping a corrupt/hand-edited

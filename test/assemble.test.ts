@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { extractJson, garminInner, mapGarminThresholds, mapGarminIdentity, mapRecovery, normalizeDob, normalizeHeightCm } from "../src/state/assemble.js";
+import { AIE_STATE_READS, collectActivities, extractJson, garminInner, mapGarminThresholds, mapGarminIdentity, mapRecovery, normalizeDob, normalizeHeightCm, otherActivitySport, plannedSport } from "../src/state/assemble.js";
 import { emptyState } from "../src/state/types.js";
 
 /**
@@ -135,4 +135,58 @@ test("mapGarminIdentity reads top-level keys too and degrades when Garmin expose
   assert.equal(s2.athleteProfile.value, null);
   mapGarminIdentity(s2, null);
   assert.equal(s2.athleteProfile.value, null);
+});
+
+// ---------- getOtherActivity: hikes / strength / climbing reach the state (2026-09-09) ----------
+
+// Shape captured live 2026-09-09 (three hill-walk days that never reached the app before this read existed).
+const OTHER_FIXTURE = {
+  activities: [
+    { activity_name: "Gwynedd Rucking", activity_type: "hiking", activity_date: "2026-09-09T08:26:27Z", activity_date_local: "2026-09-09T09:26:27Z", activity_movingtime: 13711.63, activity_avhr: 124, external_stress_score: 178, elevation_gain: 1047, distance_in_km: 11.74, kcal: 1509, id: 2477472 },
+    { activity_name: "Shropshire Multisport", activity_type: "transition", activity_date_local: "2026-09-06T09:33:05Z", activity_movingtime: 88.0, external_stress_score: 1, elevation_gain: null, distance_in_km: 0.12, id: 2464538 },
+    { activity_name: "Bouldering", activity_type: "rock_climbing", activity_date_local: "2026-09-01T12:40:53Z", activity_movingtime: 3793.76, external_stress_score: 35, elevation_gain: null, distance_in_km: null, id: 2447142 },
+    { activity_name: "Shoulder Rehab - AI Endurance", activity_type: "strength_training", activity_date_local: "2026-08-20T20:41:56Z", activity_movingtime: 1684.37, external_stress_score: 11, distance_in_km: null, id: 2408365 },
+  ],
+};
+
+test("assembleState reads getOtherActivity alongside the run/ride/swim lists", () => {
+  assert.ok(AIE_STATE_READS.some(([tool]) => tool === "getOtherActivity"), "the other-activity list is part of the spine reads");
+});
+
+test("collectActivities: hikes, strength and climbing land as typed actuals; race transitions are dropped", () => {
+  const acts = collectActivities({
+    getCyclingActivity: { activities: [{ activity_date_local: "2026-09-06T08:18:00Z", activity_movingtime: 4500, distance_in_km: 38.2, external_stress_score: 88, id: 1 }] },
+    getOtherActivity: OTHER_FIXTURE,
+  });
+  assert.deepEqual(acts.map((a) => `${a.date} ${a.sport}`), ["2026-09-06 Ride", "2026-09-09 Hike", "2026-09-01 Other", "2026-08-20 Strength"]);
+  const hike = acts.find((a) => a.sport === "Hike")!;
+  assert.equal(hike.name, "Gwynedd Rucking");
+  assert.equal(hike.type, "hiking");
+  assert.equal(hike.durationMin, 229); // 13711 s
+  assert.equal(hike.distanceKm, 11.74);
+  assert.equal(hike.elevationGainM, 1047);
+  assert.equal(hike.ess, 178);
+  assert.equal(hike.activityId, "2477472");
+  const climb = acts.find((a) => a.sport === "Other")!;
+  assert.equal(climb.distanceKm, undefined, "a null distance stays unknown, never 0");
+  assert.equal(climb.elevationGainM, undefined);
+  assert.ok(!acts.some((a) => /transition/i.test(a.type ?? "")), "T1/T2 are seconds-long noise, not sessions");
+});
+
+test("otherActivitySport classifies Garmin type keys; plannedSport reads generic act_types from the title", () => {
+  assert.equal(otherActivitySport("hiking"), "Hike");
+  assert.equal(otherActivitySport("walking"), "Hike");
+  assert.equal(otherActivitySport("strength_training"), "Strength");
+  assert.equal(otherActivitySport("training"), "Strength");
+  assert.equal(otherActivitySport("rock_climbing"), "Other");
+  assert.equal(otherActivitySport("transition"), null);
+  assert.equal(otherActivitySport(undefined), "Other");
+  // Planned: AIE's own act_types still win; a "Hill Walking" / "Shoulder Rehab" filed under a generic type
+  // is classified from its words so it can be marked done, weather-judged, and (rehab) not handed gels.
+  assert.equal(plannedSport("Ride", "Hill Walking"), "Ride");
+  assert.equal(plannedSport("Other", "Hill Walking"), "Hike");
+  assert.equal(plannedSport("Other", "Shoulder Rehab"), "Strength");
+  assert.equal(plannedSport("Strength", "Anything"), "Strength");
+  assert.equal(plannedSport("Other", "Bouldering"), "Other");
+  assert.equal(plannedSport(undefined, undefined), "Other");
 });
