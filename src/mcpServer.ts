@@ -35,6 +35,7 @@ import { coachHeadline } from "./insights/headline.js";
 import { buildSeasonArc, seasonReportText } from "./coach/seasonArc.js";
 import { runSeasonNarrative } from "./coach/seasonNarrative.js";
 import { loadCareerHistory } from "./coach/careerHistory.js";
+import { loadArchiveVolume } from "./coach/archiveVolume.js";
 import { runTuneUp } from "./coach/tuneUp.js";
 import { runResearchDigest } from "./coach/research.js";
 import { readKnowledge, writePendingDigest, pendingName, knowledgeFreshness, listPending } from "./knowledge/store.js";
@@ -705,6 +706,7 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
         ctlSeries,
         career,
         profile: state.profile,
+        archive: await loadArchiveVolume(),
       });
       // The Season-arc report is meaningful WITHOUT the LLM, so degrade to the deterministic digest
       // (more useful than failing) rather than gating the whole tool on the API key.

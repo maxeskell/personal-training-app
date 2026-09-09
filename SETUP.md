@@ -412,7 +412,8 @@ cd /Users/maxeskell/dev/personal-training-app && npm run archive:import
 The **Season arc** (folded into the dashboard's **Plan** tab, and a standalone page at `/season`) is the multi-season strategic layer —
 *where am I in the multi-year build, am I building or stalling, what's this phase's focus, what's the risk* —
 for rebuilding toward 70.3 → Ironman. It's deterministic (no LLM, no cost) and reads three things you
-already have: your **career trajectory** (from Step 6a's `career-history.json`), your **live CTL** (from your
+already have: your **career trajectory** (from Step 6a's `career-history.json`, plus every later year summed live
+from your activity archive, with a labelled projection MODEL for the year in progress), your **live CTL** (from your
 synced state), and a **multi-year plan you write** in `profile.local.yaml`:
 
 ```yaml

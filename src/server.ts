@@ -13,6 +13,7 @@ import { loadEngagementContext } from "./coach/engagementContext.js";
 import { renderDashboard, renderResearchDigestPage, aieGapKeyFromSetupKey } from "./coach/dashboard.js";
 import { renderCareerPage } from "./coach/careerPage.js";
 import { loadCareerHistory } from "./coach/careerHistory.js";
+import { loadArchiveVolume } from "./coach/archiveVolume.js";
 import { recordAndReviewRaces } from "./state/raceModelLog.js";
 import { buildSeasonArc } from "./coach/seasonArc.js";
 import { renderSeasonPage, type SeasonProse } from "./coach/seasonPage.js";
@@ -183,6 +184,7 @@ async function renderLatest(share = false): Promise<string> {
       ctlSeries,
       career,
       profile,
+      archive: await loadArchiveVolume(),
     });
     const [narrative, weekly] = await Promise.all([latestSeasonNarrative(), latestWeeklyReviewProse()]);
     seasonProse = { narrative, weekly };
@@ -710,6 +712,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         ctlSeries,
         career: loadCareerHistory(),
         profile,
+        archive: await loadArchiveVolume(),
       });
       // Surface the two latest coach-prose reports read-only (no LLM on render): the multi-season narrative
       // (npm run season) and the weekly review (npm run weekly). Both loaders degrade to undefined on any

@@ -197,3 +197,99 @@ test("renderSeasonPage escapes injected plan text (no raw markup)", () => {
   assert.doesNotMatch(html, /<script>alert/);
   assert.match(html, /&lt;script&gt;/);
 });
+
+// ---- Long arc: live years from the archive + the current-year projection (MODEL) ----------------------
+
+import { fillTrajectory, projectYear, type ArchiveVolume } from "../src/coach/seasonArc.js";
+
+/** N activities of `hours` each on evenly spaced days of `year` (days 1..N × step). */
+const acts = (year: number, n: number, hours: number, step = 1) =>
+  Array.from({ length: n }, (_, i) => ({ date: new Date(Date.UTC(year, 0, 1 + i * step)).toISOString().slice(0, 10), hours, km: 10 }));
+
+const TP_ONLY: CareerHistory = { races: [], bests: [], trajectory: [{ year: 2013, hours: 390 }, { year: 2024, hours: 203 }] };
+
+test("fillTrajectory: years the career file lacks are summed from the Garmin archive; the current year is partial; existing years are untouched", () => {
+  const archive: ArchiveVolume = {
+    garmin: [...acts(2024, 100, 3), ...acts(2025, 100, 2.2), ...acts(2026, 50, 3)], // 2024 = 300h would OVERRIDE the file's 203h if we let it
+    aie: [...acts(2025, 100, 1)],
+  };
+  const t = fillTrajectory(TP_ONLY.trajectory!, archive, "2026-09-09");
+  assert.deepEqual(
+    t.map((y) => [y.year, y.hours, y.source, y.partial ?? false]),
+    [
+      [2013, 390, undefined, false],
+      [2024, 203, undefined, false], // the record of record stays
+      [2025, 220, "garmin", false], // Garmin wins over AIE (all sports, elapsed)
+      [2026, 150, "garmin", true], // year to date
+    ],
+  );
+});
+
+test("fillTrajectory: AI Endurance fills a year Garmin doesn't cover; corrupt multi-day files and future years are dropped", () => {
+  const archive: ArchiveVolume = {
+    garmin: [...acts(2026, 10, 1)],
+    aie: [...acts(2025, 10, 5), { date: "2025-06-01", hours: 30 }, ...acts(2027, 10, 5)],
+  };
+  const t = fillTrajectory([], archive, "2026-03-01");
+  assert.deepEqual(
+    t.map((y) => [y.year, y.hours, y.source]),
+    [
+      [2025, 50, "ai-endurance"], // the 30h "activity" is a corrupt file, not a session
+      [2026, 10, "garmin"],
+    ],
+  );
+  assert.deepEqual(fillTrajectory([], undefined, "2026-03-01"), [], "no archive → nothing invented");
+});
+
+test("projectYear: a MODEL on two bases — this year's average pace and the last 8 weeks' pace — only for a partial year", () => {
+  // 2026-09-09 is day 252 of 365. 150h to date → 150/252×365 ≈ 217h at year pace.
+  const garmin = [...acts(2026, 50, 3, 5)]; // days 1,6,…,246 → all 50 sessions inside the year to date
+  const cur = { year: 2026, hours: 150, source: "garmin" as const, partial: true };
+  const p = projectYear(cur, { garmin, aie: [] }, "2026-09-09")!;
+  assert.equal(p.daysElapsed, 252);
+  assert.equal(p.daysInYear, 365);
+  assert.equal(p.atYearPace, 217);
+  // Last 56 days (15 Jul → 9 Sep) hold sessions on days 201,206,…,246 = 10 × 3h = 30h → 30/56 × 113 remaining ≈ 60.5 → 211
+  assert.equal(p.atRecentPace, 211);
+  assert.equal(p.recentWindowDays, 56);
+  // Complete years and the first fortnight of a year get no projection; a TrainingPeaks-sourced year has no recent-pace basis.
+  assert.equal(projectYear({ year: 2025, hours: 220 }, { garmin, aie: [] }, "2026-09-09"), undefined);
+  assert.equal(projectYear({ year: 2026, hours: 5, partial: true }, { garmin, aie: [] }, "2026-01-10"), undefined);
+  assert.equal(projectYear({ year: 2026, hours: 120, partial: true }, undefined, "2026-06-22")?.atRecentPace, undefined);
+  assert.equal(projectYear(undefined, undefined, "2026-06-22"), undefined);
+});
+
+test("buildSeasonArc + page: the long arc shows the live years, an orange year-to-date bar with a faint projected tail, and names its sources", () => {
+  const archive: ArchiveVolume = { garmin: [...acts(2025, 100, 2.2), ...acts(2026, 50, 3, 5)], aie: [] };
+  const r = buildSeasonArc(baseInput({ today: "2026-09-09", career: TP_ONLY, archive }));
+  assert.equal(r.trajectory?.length, 4);
+  assert.equal(r.currentYear?.hours, 150);
+  assert.equal(r.currentYearProjection?.atYearPace, 217);
+  // Consistency benchmarks the last COMPLETE year — now 2025 (live), not the file's 2024.
+  assert.match(r.consistencyNote!, /^2025: 220h vs peak 390h \(2013\)/);
+
+  const html = renderSeasonPage(r);
+  assert.match(html, /class="fill cur" style="width:38%"/); // 150 of 390
+  assert.match(html, /class="fill proj" style="width:17%"/); // (217−150) of 390
+  assert.match(html, /150h → ~217h/);
+  assert.match(html, /<span class="yr">26\*<\/span>/);
+  // Apostrophes come out as &#39; — the note goes through escapeHtml like every other interpolated string.
+  assert.match(html, /MODEL: ~217h if the rest of the year matches this year&#39;s average pace \(~211h at the last 8 weeks&#39; pace\)/);
+  assert.match(html, /2025 onward is summed live from your Garmin archive \(all sports, elapsed time\); earlier years from the TrainingPeaks export/);
+  // The fill spans sit side by side inside the track (the tail must not wrap onto a hidden second line).
+  assert.match(html, /\.bar \.track\{flex:1;display:flex;/);
+
+  const txt = seasonReportText(r);
+  assert.match(txt, /2026:150h \(to date\)/);
+  assert.match(txt, /This year \(MODEL\): 150h to 2026-09-09 \(day 252 of 365\) → ~217h at this year's average pace, ~211h at the last 8 weeks' pace/);
+  assert.match(txt, /Years from 2025 are summed live from the local archive \(garmin\)/);
+});
+
+test("long arc: a projection past the all-time peak rescales the track so the tail isn't clipped", () => {
+  const archive: ArchiveVolume = { garmin: [...acts(2026, 50, 6, 5)], aie: [] }; // 300h by day 246 → ~434h projected > 390 peak
+  const r = buildSeasonArc(baseInput({ today: "2026-09-09", career: TP_ONLY, archive }));
+  assert.ok(r.currentYearProjection!.atYearPace > 390);
+  const html = renderSeasonPage(r);
+  assert.match(html, /class="fill peak" style="width:90%"/); // 390 of 434
+  assert.doesNotMatch(html, /class="fill[^"]*" style="width:1\d\d%"/, "no bar overflows its track");
+});

@@ -85,14 +85,41 @@
 - [ ] **(agreed 11 Jul) T1 drills before Alderford (6 Sep).** Birmingham T1: **69 s of 141 stationary** + a 185 m
       transition run. Rehearse suit-half-down-before-the-rack + flying mount — 20–30 s available.
       T2 was clean (39 s watch-side) — keep the flying dismount as-is.
-- [ ] **Alderford (6 Sep 2026) debrief — OPEN.** Official result imported 9 Sep (2:42:12, 38th overall,
-      4th of 18 AG 45–49; Swim 35:58 · T1 2:51 · Bike 1:15:50 · T2 1:07 · Run 46:26) — it now sits on the
-      career page and the dashboard's "Model track record" line scores the frozen 2:34–2:38 prediction
-      (missed by ~4 min). First read from the results page alone (no FIT data yet): the
-      miss is the swim; bike and run beat Birmingham; T1 was slower despite the drills above. To settle in
-      Claude Code on the Mac with the race `.FIT`s: (1) watch swim distance + conditions/sighting,
-      (2) bike NP and whether it was ridden to 225 or the 200 W plan, (3) what ate T1, (4) run feel + gut in
-      the first km, (5) gap to 3rd in AG. Outcomes feed the FTP-test and winter swim-vs-bike questions.
+- [ ] **Alderford (6 Sep 2026) debrief — data read DONE 9 Sep; Max's account still needed.** Official
+      2:42:12, 38th overall, 4th of 18 AG 45–49 (Swim 35:58 · T1 2:51 · Bike 1:15:50 · T2 1:07 · Run 46:26);
+      model predicted 2:35:52 (miss −6:20, 3.9%). Race `.FIT` decoded per leg (Garmin 24256950430):
+      - **Swim is the whole miss (+7:09 vs model, +6:02 vs Birmingham).** Garmin 1.47 km, so not a long
+        course. 2:24/100m at avg HR 142 (Birmingham 2:00 at 151; pool CSS 1:53). Faded 2:16 → 2:36/100m
+        by quarter at FLAT HR (149–151) and constant strokes per 500 m — stroke RATE dropped 26 → 24.6/min.
+        Under-effort/skills, not a hot start. Only two open-water swims since Birmingham (15 Aug 2:45/100m,
+        29 Aug 2:57/100m) vs pool 1:44–1:52 — the open-water gap, not pool fitness, is the limiter.
+        Conditions: 17–18 °C, S wind 17–20 km/h, drizzle.
+      - **Bike executed to the adopted protocol, on the 200 W plan, not 225:** NP 196 / avg 189 W,
+        VI 1.036 (target ≤1.05, Birmingham 1.10), first 5 min 167 W, 36 surges ≥300 W (was 99), 2.7% of the
+        leg ≥300 W, decoupling 1.6%, best 20-min 199 W. Avg HR 149, max 156 (Birmingham 160 / 185) — ridden
+        with a lot in hand. 3:26 faster than Birmingham at 9 W less: course + aero work landed. The 40 km
+        race-sim ride never happened (longest ride since 20 Aug: 34 km), so 225-vs-200 was never tested.
+      - **Run near-even, opened 4:46/km (plan 4:35),** kms 4:36–4:50, HR 147 → 162 (max 166; Birmingham
+        180), last km 5:03. Beat the model by 2:50; matched Birmingham. Run HR > bike HR (the inversion is
+        gone) but both ceilings low — not a max-effort race anywhere.
+      - **T1 2:51 vs 1:53:** the watch's transition segment is 4:20 with a 0.28 km lake-to-rack run, so a
+        long exit run explains most of it; T2 1:07 (0.12 km) — clean.
+      - **Taper honesty:** 20 Aug → 5 Sep held only easy/short work (nothing over 75 min, no brick, two
+        swims in 14 days). Race-morning HRV 40 / RHR 58 / sleep 8 h (score 83) — autonomically fresh;
+        recovery-model orthopedic run 70 / bike 77. The state-store CTL/ATL/TSB series across this window
+        (CTL 58 → 25 → 31, TSB −25 on race morning, −50 by 9 Sep with no logged sessions) is a windowing
+        ARTEFACT, not physiology — don't read a taper verdict off it; fix or ignore (to-do below).
+      - **Open with Max (change the conclusions):** (1) swim account — sighting/course laps/chop/drafting,
+        goggles or wetsuit trouble, cold; (2) what ate T1 beyond the exit run; (3) gut + fuelling; (4) 3rd in
+        AG's time (gap to the podium); (5) has the strap FTP test happened (nothing logged 7–9 Sep);
+        (6) creatine started 7 Sep? (profile still `proposed`).
+      - **Consequences (provisional):** winter emphasis = open-water SKILLS + swim frequency over bike
+        fitness (swim −6 min, bike +3.5 min this season); the FTP test stays the next action — race NP 196
+        with HR in reserve says nothing about 225 (AIE's DFA-α1 threshold read on the race ride: 202 W
+        cluster / 227 W ramp). Warwick (4 Oct, pool sprint) needs no open-water fix.
+- [ ] **Load series artefact.** `data/state/*.json` CTL/ATL/TSB is unusable across 15 Aug–9 Sep (CTL
+      moves 20+ points in days; ATL 97 on 9 Sep with no sessions). Likely a short assembly window after
+      the 3 Sep token outage rather than AIE's own numbers — check the source before trusting TSB again.
 - [x] **Pull the Results Base field splits — DONE (by Max, before 19 Aug 2026; finding not retained).**
       The pull happened but which leg separates 19th from the top 10 wasn't logged. If the winter
       swim-vs-bike emphasis question needs the number, re-pull post-season — it's 10 minutes.

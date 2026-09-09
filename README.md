@@ -677,8 +677,11 @@ stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and 
   a **"N next-week changes waiting →"** link points to Decide. Then the **Season arc** folded in: chronic load (CTL)
   is now a **graph** — your curve vs the **phase target** with the **gap drawn between them** — the structural
   levers + multi-season risks, then the **full season read** (the same cohesive, evidence-backed coach voice),
-  and finally the long arc of annual hours at the very bottom. The coach's-note coaching now lives per-session
-  on **Today**, not here.
+  and finally the long arc of annual hours at the very bottom — every year the TrainingPeaks-built career file stops
+  short of is **summed live from your local archive** (Garmin first, all sports, elapsed time — the same basis as the
+  TrainingPeaks years; AI Endurance swim/bike/run as the fallback), this year shows as **year-to-date** (orange, `*`)
+  with a **faint projected tail** — a **MODEL** on two bases: *this year's average pace* and *the last 8 weeks' pace*.
+  The coach's-note coaching now lives per-session on **Today**, not here.
 - **Decide** — one unified **inbox** in two halves: **decisions** to act on (top insights, the coach's
   recommendations, **next week's plan changes**, this week's coaching cues) then **housekeeping** (numbers to
   confirm, setup to finish) —
@@ -764,7 +767,9 @@ reads it automatically. See [SETUP.md → "Activity archive"](./SETUP.md).
 **Season arc (Plan tab, also standalone at `/season`):** folded into the **Plan** tab — the *strategic* layer the daily loop can't give — a **deterministic
 multi-season review** for rebuilding toward **70.3 → Ironman over years**. Reading your **own** plan
 (`profile.season_plan`: a horizon goal + dated phases with text CTL targets), your **live chronic load**
-(CTL now + trend), your **career trajectory** (year-by-year hours — your 2013 peak, your 2019 trough) and
+(CTL now + trend), your **career trajectory** (year-by-year hours — your 2013 peak, your 2019 trough; the years
+after the TrainingPeaks export are summed live from `data/archive/` at render time, and the year in progress
+carries a labelled **projection MODEL**) and
 your profile, it reads **top-down by narrowing horizon**: your **latest weekly review** surfaces first, in the
 Plan tab's this-week block (above the fold; still at the top of the standalone `/season` page) — then the arc
 itself opens on its **anchor** (your **horizon goal + countdown** and the **active phase + its one focus
