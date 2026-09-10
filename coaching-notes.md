@@ -22,11 +22,17 @@
           near Cuckney on the Saturday, nothing on race day → https://resultsbase.net/event/5844 ;
       (2) **Windermere middle (EpicMan, YMCA Lakeside)** — 29 May 2022 has no data 28–31 May, 30 May 2021
           none either → https://www.resultsbase.net/event/5980 (2022), https://resultsbase.net/event/5451 (2021);
-      (3) **Weymouth middle** — nothing within 17 km of Weymouth on any race date; BustinSkin 2010 + 2011
-          middle-distance results checked (no Eskell); the 2009 file isn't archived. If it was pre-2011 it
-          predates every data source — recall the year, then check fullonsport.com / BustinSkin.
-      Side question: the 5 Jun 2011 unconfirmed middle distance (no GPS, Tidworth the next day) — Grafman
-      2011 fits the course (~87 km / 20 km laps); confirm from memory or a Grafman 2011 results list.
+      (3) **Weymouth middle — RESOLVED 10 Sep 2026.** Max dug up his own 2011 season calendar: "05 Jun
+          Weymouth Middle Distance Tri (entered)". The 5 Jun 2011 unconfirmed middle-distance entry (no GPS;
+          ride 07:40 BST 4:29:16 + run 11:25 BST 19.1 km 1:44:34) IS Weymouth — career entry renamed
+          (`strong`, not `confirmed`: no official time yet). Not BustinSkin (10 Jul). The Grafman 2011
+          guess is dropped. Same calendar named the 22 May 2011 marathon (Hamburg, now `confirmed`) and
+          added a 30th race: ATA Novice Sprint, Bovington, Wed 6 Apr 2011 (GPS at Bovington Camp; bike
+          22.0 km 39:37 + run 5.1 km 20:54). Cotswold Middle 26 Jun 2011 was never entered and has no data
+          on the day; the only July 2011 race was IM UK. **Still wanted from Max:** the Weymouth and
+          Bovington finish times (Results Base / fullonsport / memory), and whether the duplicate
+          "IM UK 2011 — bike leg (GPS trace)" ride row on 31 Jul 2011 should fold into the official IM UK
+          entry (it double-counts the day).
       When any is confirmed, add it to `data/career-history.json` with the official splits.
 - [x] **Creatine flipped to `active` — DONE 9 Sep 2026 (started 3 days later than the 7 Sep plan;
       no loading phase, 3–5 g/day). Profile entry carries `started: 2026-09-09`.**
