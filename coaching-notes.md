@@ -30,9 +30,9 @@
           added a 30th race: ATA Novice Sprint, Bovington, Wed 6 Apr 2011 (GPS at Bovington Camp; bike
           22.0 km 39:37 + run 5.1 km 20:54). Cotswold Middle 26 Jun 2011 was never entered and has no data
           on the day; the only July 2011 race was IM UK. **Still wanted from Max:** the Weymouth and
-          Bovington finish times (Results Base / fullonsport / memory), and whether the duplicate
-          "IM UK 2011 — bike leg (GPS trace)" ride row on 31 Jul 2011 should fold into the official IM UK
-          entry (it double-counts the day).
+          Bovington finish times (Results Base / fullonsport / memory). The duplicate "IM UK 2011 — bike
+          leg (GPS trace)" ride row on 31 Jul 2011 was folded into the official IM UK entry on 10 Sep 2026
+          (Max's call; the career page now folds any same-day leg-trace row into its whole race itself).
       When any is confirmed, add it to `data/career-history.json` with the official splits.
 - [x] **Creatine flipped to `active` — DONE 9 Sep 2026 (started 3 days later than the 7 Sep plan;
       no loading phase, 3–5 g/day). Profile entry carries `started: 2026-09-09`.**

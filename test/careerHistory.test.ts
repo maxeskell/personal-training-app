@@ -102,6 +102,58 @@ test("parseCareerHistory: round-trips a race's avgHr, via + splits", () => {
   assert.equal(cleaned?.races[0].result?.splits, undefined);
 });
 
+test("parseCareerHistory: a same-day bike-leg GPS trace folds into the official triathlon (no double-counted day)", () => {
+  const raw = {
+    races: [
+      // The watch's lone ride trace of the Ironman bike leg — a backfill listed it as its own "race".
+      {
+        date: "2011-07-31",
+        sport: "ride",
+        type: "IM UK 2011 — bike leg (GPS trace)",
+        location: "Bolton, UK (IM UK bike course)",
+        result: { distanceKm: 169.4, time: "6:32:17", avgHr: 142, via: "fit", splits: [{ label: "#1", dist: "1.00 km", time: "2:45" }] },
+      },
+      {
+        date: "2011-07-31",
+        sport: "triathlon",
+        type: "Ironman",
+        event: "IRONMAN UK",
+        location: "Bolton, UK",
+        confidence: "confirmed",
+        result: {
+          time: "12:21:00",
+          splits: [
+            { label: "Swim", dist: "3.80 km", time: "1:05:29" },
+            { label: "Ride", dist: "180.0 km", time: "7:03:21" },
+            { label: "Run", dist: "42.2 km", time: "4:02:06" },
+          ],
+        },
+      },
+      // Same day but not a leg → kept (nothing says it belongs to the triathlon).
+      { date: "2011-07-31", sport: "swim", type: "Open-water 1500 m", result: { time: "26:00" } },
+      // A leg-trace row with no same-day whole race → kept, untouched.
+      { date: "2012-05-06", sport: "ride", type: "Club TT — bike leg (GPS trace)", result: { time: "1:02:00" } },
+    ],
+  };
+  const parsed = parseCareerHistory(JSON.stringify(raw));
+  assert.ok(parsed);
+  assert.deepEqual(
+    parsed.races.map((r) => r.event ?? r.type),
+    ["IRONMAN UK", "Open-water 1500 m", "Club TT — bike leg (GPS trace)"],
+  );
+  const im = parsed.races.find((r) => r.event === "IRONMAN UK")!;
+  // Official fields win: finish time, ride distance and ride time are untouched; the trace only fills HR.
+  assert.equal(im.result?.time, "12:21:00");
+  assert.equal(im.result?.via, undefined);
+  const ride = im.result?.splits?.find((s) => s.label === "Ride")!;
+  assert.deepEqual(ride, { label: "Ride", dist: "180.0 km", time: "7:03:21", pace: undefined, hr: 142, watts: undefined });
+  assert.equal(im.result?.splits?.length, 3); // the trace's per-km laps are NOT mixed into the leg table
+  // The page lists the day once.
+  const html = renderCareerPage(parsed);
+  assert.ok(html.includes("Race history (3)"));
+  assert.equal((html.match(/2011-07-31/g) ?? []).length, 2);
+});
+
 test("renderCareerPage: renders a per-race splits table + provenance tag", () => {
   const html = renderCareerPage(SAMPLE);
   assert.match(html, /<details class="splits"><summary>Splits \(2\)<\/summary>/);

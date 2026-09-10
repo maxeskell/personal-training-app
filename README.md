@@ -741,7 +741,9 @@ your **race history** (date · event/location · your recorded performance, with
 from the official results — paste it straight off the results page with `npm run race:result -- --date YYYY-MM-DD --type "Olympic triathlon" --event "…"`, which stores the official finish, placing and leg/transition times against that date and, on the next dashboard render, lets the race-model track record judge the frozen pre-race prediction against it), your **lifetime bests vs current form** side by side (all-time / last 90 days / season,
 per sport: fastest at each distance, longest, best power — plus a **Triathlon** row with your fastest finish at
 each standard distance, **Sprint / Standard / 70.3 / Full**, from your recorded race results; a bike-leg trace
-or a non-standard distance is never counted as a finish), and an overlaid **power curve** — an **all-time**
+or a non-standard distance is never counted as a finish, and a lone "bike leg (GPS trace)" row on the same
+day as a whole triathlon folds into that race — its HR/power fill the matching leg split only where the
+official row has none — so a race day is never listed twice), and an overlaid **power curve** — an **all-time**
 line over **every ride with power in your `.FIT` archive** (years of history, not just recent rides), with the
 **Last-90-days** and **Season** windows over the same rides; curves that coincide point-for-point merge into a
 single honestly-labelled line rather than one silently hiding another. It reads a
