@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { config } from "../config.js";
+import { isMultisport, sportFamily } from "./raceResults.js";
 
 /**
  * Career history data model + best-effort loader for the read-only `/career` page.
@@ -157,6 +158,41 @@ function parsePowerPoints(v: unknown): PowerPoint[] {
   return out.sort((a, b) => a.durationSec - b.durationSec);
 }
 
+/** A race `type` that names a partial discipline leg — "IM UK 2011 — bike leg (GPS trace)" — not a whole race. */
+const LEG_TRACE = /\bleg\b|\btrace\b/i;
+/** Which per-discipline split of a multisport race a single-sport leg row belongs to. */
+const LEG_SPLIT_LABEL: Record<string, RegExp> = { swim: /^swim/i, ride: /^(ride|bike|cycl)/i, run: /^run/i };
+
+/**
+ * Fold a same-day partial-leg row into the whole race it belongs to. A backfill keyed on activity files can
+ * list one triathlon twice — the official multisport result AND the lone "bike leg (GPS trace)" ride its
+ * watch recorded — which double-counts the day in the race log. A single-sport row whose type names a
+ * leg/trace and shares a date with a multisport race is dropped; the HR / power summary it carried is copied
+ * onto that race's matching discipline split only where the split has none (the official row wins every
+ * field it already has, so nothing hand-authored is overwritten). Rows with no same-day whole race are
+ * untouched. Pure — exported for tests.
+ */
+export function foldLegTraces(races: Race[]): Race[] {
+  const out: Race[] = races.map((r) => ({ ...r }));
+  const hosts = out.filter((r) => isMultisport(r.sport, r.type));
+  if (!hosts.length) return out;
+  return out.filter((r) => {
+    if (isMultisport(r.sport, r.type) || !LEG_TRACE.test(r.type)) return true;
+    const host = hosts.find((h) => h.date === r.date);
+    if (!host) return true;
+    const label = LEG_SPLIT_LABEL[sportFamily(r.sport)];
+    const idx = label ? (host.result?.splits ?? []).findIndex((s) => label.test(s.label)) : -1;
+    if (idx >= 0 && host.result?.splits) {
+      const splits = host.result.splits.map((s) => ({ ...s }));
+      const leg = splits[idx];
+      if (leg.hr == null && r.result?.avgHr != null) leg.hr = r.result.avgHr;
+      if (leg.watts == null && r.result?.avgW != null) leg.watts = r.result.avgW;
+      host.result = { ...host.result, splits };
+    }
+    return false; // folded — the whole race already lists this day
+  });
+}
+
 /**
  * Validate + normalise a parsed JSON blob into a {@link CareerHistory}, dropping anything malformed.
  * Returns `null` if there isn't at least one usable race or best (so the page shows its empty state
@@ -249,12 +285,13 @@ export function parseCareerHistory(raw: string): CareerHistory | null {
     : [];
 
   if (!races.length && !bests.length && !powerCurve && !trajectory.length) return null;
-  races.sort((a, b) => a.date.localeCompare(b.date));
+  const folded = foldLegTraces(races);
+  folded.sort((a, b) => a.date.localeCompare(b.date));
   trajectory.sort((a, b) => a.year - b.year);
   return {
     generatedAt: asString(o.generatedAt),
     seasonYear: asNumber(o.seasonYear),
-    races,
+    races: folded,
     bests,
     powerCurve,
     trajectory: trajectory.length ? trajectory : undefined,
