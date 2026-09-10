@@ -12,6 +12,22 @@
 > the MCP and the gitignored profile aren't reachable.
 
 ## To do
+- [ ] **Race-history search (10 Sep 2026): three races Max remembers are NOT in any data — confirm or drop.**
+      Searched the career page, the full Garmin/TrainingPeaks archive (GPS of every file vs the venues), the
+      intervals.icu export + daily load, Gmail (only reaches 2025) and the web. Only the Outlaw full (28 Jul
+      2013, official 10:55:47) is recorded. Windermere 3 Jul 2022 is confirmed the *Standard* (Cockshott
+      Point, whole-lake bike), not a middle. Open, and only Max can settle them — search "Eskell" on
+      Results Base (it sits behind a human check the coach won't bypass):
+      (1) **Outlaw half** — best lead is Outlaw X, Sun 26 Sep 2021 (Thoresby): a slow 7 km "Bassetlaw" run
+          near Cuckney on the Saturday, nothing on race day → https://resultsbase.net/event/5844 ;
+      (2) **Windermere middle (EpicMan, YMCA Lakeside)** — 29 May 2022 has no data 28–31 May, 30 May 2021
+          none either → https://www.resultsbase.net/event/5980 (2022), https://resultsbase.net/event/5451 (2021);
+      (3) **Weymouth middle** — nothing within 17 km of Weymouth on any race date; BustinSkin 2010 + 2011
+          middle-distance results checked (no Eskell); the 2009 file isn't archived. If it was pre-2011 it
+          predates every data source — recall the year, then check fullonsport.com / BustinSkin.
+      Side question: the 5 Jun 2011 unconfirmed middle distance (no GPS, Tidworth the next day) — Grafman
+      2011 fits the course (~87 km / 20 km laps); confirm from memory or a Grafman 2011 results list.
+      When any is confirmed, add it to `data/career-history.json` with the official splits.
 - [x] **Creatine flipped to `active` — DONE 9 Sep 2026 (started 3 days later than the 7 Sep plan;
       no loading phase, 3–5 g/day). Profile entry carries `started: 2026-09-09`.**
 - [ ] **Run form — standing cues for every run + brick (from Birmingham race photos, 13 Jul 2026).**
