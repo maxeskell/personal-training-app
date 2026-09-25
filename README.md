@@ -739,7 +739,7 @@ For the one-off HTML or a PDF, use `npm run dashboard -- --share`.
 your **race history** (date · event/location · your recorded performance, with an expandable per-race
 **splits** table and an optional hand-authored **finishing position** — e.g. "19th overall · 1st of 8 AG" —
 from the official results — paste it straight off the results page with `npm run race:result -- --date YYYY-MM-DD --type "Olympic triathlon" --event "…"`, which stores the official finish, placing and leg/transition times against that date and, on the next dashboard render, lets the race-model track record judge the frozen pre-race prediction against it), your **lifetime bests vs current form** side by side (all-time / last 90 days / season,
-per sport: fastest at each distance, longest, best power — plus a **Triathlon** row with your fastest finish at
+per sport: fastest at each distance, longest, best power; the Run **Marathon** row is your fastest marathon *finish* from your race results — the official clock where one was imported, not the watch time — plus a **Triathlon** row with your fastest finish at
 each standard distance, **Sprint / Standard / 70.3 / Full**, from your recorded race results; a bike-leg trace
 or a non-standard distance is never counted as a finish, and a lone "bike leg (GPS trace)" row on the same
 day as a whole triathlon folds into that race — its HR/power fill the matching leg split only where the
