@@ -383,3 +383,43 @@ export function triathlonBests(races: Race[], season: number, now = new Date()):
   }
   return rows.length ? { sport: "Triathlon", rows } : null;
 }
+
+// ---------- marathon PB (best official finish from race results) ----------
+
+/** A full marathon by its race `type` label — never a half, an ultra, or a triathlon's marathon run leg. */
+const MARATHON = /\bmarathon\b/i;
+const NOT_FULL_MARATHON = /half|ultra|\bleg\b|trace|relay|iron|triathlon/i;
+
+/** True when a race `type` names a standalone full marathon. Pure — exported for tests. */
+export function isMarathon(type: string): boolean {
+  const t = String(type ?? "");
+  return MARATHON.test(t) && !NOT_FULL_MARATHON.test(t);
+}
+
+/**
+ * The "Marathon" row for the Run bests: the fastest marathon FINISH from your race results (the official
+ * clock where one was imported), compared all-time vs this season vs the last 90 days. The 5k/10k/half rows
+ * come from the activity stream, but a marathon is rare enough that the race record is the honest source —
+ * and it carries the official time, not the watch's. Null when no marathon has a parseable time. Pure.
+ */
+export function marathonBestRow(races: Race[], season: number, now = new Date()): BestRow | null {
+  const d90 = new Date(now.getTime() - 90 * 86400000).toISOString().slice(0, 10);
+  const seasonStart = `${season}-01-01`;
+  const timed = races
+    .filter((r) => isMarathon(r.type))
+    .map((r) => ({ sec: finishTimeToSeconds(r.result?.time), date: r.date, value: r.result?.time }))
+    .filter((t): t is { sec: number; date: string; value: string } => t.sec != null);
+  const fastest = (pool: typeof timed): BestValue | undefined => {
+    let best: (typeof timed)[number] | undefined;
+    for (const t of pool) if (!best || t.sec < best.sec) best = t;
+    return best ? { value: best.value, date: best.date } : undefined;
+  };
+  const allTime = fastest(timed);
+  if (!allTime) return null;
+  const row: BestRow = { label: "Marathon", allTime };
+  const seas = fastest(timed.filter((t) => t.date >= seasonStart));
+  const l90 = fastest(timed.filter((t) => t.date >= d90));
+  if (l90) row.last90 = l90;
+  if (seas) row.season = seas;
+  return row;
+}

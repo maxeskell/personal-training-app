@@ -7,6 +7,8 @@ import {
   triathlonDistance,
   finishTimeToSeconds,
   triathlonBests,
+  isMarathon,
+  marathonBestRow,
   type DatedFit,
   type ActivitySummary,
 } from "../src/coach/raceResults.js";
@@ -203,4 +205,32 @@ test("triathlonBests: fastest finish per distance, all-time vs season vs last-90
 test("triathlonBests: no timed triathlon → null (nothing to show)", () => {
   assert.equal(triathlonBests([{ date: "2024-05-04", sport: "run", type: "Marathon", result: { time: "3:19:14" } }], 2026), null);
   assert.equal(triathlonBests([], 2026), null);
+});
+
+test("isMarathon: full marathons only — not halves, ultras, or a triathlon's run leg", () => {
+  assert.equal(isMarathon("Marathon"), true);
+  assert.equal(isMarathon("Worcester Marathon"), true);
+  assert.equal(isMarathon("Half-marathon"), false);
+  assert.equal(isMarathon("Ultra marathon 50 km"), false);
+  assert.equal(isMarathon("Ironman marathon leg"), false);
+  assert.equal(isMarathon("Sprint triathlon"), false);
+});
+
+test("marathonBestRow: fastest official finish, windows, and ignores untimed / half races", () => {
+  const races: Race[] = [
+    { date: "2011-05-22", sport: "run", type: "Marathon", result: { time: "4:01:03" } },
+    { date: "2014-05-04", sport: "run", type: "Marathon", result: { time: "3:18:47" } },
+    { date: "2014-04-13", sport: "run", type: "Half-marathon", result: { time: "1:25:00" } },
+    { date: "2004-10-30", sport: "run", type: "Marathon" }, // no time → skipped
+  ];
+  const row = marathonBestRow(races, 2026, new Date("2026-09-25T12:00:00Z"))!;
+  assert.equal(row.label, "Marathon");
+  assert.deepEqual(row.allTime, { value: "3:18:47", date: "2014-05-04" });
+  assert.equal(row.season, undefined);
+  assert.equal(row.last90, undefined);
+  const recent = marathonBestRow([...races, { date: "2026-09-01", sport: "run", type: "Marathon", result: { time: "3:30:00" } }], 2026, new Date("2026-09-25T12:00:00Z"))!;
+  assert.deepEqual(recent.allTime, { value: "3:18:47", date: "2014-05-04" });
+  assert.deepEqual(recent.season, { value: "3:30:00", date: "2026-09-01" });
+  assert.deepEqual(recent.last90, { value: "3:30:00", date: "2026-09-01" });
+  assert.equal(marathonBestRow([races[2], races[3]], 2026), null);
 });

@@ -27,7 +27,7 @@ import { resolve, dirname } from "node:path";
 import { loadActivityFits, fitStreamsDir, type ActivityFit } from "../src/insights/fit.js";
 import { activityArchiveDir } from "../src/archive/activityArchive.js";
 import { meanMaximalCurve, keepPlausibleRides, ftpProxyFromNp, type CurvePoint } from "../src/insights/powerCurve.js";
-import { enrichRaceResults, excludeFutureDated, sportFamily, triathlonBests, type ActivitySummary, type DatedFit, type SportFamily } from "../src/coach/raceResults.js";
+import { enrichRaceResults, excludeFutureDated, marathonBestRow, sportFamily, triathlonBests, type ActivitySummary, type DatedFit, type SportFamily } from "../src/coach/raceResults.js";
 
 const DURATIONS = [5, 15, 30, 60, 120, 300, 480, 600, 1200, 1800, 3600];
 
@@ -295,6 +295,14 @@ function main() {
   const bests = all.length ? buildBests(all, season) : [];
   // Triathlon PBs (best finish time per standard distance) come from your race RESULTS, not the activity
   // stream, so they're appended independent of the TP archive — a curve-only rebuild still shows them.
+  // Marathon PB likewise comes from race results (official clock), slotted into Run after Half-mar.
+  const mara = marathonBestRow(races, season);
+  if (mara) {
+    let run = bests.find((b) => b.sport === "Run");
+    if (!run) bests.unshift((run = { sport: "Run", rows: [] }));
+    const at = run.rows.findIndex((r) => r.label === "Longest");
+    run.rows.splice(at < 0 ? run.rows.length : at, 0, mara);
+  }
   const tri = triathlonBests(races, season);
   if (tri) bests.push(tri);
   // A robust FTP proxy from the athlete's own ride-NP distribution anchors the power-curve plausibility
