@@ -208,7 +208,7 @@
 
 ## Decisions / things we've talked through
 - **2026-10-04 — Warwickshire (C, season closer) debrief + 2026 season review.**
-  - **Race:** official 1:04:36, 31st overall, **4th of 28 AG** (Swim 7:26 · T1 1:33 · Bike 32:29 · T2 1:17 ·
+  - **Race:** official 1:04:36, 31st overall, **4th of 30 AG** (Swim 7:26 · T1 1:33 · Bike 32:29 · T2 1:17 ·
     Run 21:51). Beat the 1:05–1:09 target and the 1:09:49 model; fastest of three Stratford pool sprints
     (2023 1:05:26, 2025 1:09:07 — course equivalence not verified). Race `.FIT` = Garmin 24598580508.
   - **Swim** 400 m pool ≈ 1:52/100m incl. the mat run. The watch logged it as 240 m *open water* (tri mode
@@ -225,7 +225,7 @@
     ~1:03:15). Standing cue for 2027 sprints: **bike floor 210 W, run starts at the pace it finishes.**
   - **2026 season review (data read 4 Oct, Garmin activity archive Jan–Sep):**
     - Results: Birmingham A **1st of 8 AG** (2:39:12), Alderford B 4th of 18 (2:42:12, swim the whole
-      miss), Warwickshire C 4th of 28 (1:04:36). FTP 199→225 W set (Phase-1 goal ~220 beaten — but a
+      miss), Warwickshire C 4th of 30 (1:04:36). FTP 199→225 W set (Phase-1 goal ~220 beaten — but a
       race-derived MODEL, the strap test never happened); CSS measured 1:53; bloods excellent; ~60 g/h
       liquid-led fuelling banked with zero GI; bike pacing discipline learned (VI 1.10 → 1.04).
     - **Volume is the headline gap: ~192 h in 39 weeks ≈ 4.9 h/wk** (excl. the Sep Wales hike/ruck) vs
