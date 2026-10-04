@@ -103,7 +103,7 @@
       over a 40 km leg at the same watts** — the largest single time purchase in the whole race file.
       Validate any change with fixed-power out-and-backs; the autumn Sportstest bike session (below)
       can sanity-check the position.
-- [ ] **(agreed 11 Jul) T1 drills before Alderford (6 Sep).** Birmingham T1: **69 s of 141 stationary** + a 185 m
+- [x] **(agreed 11 Jul) T1 drills — DONE, landed at Warwickshire (T1 1:33 vs Alderford 2:51, 4 Oct).** Birmingham T1: **69 s of 141 stationary** + a 185 m
       transition run. Rehearse suit-half-down-before-the-rack + flying mount — 20–30 s available.
       T2 was clean (39 s watch-side) — keep the flying dismount as-is.
 - [ ] **Alderford (6 Sep 2026) debrief — data read DONE 9 Sep; Max's account still needed.** Official
@@ -207,6 +207,40 @@
         the `<details>` body); optional auto-fade of an agreed item after a cool-off (today it stays annotated).
 
 ## Decisions / things we've talked through
+- **2026-10-04 — Warwickshire (C, season closer) debrief + 2026 season review.**
+  - **Race:** official 1:04:36, 31st overall, **4th of 28 AG** (Swim 7:26 · T1 1:33 · Bike 32:29 · T2 1:17 ·
+    Run 21:51). Beat the 1:05–1:09 target and the 1:09:49 model; fastest of three Stratford pool sprints
+    (2023 1:05:26, 2025 1:09:07 — course equivalence not verified). Race `.FIT` = Garmin 24598580508.
+  - **Swim** 400 m pool ≈ 1:52/100m incl. the mat run. The watch logged it as 240 m *open water* (tri mode
+    = GPS swim indoors); Max's Garmin Connect edit doesn't touch the original file, so the app's copy still
+    reads 240 m — career row hand-set to 0.40 km. Fix for next pool tri: set the multisport swim leg to POOL.
+  - **T1 1:33 (Alderford 2:51)** — the shoes-on-pedals drill landed (pool exit, no wetsuit, so not
+    like-for-like).
+  - **Bike under-ridden:** NP 199 / avg 187 W, VI 1.06, IF ≈0.88 on 225 — the agreed band was 205–215 NP.
+    Power 190→183 W half-to-half while HR *fell* 169→157: eased off, not limited.
+  - **Run negative-split hard:** km 4:36 / 4:36 / 4:33 / 4:16 / 4:04, avg HR 153 (max 165 vs bike max 173).
+    The first 3 km were too cautious.
+  - **Read:** the third race running finished with reserve (Birmingham run HR < bike; Alderford HR 149/156;
+    here IF 0.88). Execution headroom ≈ 1:20 (MODEL: 215 W NP ≈ −50 s, even 4:20/km run ≈ −35 s →
+    ~1:03:15). Standing cue for 2027 sprints: **bike floor 210 W, run starts at the pace it finishes.**
+  - **2026 season review (data read 4 Oct, Garmin activity archive Jan–Sep):**
+    - Results: Birmingham A **1st of 8 AG** (2:39:12), Alderford B 4th of 18 (2:42:12, swim the whole
+      miss), Warwickshire C 4th of 28 (1:04:36). FTP 199→225 W set (Phase-1 goal ~220 beaten — but a
+      race-derived MODEL, the strap test never happened); CSS measured 1:53; bloods excellent; ~60 g/h
+      liquid-led fuelling banked with zero GI; bike pacing discipline learned (VI 1.10 → 1.04).
+    - **Volume is the headline gap: ~192 h in 39 weeks ≈ 4.9 h/wk** (excl. the Sep Wales hike/ruck) vs
+      the profile's 11–12 h/wk availability. Monthly 13–31 h. Load (CTL, MODEL recomputed from AIE ESS;
+      the state-store series is still the known artefact) sat ~25–35 most of the year, peaked ~48 at
+      Birmingham — the Phase-1 target 50–55 by end-2026 is not met.
+    - **Run volume collapsed after June:** Jul 1.2 h, Aug 2.3 h, Sep 0.7 h for the month — yet a 4:26/km
+      off-bike 5 k today. Big upside, and the 70.3 run is the injury window: rebuild gradually.
+    - **Swim frequency only arrived in June** (Jan–May ≈0.5 h/month → Jun–Sep ~4 h/month); open-water
+      skills remain the limiter (Alderford).
+    - **Strength/gym logged Mar–Jun (1–5 h/month), ~nil since July** vs the 3–4×/wk rehab plan — ask
+      whether it's unlogged or lapsed.
+  - **Availability change (from Max, 4 Oct):** now **works in London Tue–Wed** — gym there has a pool, a
+    gym bike and weights; wants the **long run on Wednesday around the London parks**. Winter = **no
+    Saturday open-water swim.** Profile `availability` to be updated once the winter week is agreed.
 - **2026-08-19 — Triage session: bad weigh-in purged, proposal queue zeroed, open items closed down.**
   - **Erroneous 10 Aug weigh-in deleted.** The Index S2 reading (76.55 kg, body fat 0%, SMM 0 kg — a
     failed-impedance scale glitch) was stripped from `data/archive/garmin-daily.jsonl` (the row's
