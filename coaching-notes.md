@@ -300,6 +300,10 @@
     was LIVE with limited spaces on 1 Sep 2026. Alderford, Warwickshire and Mallory 2027 dates all
     still UNPUBLISHED. League tally 1/4 booked (need ≥3 to place); Max is holding off booking until
     he can do several at once._
+  - _Update 2026-10-04 — league races BOOKED: Stratford sprint Sun 18 Apr (entry confirmed for the 18th),
+    **West Midlands sprint Sat 7 Aug** (the Edgbaston event) and **Warwickshire sprint Sun 3 Oct 2027**
+    (date now confirmed). League tally **3/4 booked — enough to place**; Alderford Oly (~5 Sep, date
+    unpublished) is the optional 4th/drop race. Mallory still optional/unbooked._
 - **2026-07 — GB age-group pathway RESEARCHED & RECOMMENDED (archived here from profile
   `open_items`, 19 Aug 2026).** NATIONAL pathway (represent GB at Euro/World champs), SEPARATE from
   both the UK Triathlon League AND from Ironman 70.3 Worlds (Max's stated horizon_goal — that is an
