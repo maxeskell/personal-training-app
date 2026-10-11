@@ -546,8 +546,9 @@ async function cmdPing(): Promise<void> {
       console.warn(`[catch-up] skipped: ${e instanceof Error ? e.message : e}`);
     }
     await maybeSeasonNudge(state).catch(() => {}); // quarterly season-review nudge (best-effort)
-    // Sunday cadence: the weekly brief rides the ping (one scheduled actor) — review + snapshot + gated
-    // next-week proposals, frozen together. Best-effort: a brief failure must not break the readiness ping.
+    // Weekly-brief catch-up: the Sunday 16:00 `weekly-brief:due` job is the primary writer (review + snapshot
+    // + gated next-week proposals, frozen together); the ping only heals a missed week Mon–Wed.
+    // Best-effort: a brief failure must not break the readiness ping.
     //
     // Gated on the ARTEFACT, not on today being Sunday. A same-day `isSunday()` test silently loses the
     // whole week whenever the Mac is off on Sunday morning (the ping never runs, the branch is never
