@@ -15,7 +15,7 @@ import { loadFuelLog } from "./coach/fuelLogStore.js";
 import { runFuelReview } from "./coach/fuelReview.js";
 import { runResearchDigest } from "./coach/research.js";
 import { readKnowledge, writePendingDigest, pendingName, approvePending, knowledgeFreshness, listPending } from "./knowledge/store.js";
-import { buildTodayState, gatherCompleteness, gatherReadiness, loadArchive, loadPredictionTrajectory, todayIso, withAie } from "./coach/orchestrator.js";
+import { buildTodayState, withArchivedLoad, gatherCompleteness, gatherReadiness, loadArchive, loadPredictionTrajectory, todayIso, withAie } from "./coach/orchestrator.js";
 import { formatCompleteness } from "./state/dataCompleteness.js";
 import { proposeAdjustments, validateProposals, buildProposerContext, writeContextFor } from "./coach/planAdjust.js";
 import { screenNutritionPrompt } from "./guardrails/wellbeing.js";
@@ -283,6 +283,7 @@ async function cmdState(): Promise<void> {
   const state = await selectDataSource().assemble({ store, garmin, date: todayIso(), assembledAt: new Date().toISOString() });
   const garminConnected = garmin ? garmin.available : undefined; // capture before close()
   await garmin?.close();
+  await withArchivedLoad(state);
   await store.save(state);
 
   console.log(`\nAthleteState for ${state.date} (assembled ${state.assembledAt}):\n`);

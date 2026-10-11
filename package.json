@@ -28,6 +28,7 @@
     "weekly": "tsx src/cli.ts weekly",
     "weekly:brief": "tsx src/cli.ts weekly:brief",
     "weekly-brief:due": "tsx src/cli.ts weekly-brief:due",
+    "load:repair": "tsx scripts/repair-load-series.ts",
     "weekly-brief:install": "bash scripts/install-weekly-brief.sh",
     "weekly-brief:uninstall": "bash scripts/uninstall-weekly-brief.sh",
     "race": "tsx src/cli.ts race",

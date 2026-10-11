@@ -39,7 +39,7 @@ export function trainingStatusFinding(ts: TrainingStatusSignals | null | undefin
       `Garmin acute:chronic load ratio is ${ratio ?? "—"}${ts.acwrStatus ? ` (${ts.acwrStatus})` : ""}` +
       `${overreaching ? `, status ${prettyLabel(ts.label)}` : ""} — acute ${ts.acuteLoad ?? "—"} vs chronic ${ts.chronicLoad ?? "—"}` +
       `${ts.optimalChronicLoadMax != null ? ` (optimal chronic ${Math.round(ts.optimalChronicLoadMin ?? 0)}–${Math.round(ts.optimalChronicLoadMax)})` : ""}. ` +
-      `A ratio above ~1.5 is the most evidence-backed overreach/injury flag.`,
+      `Directional only — ACWR's injury-prediction evidence is weak, especially off a low chronic base; the run-load ramp and your own resting HR / recovery are the better gates.`,
     evidence: `get_training_status: ratio ${ratio}, ${ts.acwrStatus ?? ""} [garmin MODEL — directional]`,
     recommendation: "Pull back acute load toward the chronic baseline this week — drop a hard session or cut volume; let the ratio settle under ~1.3.",
     confidence: high && overreaching ? 0.8 : 0.7,

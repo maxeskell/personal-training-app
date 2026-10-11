@@ -3,6 +3,7 @@ import {
   richActivities,
   type RichActivity,
   loadModel,
+  essSeriesWithHistory,
   runLoadRamp,
   efTrend,
   durabilityTrend,
@@ -462,7 +463,8 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   const live = richActivities(raw);
   // Prefer the archived history when it's deeper than the live 40-deep window.
   const acts = archive?.activities && archive.activities.length > live.length ? archive.activities : live;
-  const load = loadModel((raw.getRecoveryModel as { data?: { date?: unknown[]; external_stress_score?: unknown[] } } | undefined)?.data);
+  // CTL needs months of history, but AIE's recovery series is ~14 days — extend it with the archive (spec: load fix, Oct 2026).
+  const load = loadModel(essSeriesWithHistory((raw.getRecoveryModel as { data?: { date?: unknown[]; external_stress_score?: unknown[] } } | undefined)?.data, acts));
   const runRamp = runLoadRamp(acts);
   const ef = { run: efTrend(acts, "Run"), ride: efTrend(acts, "Ride") };
   const durability = { run: durabilityTrend(acts, "Run"), ride: durabilityTrend(acts, "Ride") };

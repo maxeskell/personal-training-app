@@ -34,7 +34,7 @@ import { diffWeeklySnapshots } from "./coach/weeklyBrief.js";
 import { loadRecentWeeklyBriefs } from "./coach/weeklyBriefStore.js";
 import { backfillSessionFeedback } from "./coach/autoSessionFeedback.js";
 import { buildInsights } from "./insights/engine.js";
-import { loadArchive } from "./coach/orchestrator.js";
+import { loadArchive, withArchivedLoad } from "./coach/orchestrator.js";
 import { ArchiveStore } from "./archive/store.js";
 import { CoachLLM } from "./llm/client.js";
 import { loadSystemPrompt } from "./coach/persona.js";
@@ -257,6 +257,7 @@ async function refresh(): Promise<void> {
     // Assemble via the configured spine (see src/sources/).
     const today = todayIso();
     const state = await selectDataSource().assemble({ store, garmin, date: today, assembledAt: new Date().toISOString() });
+    await withArchivedLoad(state); // CTL from archive-extended history, not AIE's 14-day window
     await store.save(state);
     // Keep the thermal layer (session card + heat confounder) current, hands-free. fit-sync dedups
     // against the archive, so steady-state this fetches ~0–1 new activities; only the first run is slow.
