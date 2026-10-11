@@ -3,11 +3,14 @@ import { pageShell } from "./shell.js";
 import { mdProse, ageDaysFrom } from "./dashboardHelpers.js";
 import type { SeasonArcReport, Lever, CtlPoint, YearProjection } from "./seasonArc.js";
 import type { YearStat } from "./careerHistory.js";
+import type { WeekInReviewSlot } from "./scheduleGates.js";
 
 /** A persisted coach-prose report surfaced read-only on this page (markdown + its YYYY-MM-DD date). */
 export interface ProseReport {
   markdown: string;
   date: string;
+  /** When the file was actually written (ISO, from its mtime) — the "written Sun 16:02" stamp. Optional. */
+  writtenAt?: string;
 }
 
 /** The two latest coach-prose reports surfaced near the top of `/season` (each optional → degrade cleanly). */
@@ -258,4 +261,52 @@ export function renderSeasonInner(report: SeasonArcReport, share = false, prose?
   // structural levers + multi-season risks → the deep strategic read (collapsed) → and finally the long
   // arc of annual hours at the very bottom (the slowest-moving context).
   return `<div class="season-inner"><h1>Season arc</h1><div class="sub">Your plan, your numbers — the multi-season view.</div>${planless}${weeklyCard}${horizon}${phase}${focus}${ctl}${levers}${flags}${narrativeCard}${traj}</div>`;
+}
+
+/** "Sun 11 Oct" for a YYYY-MM-DD date (calendar date, no timezone shift). Pure. */
+function dayLabel(iso: string): string {
+  const d = new Date(`${iso}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+}
+
+/** "Sun 16:02" for an ISO instant, in the athlete's timezone. "" when unparsable. Pure. */
+function writtenLabel(iso: string | undefined, tz: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const day = d.toLocaleDateString("en-GB", { weekday: "short", timeZone: tz });
+  const time = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: tz });
+  return `${day} ${time}`;
+}
+
+/**
+ * The Today-tab "Week in review" card — the weekly review as front-page news from its Sunday release
+ * (COACH_WEEKLY_BRIEF_HOUR, default 16:00) to the end of Tuesday, then it lives only on the Plan tab. Says
+ * plainly when it lands / was written / lands next, so the timing is never a mystery. Unlike the Plan-tab
+ * card it keeps the "## Next week" section: this is the one place it gets read. `extras` are the already-
+ * rendered week-over-week delta line and the "changes waiting" link. Pure; "" for `none`.
+ */
+export function renderWeekInReviewCard(slot: WeekInReviewSlot, prose: ProseReport | undefined, tz: string, extras = ""): string {
+  if (slot.kind === "none") return "";
+  const at = `${String(slot.releaseHour).padStart(2, "0")}:00`;
+  if (slot.kind === "pending") {
+    return `<div class="card week-review"><h2>Week in review</h2>
+    <div class="muted">🗓 Lands <b>today at ${at}</b> — after your Sunday sessions, so it covers the whole week. It stays here until Tuesday, then moves to the Plan tab.</div></div>`;
+  }
+  if (slot.kind !== "ready" || !prose) {
+    return `<div class="card week-review"><h2>Week in review — week ending ${escapeHtml(dayLabel(slot.weekEnding))}</h2>
+    <div class="muted">Due ${escapeHtml(dayLabel(slot.weekEnding))} at ${at} but not written yet — the Mac was likely asleep or AI Endurance was offline. It runs on the next wake or morning ping; to write it now: <code>npm run weekly:brief</code>.</div></div>`;
+  }
+  const body = mdProse(stripLeadingH1(prose.markdown).trim());
+  const written = writtenLabel(prose.writtenAt, tz);
+  const stamp = [
+    `Week ending ${escapeHtml(dayLabel(slot.weekEnding))}`,
+    written ? `written ${escapeHtml(written)}` : "",
+    `next one ${escapeHtml(dayLabel(slot.nextRelease))}, ${at}`,
+    "on Today until Tuesday, then under Plan",
+  ].filter(Boolean).join(" · ");
+  return `<div class="card week-review"><h2>Week in review</h2>
+    <div class="stamp">${stamp}</div>
+    ${extras}
+    <div class="prose">${body}</div></div>`;
 }

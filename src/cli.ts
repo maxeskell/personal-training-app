@@ -49,6 +49,7 @@ import { getForecast } from "./weather/store.js";
 import { assessWeek, latestActuals, upcomingPlanned, type WeekWeather } from "./weather/assess.js";
 
 import { notify } from "./notify.js";
+import { localHour } from "./util/today.js";
 import { fileChecks, redactSecrets, checkRemoteHealth, garminLiveCheck, garminFreshnessCheck, healthNotifyDecision, type HealthNotifyState } from "./health.js";
 import { retryTransient } from "./util/transient.js";
 import { drainInflight } from "./mcp/oauthProvider.js";
@@ -551,10 +552,12 @@ async function cmdPing(): Promise<void> {
     // whole week whenever the Mac is off on Sunday morning (the ping never runs, the branch is never
     // evaluated, nothing retries) — which is exactly how the week ending 2026-07-12 went unreviewed.
     // Asking "is last Sunday's review missing?" instead means the next ping that runs heals it.
-    const wk = weeklyBriefDue(state.date, await weeklyReviewDates());
+    // Release-time gated: on Sunday itself the 06:00 ping skips (the week isn't over until the Sunday
+    // sessions are in) — the 16:00 `weekly-brief:due` job writes it; the ping only catches up Mon–Wed.
+    const wk = weeklyBriefDue(state.date, await weeklyReviewDates(), { hourNow: localHour(), releaseHour: config.weeklyBrief.releaseHour });
     if (wk.due) {
       console.log(`\n[weekly-brief] ${wk.reason}`);
-      await runWeeklyBrief(wk.reviewDate).catch((e) => console.warn(`[weekly-brief] skipped: ${e instanceof Error ? e.message : e}`));
+      await runWeeklyBrief(wk.reviewDate, { notify: true }).catch((e) => console.warn(`[weekly-brief] skipped: ${e instanceof Error ? e.message : e}`));
     } else {
       console.log(`\n[weekly-brief] not due — ${wk.reason}`);
     }
@@ -1008,7 +1011,7 @@ async function cmdWeekly(): Promise<void> {
  * `reviewDate` is the Sunday the week ENDED, which is not always today: a ping that missed Sunday catches
  * up on Monday and must still file the artefacts against the week they describe.
  */
-async function runWeeklyBrief(reviewDate?: string): Promise<void> {
+async function runWeeklyBrief(reviewDate?: string, opts: { notify?: boolean } = {}): Promise<void> {
   if (!requireLLM()) return; // best-effort inside the ping; never break the morning readiness
   const { state, window } = await buildTodayState();
   // Data gate (spec 11): a review + frozen snapshot of a week AI Endurance couldn't describe is worse than
@@ -1041,6 +1044,22 @@ async function runWeeklyBrief(reviewDate?: string): Promise<void> {
     proposalNote = ` ${res.drafted} next-week proposal(s) queued${res.skipped ? `, ${res.skipped} already present` : ""};`;
   }
   console.log(`(weekly brief → reports/${forDate}-weekly-review.md;${proposalNote} ${costNote(costUsd, cacheRead)})`);
+  if (opts.notify) await notify("Week in review ready", `Week ending ${forDate} — it's on the dashboard's Today tab until Tuesday.`).catch(() => {});
+}
+
+/**
+ * `weekly-brief:due` — the Sunday release job (launchd, `npm run weekly-brief:install`, at
+ * COACH_WEEKLY_BRIEF_HOUR, default 16:00): run the brief only if the release-time + artefact gate says
+ * so. Quiet otherwise, so a wake-after-sleep fire or a re-run is free. Notifies when it writes one.
+ */
+async function cmdWeeklyBriefDue(): Promise<void> {
+  const wk = weeklyBriefDue(todayIso(), await weeklyReviewDates(), { hourNow: localHour(), releaseHour: config.weeklyBrief.releaseHour });
+  if (!wk.due) {
+    console.log(`[weekly-brief] not due — ${wk.reason}`);
+    return;
+  }
+  console.log(`[weekly-brief] ${wk.reason}`);
+  await runWeeklyBrief(wk.reviewDate, { notify: true });
 }
 
 /** `weekly:brief` — run the full Sunday brief on demand (review + snapshot + gated proposals). */
@@ -1343,6 +1362,7 @@ const commands: Record<string, () => Promise<void>> = {
   ping: cmdPing,
   weekly: cmdWeekly,
   "weekly:brief": cmdWeeklyBrief,
+  "weekly-brief:due": cmdWeeklyBriefDue,
   race: cmdRace,
   propose: cmdPropose,
   confirm: cmdConfirm,
@@ -1390,6 +1410,7 @@ if (!run) {
   console.log("  readiness  green/amber/red verdict with cited drivers");
   console.log("  ping       unattended morning readiness: verdict + report + desktop notification");
   console.log("  weekly     weekly review → dated markdown report");
+  console.log("  weekly-brief:due  the Sunday release job: full weekly brief only if due (after COACH_WEEKLY_BRIEF_HOUR, default 16:00)");
   console.log('  race [name] race-specific prep (auto-picks next race) → report');
   console.log('  propose "<request>"  gated plan-adjustment proposals');
   console.log("  confirm <id> / decline <id>   apply or dismiss a proposal");

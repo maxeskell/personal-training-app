@@ -25,3 +25,9 @@ export function shiftIso(date: string, days: number): string {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
+
+/** The current hour (0–23) in the athlete's timezone — for release-time gates (e.g. the 16:00 Sunday review). */
+export function localHour(tz: string = config.athlete.timezone, now: Date = new Date()): number {
+  const h = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(now);
+  return Number(h) % 24;
+}
