@@ -65,7 +65,7 @@
 - [x] **(agreed 11 Jul) T1 drills — DONE, landed at Warwickshire (T1 1:33 vs Alderford 2:51, 4 Oct).** Birmingham T1: **69 s of 141 stationary** + a 185 m
       transition run. Rehearse suit-half-down-before-the-rack + flying mount — 20–30 s available.
       T2 was clean (39 s watch-side) — keep the flying dismount as-is.
-- [ ] **Load series artefact — ROOT CAUSE FOUND 11 Oct 2026, fix in progress.** CTL/ATL/TSB was computed
+- [x] **Load series artefact — FIXED & SHIPPED 11 Oct 2026 (e8d4f14).** True CTL ~33–34 through late Sep–Oct (not 19); 102 stored snapshots repaired via `npm run load:repair`. CTL/ATL/TSB was computed
       from AIE's 60-day `getRecoveryModel` ESS window, seeded from its first week — too short for a 42-day
       constant, so the number lurched with whatever week fell off the window (29.8 → 19.3 → 38.2 in two
       weeks). Fix: compute from the local activity archive (ESS back to 28 Apr 2026), the 60-day feed only
