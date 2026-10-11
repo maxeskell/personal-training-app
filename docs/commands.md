@@ -112,6 +112,7 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 | Command | What it does |
 |---|---|
 | `npm run ping` | unattended morning readiness: verdict + report + desktop notification. Catches up a missed weekly brief Mon–Wed; on Sunday it skips the brief (the week isn't over until the release hour) |
+| `npm run load:repair` (`-- --dry-run`) | one-off: rewrite stored daily CTL/ATL/TSB (`data/state/*.json`) from the archive-extended ESS history — fixes snapshots written while CTL was seeded from AIE's 14-day window. Idempotent |
 | `npm run weekly-brief:due` | the Sunday release job: runs the full weekly brief only if due (past `COACH_WEEKLY_BRIEF_HOUR`, default 16:00, and not yet written) + a "Week in review ready" notification |
 | `npm run weekly-brief:install` (`-- HH`) | schedule `weekly-brief:due` Sundays at HH:00 (default: `COACH_WEEKLY_BRIEF_HOUR` from `.env`, else 16); `weekly-brief:uninstall` to remove |
 | `npm run schedule:install` (`-- HH MM`) | schedule the daily `ping` (e.g. `-- 6 30`); `schedule:uninstall` to remove. Sets `RunAtLoad`, so a day the Mac was powered off is recovered at next login (the ping is idempotent per date) |

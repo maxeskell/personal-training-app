@@ -85,7 +85,8 @@ export interface TiebreakSignals {
 
 /**
  * Garmin training-status / acute:chronic load (get_training_status). Garmin computes the acute:chronic
- * workload ratio natively — the most evidence-backed overtraining/injury flag in the dataset (brief Q2).
+ * workload ratio natively (brief Q2) — directional only: ACWR's injury-prediction evidence is weak, so the
+ * run-load ramp guard (metrics.ts) is the primary injury gate.
  */
 export interface TrainingStatusSignals {
   label?: string; // e.g. "OVERREACHING_5", "PRODUCTIVE_2", "UNPRODUCTIVE_3"

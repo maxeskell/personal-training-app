@@ -6,6 +6,17 @@ so the front page stays short; nothing here needs an LLM call, and every detecto
 enough of your own history behind it. Surfaced in `deep-dive`, `ask`, the dashboard **Signals** panel, and
 the MCP `insights` tool.
 
+## Load model (CTL / ATL / TSB)
+
+Fitness (CTL, 42-day), fatigue (ATL, 7-day) and form (TSB = CTL − ATL) are impulse-response EWMAs over the
+daily External Stress Score (ESS). AI Endurance's `getRecoveryModel` only returns the last ~14 days of ESS,
+which is far too short to seed a 42-day average — until Oct 2026 CTL was computed from that window alone and
+lurched with whichever week fell off it (29.8 → 19.3 → 38.2 in two weeks). Now `essSeriesWithHistory`
+extends the AIE window backwards with per-day ESS summed from the local activity archive
+(`data/archive/activities.jsonl`, continuous since Jan 2024; it matches AIE's daily totals to ~0.3 ESS/day),
+keeping AIE's own figures inside its window. The persisted daily snapshots use the same series; stored
+snapshots written before the fix were rewritten once with `npm run load:repair` (`-- --dry-run` to preview).
+
 ## n=1 analytics layer (data-scientist brief Q1–Q7)
 
 The insight engine answers a set of pre-registered analytical questions (Q1–Q7) with HONEST uncertainty —

@@ -12,28 +12,6 @@
 > the MCP and the gitignored profile aren't reachable.
 
 ## To do
-- [ ] **Race-history search (10 Sep 2026): three races Max remembers are NOT in any data — confirm or drop.**
-      Searched the career page, the full Garmin/TrainingPeaks archive (GPS of every file vs the venues), the
-      intervals.icu export + daily load, Gmail (only reaches 2025) and the web. Only the Outlaw full (28 Jul
-      2013, official 10:55:47) is recorded. Windermere 3 Jul 2022 is confirmed the *Standard* (Cockshott
-      Point, whole-lake bike), not a middle. Open, and only Max can settle them — search "Eskell" on
-      Results Base (it sits behind a human check the coach won't bypass):
-      (1) **Outlaw half** — best lead is Outlaw X, Sun 26 Sep 2021 (Thoresby): a slow 7 km "Bassetlaw" run
-          near Cuckney on the Saturday, nothing on race day → https://resultsbase.net/event/5844 ;
-      (2) **Windermere middle (EpicMan, YMCA Lakeside)** — 29 May 2022 has no data 28–31 May, 30 May 2021
-          none either → https://www.resultsbase.net/event/5980 (2022), https://resultsbase.net/event/5451 (2021);
-      (3) **Weymouth middle — RESOLVED 10 Sep 2026.** Max dug up his own 2011 season calendar: "05 Jun
-          Weymouth Middle Distance Tri (entered)". The 5 Jun 2011 unconfirmed middle-distance entry (no GPS;
-          ride 07:40 BST 4:29:16 + run 11:25 BST 19.1 km 1:44:34) IS Weymouth — career entry renamed
-          (`strong`, not `confirmed`: no official time yet). Not BustinSkin (10 Jul). The Grafman 2011
-          guess is dropped. Same calendar named the 22 May 2011 marathon (Hamburg, now `confirmed`) and
-          added a 30th race: ATA Novice Sprint, Bovington, Wed 6 Apr 2011 (GPS at Bovington Camp; bike
-          22.0 km 39:37 + run 5.1 km 20:54). Cotswold Middle 26 Jun 2011 was never entered and has no data
-          on the day; the only July 2011 race was IM UK. **Still wanted from Max:** the Weymouth and
-          Bovington finish times (Results Base / fullonsport / memory). The duplicate "IM UK 2011 — bike
-          leg (GPS trace)" ride row on 31 Jul 2011 was folded into the official IM UK entry on 10 Sep 2026
-          (Max's call; the career page now folds any same-day leg-trace row into its whole race itself).
-      When any is confirmed, add it to `data/career-history.json` with the official splits.
 - [x] **Creatine flipped to `active` — DONE 9 Sep 2026 (started 3 days later than the 7 Sep plan;
       no loading phase, 3–5 g/day). Profile entry carries `started: 2026-09-09`.**
 - [ ] **Run form — standing cues for every run + brick (from Birmingham race photos, 13 Jul 2026).**
@@ -45,26 +23,15 @@
       crisp); tension there travels up into the shoulders. Foot strike + posture already good, so this is the
       one run-economy lever from the photos. Add a mid-run cue reset, and one deliberately in the first km
       off the bike in bricks.
-- [ ] **Bike position micro-cues (Birmingham race photos, 13 Jul 2026) — folds into the aero-position to-do below.**
-      On the road bike in the drops the position is committed and low, but (1) **shoulders shrug up toward the
-      ears** (Bike-245 front-on) — consciously drop/relax them to hold the position longer and unload the neck;
-      (2) **the back rounds through the thoracic spine** instead of hinging from the hips — a flatter back off a
-      bigger hip hinge is both more aero and a stronger power position. Test alongside any pad-drop / clip-on
-      change on the fixed-power out-and-backs already planned.
 - [x] **Set FTP 225 W in BOTH AI Endurance and Garmin Connect — DONE (Max, 11 Jul evening).**
       Garmin side verified live via `ftp_check` (configured 225 W, read from Garmin); AIE side
       athlete-reported (the connector is read-only and can't see which engine set it). Zones on the
       watch recompute automatically (%FTP mode). Garmin's own MMP estimate reads 172 W — that's a
       floor, not a verdict: its curve only climbs on hard sustained power efforts, so expect it to
       lag until the post-Japan test block.
-- [ ] **Strap-verified FTP test — MOVED post-Alderford, w/c 7 Sep (agreed 19 Aug 2026).** The pre-taper
-      window closed (post-viral comeback + heatwave ate the w/c 10 Aug re-entry plan), so the already-
-      agreed 40 km race-simulation ride settles RACE pacing (225 vs 200) before the taper, and the
-      formal ramp/20-min strap test re-sets the three numbers properly the week after Alderford:
-      (a) **FTP** (adjust 225 up/down to the test), (b) **max HR** (race wrist-HR hit 185 vs the set
-      182 — strap-verify before touching), and (c) **bike LTHR** (currently 160 = the Birmingham
-      79-min race average, so it's underset). Every zone and the 250 W build arc hang off these; one
-      session closes all three.
+- [x] **Home strap FTP test — DROPPED (11 Oct 2026).** The Feb 2027 Sportstest lab ramp sets FTP, max HR
+      and bike LTHR together; until then the winter base is HR/power-capped Z2, which doesn't need a fresh
+      threshold. FTP stays 225 W (race-derived MODEL) meanwhile.
 - [x] **Swim CSS test (400/200) — DONE (measured ~14 Aug 2026): CSS 1:53/100m.** Set app-side via
       COACH_SWIM_CSS (AIE's API can't read UI-set CSS back); state, zones and the race swim model now
       run off a measured number, and the stale `swim-css-not-set` profile item was cleared (19 Aug).
@@ -78,11 +45,9 @@
         by hand (swim 7:30–8:00 + 20 k at 205–215 NP ≈ 35 min + 5 k at 4:25–4:35 + transitions), NOT
         from the splits model, which assumes a 750 m open-water sprint and therefore **wrongly flags
         this target implausible** on the dashboard. Known cosmetic false-flag; profile note documents it.
-- [ ] **Teach the splits model pool-sprint formats (small).** A per-race format/distance override in
-      `profile races[]` (e.g. `swim_m: 400`, pool: no wetsuit, faster T1 assumptions) so Warwick-style
-      races model correctly and the target gate stops false-flagging them. Until then the Warwick
-      "implausible" badge is expected noise.
-- [ ] **Rally-on-Atom power offset test (10 min, post-Japan).** Fit the Rally pedals to the Wattbike
+- [x] **Splits model knows pool sprints — DONE.** `swim_m` / `bike_km` / `run_km` on a profile race
+      (Warwick 2026 used `swim_m: 400`; Stratford 2027 set to 400 m / 18 km on 11 Oct 2026).
+- [ ] **Rally-on-Atom power offset test (10 min) — do it in NOVEMBER 2026** (winter = Wattbike-heavy, so it matters now). Fit the Rally pedals to the Wattbike
       Atom once, record the SAME 3×5-min steady session on the watch (Rally) and Wattbike Hub (Atom)
       simultaneously, and read the per-second offset. Why: the archive shows the two power sources have
       NEVER measured the same effort — every outdoor ride records Rally, indoor rides pair the Atom's
@@ -97,16 +62,143 @@
       as agreed: **max HR and bike LTHR wait for the strap-verified post-Japan test** (race wrist-HR hit
       185 vs set max 182; LTHR 160 was literally the 79-min race average). FTP 225 in both platforms:
       done the same evening — see the ticked to-do above.
-- [ ] **(agreed 11 Jul) Aero position work on the current road bike — don't wait for the Speedform.** Race-file CdA
-      fitted **~0.358 m²** (MODEL: 309 flat steady samples, light 8–9 km/h wind, Crr 0.004, 81 kg
-      system) — hoods territory. Getting toward ~0.30 (clip-ons / pad drop / helmet) ≈ **2.5–3.5 min
-      over a 40 km leg at the same watts** — the largest single time purchase in the whole race file.
-      Validate any change with fixed-power out-and-backs; the autumn Sportstest bike session (below)
-      can sanity-check the position.
 - [x] **(agreed 11 Jul) T1 drills — DONE, landed at Warwickshire (T1 1:33 vs Alderford 2:51, 4 Oct).** Birmingham T1: **69 s of 141 stationary** + a 185 m
       transition run. Rehearse suit-half-down-before-the-rack + flying mount — 20–30 s available.
       T2 was clean (39 s watch-side) — keep the flying dismount as-is.
-- [ ] **Alderford (6 Sep 2026) debrief — data read DONE 9 Sep; Max's account still needed.** Official
+- [ ] **Load series artefact — ROOT CAUSE FOUND 11 Oct 2026, fix in progress.** CTL/ATL/TSB was computed
+      from AIE's 60-day `getRecoveryModel` ESS window, seeded from its first week — too short for a 42-day
+      constant, so the number lurched with whatever week fell off the window (29.8 → 19.3 → 38.2 in two
+      weeks). Fix: compute from the local activity archive (ESS back to 28 Apr 2026), the 60-day feed only
+      topping up the latest days, and repair the stored daily snapshots.
+- [x] **Pull the Results Base field splits — DONE (by Max, before 19 Aug 2026; finding not retained).**
+      The pull happened but which leg separates 19th from the top 10 wasn't logged. If the winter
+      swim-vs-bike emphasis question needs the number, re-pull post-season — it's 10 minutes.
+- [x] **Winter wheel swap — MOOT (11 Oct 2026).** The alloy winter set punctured and is being given
+      away; the Hunts (30 mm GP5000 S TR) are the training wheel year-round now.
+- [ ] **Rehearse long-run liquid carb — PARKED until March 2027 (the 70.3 run build)** — vest arrived 19 Aug;
+      load PF 60 in the front soft
+      flasks and practise drinking carb *on the run*, not just water. Closes the GLP-1 fuelling gap (run
+      fuel should be liquid on a slowed gut) and the missed carb channel. Build the rate up gradually in
+      long runs, and rehearse it **in the Tue–Thu GI-trough window** at least once, not only on fresh days,
+      so it's race-realistic for the 70.3 run leg. Vest: Salomon Active Skin 8 (flasks included) was the pick.
+- [ ] **Sportstest — two visits (agreed 11 Oct 2026; one paid round a year, as agreed 6 Jul).**
+      (1) **November 2026 — the two one-offs:** endless-pool **swim video analysis** (winter = the technique
+      window; every Mon/Thu swim then works on what it finds) + **cycling technique analysis** (motion
+      capture / pedal-stroke + L/R power balance) — checks whether the 4 mm right-cleat shim + 2 mm left-pedal
+      washer fixed the left heel-out/knee-in tracking and late left power phase. Ask whether it can run on
+      the Rally pedals. Take the Birmingham-photo bike cues with you: shoulders shrug toward the ears in the
+      drops (relax/drop them) and the back rounds through the thoracic spine instead of hinging at the hips.
+      (2) **Last week of Feb 2027 — the annual bike physiology test** (see the testing-week to-do below).
+      **Measured CdA is NOT a lab test** — do an outdoor fixed-power out-and-back CdA test, ideally on the
+      Speedform once it lands (J.Laverack answer due w/c 19 Oct); race-file fit was ~0.358 m² (MODEL),
+      ~0.30 ≈ 2.5–3.5 min per 40 km at the same watts. Phone 0333 900 3330 (Cannock).
+- [x] **Catch-up Medichecks panel — DONE (drawn 12 Aug 2026, fasted; results 13 Aug; panel + flags saved
+      to `profile.local.yaml → bloods.panels`, the canonical store).** Headline: strong panel, 2020→2026
+      trend emphatically good; one flag (lymphocytes 0.39) read as post-viral transient — full read +
+      decisions in the 2026-08-18 Decisions entry below. Protocol miss for next time: drawn 11:41, outside
+      the 6-10am cortisol window — the annual testing week (below) now specifies pre-10am.
+- [ ] **Book the annual testing week — last week of Feb, every year (first: Feb 2027).** Medichecks
+      panel Monday morning (fasted, **pre-10am** — that lands the in-window cortisol/T:C baseline the
+      Aug 2026 panel missed; ≥48 h after last hard session; pick a panel that **includes CK** — the
+      Ultimate Performance panel doesn't, the 2020 Well Man UltraVit did) + Sportstest
+      comprehensive **bike** physiological assessment (ramp + lactate thresholds + VO2max, own pedals)
+      later the same week. Late Feb = vit-D trough, iron checked before the build, end-of-base repeatable
+      state, zones set for the season, the annual FTP data point for the 2028 short-vs-long gate — and it
+      re-checks the Aug 2026 watch items (lymphocytes, active-B12 set point, folate, SHBG, winter vit D
+      on ~400 IU/day).
+      **Also (11 Oct 2026):** this week now carries the vitamin D re-test (the profile open item was
+      folded in — the panel reads the supplemented winter floor on ~400 IU/day Oct–Mar), and the panel
+      MUST include CK (muscle marker for lean-mass watch on tirzepatide).
+- [x] **Sweat-rate test — DECLINED (Max, 19 Aug 2026).** Happy with the population MODEL; the hydration
+      line keeps its honest estimate label. The setup-card question was down-ranked with a discussed-
+      with-coach note (visible, not hidden). Reopen only if a hot race or hydration trouble makes the
+      real number matter — the protocol lives in `docs/profile-questions.md` and the field
+      (`fuelling.preferences.sweat_rate_ml_per_hour`) still exists if that day comes.
+
+- [x] **Fuel card solid/liquid balance preference — SHIPPED (Phase 1).** `fuelling.preferences.solid_liquid_split`
+      (`liquid`|`even`|`solid`, bare or per-sport) now drives `planFuel` (`src/coach/fuelPlan.ts`); `even`
+      alternates a cadence-sensible solid + liquid feed, and the free-text `prefs.notes` is echoed on
+      fuelled sessions. Both the chat and the dashboard card read it (same engine). Max's profile set to
+      `{ride: even, run: liquid}`. This is the template for "Channel A" (structured fact → profile →
+      recompute → both surfaces).
+- [x] **Phase 2 — coach↔dashboard decision loop ("Channel B") — SHIPPED.** The Claude coach walks the
+      dashboard's cues + "discuss with coach" items (`agenda`), reaches a call with the athlete, records it,
+      and the card reflects "✓ discussed with coach". One store (`data/decisions/log.jsonl`), gated writes
+      unchanged. Pieces:
+      - [x] (a) `agenda` MCP read tool — enumerates the exact dashboard items with stable keys (`src/coach/agenda.ts`).
+      - [x] (b) `react_to_insight` carries a one-line `note` + stamps `via:"coach"`; `latestCoachDiscussions`
+        extractor returns the latest coach outcome per key (`src/state/decisionLog.ts`).
+      - [x] (c) scoped render: `discussedLineHtml` shows "✓ discussed with coach · date · outcome — note" on
+        the reactable / applyable / task cards + coach recs (threaded via a `discussions` map, additive).
+      - [x] (d) stable ids for `open_items` (string OR `{id,text}`); Max's profile migrated to ids.
+      - Refine ideas (later): on the card, surface the discussed line in the open-item SUMMARY (currently in
+        the `<details>` body); optional auto-fade of an agreed item after a cool-off (today it stays annotated).
+
+## Decisions / things we've talked through
+- **2026-10-11 — Season-end review, winter plan, AI Endurance set-up and a full clean-up.**
+  - **Season-arc review run** (`reports/2026-10-11-season-arc.md`): 2026 delivered (Birmingham AG win, FTP
+    199→225 W, CSS measured, bloods excellent, fuelling banked). The gap is weeks completed: ~5.2 h/wk vs
+    9–10 available (~275 h vs the 2013 peak of 390 h). The weight-loss W/kg lever is spent — gains from
+    here come from watts + lean mass, so strength and fuelling are the winter's non-negotiables.
+  - **Winter aim: base for the July A (On The Edge 70.3, 25 Jul 2027) at 7–9 h/wk.** Stratford (18 Apr) is
+    raced untapered. Blocks: absorb (now–mid-Nov, easy only — 11 Oct showed TSB −22 and run load +79% after
+    a week of 230% threshold / unprescribed anaerobic) → base (late Nov–Dec, easy week every 4th) → base +
+    one Friday sweet-spot (Jan–Feb; Feb testing week sets zones) → run build + first bricks (Mar–mid-Apr).
+    Judged on: ≥80% of weeks ≥7 h, two strength sessions logged weekly, ≥80% of time easy — NOT on CTL
+    until the load calc is fixed.
+  - **Week:** Mon group swim (coach-led) · Tue London long gym session · Wed long easy run 60→90 min ·
+    Thu morning swim · Fri Wattbike 60 + 20-min legs/plyo (rest in easy weeks) · Sat easy run 40–50 +
+    strides · Sun long ride 2.5→4 h at 80 g/h.
+  - **AI Endurance doesn't read the profile or these chats** — it plans from its own availability
+    settings, which the coach can READ but not write. They still said ~17 h/wk (swim 3 / ride 8 / run 4 /
+    strength 2; Sun 6 h; rides allowed Tue/Wed in London). Max to set: weekly swim 2 / ride 4 / run 2 /
+    strength 1.25; Mon 1 h swim · Tue 1.25 h strength · Wed 1.5 h run · Thu 1 h swim · Fri 1 h ride ·
+    Sat 1 h run (ride backup) · Sun 4 h ride — plus a winter-base athlete-context text. Re-read to verify.
+  - **Clean-up:** 9 proposals declined (8 stale Aug–Sep + converting Monday's coach-led group swim), 2
+    applied (Z2 cap note on the 18 Oct ride, run-volume cap on the 21 Oct long run). Dashboard: ramp +
+    strength recs kept; 80 g/h + bike-fit recs and the sweat-rate question dismissed; this week's three
+    cues agreed; Garmin ACWR card and the Garmin "power profile leans anaerobic" card turned down.
+    Profile: bike shim IN (4 mm right cleat + 2 mm left-pedal washer), Hunts year-round, winter
+    availability, Stratford 400 m / 18 km, vit-D open item folded into the Feb testing week, Speedform
+    chased (answer w/c 19 Oct). Notes: race-history search dropped (reopen only if results turn up —
+    Outlaw half / Windermere middle leads + Weymouth/Bovington times), home FTP test dropped for the
+    Feb lab, bike cues + aero + Sportstest merged into one two-visit item, liquid-carb rehearsal parked
+    to March, Alderford debrief archived below.
+- **2026-10-04 — Warwickshire (C, season closer) debrief + 2026 season review.**
+  - **Race:** official 1:04:36, 31st overall, **4th of 30 AG** (Swim 7:26 · T1 1:33 · Bike 32:29 · T2 1:17 ·
+    Run 21:51). Beat the 1:05–1:09 target and the 1:09:49 model; fastest of three Stratford pool sprints
+    (2023 1:05:26, 2025 1:09:07 — course equivalence not verified). Race `.FIT` = Garmin 24598580508.
+  - **Swim** 400 m pool ≈ 1:52/100m incl. the mat run. The watch logged it as 240 m *open water* (tri mode
+    = GPS swim indoors); Max's Garmin Connect edit doesn't touch the original file, so the app's copy still
+    reads 240 m — career row hand-set to 0.40 km. Fix for next pool tri: set the multisport swim leg to POOL.
+  - **T1 1:33 (Alderford 2:51)** — the shoes-on-pedals drill landed (pool exit, no wetsuit, so not
+    like-for-like).
+  - **Bike under-ridden:** NP 199 / avg 187 W, VI 1.06, IF ≈0.88 on 225 — the agreed band was 205–215 NP.
+    Power 190→183 W half-to-half while HR *fell* 169→157: eased off, not limited.
+  - **Run negative-split hard:** km 4:36 / 4:36 / 4:33 / 4:16 / 4:04, avg HR 153 (max 165 vs bike max 173).
+    The first 3 km were too cautious.
+  - **Read:** the third race running finished with reserve (Birmingham run HR < bike; Alderford HR 149/156;
+    here IF 0.88). Execution headroom ≈ 1:20 (MODEL: 215 W NP ≈ −50 s, even 4:20/km run ≈ −35 s →
+    ~1:03:15). Standing cue for 2027 sprints: **bike floor 210 W, run starts at the pace it finishes.**
+  - **2026 season review (data read 4 Oct, Garmin activity archive Jan–Sep):**
+    - Results: Birmingham A **1st of 8 AG** (2:39:12), Alderford B 4th of 18 (2:42:12, swim the whole
+      miss), Warwickshire C 4th of 30 (1:04:36). FTP 199→225 W set (Phase-1 goal ~220 beaten — but a
+      race-derived MODEL, the strap test never happened); CSS measured 1:53; bloods excellent; ~60 g/h
+      liquid-led fuelling banked with zero GI; bike pacing discipline learned (VI 1.10 → 1.04).
+    - **Volume is the headline gap: ~192 h in 39 weeks ≈ 4.9 h/wk** (excl. the Sep Wales hike/ruck) vs
+      the profile's 11–12 h/wk availability. Monthly 13–31 h. Load (CTL, MODEL recomputed from AIE ESS;
+      the state-store series is still the known artefact) sat ~25–35 most of the year, peaked ~48 at
+      Birmingham — the Phase-1 target 50–55 by end-2026 is not met.
+    - **Run volume collapsed after June:** Jul 1.2 h, Aug 2.3 h, Sep 0.7 h for the month — yet a 4:26/km
+      off-bike 5 k today. Big upside, and the 70.3 run is the injury window: rebuild gradually.
+    - **Swim frequency only arrived in June** (Jan–May ≈0.5 h/month → Jun–Sep ~4 h/month); open-water
+      skills remain the limiter (Alderford).
+    - **Strength/gym logged Mar–Jun (1–5 h/month), ~nil since July** vs the 3–4×/wk rehab plan — ask
+      whether it's unlogged or lapsed.
+  - **Availability change (from Max, 4 Oct):** now **works in London Tue–Wed** — gym there has a pool, a
+    gym bike and weights; wants the **long run on Wednesday around the London parks**. Winter = **no
+    Saturday open-water swim.** Profile `availability` to be updated once the winter week is agreed.
+- **2026-09-09 — Alderford (B) debrief (archived from the to-do list 11 Oct 2026).** Official
       2:42:12, 38th overall, 4th of 18 AG 45–49 (Swim 35:58 · T1 2:51 · Bike 1:15:50 · T2 1:07 · Run 46:26);
       model predicted 2:35:52 (miss −6:20, 3.9%). Race `.FIT` decoded per leg (Garmin 24256950430):
       - **Swim is the whole miss (+7:09 vs model, +6:02 vs Birmingham).** Garmin 1.47 km, so not a long
@@ -145,102 +237,6 @@
         race NP 196 at HR 149/156 says nothing about 225 (DFA-α1 on the race ride: 202 W cluster /
         227 W ramp); (3) T1 fix = shoes on the pedals + flying mount + suit to the waist on the exit run,
         rehearsed before Warwick (4 Oct, pool sprint — no open-water problem there).
-- [ ] **Load series artefact.** `data/state/*.json` CTL/ATL/TSB is unusable across 15 Aug–9 Sep (CTL
-      moves 20+ points in days; ATL 97 on 9 Sep with no sessions). Likely a short assembly window after
-      the 3 Sep token outage rather than AIE's own numbers — check the source before trusting TSB again.
-- [x] **Pull the Results Base field splits — DONE (by Max, before 19 Aug 2026; finding not retained).**
-      The pull happened but which leg separates 19th from the top 10 wasn't logged. If the winter
-      swim-vs-bike emphasis question needs the number, re-pull post-season — it's 10 minutes.
-- [ ] **Winter wheel swap** — the Hunt 40mm deep aero wheels (30mm GP5000 S TR) are the *summer*
-      everyday training wheel; switch back to the 32mm alloy wheelset (nominal-32mm GP5000) when winter
-      conditions arrive, and back to the Hunts in spring. Pressures differ between the two — summer
-      (30mm) ≈ 52 F / 60 R psi; winter (32mm, wetter roads) ≈ 48 F / 55 R psi (both MODELs, tune by feel).
-- [ ] **Rehearse long-run liquid carb — vest ARRIVED (confirmed 19 Aug 2026), rehearsal now live** —
-      load PF 60 in the front soft
-      flasks and practise drinking carb *on the run*, not just water. Closes the GLP-1 fuelling gap (run
-      fuel should be liquid on a slowed gut) and the missed carb channel. Build the rate up gradually in
-      long runs, and rehearse it **in the Tue–Thu GI-trough window** at least once, not only on fresh days,
-      so it's race-realistic for the 70.3 run leg. Vest: Salomon Active Skin 8 (flasks included) was the pick.
-- [ ] **Call Sportstest (0333 900 3330, Cannock) — price + book the two one-offs.** Get pricing for
-      (a) the endless-pool **swim video analysis** and (b) the **cycling technique analysis** (motion
-      capture / pedal-stroke + power-balance — book it *for the asymmetry question*: left heel-out/toe-in,
-      knee tracking, platform offset L −9 mm / R +5 mm, late left power phase). Sensible window: **autumn
-      2026** (post-Warwick, before the winter swim block). Also ask whether the annual bike assessment can
-      run **on your own Rally pedals** — that's what makes the lab threshold map onto every ride you record.
-- [x] **Catch-up Medichecks panel — DONE (drawn 12 Aug 2026, fasted; results 13 Aug; panel + flags saved
-      to `profile.local.yaml → bloods.panels`, the canonical store).** Headline: strong panel, 2020→2026
-      trend emphatically good; one flag (lymphocytes 0.39) read as post-viral transient — full read +
-      decisions in the 2026-08-18 Decisions entry below. Protocol miss for next time: drawn 11:41, outside
-      the 6-10am cortisol window — the annual testing week (below) now specifies pre-10am.
-- [ ] **Book the annual testing week — last week of Feb, every year (first: Feb 2027).** Medichecks
-      panel Monday morning (fasted, **pre-10am** — that lands the in-window cortisol/T:C baseline the
-      Aug 2026 panel missed; ≥48 h after last hard session; pick a panel that **includes CK** — the
-      Ultimate Performance panel doesn't, the 2020 Well Man UltraVit did) + Sportstest
-      comprehensive **bike** physiological assessment (ramp + lactate thresholds + VO2max, own pedals)
-      later the same week. Late Feb = vit-D trough, iron checked before the build, end-of-base repeatable
-      state, zones set for the season, the annual FTP data point for the 2028 short-vs-long gate — and it
-      re-checks the Aug 2026 watch items (lymphocytes, active-B12 set point, folate, SHBG, winter vit D
-      on ~400 IU/day).
-- [x] **Sweat-rate test — DECLINED (Max, 19 Aug 2026).** Happy with the population MODEL; the hydration
-      line keeps its honest estimate label. The setup-card question was down-ranked with a discussed-
-      with-coach note (visible, not hidden). Reopen only if a hot race or hydration trouble makes the
-      real number matter — the protocol lives in `docs/profile-questions.md` and the field
-      (`fuelling.preferences.sweat_rate_ml_per_hour`) still exists if that day comes.
-
-- [x] **Fuel card solid/liquid balance preference — SHIPPED (Phase 1).** `fuelling.preferences.solid_liquid_split`
-      (`liquid`|`even`|`solid`, bare or per-sport) now drives `planFuel` (`src/coach/fuelPlan.ts`); `even`
-      alternates a cadence-sensible solid + liquid feed, and the free-text `prefs.notes` is echoed on
-      fuelled sessions. Both the chat and the dashboard card read it (same engine). Max's profile set to
-      `{ride: even, run: liquid}`. This is the template for "Channel A" (structured fact → profile →
-      recompute → both surfaces).
-- [x] **Phase 2 — coach↔dashboard decision loop ("Channel B") — SHIPPED.** The Claude coach walks the
-      dashboard's cues + "discuss with coach" items (`agenda`), reaches a call with the athlete, records it,
-      and the card reflects "✓ discussed with coach". One store (`data/decisions/log.jsonl`), gated writes
-      unchanged. Pieces:
-      - [x] (a) `agenda` MCP read tool — enumerates the exact dashboard items with stable keys (`src/coach/agenda.ts`).
-      - [x] (b) `react_to_insight` carries a one-line `note` + stamps `via:"coach"`; `latestCoachDiscussions`
-        extractor returns the latest coach outcome per key (`src/state/decisionLog.ts`).
-      - [x] (c) scoped render: `discussedLineHtml` shows "✓ discussed with coach · date · outcome — note" on
-        the reactable / applyable / task cards + coach recs (threaded via a `discussions` map, additive).
-      - [x] (d) stable ids for `open_items` (string OR `{id,text}`); Max's profile migrated to ids.
-      - Refine ideas (later): on the card, surface the discussed line in the open-item SUMMARY (currently in
-        the `<details>` body); optional auto-fade of an agreed item after a cool-off (today it stays annotated).
-
-## Decisions / things we've talked through
-- **2026-10-04 — Warwickshire (C, season closer) debrief + 2026 season review.**
-  - **Race:** official 1:04:36, 31st overall, **4th of 30 AG** (Swim 7:26 · T1 1:33 · Bike 32:29 · T2 1:17 ·
-    Run 21:51). Beat the 1:05–1:09 target and the 1:09:49 model; fastest of three Stratford pool sprints
-    (2023 1:05:26, 2025 1:09:07 — course equivalence not verified). Race `.FIT` = Garmin 24598580508.
-  - **Swim** 400 m pool ≈ 1:52/100m incl. the mat run. The watch logged it as 240 m *open water* (tri mode
-    = GPS swim indoors); Max's Garmin Connect edit doesn't touch the original file, so the app's copy still
-    reads 240 m — career row hand-set to 0.40 km. Fix for next pool tri: set the multisport swim leg to POOL.
-  - **T1 1:33 (Alderford 2:51)** — the shoes-on-pedals drill landed (pool exit, no wetsuit, so not
-    like-for-like).
-  - **Bike under-ridden:** NP 199 / avg 187 W, VI 1.06, IF ≈0.88 on 225 — the agreed band was 205–215 NP.
-    Power 190→183 W half-to-half while HR *fell* 169→157: eased off, not limited.
-  - **Run negative-split hard:** km 4:36 / 4:36 / 4:33 / 4:16 / 4:04, avg HR 153 (max 165 vs bike max 173).
-    The first 3 km were too cautious.
-  - **Read:** the third race running finished with reserve (Birmingham run HR < bike; Alderford HR 149/156;
-    here IF 0.88). Execution headroom ≈ 1:20 (MODEL: 215 W NP ≈ −50 s, even 4:20/km run ≈ −35 s →
-    ~1:03:15). Standing cue for 2027 sprints: **bike floor 210 W, run starts at the pace it finishes.**
-  - **2026 season review (data read 4 Oct, Garmin activity archive Jan–Sep):**
-    - Results: Birmingham A **1st of 8 AG** (2:39:12), Alderford B 4th of 18 (2:42:12, swim the whole
-      miss), Warwickshire C 4th of 30 (1:04:36). FTP 199→225 W set (Phase-1 goal ~220 beaten — but a
-      race-derived MODEL, the strap test never happened); CSS measured 1:53; bloods excellent; ~60 g/h
-      liquid-led fuelling banked with zero GI; bike pacing discipline learned (VI 1.10 → 1.04).
-    - **Volume is the headline gap: ~192 h in 39 weeks ≈ 4.9 h/wk** (excl. the Sep Wales hike/ruck) vs
-      the profile's 11–12 h/wk availability. Monthly 13–31 h. Load (CTL, MODEL recomputed from AIE ESS;
-      the state-store series is still the known artefact) sat ~25–35 most of the year, peaked ~48 at
-      Birmingham — the Phase-1 target 50–55 by end-2026 is not met.
-    - **Run volume collapsed after June:** Jul 1.2 h, Aug 2.3 h, Sep 0.7 h for the month — yet a 4:26/km
-      off-bike 5 k today. Big upside, and the 70.3 run is the injury window: rebuild gradually.
-    - **Swim frequency only arrived in June** (Jan–May ≈0.5 h/month → Jun–Sep ~4 h/month); open-water
-      skills remain the limiter (Alderford).
-    - **Strength/gym logged Mar–Jun (1–5 h/month), ~nil since July** vs the 3–4×/wk rehab plan — ask
-      whether it's unlogged or lapsed.
-  - **Availability change (from Max, 4 Oct):** now **works in London Tue–Wed** — gym there has a pool, a
-    gym bike and weights; wants the **long run on Wednesday around the London parks**. Winter = **no
-    Saturday open-water swim.** Profile `availability` to be updated once the winter week is agreed.
 - **2026-08-19 — Triage session: bad weigh-in purged, proposal queue zeroed, open items closed down.**
   - **Erroneous 10 Aug weigh-in deleted.** The Index S2 reading (76.55 kg, body fat 0%, SMM 0 kg — a
     failed-impedance scale glitch) was stripped from `data/archive/garmin-daily.jsonl` (the row's

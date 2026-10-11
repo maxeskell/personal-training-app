@@ -221,6 +221,42 @@ export function loadModel(recoveryData: { date?: unknown[]; external_stress_scor
   return { series, ctl: last.ctl, atl: last.atl, tsb: last.tsb, rampPerWeek: +(last.ctl - weekAgo.ctl).toFixed(1) };
 }
 
+/**
+ * Extend AIE's daily ESS series backwards with the local activity archive, so the 42-day CTL has history
+ * to settle on. `getRecoveryModel.data` only carries the last ~14 days, and seeding a τ=42 EWMA from that
+ * made CTL lurch with whichever week fell off the window (29.8 → 19.3 → 38.2 across two weeks, Oct 2026).
+ * Days inside the AIE window keep AIE's own daily totals (authoritative, and they include today); days
+ * before it are the per-day sum of archived activity ESS (0 on a day with no activity). The archive
+ * matches AIE's daily totals to ~0.3 ESS/day on the overlap, so the splice is seamless. Pure.
+ * Returns the AIE series unchanged when there's no older history.
+ */
+export function essSeriesWithHistory(
+  recoveryData: { date?: unknown[]; external_stress_score?: unknown[] } | undefined,
+  history: ReadonlyArray<{ date: string; ess?: number }>,
+): { date: string[]; external_stress_score: number[] } | undefined {
+  const rDates = (recoveryData?.date ?? []).map((d) => String(d).slice(0, 10));
+  const rEss = (recoveryData?.external_stress_score ?? []).map((e) => num(e) ?? 0);
+  if (rDates.length !== rEss.length) return undefined;
+  const byDay = new Map<string, number>();
+  for (const a of history) {
+    if (!a.date || typeof a.ess !== "number" || !Number.isFinite(a.ess)) continue;
+    byDay.set(a.date.slice(0, 10), (byDay.get(a.date.slice(0, 10)) ?? 0) + a.ess);
+  }
+  const histDates = [...byDay.keys()].sort();
+  const windowStart = rDates[0];
+  if (!histDates.length || (windowStart && histDates[0] >= windowStart)) return rDates.length ? { date: rDates, external_stress_score: rEss } : undefined;
+  const end = rDates.length ? rDates[rDates.length - 1] : histDates[histDates.length - 1];
+  const fromAie = new Map(rDates.map((d, i) => [d, rEss[i]]));
+  const date: string[] = [];
+  const ess: number[] = [];
+  for (const d = new Date(`${histDates[0]}T00:00:00Z`); d.toISOString().slice(0, 10) <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    const k = d.toISOString().slice(0, 10);
+    date.push(k);
+    ess.push(windowStart && k >= windowStart ? (fromAie.get(k) ?? 0) : (byDay.get(k) ?? 0));
+  }
+  return { date, external_stress_score: ess };
+}
+
 // ---------- Run-load ramp guard (the injury-window safety net; ACWR demoted) ----------
 
 export interface RunRamp {

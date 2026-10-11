@@ -12,7 +12,7 @@ import { InsightLog } from "../state/insightLog.js";
 import { assessHealthRisk } from "../guardrails/wellbeing.js";
 import { DecisionLog, decisionId, nowIso } from "../state/decisionLog.js";
 import { ArchiveStore } from "../archive/store.js";
-import { mapRichActivity, richActivities } from "../insights/metrics.js";
+import { mapRichActivity, richActivities, loadModel, essSeriesWithHistory } from "../insights/metrics.js";
 import { loadSessionDecays } from "../insights/fit.js";
 import { syncFitSummaries, type FitSyncResult } from "../archive/fitSync.js";
 import { assessCompleteness, type DataCompletenessReport } from "../state/dataCompleteness.js";
@@ -63,6 +63,22 @@ export async function loadArchive(): Promise<ArchiveInput | undefined> {
     garminDays: withinPhysioHorizon(gar), // GarminDay already carries every field ArchiveInput needs (incl. slice-1b series)
     fitSummaries,
   };
+}
+
+/**
+ * Recompute the persisted CTL/ATL/TSB from AIE's ~14-day ESS window EXTENDED with the activity archive
+ * (see `essSeriesWithHistory`) — the assemble-time value, seeded from 14 days, isn't a usable 42-day CTL.
+ * Best-effort: no archive, or any failure, leaves the assemble-time load untouched.
+ */
+export async function withArchivedLoad(state: AthleteState): Promise<void> {
+  try {
+    const acts = (await new ArchiveStore().loadActivities()).map((a) => mapRichActivity(a.raw, a.sport));
+    const rec = (state.raw?.getRecoveryModel as { data?: { date?: unknown[]; external_stress_score?: unknown[] } } | undefined)?.data;
+    const lm = loadModel(essSeriesWithHistory(rec, acts));
+    if (lm) state.load = { value: { ctl: lm.ctl, atl: lm.atl, tsb: lm.tsb }, source: "ai-endurance" };
+  } catch {
+    /* keep the assemble-time load */
+  }
 }
 
 export interface BuildStateOpts {
@@ -123,6 +139,7 @@ export async function buildTodayState(opts: BuildStateOpts = {}): Promise<{ stat
     }
   }
   await garmin?.close();
+  await withArchivedLoad(state);
   await store.save(state);
 
   // AIE tool-change tolerance: a read that errored degrades its field to null rather than
