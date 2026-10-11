@@ -267,6 +267,19 @@ export const config = {
   },
 
   /**
+   * Sunday week-in-review. `releaseHour` (local, 0–23) is when the week counts as over: the review is
+   * generated then (the `weekly-brief` launchd job, installed with `npm run weekly-brief:install`) — never
+   * by the 06:00 ping, which ran before the Sunday sessions. The Today tab names this time. Keep the
+   * installed job's hour in step (the install script reads this same env var).
+   */
+  weeklyBrief: {
+    releaseHour: (() => {
+      const n = Number(process.env.COACH_WEEKLY_BRIEF_HOUR ?? 16);
+      return Number.isInteger(n) && n >= 0 && n <= 23 ? n : 16;
+    })(),
+  },
+
+  /**
    * Read-only `/career` page (race history + lifetime bests vs current + power curve). The data is a
    * HISTORICAL multi-year archive (TrainingPeaks export + raw .FIT files), not live coaching state,
    * so it lives in a gitignored file built by `scripts/build-career-history.ts`. Path is relative to the repo root

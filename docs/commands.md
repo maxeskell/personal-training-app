@@ -111,8 +111,10 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 ## Hands-free automation (macOS launchd; prints a Linux cron/systemd equivalent)
 | Command | What it does |
 |---|---|
-| `npm run ping` | unattended morning readiness: verdict + report + desktop notification. **On Sundays it also runs the weekly brief** (review + snapshot + gated next-week proposals), frozen together |
-| `npm run schedule:install` (`-- HH MM`) | schedule the daily `ping` (e.g. `-- 6 30`); `schedule:uninstall` to remove. The weekly brief rides this one job — no separate installer. Sets `RunAtLoad`, so a day the Mac was powered off is recovered at next login (the ping is idempotent per date) |
+| `npm run ping` | unattended morning readiness: verdict + report + desktop notification. Catches up a missed weekly brief Mon–Wed; on Sunday it skips the brief (the week isn't over until the release hour) |
+| `npm run weekly-brief:due` | the Sunday release job: runs the full weekly brief only if due (past `COACH_WEEKLY_BRIEF_HOUR`, default 16:00, and not yet written) + a "Week in review ready" notification |
+| `npm run weekly-brief:install` (`-- HH`) | schedule `weekly-brief:due` Sundays at HH:00 (default: `COACH_WEEKLY_BRIEF_HOUR` from `.env`, else 16); `weekly-brief:uninstall` to remove |
+| `npm run schedule:install` (`-- HH MM`) | schedule the daily `ping` (e.g. `-- 6 30`); `schedule:uninstall` to remove. Sets `RunAtLoad`, so a day the Mac was powered off is recovered at next login (the ping is idempotent per date) |
 | `npm run post-swim:install` (`-- HH MM`) | schedule the post-swim deep dive (default 19:00): fit-sync, then a deep dive only if you swam today; `post-swim:uninstall` to remove |
 | `npm run watch:install` (`-- HH MM`) | proactive daily watch (fit-sync + fire-only check); `watch:uninstall` to remove |
 | `npm run serve:install` / `serve:uninstall` | keep the dashboard server running at login |

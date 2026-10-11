@@ -23,11 +23,11 @@ export async function latestWeeklyReview(): Promise<{ date: string; actions: str
 
 /** The most recent weekly review's FULL markdown + its date (the `/season` page renders the prose, the
  *  dashboard surfaces only its action bullets via {@link latestWeeklyReview}). Best-effort → undefined. */
-export async function latestWeeklyReviewProse(): Promise<{ markdown: string; date: string } | undefined> {
+export async function latestWeeklyReviewProse(): Promise<{ markdown: string; date: string; writtenAt?: string } | undefined> {
   try {
     const r = (await listReports()).find((i) => i.name.endsWith("-weekly-review.md"));
     if (!r?.date) return undefined;
-    return { markdown: await readReport(r.name), date: r.date };
+    return { markdown: await readReport(r.name), date: r.date, writtenAt: r.modified };
   } catch {
     return undefined;
   }

@@ -93,9 +93,13 @@ and decisions that travels with the repo.
   can't be written into the plan. Everything still goes through the explicit propose→confirm gate.
 - **Observable unattended ping.** `ping` is idempotent per day (a re-fire won't double-notify or double-spend),
   records a success heartbeat, and **notifies you if it fails** instead of failing silently; `doctor` warns
-  if the scheduled ping hasn't succeeded in over a day. **The ping also carries the weekly brief** —
-  one scheduled job, no separate installer — freezing the week's snapshot, the review and its gated next-week
-  proposals together (all idempotent, so a re-fire is safe).
+  if the scheduled ping hasn't succeeded in over a day.
+- **The weekly brief releases Sunday at 16:00, after your Sunday sessions.** A Sunday-only launchd job
+  (`npm run weekly-brief:install`; hour = `COACH_WEEKLY_BRIEF_HOUR`, default 16) runs the gated
+  `weekly-brief:due`, freezing the week's snapshot, the review and its gated next-week proposals together (all
+  idempotent, so a re-fire is safe), and sends a **"Week in review ready"** desktop notification. The 06:00
+  ping deliberately skips Sunday (it used to review the week before the long Sunday session happened) and only
+  catches up a missed week Mon–Wed. If the Mac is asleep at 16:00, launchd fires on wake.
 - **The weekly brief catches up a missed Sunday.** It fires when *last Sunday's review is missing*, not when
   "today is Sunday" — because a same-day trigger silently loses the whole week whenever the Mac is off on
   Sunday morning (the ping never runs, so the branch is never even evaluated). The next ping that does run
@@ -668,6 +672,11 @@ stacks into one long scroll (degrade-don't-crash). A persistent **Ask** bar and 
   call** — a *view* over the same engine — and stays short when nothing moved. The since-yesterday diff is
   powered by a tiny per-day snapshot under `data/brief/` (gitignored). `COACH_DAILY_BRIEF=false` drops the
   brief sections, leaving the plain readiness card.
+  **Week in review on the front page:** from the Sunday release (16:00) to the end of Tuesday, the full weekly
+  review (with its week-over-week delta, *Next week* section and the link to next-week changes waiting on you)
+  sits on Today, stamped *"Week ending Sun 11 Oct · written Sun 16:02 · next one Sun 18 Oct, 16:00"*. Earlier on
+  Sunday it says *"Lands today at 16:00"*; if it's past due and not written it says so (with the command to
+  write it now). Wednesday–Saturday it lives only on the Plan tab.
 - **Plan** — the forward-looking view. The **Week ahead** card is **future training only** (today's sessions,
   with their full advice, live on Today) and is **weather analysis only** — verdict + reason per session, no
   fuelling. Then the **Sunday weekly brief** — the strategic sibling of Today's daily brief. Above the review

@@ -59,12 +59,22 @@ export interface WeeklyBriefDecision {
  * A review already dated on/after that Sunday (including one written by a manual `npm run weekly`)
  * counts as done, so a caught-up week never double-spends the LLM budget.
  */
-export function weeklyBriefDue(today: string, reviewDates: readonly string[]): WeeklyBriefDecision {
+export function weeklyBriefDue(
+  today: string,
+  reviewDates: readonly string[],
+  opts: { hourNow?: number; releaseHour?: number } = {},
+): WeeklyBriefDecision {
   const sunday = lastSunday(today);
   const lateBy = daysBetween(sunday, today);
 
   if (reviewDates.some((d) => d >= sunday)) {
     return { due: false, reviewDate: sunday, reason: `weekly review for week ending ${sunday} already written` };
+  }
+  // Release time: on the Sunday itself the week isn't over until the athlete's Sunday sessions are in, so a
+  // 06:00 ping must NOT review it (it used to — every review missed the long Sunday session). Callers that
+  // pass the local hour get the gate; Mon–Wed catch-up is unaffected.
+  if (lateBy === 0 && opts.hourNow != null && opts.releaseHour != null && opts.hourNow < opts.releaseHour) {
+    return { due: false, reviewDate: sunday, reason: `week ending ${sunday} isn't over yet — the review releases at ${String(opts.releaseHour).padStart(2, "0")}:00, after the Sunday sessions` };
   }
   if (lateBy > WEEKLY_CATCHUP_DAYS) {
     return {
@@ -78,6 +88,34 @@ export function weeklyBriefDue(today: string, reviewDates: readonly string[]): W
     reviewDate: sunday,
     reason: lateBy === 0 ? `Sunday cadence for week ending ${sunday}` : `catching up missed Sunday ${sunday} (${lateBy}d late)`,
   };
+}
+
+/**
+ * What the Today tab shows for the week in review. The review is front-page news from its Sunday release
+ * until the end of Tuesday ({@link WEEK_IN_REVIEW_FRONT_DAYS}); outside that it lives only on the Plan tab.
+ * - `pending`: it's Sunday before the release hour and this week's review isn't written — say when it lands.
+ * - `overdue`: past the release (Sun evening–Tue) and still not written (Mac asleep/off, AIE outage) — be honest.
+ * - `ready`: this week's review exists — show it, with when the next one lands.
+ * - `none`: Wed–Sat — nothing on the front page.
+ * Pure (date + hour in, decision out) so the window edges are unit-testable.
+ */
+export const WEEK_IN_REVIEW_FRONT_DAYS = 2;
+
+export type WeekInReviewSlot =
+  | { kind: "pending" | "overdue"; weekEnding: string; releaseHour: number }
+  | { kind: "ready"; weekEnding: string; releaseHour: number; nextRelease: string }
+  | { kind: "none" };
+
+export function weekInReviewSlot(today: string, hourNow: number, releaseHour: number, latestReviewDate: string | undefined): WeekInReviewSlot {
+  const sunday = lastSunday(today);
+  const lateBy = daysBetween(sunday, today);
+  if (lateBy > WEEK_IN_REVIEW_FRONT_DAYS) return { kind: "none" };
+  if (latestReviewDate && latestReviewDate >= sunday) {
+    const next = parseUtcDate(sunday);
+    next.setUTCDate(next.getUTCDate() + 7);
+    return { kind: "ready", weekEnding: sunday, releaseHour, nextRelease: isoOf(next) };
+  }
+  return { kind: lateBy === 0 && hourNow < releaseHour ? "pending" : "overdue", weekEnding: sunday, releaseHour };
 }
 
 /** Weekly-review report dates currently on disk, newest first. */

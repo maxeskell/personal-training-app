@@ -51,7 +51,9 @@ import {
 } from "./dashboardHelpers.js";
 import { renderResearchDigestPage } from "./researchPage.js";
 import { pageHead, renderNav, type NavId } from "./shell.js";
-import { renderSeasonInner, renderWeeklyProse, type SeasonProse } from "./seasonPage.js";
+import { renderSeasonInner, renderWeeklyProse, renderWeekInReviewCard, type SeasonProse } from "./seasonPage.js";
+import { weekInReviewSlot } from "./scheduleGates.js";
+import { todayIso, localHour } from "../util/today.js";
 import { renderWeeklyBriefDelta, selectWeeklyProposals, type WeeklyDelta, type WeeklyProposalView } from "./weeklyBrief.js";
 import type { SeasonArcReport } from "./seasonArc.js";
 import { renderCareerInner } from "./careerPage.js";
@@ -1552,6 +1554,12 @@ export function renderDashboard({ window, decisions, insights, reactions, discus
   // Supplement protocol — deterministic "what & when" from the profile + race calendar; "" when the
   // profile lists no supplements (the setup nudge rides the profile-questions machinery instead).
   const supplementsHtml = renderSupplementCard({ profile, nowMs: now ?? Date.now(), timezone: config.athlete.timezone, share: !!share });
+  // Week in review on the FRONT page (Today tab) from its Sunday release to end of Tuesday — the Plan-tab
+  // copy alone went unread. Before the release on Sunday it says when it lands; past it, unwritten, it says so.
+  const nowDate = new Date(now ?? Date.now());
+  const tz = config.athlete.timezone;
+  const reviewSlot = weekInReviewSlot(todayIso(tz, nowDate), localHour(tz, nowDate), config.weeklyBrief.releaseHour, seasonProse?.weekly?.date);
+  const weekInReviewHtml = renderWeekInReviewCard(reviewSlot, seasonProse?.weekly, tz, [weeklyDelta ? renderWeeklyBriefDelta(weeklyDelta) : "", weeklyLinkHtml].filter(Boolean).join("\n"));
   const corePlan = [weatherHtml, supplementsHtml, renderWeeklyProse(seasonProse), seasonFold].filter((s) => s.trim());
   const planBody = corePlan.length
     ? [weatherHtml, weeklyDeltaHtml, weeklyLinkHtml, supplementsHtml, renderWeeklyProse(seasonProse), seasonFold].filter((s) => s.trim()).join("\n")
@@ -1593,6 +1601,8 @@ ${share ? `<div class="card sharebanner" style="background:#eef4ff;border:1px so
 
 ${renderHealthBanner(share ? null : assessHealthRisk(window))}
 ${renderTodayCard({ today, window, insights, hl, leadKey, decisions, garminDays, priorBrief: priorBrief ?? null, weather, fuel: todayFuelCtx, sessionFeedbacks, fitSummaries, redact, share, now: now ?? Date.now(), briefEnabled: config.dailyBrief.enabled, postSessionSignal })}
+
+${weekInReviewHtml}
 
 ${renderLastSession(window, insights, fitSummaries, canFetchFit, sessionFeedbacks, setupHealth?.hasApiKey, share, redact)}
 ${decideCount > 0 ? `<a class="card nav-link" data-tab="decide" href="#decide" style="display:block;text-decoration:none;color:#c8642d;font-weight:600">📥 ${decideCount} ${decideCount === 1 ? "item" : "items"} waiting on your call${decideNewCount > 0 ? ` · <span style="color:#1558d6">${decideNewCount} new</span>` : ""} →</a>` : ""}
