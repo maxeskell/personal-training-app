@@ -139,7 +139,8 @@ Each service installs with `npm run <install script>` and uninstalls with the ma
 | Label | Install / uninstall | Schedule (default) | Runs | Notes |
 |---|---|---|---|---|
 | `com.endurance-coach.dashboard` | `serve:install` / `serve:uninstall` | RunAtLoad + KeepAlive (always-on) | `npm run serve` (dashboard, port 3000) | **The canonical runner.** Binds LAN, installs the `post-merge` restart hook, prints the pairing URL. |
-| `com.endurance-coach.morning` | `schedule:install [HH] [MM]` / `schedule:uninstall` | Daily **06:00** | `npm run ping` | Unattended morning readiness (verdict + report + desktop note). **On Sunday** `ping` also fires the weekly brief (`isSunday(state.date)` in `cmdPing`, `cli.ts`). |
+| `com.endurance-coach.morning` | `schedule:install [HH] [MM]` / `schedule:uninstall` | Daily **06:00** | `npm run ping` | Unattended morning readiness (verdict + report + desktop note). Catches up a **missed** weekly brief Mon–Wed; on Sunday it skips it (release-hour gate in `weeklyBriefDue`, `scheduleGates.ts`). |
+| `com.endurance-coach.weekly-brief` | `weekly-brief:install [HH]` / `weekly-brief:uninstall` | **Sundays 16:00** (`COACH_WEEKLY_BRIEF_HOUR`) | `npm run weekly-brief:due` | The Sunday week-in-review release: full brief (review + snapshot + gated proposals) only if due, + "Week in review ready" notification. Fires on wake if the Mac slept through 16:00. Shown on the dashboard's Today tab Sun 16:00 → end of Tue. |
 | `com.endurance-coach.watch` | `watch:install [HH] [MM]` / `watch:uninstall` | Daily **07:30** (RunAtLoad false) | `npm run fit-sync` then `npm run check` | Downloads recent `.FIT`, then a **fire-only** `check` — notifies **only if** a flag/health early-warning fires; quiet otherwise. No LLM. |
 | `com.endurance-coach.mcp` | `mcp:install <PUBLIC_URL> [--yes]` / `mcp:uninstall` | RunAtLoad + KeepAlive (always-on) | `node --import tsx src/mcpHttp.ts` (i.e. `mcp:http`) | The remote MCP HTTP surface for Cowork. Port **8787** (`COACH_MCP_PORT`). Installs with `COACH_MCP_AUTH=oauth`. Only works while your tunnel is up. Stop any manual `npm run mcp:http` first (it holds 8787). |
 | `com.endurance-coach.healthcheck` | `healthcheck:install <PUBLIC_URL> [INTERVAL]` / `healthcheck:uninstall` | Every **1200 s** (20 min) + RunAtLoad | `npm run health-remote` | Pings the PUBLIC tunnel `/health`, alerts if the connector is down / needs re-auth. |
@@ -288,7 +289,7 @@ Verified against the repo on **2026-07-04** (branch `main`). Re-run these to con
   `grep -nE 'LABEL=|StartInterval|StartCalendarInterval|INTERVAL=|CHUNK=|Hour|Minute|RunAtLoad|KeepAlive' /Users/maxeskell/dev/personal-training-app/scripts/install-*.sh`.
 - **Autoupdate is defensive (skips dirty tree, ff-only, switches to deploy branch):**
   `sed -n '18,53p' /Users/maxeskell/dev/personal-training-app/scripts/autoupdate.sh`.
-- **Sunday ping → weekly brief:** `grep -n "isSunday" /Users/maxeskell/dev/personal-training-app/src/cli.ts`.
+- **Sunday weekly brief (release-hour gate + 16:00 job):** `grep -n "weeklyBriefDue\|cmdWeeklyBriefDue" /Users/maxeskell/dev/personal-training-app/src/cli.ts`.
 - **MCP HTTP default port 8787:** `grep -n "COACH_MCP_PORT" /Users/maxeskell/dev/personal-training-app/src/config.ts`.
 - **data/ + secrets paths:** `grep -nE "dataDir|secretsDir" /Users/maxeskell/dev/personal-training-app/src/config.ts`
   and `find /Users/maxeskell/dev/personal-training-app/data -maxdepth 2 -type d`.

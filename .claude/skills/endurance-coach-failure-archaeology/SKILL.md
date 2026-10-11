@@ -170,7 +170,19 @@ read it as a live bug.
 - **RESOLUTION.** `assemble.ts` `mapRecovery()` now populates `state.load` (CTL/ATL/TSB) from the
   recovery model's ESS series via `loadModel()`, restoring the trend, with `test/assemble.test.ts`
   coverage.
-- **STATUS: SETTLED (wired up).**
+- **STATUS: SETTLED (wired up)** — but see B3b: the series it was wired to was too short.
+
+### B3b. CTL seeded from a 14-day window — lurched 29.8 → 19.3 → 38.2 in two weeks  ⚠️⚠️
+
+- **SYMPTOM.** Stored/displayed CTL swung by 10–20 points week to week; the 4 Oct 2026 deep dive built its
+  "volume is the limiter at CTL 19" framing on an artefact (true CTL ~33).
+- **ROOT CAUSE.** `getRecoveryModel.data` carries only ~14 days of ESS. `loadModel()` seeded a τ=42 EWMA
+  from that window's first week, so CTL tracked whichever week fell off the window.
+- **RESOLUTION.** `essSeriesWithHistory()` (`metrics.ts`) prepends per-day ESS from the activity archive
+  (continuous since Jan 2024; matches AIE ~0.3 ESS/day) — used by the insight engine and every persisted
+  snapshot (`withArchivedLoad`). 102 stored snapshots rewritten via `npm run load:repair`. Commit **e8d4f14**,
+  `test/loadHistory.test.ts`.
+- **STATUS: SETTLED (11 Oct 2026).** Distrust CTL/TSB quoted in reports dated before it.
 
 ### B4. Non-atomic state writes + JSONL corruption  ⚠️⚠️
 
