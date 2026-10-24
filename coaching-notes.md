@@ -14,12 +14,14 @@
 ## To do
 - [ ] **Left pedal washer + cleat shim change: separate them, then test (raised 24 Oct 2026).** Two fit
       changes, both Max-reported: (a) a **2 mm washer between the LEFT pedal and crank on the Laverack**
-      (wider left stance, not a shim), fitted **"a few weeks ago" ≈ early Oct 2026**; (b) a **cleat shim
-      reduced from 6 mm to 2 mm** (side and date not yet confirmed). So the Jun 2026 improvement in the
+      (wider left stance, not a shim), fitted **"a few weeks ago" ≈ early Oct 2026**; (b) the **LEFT cleat shim
+      reduced from 6 mm to 2 mm around April 2026**. So the Jun 2026 improvement in the
       pedalling history (left PCO −9/−10 → −5.5/−8 mm, balance 56–58% → 52–54% left, right TE 62.6 → 69.3%)
       **can't be the washer**; it may be the shim change, the switch to dual-sided pedal data (also June), or
       season. October (3 rides, after the washer) slipped back to −8 mm. Max also rides a **TT bike** and a
-      **Wattbike**, so the outdoor history mixes two bikes. To do: (1) confirm the shim side + date; (2) record
+      **Wattbike**, so the outdoor history mixes two bikes. Balance went 50–51% left (Feb–Mar) → 56–58% (Apr–May) → 52–54% (Jun–Oct), but
+      summer 2024 and 2025 show the same leftward drift (TT-bike season?), so it isn't attributable yet. To do:
+      (1) per-bike split `--bike laverack --split 2026-04-01`, compare with Laverack Jan–Oct 2025; (2) record
       both changes in `profile.local.yaml → biomechanics` on the Mac; (3) `npm run archive:gear` then
       `npm run pedalling -- --outdoor --bike laverack --split <shim date>` (and again at the washer date once
       ~10 Laverack rides have built up); (4) controlled test if dates coincide with the pedal change (20 min
