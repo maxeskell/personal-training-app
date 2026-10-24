@@ -241,8 +241,8 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
 - **`pedalling_history`** `{ from?, to?, splitAt?, indoor?, bike? }` — pedalling-mechanics history across every
   archived ride with dual-sided pedal data (activity archive + fit-streams): monthly medians of L/R balance
   (plus its load shift and late drift), torque effectiveness, platform centre offset and power-phase arc;
-  indoor vs outdoor; a per-bike breakdown from Garmin Connect gear (`bike` filters to one; needs `npm run
-  archive:gear` once); `splitAt` compares before/after a date (cleat change, shim, fit). Deterministic, no LLM
+  indoor vs outdoor; a per-bike breakdown from Garmin Connect gear, with untagged rides inferred from their paired sensors
+  (`bike` filters to one; needs `npm run archive:gear` once); `splitAt` compares before/after a date (cleat change, shim, fit). Deterministic, no LLM
   cost; the first call parses the archive (slow), later calls use the `data/pedalling-history.json` cache.
 - **`insights`** — run the insight engine over your history (CTL/ATL/TSB & ramp, EF, durability,
   run-load, autocorr-aware correlations, change-points, taper target, validated monitoring rules)
