@@ -42,6 +42,7 @@ import { readKnowledge, writePendingDigest, pendingName, knowledgeFreshness, lis
 import { runSessionFeedback } from "./coach/session.js";
 import { aieDurabilityFetcher } from "./coach/sessionDurability.js";
 import { loadSessionDecays } from "./insights/fit.js";
+import { buildPedallingHistory, summarisePedallingHistory, formatPedallingHistory } from "./insights/pedallingHistory.js";
 import { buildWeekFuelPlans, loadFuelPrefs, formatWeekFuelText } from "./coach/fuelPlan.js";
 import { loadInventory } from "./coach/fuelInventory.js";
 import { loadFuelLog, saveFuelLog, isFuelOutcome } from "./coach/fuelLogStore.js";
@@ -335,6 +336,21 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
         else lines.push("CSS: couldn't auto-detect a 400 m + 200 m maximal pair from the laps — pass t400 and t200 (your test times) to compute it.");
       }
       return ok(lines.join("\n"));
+    },
+  );
+
+  server.tool(
+    "pedalling_history",
+    "Pedalling-mechanics HISTORY across every archived ride with dual-sided pedal data (back through the whole activity archive + fit-streams): month-by-month medians of L/R balance, how balance shifts with load and drifts late, torque effectiveness L/R, platform centre offset L/R (the cleat-position signal) and power-phase arc, plus indoor vs outdoor and an optional before/after split around a date (a cleat change, shim or bike fit). Use for shim / cleat / asymmetry questions that need the long view, not one ride. Deterministic, no LLM cost; the first call parses the archive (slow), later calls are cached.",
+    {
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Only rides on/after this date."),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Only rides on/before this date."),
+      splitAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Compare before vs from this date (e.g. the day cleats or shims changed)."),
+      indoor: z.enum(["all", "indoor", "outdoor"]).optional().describe("Filter by indoor/outdoor (default all)."),
+    },
+    async ({ from, to, splitAt, indoor }) => {
+      const build = buildPedallingHistory();
+      return ok(formatPedallingHistory(summarisePedallingHistory(build.rides, { from, to, splitAt, indoor }), build).join("\n"));
     },
   );
 

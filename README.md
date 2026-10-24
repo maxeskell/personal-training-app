@@ -446,6 +446,14 @@ shim question) from one that grows with load or fatigue. Everything is computed 
 it; a single-sided meter or a trainer shows none of it. The field numbers follow the published FIT profile and
 are pinned by tests, but haven't yet been checked against one of your own ride files.
 
+**Pedalling history** (`npm run pedalling`, or the `pedalling_history` MCP tool) runs the same analysis over
+**every archived ride** (the activity archive, filled by `npm run archive:backfill`, plus fit-streams) and
+reports month-by-month medians: L/R balance, how it shifts with load and drifts late, torque effectiveness,
+platform centre offset and power-phase arc, with indoor and outdoor kept apart (different power sources can
+read differently). `--split YYYY-MM-DD` compares before vs after a date: a cleat change, a shim, a bike fit.
+The first run parses the whole archive and is slow; results are cached in `data/pedalling-history.json`, so
+later runs only parse new rides. Rides under 20 minutes are left out as too noisy.
+
 **A missing `.FIT` is now loud, not silent.** `sync` / `get_state` / `npm run state` print a
 **data-completeness** line: when a recent session's raw `.FIT` isn't present (so its per-interval splits
 and biomechanics are unreachable), it's named explicitly with the reason — Garmin disabled, not reachable

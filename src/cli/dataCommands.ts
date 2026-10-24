@@ -9,6 +9,7 @@ import { syncFitSummaries } from "../archive/fitSync.js";
 import { recoverGaps, DEFAULT_RECOVER_STALE_DAYS } from "../archive/recover.js";
 import { activityArchiveDir, importDir, archiveSummary } from "../archive/activityArchive.js";
 import { backfillGarminFits } from "../archive/activityArchiveBackfill.js";
+import { buildPedallingHistory, summarisePedallingHistory, formatPedallingHistory } from "../insights/pedallingHistory.js";
 
 /**
  * Data/archive CLI commands (backfill / probe / fit-sync / archive-status / archive-compact), extracted
@@ -433,3 +434,35 @@ export async function cmdRecoverGaps(): Promise<void> {
   console.log(`\n${rec.summary}`);
   await printArchiveStatus(new ArchiveStore());
 }
+
+/**
+ * `pedalling` — pedalling-mechanics history (L/R balance, torque effectiveness, platform centre offset,
+ * power phase) for every ride with dual-sided pedal data, from the activity archive + fit-streams.
+ * Flags: `--from YYYY-MM-DD`, `--to YYYY-MM-DD`, `--split YYYY-MM-DD` (before/after a cleat change, shim
+ * or fit), `--indoor` / `--outdoor`. The first run parses the whole archive (slow); later runs use the cache.
+ */
+export async function cmdPedalling(): Promise<void> {
+  const args = process.argv.slice(3);
+  const val = (flag: string) => {
+    const i = args.indexOf(flag);
+    const v = i >= 0 ? args[i + 1] : undefined;
+    return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined;
+  };
+  let last = 0;
+  const build = buildPedallingHistory({
+    onProgress: (done, total) => {
+      if (total > 50 && done - last >= 100) {
+        last = done;
+        process.stderr.write(`  scanning ${done}/${total} …\r`);
+      }
+    },
+  });
+  const s = summarisePedallingHistory(build.rides, {
+    from: val("--from"),
+    to: val("--to"),
+    splitAt: val("--split"),
+    indoor: args.includes("--indoor") ? "indoor" : args.includes("--outdoor") ? "outdoor" : "all",
+  });
+  console.log("\n" + formatPedallingHistory(s, build).join("\n"));
+}
+

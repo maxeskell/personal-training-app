@@ -32,7 +32,7 @@ import { latestWeeklyReview, latestResearchDigest, latestSeasonNarrative, latest
 import { loadSessionFeedbacks, saveSessionFeedback, recordFromFeedback } from "./coach/sessionFeedbackStore.js";
 import { loadMetricOverrides } from "./state/metricOverrides.js";
 import { buildDemoWindow, buildDemoGarminDays, demoProfile } from "./demo/sampleData.js";
-import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact, cmdActivityArchiveImport, cmdActivityArchiveBackfill, cmdActivityArchiveHeal, cmdRecoverGaps } from "./cli/dataCommands.js";
+import { cmdBackfill, cmdProbe, cmdFitSync, cmdArchiveStatus, cmdArchiveCompact, cmdActivityArchiveImport, cmdActivityArchiveBackfill, cmdActivityArchiveHeal, cmdRecoverGaps, cmdPedalling } from "./cli/dataCommands.js";
 import { buildInsights } from "./insights/engine.js";
 import { alertFindings, loadModel } from "./insights/metrics.js";
 import { InsightLog } from "./state/insightLog.js";
@@ -1387,6 +1387,7 @@ const commands: Record<string, () => Promise<void>> = {
   listening: cmdListening,
   backfill: cmdBackfill,
   "archive-status": cmdArchiveStatus,
+  pedalling: cmdPedalling,
   "archive-compact": cmdArchiveCompact,
   "archive-import": cmdActivityArchiveImport,
   "archive-backfill": cmdActivityArchiveBackfill,
