@@ -128,6 +128,14 @@ and decisions that travels with the repo.
 Garmin is **optional** — leave `GARMIN_ENABLED=false` and the coach runs on AI Endurance alone.
 To enable it, run the one-time `npm run garmin:auth` (Garmin's `garmin-mcp-auth`, on the app's pinned version) then set `GARMIN_ENABLED=true`.
 
+With the current connector the daily sync also reads Garmin's **heat acclimation** (0–100%, decays without
+heat exposure), **recovery clock** (tiebreak only) and **Running Tolerance** (how much run load you can absorb
+vs what recent runs produced). Running Tolerance raises a **Load & injury risk** finding when recent load is
+over capacity (watch over 100%, flag over 120%), with advice that depends on whether intensity or distance is
+driving it; all three feed the coach's context, labelled MODEL. Their history goes into
+`data/archive/garmin-extras.jsonl`: seed it once with `npm run archive:extras` (last 365 days; `-- --days N`),
+after which the morning catch-up keeps it current. `npm run backfill:status` shows the coverage.
+
 Layout: `src/mcp/` (AIE OAuth client + Garmin stdio client), `src/state/` (AthleteState, store,
 baselines, sync-gaps), `knowledge/sports-science.md` (priors for the M3 LLM layer).
 

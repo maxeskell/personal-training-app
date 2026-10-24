@@ -95,8 +95,36 @@ export interface TrainingStatusSignals {
   loadRatio?: number; // acute:chronic
   acwrStatus?: string; // "HIGH" | "OPTIMAL" | "LOW"
   vo2max?: number;
+  /** Cycling VO2max (Garmin computes it separately from running; garmin_mcp ≥ a2ca5fc). */
+  cyclingVo2max?: number;
   optimalChronicLoadMin?: number;
   optimalChronicLoadMax?: number;
+}
+
+/** Garmin heat (and altitude) acclimation (get_acclimation, garmin_mcp ≥ a2ca5fc). 0–100%, decays without exposure. */
+export interface HeatAcclimationSignals {
+  heatPct?: number;
+  previousHeatPct?: number;
+  heatChange?: number; // heatPct − previousHeatPct
+  heatTrend?: string; // Garmin's label, e.g. "ACCLIMATIZED"
+  altitudeM?: number;
+  asOf?: string; // date of the reading
+}
+
+/** Garmin's Firstbeat recovery clock (get_recovery_time_remaining) — a snapshot, not a live countdown. */
+export interface RecoveryTimeSignals {
+  remainingHours?: number;
+  state?: string;
+  recoveryScore?: number;
+}
+
+/** Garmin Running Tolerance (get_running_tolerance): run load the athlete can absorb vs what recent runs produced. */
+export interface RunningToleranceSignals {
+  toleranceKm?: number; // current capacity
+  acuteLoadKm?: number; // intensity-adjusted recent load
+  distanceKm?: number; // raw recent distance
+  loadRatio?: number; // acuteLoadKm ÷ distanceKm: how much intensity inflates each km
+  feedback?: string;
 }
 
 /** Garmin HRV status with the device's own personal baseline band (get_hrv_data). */
@@ -241,6 +269,11 @@ export interface AthleteState {
   trainingStatus: Provenanced<TrainingStatusSignals>;
   hrvStatus: Provenanced<HrvStatusSignals>;
 
+  // Garmin signals added with the a2ca5fc connector: heat acclimation, recovery clock, running tolerance.
+  heatAcclimation: Provenanced<HeatAcclimationSignals>;
+  recoveryTime: Provenanced<RecoveryTimeSignals>;
+  runningTolerance: Provenanced<RunningToleranceSignals>;
+
   // Garmin model scores: power-duration curve (MMP), endurance score, hill score.
   powerCurve: Provenanced<PowerCurveSignals>;
   enduranceScore: Provenanced<EnduranceScoreSignals>;
@@ -327,6 +360,9 @@ export function emptyState(date: string, assembledAt: string): AthleteState {
     tiebreak: absent<TiebreakSignals>("garmin"),
     trainingStatus: absent<TrainingStatusSignals>("garmin"),
     hrvStatus: absent<HrvStatusSignals>("garmin"),
+    heatAcclimation: absent<HeatAcclimationSignals>("garmin"),
+    recoveryTime: absent<RecoveryTimeSignals>("garmin"),
+    runningTolerance: absent<RunningToleranceSignals>("garmin"),
     powerCurve: absent<PowerCurveSignals>("garmin"),
     enduranceScore: absent<EnduranceScoreSignals>("garmin"),
     hillScore: absent<HillScoreSignals>("garmin"),

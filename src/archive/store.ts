@@ -13,6 +13,19 @@ const jsonlCache = new Map<string, { mtimeMs: number; size: number; data: unknow
  * `--daily-only` grind fires) each see a date as "missing" and both append it. Deduping at the read
  * boundary keeps the insight engine — which consumes the raw series — from double-weighting days.
  */
+/** Merge extras rows by date, later rows' defined fields winning. Pure — exported for tests. */
+export function mergeExtrasByDate(rows: GarminExtraDay[]): GarminExtraDay[] {
+  const by = new Map<string, GarminExtraDay>();
+  for (const r of rows) {
+    if (!r?.date) continue;
+    const prev = by.get(r.date) ?? { date: r.date };
+    const next: GarminExtraDay = { ...prev };
+    for (const [k, v] of Object.entries(r)) if (v !== undefined) (next as unknown as Record<string, unknown>)[k] = v;
+    by.set(r.date, next);
+  }
+  return [...by.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function dedupByKey<T>(items: T[], key: (t: T) => string): T[] {
   const byKey = new Map<string, T>();
   for (const it of items) byKey.set(key(it), it);
@@ -54,6 +67,24 @@ export interface GarminDay {
   muscleMassKg?: number;
   bodyFatPct?: number;
 }
+/**
+ * Per-day Garmin signals added with the a2ca5fc connector (heat acclimation, running tolerance), kept in
+ * their own file so the original daily archive and its backfill are untouched. `*Fetched` marks a day as
+ * already asked for, so the resumable backfill doesn't re-ask days Garmin had nothing for.
+ */
+export interface GarminExtraDay {
+  date: string;
+  heatAcclimationPct?: number;
+  heatTrend?: string;
+  altitudeAcclimationM?: number;
+  runToleranceKm?: number;
+  runAcuteLoadKm?: number;
+  runDistanceKm?: number;
+  runLoadRatio?: number;
+  acclFetched?: boolean;
+  tolFetched?: boolean;
+}
+
 /** A Garmin activity (the full decade of workouts — Garmin keeps far more history than AI Endurance). */
 export interface GarminActivity {
   id: string;
@@ -88,6 +119,7 @@ export class ArchiveStore {
   private readonly garPath = join(this.dir, "garmin-daily.jsonl");
   private readonly garActPath = join(this.dir, "garmin-activities.jsonl");
   private readonly fitSumPath = join(this.dir, "fit-summaries.jsonl");
+  private readonly garExtraPath = join(this.dir, "garmin-extras.jsonl");
 
   private async ensure() {
     await mkdir(this.dir, { recursive: true });
@@ -150,6 +182,16 @@ export class ArchiveStore {
     if (!days.length) return;
     await this.ensure();
     await appendFile(this.garPath, days.map((d) => JSON.stringify(d)).join("\n") + "\n");
+  }
+
+  /** Extras, MERGED per date (two backfill passes write different fields for the same day). */
+  async loadGarminExtras(): Promise<GarminExtraDay[]> {
+    return mergeExtrasByDate(await this.readJsonl<GarminExtraDay>(this.garExtraPath));
+  }
+  async appendGarminExtras(days: GarminExtraDay[]): Promise<void> {
+    if (!days.length) return;
+    await this.ensure();
+    await appendFile(this.garExtraPath, days.map((d) => JSON.stringify(d)).join("\n") + "\n");
   }
 
   async loadGarminActivities(): Promise<GarminActivity[]> {

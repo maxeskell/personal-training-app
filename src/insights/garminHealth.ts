@@ -9,7 +9,7 @@
  * Both are MODEL estimates → directional: we surface the state + the numbers, with the caveat attached.
  */
 
-import type { TrainingStatusSignals, HrvStatusSignals, EnduranceScoreSignals, PowerCurveSignals } from "../state/types.js";
+import type { TrainingStatusSignals, HrvStatusSignals, EnduranceScoreSignals, PowerCurveSignals, RunningToleranceSignals } from "../state/types.js";
 import type { Finding } from "./metrics.js";
 
 /** Acute:chronic load + training status → overtraining / injury-risk finding. */
@@ -119,3 +119,31 @@ function prettyLabel(s: string | undefined): string {
     .toLowerCase()
     .replace(/(^|_)(\w)/g, (_, p, c) => (p ? " " : "") + c.toUpperCase());
 }
+
+/**
+ * Running Tolerance (Garmin, a2ca5fc connector): recent intensity-adjusted run load vs the load Garmin thinks
+ * the athlete can currently absorb. Over 100% → watch; over 120% → flag. Silent when comfortably under (the
+ * common case). A proprietary MODEL like ACWR: a nudge to check the run ramp, not a diagnosis.
+ */
+export function runningToleranceFinding(t: RunningToleranceSignals | null | undefined): Finding | null {
+  if (!t || t.toleranceKm == null || t.acuteLoadKm == null || !(t.toleranceKm > 0)) return null;
+  const pct = Math.round((t.acuteLoadKm / t.toleranceKm) * 100);
+  if (pct <= 100) return null;
+  const intensity = t.loadRatio != null && t.loadRatio > 1.3 ? ` Intensity is inflating it: each km costs ${t.loadRatio}× its distance.` : "";
+  return {
+    family: "Load & injury risk",
+    title: pct > 120 ? "Run load well over running tolerance" : "Run load over running tolerance",
+    severity: pct > 120 ? "flag" : "watch",
+    detail:
+      `Garmin's Running Tolerance puts recent run load at ${t.acuteLoadKm} km-equivalent against a capacity of ${t.toleranceKm} km (${pct}%), ` +
+      `from ${t.distanceKm ?? "—"} km actually run.${intensity}${t.feedback ? ` Garmin: ${t.feedback.replace(/_/g, " ").toLowerCase()}.` : ""} ` +
+      `A proprietary MODEL; read it with the run-load ramp and how your legs feel.`,
+    evidence: `get_running_tolerance: ${t.acuteLoadKm}/${t.toleranceKm} km [garmin MODEL — directional]`,
+    recommendation:
+      t.loadRatio != null && t.loadRatio > 1.3
+        ? "Keep the distance but take the intensity out of the next few runs (easy pace), or swap one run for a ride."
+        : "Hold run volume flat this week rather than adding to it; let tolerance catch up.",
+    confidence: pct > 120 ? 0.7 : 0.6,
+  };
+}
+

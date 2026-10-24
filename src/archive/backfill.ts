@@ -1,7 +1,7 @@
 import type { AieClient } from "../mcp/aieClient.js";
 import type { GarminClient } from "../mcp/garminClient.js";
 import { extractJson } from "../state/assemble.js";
-import { ArchiveStore, type ArchivedActivity, type GarminDay, type GarminActivity } from "./store.js";
+import { ArchiveStore, type ArchivedActivity, type GarminDay, type GarminActivity, type GarminExtraDay } from "./store.js";
 
 /**
  * Historical backfill. AIE: page month-by-month (the list caps at 40/call, so narrow windows reach
@@ -230,4 +230,114 @@ export async function backfillGarmin(
   }
   await store.appendGarminDays(buffer);
   return added;
+}
+
+/**
+ * True when an MCP tool result is a failure rather than an answer: the protocol's `isError` flag (e.g. an
+ * unknown tool on an older garmin_mcp pin), or garmin_mcp's own "Error …" text. A failure must not mark a
+ * day as fetched; "No … data found" is a real answer and does. Pure — exported for tests.
+ */
+export function isToolFailure(raw: unknown): boolean {
+  if (raw == null) return true;
+  const r = raw as { isError?: boolean; content?: Array<{ type?: string; text?: string }> };
+  if (r.isError === true) return true;
+  const text = Array.isArray(r.content) ? r.content.find((c) => c?.type === "text")?.text ?? "" : "";
+  return /^\s*(error\b|unknown tool|tool .* not found)/i.test(text);
+}
+
+/** Split [from, to] (inclusive ISO dates) into consecutive chunks of at most `size` days. Pure — exported for tests. */
+export function dateChunks(fromIso: string, toIso: string, size: number): Array<{ start: string; end: string; days: string[] }> {
+  const days: string[] = [];
+  for (let d = new Date(`${fromIso}T00:00:00Z`); d <= new Date(`${toIso}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1)) {
+    days.push(d.toISOString().slice(0, 10));
+  }
+  const out: Array<{ start: string; end: string; days: string[] }> = [];
+  for (let i = 0; i < days.length; i += size) {
+    const c = days.slice(i, i + size);
+    out.push({ start: c[0], end: c[c.length - 1], days: c });
+  }
+  return out;
+}
+
+/** get_running_tolerance_trend (daily) payload → per-date rows. Defensive about the wrapper. Pure — exported for tests. */
+export function toleranceRows(payload: unknown): GarminExtraDay[] {
+  const p = payload as { trend?: unknown; daily?: unknown } | unknown[] | null;
+  const list = Array.isArray(p) ? p : Array.isArray((p as { trend?: unknown })?.trend) ? ((p as { trend: unknown[] }).trend) : [];
+  const out: GarminExtraDay[] = [];
+  for (const e of list as Array<Record<string, unknown>>) {
+    const date = typeof e?.date === "string" ? e.date.slice(0, 10) : "";
+    if (!date) continue;
+    out.push({
+      date,
+      runToleranceKm: num(e.tolerance_km),
+      runAcuteLoadKm: num(e.acute_load_km),
+      runDistanceKm: num(e.distance_km),
+      runLoadRatio: num(e.load_ratio),
+    });
+  }
+  return out;
+}
+
+/**
+ * Backfill the a2ca5fc-connector daily signals into `garmin-extras.jsonl`: running tolerance via the daily
+ * trend tool (≤90 days per call, so a year is ~5 calls) and heat/altitude acclimation via one get_acclimation
+ * per day (throttled). Resumable: days already asked for are skipped, except the last `refreshDays`, which
+ * are re-asked because Garmin updates them. A null response (tool missing on an older garmin_mcp pin, or an
+ * error) leaves the day unmarked so a later run retries it; only a real answer, data or "no data", marks it.
+ */
+export async function backfillGarminExtras(
+  garmin: GarminClient,
+  store: ArchiveStore,
+  fromIso: string,
+  toIso: string,
+  log: (m: string) => void,
+  opts: { throttleMs?: number; refreshDays?: number } = {},
+): Promise<{ toleranceDays: number; acclimationDays: number }> {
+  const throttleMs = opts.throttleMs ?? 250;
+  const refreshFrom = new Date(Date.parse(`${toIso}T00:00:00Z`) - (opts.refreshDays ?? 3) * 86400000).toISOString().slice(0, 10);
+  const have = new Map((await store.loadGarminExtras()).map((d) => [d.date, d]));
+  // `> refreshFrom`: the last `refreshDays` days, today included (0 → none re-asked).
+  const due = (d: string, flag: "tolFetched" | "acclFetched") => d > refreshFrom || !have.get(d)?.[flag];
+
+  let toleranceDays = 0;
+  for (const c of dateChunks(fromIso, toIso, 90)) {
+    if (!c.days.some((d) => due(d, "tolFetched"))) continue;
+    const raw = await garmin.tryCall("get_running_tolerance_trend", { start_date: c.start, end_date: c.end, aggregation: "daily" });
+    if (isToolFailure(raw)) {
+      log(`  Garmin extras: running tolerance unavailable for ${c.start}…${c.end} (older garmin_mcp, or an error) — will retry next run`);
+      continue;
+    }
+    const rows = new Map(toleranceRows(gInner(raw)).map((r) => [r.date, r]));
+    const batch = c.days.map((d) => ({ ...(rows.get(d) ?? { date: d }), tolFetched: true }));
+    await store.appendGarminExtras(batch);
+    toleranceDays += rows.size;
+    log(`  Garmin extras: running tolerance ${c.start}…${c.end} → ${rows.size} day(s) with data`);
+    await sleep(throttleMs);
+  }
+
+  let acclimationDays = 0;
+  let buffer: GarminExtraDay[] = [];
+  for (const c of dateChunks(fromIso, toIso, 1)) {
+    const date = c.start;
+    if (!due(date, "acclFetched")) continue;
+    const raw = await garmin.tryCall("get_acclimation", { date });
+    await sleep(throttleMs);
+    if (isToolFailure(raw)) continue; // tool missing / error: leave unmarked so a later run retries
+    const a = gInner(raw) as Record<string, unknown> | null;
+    const row: GarminExtraDay = { date, acclFetched: true };
+    if (a && typeof a === "object") {
+      row.heatAcclimationPct = num(a.heat_acclimation_percent);
+      row.heatTrend = typeof a.heat_trend === "string" ? a.heat_trend : undefined;
+      row.altitudeAcclimationM = num(a.altitude_acclimation_meters);
+      if (row.heatAcclimationPct != null || row.altitudeAcclimationM != null) acclimationDays++;
+    }
+    buffer.push(row);
+    if (buffer.length >= 30) {
+      await store.appendGarminExtras(buffer);
+      log(`  Garmin extras: acclimation through ${date} (${acclimationDays} day(s) with data)`);
+      buffer = [];
+    }
+  }
+  await store.appendGarminExtras(buffer);
+  return { toleranceDays, acclimationDays };
 }

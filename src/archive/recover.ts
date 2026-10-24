@@ -4,7 +4,7 @@ import { ArchiveStore } from "./store.js";
 import { GarminClient } from "../mcp/garminClient.js";
 import { ReauthRequiredError } from "../mcp/aieClient.js";
 import { withAie } from "../coach/orchestrator.js";
-import { backfillActivities, backfillGarminActivities, backfillGarmin } from "./backfill.js";
+import { backfillActivities, backfillGarminActivities, backfillGarmin, backfillGarminExtras } from "./backfill.js";
 import { syncFitSummaries } from "./fitSync.js";
 
 /**
@@ -120,7 +120,9 @@ export async function recoverGaps(opts: {
   }
   const gDailyPlan = planGapRecovery(newestDate(await store.loadGarminDays()), today, staleDays);
   const gActPlan = planGapRecovery(newestDate(await store.loadGarminActivities()), today, staleDays);
-  if (!gDailyPlan.stale && !gActPlan.stale) {
+  // Extras (running tolerance, acclimation): only once a baseline exists (`npm run archive:extras` seeds it).
+  const gExtraPlan = planGapRecovery(newestDate(await store.loadGarminExtras()), today, staleDays);
+  if (!gDailyPlan.stale && !gActPlan.stale && !gExtraPlan.stale) {
     sources.push({ source: "Garmin daily", gapDays: gDailyPlan.gapDays, added: 0, status: "current" });
     sources.push({ source: "Garmin activities+streams", gapDays: gActPlan.gapDays, added: 0, status: "current" });
     return summarizeRecovery(sources, staleDays);
@@ -156,6 +158,14 @@ export async function recoverGaps(opts: {
       }
     } else {
       sources.push({ source: "Garmin daily", gapDays: gDailyPlan.gapDays, added: 0, status: "current" });
+    }
+    if (gExtraPlan.stale && gExtraPlan.from) {
+      try {
+        const r = await backfillGarminExtras(g, store, gExtraPlan.from, today, log);
+        sources.push({ source: "Garmin extras", gapDays: gExtraPlan.gapDays, added: r.toleranceDays + r.acclimationDays, status: "recovered" });
+      } catch (e) {
+        sources.push({ source: "Garmin extras", gapDays: gExtraPlan.gapDays, added: 0, status: "error", note: reason(e) });
+      }
     }
   } finally {
     await g.close();

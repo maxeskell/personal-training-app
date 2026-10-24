@@ -166,13 +166,17 @@ export async function assembleState(
     const endurance = await callG("get_endurance_score", { start_date: monthAgo, end_date: opts.date });
     const hill = await callG("get_hill_score", { start_date: monthAgo, end_date: opts.date });
     const racePred = await callG("get_race_predictions", {});
+    // Added with the a2ca5fc connector (absent on older pins → null → slot stays absent).
+    const acclimation = await callG("get_acclimation", { date: opts.date });
+    const recoveryTime = await callG("get_recovery_time_remaining", { date: opts.date });
+    const runTolerance = await callG("get_running_tolerance", { date: opts.date });
     // STABLE identity Garmin holds that AIE doesn't: date of birth + standing height. (Verified tool
     // name `get_user_profile` against Taxuspt/garmin_mcp's user_profile module → python-garminconnect
     // get_user_profile(); birthDate/height live under a `userData` object.) Weight/FTP/HRV are NOT taken
     // here — they're live numbers pulled live elsewhere and rejected by the profile's no-live-numbers
     // guard. Best-effort + inside the wall-clock budget like every other Garmin read.
     const userProfile = await callG("get_user_profile", {});
-    raw.garmin = { sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv, pdc, endurance, hill, racePred, userProfile };
+    raw.garmin = { sleep, battery, readiness, vo2, weight, ftp, lactate, trainingStatus, hrv, pdc, endurance, hill, racePred, userProfile, acclimation, recoveryTime, runTolerance };
 
     // Enrich the AIE-derived identity with Garmin's stable DOB + height (only fills gaps / adds anthropometry).
     mapGarminIdentity(state, userProfile);
@@ -187,6 +191,9 @@ export async function assembleState(
     mapEnduranceScore(state, endurance);
     mapHillScore(state, hill);
     mapRacePredictions(state, racePred);
+    mapHeatAcclimation(state, acclimation);
+    mapRecoveryTime(state, recoveryTime);
+    mapRunningTolerance(state, runTolerance);
 
     // Sleep — interpretable signal (own slot).
     const sleepScore = asNumber(get(sleep, "sleep_score"));
@@ -615,11 +622,62 @@ function mapTrainingStatus(state: AthleteState, payload: unknown): void {
       loadRatio: ratio,
       acwrStatus: typeof get(payload, "acwr_status") === "string" ? (get(payload, "acwr_status") as string) : undefined,
       vo2max: asNumber(get(payload, "vo2_max")),
+      cyclingVo2max: asNumber(get(payload, "cycling_vo2_max")),
       optimalChronicLoadMin: asNumber(get(payload, "optimal_chronic_load_min")),
       optimalChronicLoadMax: asNumber(get(payload, "optimal_chronic_load_max")),
     },
     source: "garmin",
     note: "Garmin get_training_status (acute:chronic load) — MODEL, directional",
+  };
+}
+
+const str = (x: unknown): string | undefined => (typeof x === "string" && x.trim() ? x : undefined);
+
+/** get_acclimation → heat/altitude acclimation (shape from garmin_mcp a2ca5fc source). Exported for tests. */
+export function mapHeatAcclimation(state: AthleteState, payload: unknown): void {
+  const heatPct = asNumber(get(payload, "heat_acclimation_percent"));
+  const altitudeM = asNumber(get(payload, "altitude_acclimation_meters"));
+  if (heatPct == null && altitudeM == null) return;
+  state.heatAcclimation = {
+    value: {
+      heatPct,
+      previousHeatPct: asNumber(get(payload, "previous_heat_acclimation_percent")),
+      heatChange: asNumber(get(payload, "heat_acclimation_change")),
+      heatTrend: str(get(payload, "heat_trend")),
+      altitudeM,
+      asOf: str(get(payload, "date")),
+    },
+    source: "garmin",
+    note: "Garmin get_acclimation — MODEL; heat acclimation decays without continued heat exposure",
+  };
+}
+
+/** get_recovery_time_remaining → Firstbeat recovery clock snapshot. Exported for tests. */
+export function mapRecoveryTime(state: AthleteState, payload: unknown): void {
+  const remainingHours = asNumber(get(payload, "remaining_hours"));
+  if (remainingHours == null) return;
+  state.recoveryTime = {
+    value: { remainingHours, state: str(get(payload, "state")), recoveryScore: asNumber(get(payload, "recovery_score")) },
+    source: "garmin",
+    note: "Garmin recovery clock — proprietary MODEL, tiebreak only (a snapshot, not a live countdown)",
+  };
+}
+
+/** get_running_tolerance → run load capacity vs recent acute load (all km). Exported for tests. */
+export function mapRunningTolerance(state: AthleteState, payload: unknown): void {
+  const toleranceKm = asNumber(get(payload, "tolerance_km"));
+  const acuteLoadKm = asNumber(get(payload, "acute_load_km"));
+  if (toleranceKm == null && acuteLoadKm == null) return;
+  state.runningTolerance = {
+    value: {
+      toleranceKm,
+      acuteLoadKm,
+      distanceKm: asNumber(get(payload, "distance_km")),
+      loadRatio: asNumber(get(payload, "load_ratio")),
+      feedback: str(get(payload, "feedback_phrase")),
+    },
+    source: "garmin",
+    note: "Garmin Running Tolerance — MODEL of run-load capacity (km), directional",
   };
 }
 

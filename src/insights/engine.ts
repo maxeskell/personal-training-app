@@ -26,7 +26,7 @@ import { analyseTaper, taperFinding, type TaperAnalysis } from "./taper.js";
 import { analyseEfficiency, efficiencyFinding, type EfficiencyAnalysis } from "./efficiency.js";
 import { analyseFuelling, fuellingFinding, type FuellingAnalysis } from "./fuelling.js";
 import { loadSessionDecays, fitFindings, type SessionDecay } from "./fit.js";
-import { trainingStatusFinding, hrvStatusFinding, enduranceScoreFinding, powerCurveFinding } from "./garminHealth.js";
+import { trainingStatusFinding, hrvStatusFinding, enduranceScoreFinding, powerCurveFinding, runningToleranceFinding } from "./garminHealth.js";
 import { garminTrendFindings } from "./garminTrends.js";
 import { analyseHeat, heatFinding } from "./heat.js";
 import { finiteNums, slope } from "./stats.js";
@@ -604,6 +604,9 @@ export function buildInsights(state: AthleteState, archive?: ArchiveInput, opts?
   if (esF) findings.push(esF);
   const pcF = powerCurveFinding(state.powerCurve.value);
   if (pcF) findings.push(pcF);
+  // Optional chaining: snapshots saved before these slots existed have no runningTolerance at all.
+  const rtF = runningToleranceFinding(state.runningTolerance?.value);
+  if (rtF) findings.push(rtF);
 
   // 5c. Garmin daily-series trends (illness early-warning, stress, Body-Battery, deep + total sleep)
   // plus the uniform data-quality check (implausible / stale readings) across every physio stream.
