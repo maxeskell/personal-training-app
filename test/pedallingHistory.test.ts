@@ -7,6 +7,7 @@ import {
   buildPedallingHistory,
   summarisePedallingHistory,
   formatPedallingHistory,
+  PEDALLING_ENGINE_VERSION,
   type PedallingRide,
 } from "../src/insights/pedallingHistory.js";
 
@@ -106,7 +107,7 @@ test("buildPedallingHistory: a corrupt cache is rebuilt, not fatal", () => {
     writeFileSync(join(d.streamsDir, "r.fit"), rideFit(SEP, 1500, 52, 1));
     writeFileSync(d.cachePath, "{ not json");
     assert.equal(buildPedallingHistory(d).rides.length, 1);
-    assert.equal(JSON.parse(readFileSync(d.cachePath, "utf8")).version, 1);
+    assert.equal(JSON.parse(readFileSync(d.cachePath, "utf8")).version, PEDALLING_ENGINE_VERSION);
   } finally {
     rmSync(d.root, { recursive: true, force: true });
   }

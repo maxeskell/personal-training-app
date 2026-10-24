@@ -348,6 +348,8 @@ function phaseRead(ps: Array<[number, number] | undefined>): PhaseRead | null {
   return { startDeg, endDeg, arcDeg: (endDeg - startDeg + 360) % 360 };
 }
 
+const pos = (v: number | undefined): number | undefined => (v != null && v > 0 ? v : undefined);
+
 /** Plain mean that keeps signed values and zeros (PCO is signed; 0 mm is a real reading). */
 function meanOrNull(xs: Array<number | undefined>): number | null {
   const v = xs.filter((x): x is number => typeof x === "number");
@@ -376,9 +378,11 @@ export function analysePedalling(s: Sample[]): PedallingAnalysis | null {
     balanceLeftPct: bal(p),
     balanceByPower: bands,
     balanceByQuarter: [0, 1, 2, 3].map((i) => bal(p.slice(i * qn, i === 3 ? p.length : (i + 1) * qn))),
-    torqueEffectivenessPct: { left: meanOrNull(p.map((x) => x.leftTe)), right: meanOrNull(p.map((x) => x.rightTe)) },
-    pedalSmoothnessPct: { left: meanOrNull(p.map((x) => x.leftPs)), right: meanOrNull(p.map((x) => x.rightPs)) },
-    combinedSmoothnessPct: meanOrNull(p.map((x) => x.combinedPs)),
+    // Positive values only: single-sided meters write 0 (not the invalid sentinel) for the side they can't
+    // measure, and a real 0% torque effectiveness / smoothness while pedalling is impossible.
+    torqueEffectivenessPct: { left: meanOrNull(p.map((x) => pos(x.leftTe))), right: meanOrNull(p.map((x) => pos(x.rightTe))) },
+    pedalSmoothnessPct: { left: meanOrNull(p.map((x) => pos(x.leftPs))), right: meanOrNull(p.map((x) => pos(x.rightPs))) },
+    combinedSmoothnessPct: meanOrNull(p.map((x) => pos(x.combinedPs))),
     platformCentreOffsetMm: { left: meanOrNull(p.map((x) => x.leftPco)), right: meanOrNull(p.map((x) => x.rightPco)) },
     powerPhase: { left: phaseRead(p.map((x) => x.leftPhase)), right: phaseRead(p.map((x) => x.rightPhase)) },
     peakPowerPhase: { left: phaseRead(p.map((x) => x.leftPeakPhase)), right: phaseRead(p.map((x) => x.rightPeakPhase)) },

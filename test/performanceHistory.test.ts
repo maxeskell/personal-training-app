@@ -137,3 +137,19 @@ test("buildPerformanceHistory: empty dirs give an empty history; maxParse caps w
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("summarisePerformance: broken file dates are left out and counted, not allowed to stretch the trend", () => {
+  const sessions = [ride(10, 200), ride(5, 201), { ...ride(1, 999), date: "1946-06-01" }, { ...ride(1, 999), date: "" }];
+  const r = summarisePerformance(sessions, { today: TODAY });
+  assert.equal(r.sessions, 2);
+  assert.equal(r.droppedBadDates, 2);
+  assert.match(formatPerformanceReport(r).join("\n"), /2 session\(s\) left out/);
+});
+
+test("summarisePerformance: a bike aerobic threshold at or above CP is flagged implausible, low confidence", () => {
+  const dfa = (d: number): SessionPerformance => ({ ...ride(d, 200), dfa: { aetHr: 159, aetOutput: 231, windows: 20, artefactPct: 1, r2: 0.7 } });
+  const r = summarisePerformance([mmpRide(10, 213, 14000), mmpRide(30, 210, 14000), dfa(5), dfa(15), dfa(25)], { today: TODAY });
+  const ride_ = r.aet.find((a) => a.kind === "ride")!;
+  assert.equal(ride_.confidence, "low");
+  assert.match(ride_.why[0], /Implausible: 231 W/);
+});

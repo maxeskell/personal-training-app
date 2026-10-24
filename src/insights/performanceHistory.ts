@@ -434,6 +434,8 @@ export function aerobicThreshold(sessions: SessionPerformance[], kind: "ride" | 
 export interface PerformanceReport {
   today: string;
   sessions: number;
+  /** Sessions excluded because their file's date was implausible (broken device clock). */
+  droppedBadDates?: number;
   build?: Pick<PerformanceBuild, "parsed" | "scanned" | "pending">;
   fixedHr: FixedHrSummary[];
   cp: CpSummary;
@@ -441,23 +443,40 @@ export interface PerformanceReport {
   aet: AetSummary[];
 }
 
+/** A session date we can trust: some files carry a broken clock (seen in real archives: ~1946), which would
+ *  wreck every trend's time axis. Keep 2000-01-01 → today only. Pure — exported for tests. */
+export function plausibleDate(date: string, today: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && date >= "2000-01-01" && date <= today;
+}
+
 /** Assemble the whole report. Pure given the sessions. */
 export function summarisePerformance(
-  sessions: SessionPerformance[],
+  allSessions: SessionPerformance[],
   opts: { today: string; refHrBike?: number; refHrRun?: number; build?: PerformanceReport["build"] },
 ): PerformanceReport {
+  const sessions = allSessions.filter((s) => plausibleDate(s.date, opts.today));
+  const cp = criticalPower(sessions, { today: opts.today });
+  const aet = [aerobicThreshold(sessions, "ride", { today: opts.today }), aerobicThreshold(sessions, "run", { today: opts.today })];
+  // Cross-check: the aerobic threshold sits well below critical power (typically ~75–85% of it). A bike AeT
+  // at or above CP is physiologically implausible, so it can't be more than a low-confidence read.
+  const rideAet = aet[0];
+  if (cp.cpW != null && rideAet.recentOutput != null && rideAet.recentOutput >= cp.cpW * 0.95) {
+    rideAet.confidence = rideAet.confidence === "none" ? "none" : "low";
+    rideAet.why.unshift(`Implausible: ${rideAet.recentOutput} W at the aerobic threshold is at or above your critical power (${cp.cpW} W); it should sit well below it. Likely a noisy session (artefacts, surges) — don't use it.`);
+  }
   return {
     today: opts.today,
     sessions: sessions.length,
+    droppedBadDates: allSessions.length - sessions.length,
     build: opts.build,
     fixedHr: [
       fixedHrSeries(sessions, "bike-outdoor", { refHr: opts.refHrBike, today: opts.today, windowDays: 365 }),
       fixedHrSeries(sessions, "bike-indoor", { refHr: opts.refHrBike, today: opts.today, windowDays: 365 }),
       fixedHrSeries(sessions, "run", { refHr: opts.refHrRun, today: opts.today, windowDays: 365 }),
     ],
-    cp: criticalPower(sessions, { today: opts.today }),
+    cp,
     durability: durability(sessions, { today: opts.today }),
-    aet: [aerobicThreshold(sessions, "ride", { today: opts.today }), aerobicThreshold(sessions, "run", { today: opts.today })],
+    aet,
   };
 }
 
@@ -472,6 +491,7 @@ export function paceLabel(ms: number | null): string {
 export function formatPerformanceReport(r: PerformanceReport): string[] {
   const out = [`EFFICIENCY & PERFORMANCE [.FIT archive + fit-streams, ${r.sessions} sessions; MODEL estimates, confidence per metric]`];
   if (r.build) out.push(`  ${r.build.scanned} files scanned, ${r.build.parsed} parsed this run${r.build.pending ? `, ${r.build.pending} still to parse (run \`npm run efficiency\`)` : ""}`);
+  if (r.droppedBadDates) out.push(`  ${r.droppedBadDates} session(s) left out: their file's date is implausible (broken device clock)`);
   for (const f of r.fixedHr) {
     const v = (x: number | null) => (f.unit === "W" ? (x == null ? "—" : `${Math.round(x)} W`) : `${paceLabel(x)}/km`);
     out.push(

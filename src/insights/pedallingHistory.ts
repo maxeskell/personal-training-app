@@ -47,8 +47,11 @@ export interface PedallingRide {
   phaseArcRightDeg: number | null;
 }
 
+/** Bump when the per-ride maths changes so cached rows are re-parsed (2: single-sided 0s are "no data"). */
+export const PEDALLING_ENGINE_VERSION = 2;
+
 interface CacheFile {
-  version: 1;
+  version: number;
   rides: Record<string, PedallingRide | null>;
 }
 
@@ -108,11 +111,11 @@ export function ridesFromFit(act: FitActivity, source: PedallingRide["source"]):
 function loadCache(path: string): CacheFile {
   try {
     const c = JSON.parse(readFileSync(path, "utf8")) as CacheFile;
-    if (c.version === 1 && c.rides) return c;
+    if (c.version === PEDALLING_ENGINE_VERSION && c.rides) return c;
   } catch {
     /* absent or corrupt → rebuild */
   }
-  return { version: 1, rides: {} };
+  return { version: PEDALLING_ENGINE_VERSION, rides: {} };
 }
 
 function saveCache(path: string, c: CacheFile): void {
