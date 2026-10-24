@@ -255,3 +255,10 @@ test("pedallingLines: names each channel and skips the ones the pedals didn't re
   assert.match(text, /Platform centre offset L -6\.0mm \/ R 1\.0mm/);
   assert.doesNotMatch(text, /Torque effectiveness/, "not recorded → no line, not a row of dashes");
 });
+
+test("analysePedalling: a single-sided meter's 0 for the unmeasured side reads as no data, not 0%", () => {
+  // Seen in a real archive: left-only meters wrote rightTe = 0 for years, dragging the summary to "68.5/0".
+  const p = analysePedalling(Array.from({ length: 600 }, (_, i) => ({ t: i, power: 200, cadence: 90, leftTe: 70, rightTe: 0, leftPs: 22, rightPs: 0 })))!;
+  assert.deepEqual(p.torqueEffectivenessPct, { left: 70, right: null });
+  assert.deepEqual(p.pedalSmoothnessPct, { left: 22, right: null });
+});

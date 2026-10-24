@@ -140,7 +140,7 @@ export function renderEfficiencyInner(report: PerformanceReport | null): string 
 <code>npm run efficiency</code> (the first run parses the whole activity archive and takes a while). If the archive is empty, fill it first with <code>npm run archive:backfill</code>.</p></div></div>`;
   }
   const b = report.build;
-  const sub = `${report.sessions} sessions analysed${b?.pending ? ` · ${b.pending} new files not parsed yet (run <code>npm run efficiency</code>)` : ""} · as of ${E(report.today)}`;
+  const sub = `${report.sessions} sessions analysed${report.droppedBadDates ? ` (${report.droppedBadDates} left out: broken file dates)` : ""}${b?.pending ? ` · ${b.pending} new files not parsed yet (run <code>npm run efficiency</code>)` : ""} · as of ${E(report.today)}`;
   return `${PAGE_CSS}<div class="eff-inner"><h1>Efficiency &amp; performance</h1><div class="sub">${sub}</div>
 ${caveats}
 <div class="section-rule-label">Efficiency: same heart rate, more output?</div>
