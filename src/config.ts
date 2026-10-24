@@ -252,6 +252,14 @@ export const config = {
   manualSwimCssSecPer100: parseManualSwimCss(process.env.COACH_SWIM_CSS),
 
   /**
+   * Minutes cut from the END of every run before its per-second analysis (cadence drop, HR drift,
+   * decoupling, run dynamics). The athlete's runs often finish with a walk (the dog sniffing, getting to
+   * the accommodation) that isn't running and would read as fake fade. Duration is still the full run;
+   * multisport race legs are never trimmed. Default 10; 0 turns it off.
+   */
+  runTailTrimMin: Math.max(0, Number(process.env.COACH_RUN_TAIL_TRIM_MIN ?? 10) || 0),
+
+  /**
    * Dashboard auto-sync: a page load whose snapshot is older than this kicks a background
    * /refresh and reloads when done (the page itself still renders instantly). 0 disables it.
    */

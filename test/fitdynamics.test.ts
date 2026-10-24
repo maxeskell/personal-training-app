@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { analyseSession } from "../src/insights/fit.js";
+import { analyseSession, trimRunTail } from "../src/insights/fit.js";
 import { decodeLrBalanceLeftPct } from "../src/insights/fitParser.js";
 
 /**
@@ -18,7 +18,7 @@ test("analyseSession: surfaces run dynamics averages + normalized power", () => 
     sport: "Run",
     date: "2026-06-19",
     samples: samples(120, { power: 200, verticalRatio: 8, stepLength: 1100, gctBalance: 49.5 }),
-  })!;
+  }, 0)!; // 2-min fixture: tail trim off (covered by its own tests below)
   assert.ok(d);
   assert.equal(d.avgVerticalRatioPct, 8);
   assert.equal(d.avgStepLengthMm, 1100);
@@ -60,7 +60,7 @@ test("analyseSession: decodes a flag-encoded L/R balance instead of reporting an
 });
 
 test("analyseSession: normalized power needs enough power data, else null", () => {
-  const d = analyseSession({ sport: "Run", date: "2026-06-19", samples: samples(120, { /* no power */ }) })!;
+  const d = analyseSession({ sport: "Run", date: "2026-06-19", samples: samples(120, { /* no power */ }) }, 0)!;
   assert.equal(d.normalizedPowerW, null);
   assert.equal(d.avgPowerW, null);
 });
@@ -122,6 +122,44 @@ test("analyseSession (swim): a pool swim with no GPS speed → pace/efficiency n
 });
 
 test("analyseSession: a run carries no swim block", () => {
-  const d = analyseSession({ sport: "Run", date: "2026-06-19", samples: samples(120, { power: 200 }) })!;
+  const d = analyseSession({ sport: "Run", date: "2026-06-19", samples: samples(120, { power: 200 }) }, 0)!;
   assert.equal(d.swim, null);
+});
+
+// Runs often end walking (dog sniffing, getting to the door): the last N min must not feed the metrics.
+function runWithWalkTail(): Array<Record<string, number>> {
+  // 40 min running at cadence 180, then 10 min walking at cadence 100 (1 Hz, t from 1000).
+  return Array.from({ length: 3000 }, (_, i) => ({ t: 1000 + i, hr: 150, speed: i < 2400 ? 3.3 : 1.4, cadence: i < 2400 ? 180 : 100 }));
+}
+
+test("analyseSession: a run's last 10 min (the walk) is excluded from every metric", () => {
+  const d = analyseSession({ sport: "Run", date: "2026-10-24", samples: runWithWalkTail() }, 10)!;
+  assert.equal(d.tailTrimmedMin, 10);
+  assert.equal(d.cadenceDropPct, 0, "walk tail cut → no fake cadence drop");
+  assert.equal(d.decouplingPct, 0, "walk tail cut → no fake decoupling");
+  assert.equal(d.durationMin, 50, "duration still counts the whole run");
+});
+
+test("analyseSession: with the trim off, the walk tail reads as fake fade (why the trim exists)", () => {
+  const d = analyseSession({ sport: "Run", date: "2026-10-24", samples: runWithWalkTail() }, 0)!;
+  assert.equal(d.tailTrimmedMin, 0);
+  assert.ok(d.cadenceDropPct! < -20);
+});
+
+test("analyseSession: rides and multisport race legs are never tail-trimmed", () => {
+  const ride = analyseSession({ sport: "Ride", date: "2026-10-24", samples: runWithWalkTail() }, 10)!;
+  assert.equal(ride.tailTrimmedMin, 0);
+  const leg = analyseSession({ sport: "Run", date: "2026-10-24", multisportLeg: true, samples: runWithWalkTail() }, 10)!;
+  assert.equal(leg.tailTrimmedMin, 0);
+});
+
+test("analyseSession: a run too short to survive the cut gives no readout, not one built from scraps", () => {
+  const s = Array.from({ length: 620 }, (_, i) => ({ t: 1000 + i, hr: 150, cadence: 180 }));
+  assert.equal(analyseSession({ sport: "Run", date: "2026-10-24", samples: s }, 10), null);
+});
+
+test("trimRunTail: cuts by timestamp, so gaps from smart recording don't shift the cut", () => {
+  const s = [{ t: 0 }, { t: 100 }, { t: 1000 }, { t: 1500 }, { t: 1600 }];
+  assert.deepEqual(trimRunTail(s, 10).map((x) => x.t), [0, 100, 1000]);
+  assert.deepEqual(trimRunTail(s, 0), s);
 });

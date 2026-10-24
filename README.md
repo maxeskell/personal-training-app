@@ -353,7 +353,10 @@ an open-water swim (tagged via the .FIT `sub_sport`) gets **GPS pace and stroke 
 not just stroke rate, so "swam slower" is told apart from "stroke fell apart"), and its cadence/HR/decoupling
 drifts are computed over **active swimming only** — the rests/floats between reps are excluded, so a long float
 no longer reads as a giant late "cadence collapse". A pool swim has no GPS, so pace falls back to the per-length
-splits rather than being fabricated. It also reads your **upcoming 7 days
+splits rather than being fabricated. **Runs drop their last 10 minutes** before any of this is computed:
+runs often finish with a walk (the dog sniffing, getting to the accommodation), which would otherwise read as a
+fake late fade. The run's duration still counts the whole thing; multisport race legs are never trimmed; set
+`COACH_RUN_TAIL_TRIM_MIN` to change the cut (0 turns it off). It also reads your **upcoming 7 days
 of planned sessions** and says what (if anything) this session should change ahead — suggestions only;
 plan writes stay behind the gated two-step confirm.
 

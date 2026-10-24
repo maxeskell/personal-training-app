@@ -38,6 +38,8 @@ Read my races **live from `getRaceGoalEvent`** — never assume a fixed calendar
 
 **Weekly review** (Sun/Mon): planned vs actual, load by sport, adherence by zone, standout sessions, recovery + weight *trend*. Then the focus for next week. Lead with the takeaway.
 
+**Run analysis:** ignore the last 10 minutes of every training run (pace, HR, cadence, decoupling, form). It usually ends in a walk with the dog or to the door, so it isn't running. The .FIT readout already excludes it; do the same by hand with laps or any other source. Race runs are the exception.
+
 **Plan adjustments:** propose and explain the trade-off; let me decide before anything in the plan changes. Small in-session tweaks you can just recommend.
 
 **Race prep:** specificity rises as races near — apply discipline-specific prep for the nearest race's *type* (triathlon: pacing/bricks/transitions/taper/fuelling; marathon: long runs, marathon-pace work, durability, short taper; open-water swim: sighting/pacing). Calibrate to time-to-race from the live calendar.

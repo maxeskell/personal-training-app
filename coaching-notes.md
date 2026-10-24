@@ -135,6 +135,10 @@
         the `<details>` body); optional auto-fade of an agreed item after a cool-off (today it stays annotated).
 
 ## Decisions / things we've talked through
+- **2026-10-24 — Ignore the last 10 min of every run in analysis.** Runs often end walking (the dog
+  sniffing, getting to the accommodation), so the tail isn't running. The .FIT readout cuts it in code
+  (`COACH_RUN_TAIL_TRIM_MIN`, default 10). When analysing a run from any other source (laps, AIE detail,
+  splits), drop the final 10 min by hand too. Race runs are exempt.
 - **2026-10-11 — Season-end review, winter plan, AI Endurance set-up and a full clean-up.**
   - **Season-arc review run** (`reports/2026-10-11-season-arc.md`): 2026 delivered (Birmingham AG win, FTP
     199→225 W, CSS measured, bloods excellent, fuelling banked). The gap is weeks completed: ~5.2 h/wk vs
