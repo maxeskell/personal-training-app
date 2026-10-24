@@ -454,6 +454,26 @@ read differently). `--split YYYY-MM-DD` compares before vs after a date: a cleat
 The first run parses the whole archive and is slow; results are cached in `data/pedalling-history.json`, so
 later runs only parse new rides. Rides under 20 minutes are left out as too noisy.
 
+**Efficiency & performance page** (`/efficiency`, linked from the Performance tab; also `npm run efficiency`
+and the `efficiency` MCP tool). Built from every ride and run in the activity archive + fit-streams:
+
+- **Power / pace at a fixed heart rate**: each session's steady minutes give an output-vs-HR line, read at a
+  reference HR (your own typical steady HR, or `COACH_EFF_REF_HR_BIKE` / `_RUN`). Never extrapolated outside the
+  HR range a session covered. Runs use **grade-adjusted pace** (Minetti's running-cost curve) and drop the
+  closing walk. **Heat** is corrected only when your own data shows a heat effect; indoor and outdoor bike
+  power are separate series (different power meters).
+- **Critical power + W′** from the last 90 days' best 3/5/10/20-min efforts, with a check that flags efforts
+  that look submaximal (normal in base, and it means CP is underestimated).
+- **Durability**: best 5 / 20-min power after 1500 and 2500 kJ, as a % of fresh.
+- **Aerobic threshold from beat-to-beat HR** (DFA-α1 = 0.75), per session and trended. Needs a chest strap
+  with HRV logging on; the parser now decodes the `.FIT` `hrv` messages that carry those beats.
+
+Every metric shows a **confidence grade** (not enough data / low / moderate / high), **why** it has that
+grade and **how to raise it** (which sessions to do, what to keep the same). All are MODEL estimates on n=1
+data, not lab measurements; the page says so up front. The page only parses up to 10 new files per load so it
+never blocks; `npm run efficiency` does the full first build (slow) and later runs are cached in
+`data/performance-history.json`.
+
 **A missing `.FIT` is now loud, not silent.** `sync` / `get_state` / `npm run state` print a
 **data-completeness** line: when a recent session's raw `.FIT` isn't present (so its per-interval splits
 and biomechanics are unreachable), it's named explicitly with the reason — Garmin disabled, not reachable

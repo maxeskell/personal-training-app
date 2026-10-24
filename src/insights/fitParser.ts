@@ -152,6 +152,8 @@ export interface FitActivity {
   lengths: FitLength[];
   /** Every `session` message — length > 1 ⇒ a multisport file (swim/bike/run legs). */
   sessions: FitSessionSummary[];
+  /** Beat-to-beat RR intervals (ms) from `hrv` messages, when the strap + watch logged them. Absent otherwise. */
+  rrMs?: number[];
   session: {
     durationSec?: number;
     distanceKm?: number;
@@ -295,6 +297,7 @@ export function parseFit(buf: Buffer): FitActivity | null {
   let sportEnum = 0;
   let subSportEnum: number | null = null;
   const sessionMsgs: Record<number, number | null>[] = [];
+  const rrMs: number[] = []; // beat-to-beat intervals, ms, in recording order
 
   try {
     while (pos < end) {
@@ -344,6 +347,10 @@ export function parseFit(buf: Buffer): FitActivity | null {
         else if (def.global === 18) sessionMsgs.push(rec.fields);
         else if (def.global === 19) laps.push(toLap(rec.fields));
         else if (def.global === 101) lengths.push(toLength(rec.fields));
+        else if (def.global === 78) {
+          // hrv message: field 0 = RR intervals, uint16 scale 1000 (s). Invalid (0xFFFF) slots are null.
+          for (const v of rec.arrays[0] ?? [rec.fields[0] ?? null]) if (v != null) rrMs.push(v);
+        }
         else if (def.global === 12) {
           // `sport` message: field 0 = sport, field 1 = sub_sport.
           if (rec.fields[0] != null) sportEnum = rec.fields[0] as number;
@@ -369,6 +376,7 @@ export function parseFit(buf: Buffer): FitActivity | null {
     laps,
     lengths,
     sessions: sessionMsgs.map(toSessionSummary),
+    ...(rrMs.length ? { rrMs } : {}),
     session: {
       durationSec: ts.length > 1 ? ts[ts.length - 1] - ts[0] : undefined,
       distanceKm: session[9] != null ? +(((session[9] as number) / 100) / 1000).toFixed(2) : undefined,
@@ -381,8 +389,9 @@ export function parseFit(buf: Buffer): FitActivity | null {
   };
 }
 
-/** Array fields read whole (the rest keep only element 0): record power-phase angles 69–72. */
-const ARRAY_FIELDS = new Set([69, 70, 71, 72]);
+/** Array fields read whole (the rest keep only element 0): record power-phase angles 69–72, and the
+ *  `hrv` message's (global 78) field 0 — up to five beat-to-beat RR intervals per message. */
+const ARRAY_FIELDS: Record<number, Set<number>> = { 20: new Set([69, 70, 71, 72]), 78: new Set([0]) };
 
 function readData(
   buf: Buffer,
@@ -396,7 +405,7 @@ function readData(
     if (!fd.dev && fd.size >= baseSize && pos + baseSize <= buf.length) {
       // Arrays (size > one element) → take the first element; the rest is skipped.
       fields[fd.num] = readScalar(buf, pos, fd.base, def.le);
-      if (def.global === 20 && ARRAY_FIELDS.has(fd.num) && pos + fd.size <= buf.length) {
+      if (ARRAY_FIELDS[def.global]?.has(fd.num) && pos + fd.size <= buf.length) {
         arrays[fd.num] = Array.from({ length: Math.floor(fd.size / baseSize) }, (_, i) => readScalar(buf, pos + i * baseSize, fd.base, def.le));
       }
     }
