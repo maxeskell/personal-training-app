@@ -12,6 +12,18 @@
 > the MCP and the gitignored profile aren't reachable.
 
 ## To do
+- [ ] **Left pedal washer on the Laverack: date it, record it, test it (raised 24 Oct 2026).** Max added a
+      **2 mm washer between the LEFT pedal and crank on the Laverack** (wider left stance, NOT a cleat shim:
+      it changes Q-factor, not leg length). Date unknown, likely around June 2026. Pedalling history (MODEL,
+      monthly medians, pasted 24 Oct) shows the left platform centre offset improving from about −9/−10 mm
+      inboard (Apr–May 2026) to −5.5/−8 mm (Jun–Oct), balance easing from 56–58% to 52–54% left, and right
+      torque effectiveness rising 62.6→69.3%. Confounded: dual-sided pedal data also starts June 2026, only
+      4 rides before, summer season, and October slipped back to −8 mm. To do: (1) pin the washer date (and
+      any cleat-shim change, which Max also mentioned); (2) record it in `profile.local.yaml →
+      biomechanics` on the Mac; (3) `npm run pedalling -- --outdoor --split <date>`; (4) if the pedal change
+      and washer share a date, run a controlled test (20 min each at 3 steady powers, washer in vs out);
+      (5) check whether other bikes are mixed into the history. Strongest standing signal for the fitter:
+      left PCO −5 to −12 mm inboard every month since 2022 vs right ≈0 to +5 mm.
 - [x] **Creatine flipped to `active` — DONE 9 Sep 2026 (started 3 days later than the 7 Sep plan;
       no loading phase, 3–5 g/day). Profile entry carries `started: 2026-09-09`.**
 - [ ] **Run form — standing cues for every run + brick (from Birmingham race photos, 13 Jul 2026).**
