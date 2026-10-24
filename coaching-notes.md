@@ -139,6 +139,9 @@
   sniffing, getting to the accommodation), so the tail isn't running. The .FIT readout cuts it in code
   (`COACH_RUN_TAIL_TRIM_MIN`, default 10). When analysing a run from any other source (laps, AIE detail,
   splits), drop the final 10 min by hand too. Race runs are exempt.
+- **2026-10-24 — Refined: cut the walk, not a blanket 10 min.** The readout now detects the closing walk
+  (speed under 7.2 km/h for a minute or more; cadence if no speed) inside the last 10 min and cuts from
+  where it starts, so runs run to the finish keep all their data. No speed or cadence = full 10 min cut.
 - **2026-10-11 — Season-end review, winter plan, AI Endurance set-up and a full clean-up.**
   - **Season-arc review run** (`reports/2026-10-11-season-arc.md`): 2026 delivered (Birmingham AG win, FTP
     199→225 W, CSS measured, bloods excellent, fuelling banked). The gap is weeks completed: ~5.2 h/wk vs
