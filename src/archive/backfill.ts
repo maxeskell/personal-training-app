@@ -1,7 +1,7 @@
 import type { AieClient } from "../mcp/aieClient.js";
 import type { GarminClient } from "../mcp/garminClient.js";
 import { extractJson } from "../state/assemble.js";
-import { ArchiveStore, type ArchivedActivity, type GarminDay, type GarminActivity, type GarminExtraDay } from "./store.js";
+import { ArchiveStore, type ArchivedActivity, type GarminDay, type GarminActivity, type GarminExtraDay, type ActivityGear } from "./store.js";
 
 /**
  * Historical backfill. AIE: page month-by-month (the list caps at 40/call, so narrow windows reach
@@ -341,3 +341,63 @@ export async function backfillGarminExtras(
   await store.appendGarminExtras(buffer);
   return { toleranceDays, acclimationDays };
 }
+
+/**
+ * Bike name from a get_activity_gear payload (garminconnect's raw gear list for one activity). Prefers the
+ * item whose type is a bike, then the athlete's own display name, then make/model. null when none is
+ * assigned. Pure — exported for tests.
+ */
+export function bikeFromGear(payload: unknown): string | null {
+  const list = Array.isArray(payload) ? payload : payload && typeof payload === "object" ? [payload] : [];
+  const items = (list as Array<Record<string, unknown>>).filter((g) => g && typeof g === "object");
+  const bike = items.find((g) => /bike/i.test(String(g.gearTypeName ?? ""))) ?? items[0];
+  if (!bike) return null;
+  const name = [bike.displayName, bike.customMakeModel, [bike.gearMakeName, bike.gearModelName].filter(Boolean).join(" ")]
+    .map((v) => (typeof v === "string" ? v.trim() : ""))
+    .find((v) => v && v.toLowerCase() !== "unknown");
+  return name || null;
+}
+
+/** Garmin activity types that are rides (incl. indoor/virtual — the Wattbike gets its own gear too). */
+export function isRideType(type: string | undefined): boolean {
+  return /cycl|bik|ride/i.test(type ?? "");
+}
+
+/**
+ * Which bike each ride used, from Garmin Connect gear (get_activity_gear, one call per ride, throttled), into
+ * data/archive/activity-gear.jsonl. Resumable: rides already asked are skipped; a failed call is retried next
+ * run (never stored as "no gear"). `limit` bounds one run. Newest rides first, so a capped run covers the
+ * recent history the shim/cleat questions care about.
+ */
+export async function backfillActivityGear(
+  garmin: GarminClient,
+  store: ArchiveStore,
+  log: (m: string) => void,
+  opts: { limit?: number; throttleMs?: number } = {},
+): Promise<{ asked: number; withGear: number; pending: number }> {
+  const known = await store.loadActivityGear();
+  const rides = (await store.loadGarminActivities())
+    .filter((a) => isRideType(a.type) && !known.has(a.id))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const todo = opts.limit != null ? rides.slice(0, opts.limit) : rides;
+  let asked = 0;
+  let withGear = 0;
+  let buffer: ActivityGear[] = [];
+  for (const a of todo) {
+    const raw = await garmin.tryCall("get_activity_gear", { activity_id: a.id });
+    await sleep(opts.throttleMs ?? 250);
+    if (isToolFailure(raw)) continue;
+    const gear = bikeFromGear(gInner(raw));
+    buffer.push({ activityId: a.id, gear });
+    asked++;
+    if (gear) withGear++;
+    if (buffer.length >= 50) {
+      await store.appendActivityGear(buffer);
+      log(`  gear: ${asked}/${todo.length} rides asked (${withGear} with a bike assigned)`);
+      buffer = [];
+    }
+  }
+  await store.appendActivityGear(buffer);
+  return { asked, withGear, pending: rides.length - asked };
+}
+

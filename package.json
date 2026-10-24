@@ -92,6 +92,7 @@
     "efficiency": "tsx src/cli.ts efficiency",
     "garmin:auth": "tsx src/cli.ts garmin-auth",
     "archive:extras": "tsx src/cli.ts archive-extras",
+    "archive:gear": "tsx src/cli.ts archive-gear",
     "backfill:compact": "tsx src/cli.ts archive-compact",
     "backfill:install": "bash scripts/install-backfill.sh",
     "backfill:uninstall": "bash scripts/uninstall-backfill.sh",

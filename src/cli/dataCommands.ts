@@ -4,7 +4,7 @@ import { GarminClient } from "../mcp/garminClient.js";
 import { withAie, todayIso } from "../coach/orchestrator.js";
 import { extractJson, garminInner } from "../state/assemble.js";
 import { scanKeys, firstObjectArray, listCoverage } from "../util/keyScan.js";
-import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate, backfillGarminExtras } from "../archive/backfill.js";
+import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate, backfillGarminExtras, backfillActivityGear } from "../archive/backfill.js";
 import { syncFitSummaries } from "../archive/fitSync.js";
 import { recoverGaps, DEFAULT_RECOVER_STALE_DAYS } from "../archive/recover.js";
 import { activityArchiveDir, importDir, archiveSummary } from "../archive/activityArchive.js";
@@ -382,6 +382,9 @@ async function printArchiveStatus(store: ArchiveStore): Promise<void> {
   const withTol = extras.filter((d) => d.runToleranceKm != null);
   const withAccl = extras.filter((d) => d.heatAcclimationPct != null);
   const range = (xs: typeof extras) => (xs.length ? `${xs[0].date} → ${xs[xs.length - 1].date}` : "none — run `npm run archive:extras`");
+  const gearMap = await store.loadActivityGear();
+  const tagged = [...gearMap.values()].filter((v) => v != null).length;
+  console.log(`  Ride → bike:       ${gearMap.size ? `${gearMap.size} rides asked, ${tagged} with a bike` : "none — run `npm run archive:gear`"}`);
   console.log(`  Garmin extras:     running tolerance ${withTol.length} days (${range(withTol)}), heat acclimation ${withAccl.length} days (${range(withAccl)})`);
 }
 
@@ -468,8 +471,40 @@ export async function cmdPedalling(): Promise<void> {
     to: val("--to"),
     splitAt: val("--split"),
     indoor: args.includes("--indoor") ? "indoor" : args.includes("--outdoor") ? "outdoor" : "all",
+    bike: args.includes("--bike") ? args[args.indexOf("--bike") + 1] : undefined,
+    gearById: await new ArchiveStore().loadActivityGear(),
   });
   console.log("\n" + formatPedallingHistory(s, build).join("\n"));
+}
+
+/**
+ * `archive-gear [--limit N]` — tag each ride with the bike it was ridden on (Garmin Connect gear, one
+ * get_activity_gear call per ride, throttled) into data/archive/activity-gear.jsonl. Resumable, newest
+ * first; feeds `npm run pedalling -- --bike <name>`. Assign bikes to rides in Garmin Connect for this to work.
+ */
+export async function cmdArchiveGear(): Promise<void> {
+  if (!config.garmin.enabled) {
+    console.error("\nGarmin is disabled. Set GARMIN_ENABLED=true (and run `npm run garmin:auth`) to fetch gear.\n");
+    process.exit(1);
+  }
+  const args = process.argv.slice(3);
+  const li = args.indexOf("--limit");
+  const limit = li >= 0 && Number(args[li + 1]) > 0 ? Math.floor(Number(args[li + 1])) : undefined;
+  const g = new GarminClient();
+  if (!(await g.connect())) {
+    console.error("\nGarmin unavailable — run `npm run garmin:auth` and retry.\n");
+    process.exit(1);
+  }
+  try {
+    const r = await backfillActivityGear(g, new ArchiveStore(), (m) => console.log(m), { limit });
+    const gear = await new ArchiveStore().loadActivityGear();
+    const counts = new Map<string, number>();
+    for (const v of gear.values()) counts.set(v ?? "(no bike assigned)", (counts.get(v ?? "(no bike assigned)") ?? 0) + 1);
+    console.log(`\nDone: ${r.asked} ride(s) asked this run, ${r.withGear} with a bike; ${r.pending} still to ask.`);
+    console.log("Rides per bike: " + [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(" · "));
+  } finally {
+    await g.close();
+  }
 }
 
 /**

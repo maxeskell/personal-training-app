@@ -357,16 +357,18 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
 
   server.tool(
     "pedalling_history",
-    "Pedalling-mechanics HISTORY across every archived ride with dual-sided pedal data (back through the whole activity archive + fit-streams): month-by-month medians of L/R balance, how balance shifts with load and drifts late, torque effectiveness L/R, platform centre offset L/R (the cleat-position signal) and power-phase arc, plus indoor vs outdoor and an optional before/after split around a date (a cleat change, shim or bike fit). Use for shim / cleat / asymmetry questions that need the long view, not one ride. Deterministic, no LLM cost; the first call parses the archive (slow), later calls are cached.",
+    "Pedalling-mechanics HISTORY across every archived ride with dual-sided pedal data (back through the whole activity archive + fit-streams): month-by-month medians of L/R balance, how balance shifts with load and drifts late, torque effectiveness L/R, platform centre offset L/R (the cleat-position signal) and power-phase arc, plus indoor vs outdoor, a per-bike breakdown (Garmin Connect gear) with an optional bike filter, and an optional before/after split around a date (a cleat change, shim or bike fit). Use for shim / cleat / asymmetry questions that need the long view, not one ride. Deterministic, no LLM cost; the first call parses the archive (slow), later calls are cached.",
     {
       from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Only rides on/after this date."),
       to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Only rides on/before this date."),
       splitAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe("Compare before vs from this date (e.g. the day cleats or shims changed)."),
       indoor: z.enum(["all", "indoor", "outdoor"]).optional().describe("Filter by indoor/outdoor (default all)."),
+      bike: z.string().optional().describe("Only rides on this bike: a case-insensitive part of its Garmin Connect gear name (needs `npm run archive:gear` once)."),
     },
-    async ({ from, to, splitAt, indoor }) => {
+    async ({ from, to, splitAt, indoor, bike }) => {
       const build = buildPedallingHistory();
-      return ok(formatPedallingHistory(summarisePedallingHistory(build.rides, { from, to, splitAt, indoor }), build).join("\n"));
+      const gearById = await new ArchiveStore().loadActivityGear();
+      return ok(formatPedallingHistory(summarisePedallingHistory(build.rides, { from, to, splitAt, indoor, bike, gearById }), build).join("\n"));
     },
   );
 

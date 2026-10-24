@@ -85,6 +85,12 @@ export interface GarminExtraDay {
   tolFetched?: boolean;
 }
 
+/** Which bike (Garmin Connect gear) a ride used. `gear` null = asked, none assigned. */
+export interface ActivityGear {
+  activityId: string;
+  gear: string | null;
+}
+
 /** A Garmin activity (the full decade of workouts — Garmin keeps far more history than AI Endurance). */
 export interface GarminActivity {
   id: string;
@@ -120,6 +126,7 @@ export class ArchiveStore {
   private readonly garActPath = join(this.dir, "garmin-activities.jsonl");
   private readonly fitSumPath = join(this.dir, "fit-summaries.jsonl");
   private readonly garExtraPath = join(this.dir, "garmin-extras.jsonl");
+  private readonly gearPath = join(this.dir, "activity-gear.jsonl");
 
   private async ensure() {
     await mkdir(this.dir, { recursive: true });
@@ -192,6 +199,16 @@ export class ArchiveStore {
     if (!days.length) return;
     await this.ensure();
     await appendFile(this.garExtraPath, days.map((d) => JSON.stringify(d)).join("\n") + "\n");
+  }
+
+  /** activityId → bike name (null = no gear assigned in Garmin Connect). Last write wins. */
+  async loadActivityGear(): Promise<Map<string, string | null>> {
+    return new Map(dedupByKey(await this.readJsonl<ActivityGear>(this.gearPath), (g) => g.activityId).map((g) => [g.activityId, g.gear]));
+  }
+  async appendActivityGear(rows: ActivityGear[]): Promise<void> {
+    if (!rows.length) return;
+    await this.ensure();
+    await appendFile(this.gearPath, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
   }
 
   async loadGarminActivities(): Promise<GarminActivity[]> {
