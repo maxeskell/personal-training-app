@@ -4,7 +4,7 @@ import { GarminClient } from "../mcp/garminClient.js";
 import { withAie, todayIso } from "../coach/orchestrator.js";
 import { extractJson, garminInner } from "../state/assemble.js";
 import { scanKeys, firstObjectArray, listCoverage } from "../util/keyScan.js";
-import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate } from "../archive/backfill.js";
+import { backfillActivities, backfillGarmin, backfillGarminActivities, earliestGarminActivityDate, backfillGarminExtras } from "../archive/backfill.js";
 import { syncFitSummaries } from "../archive/fitSync.js";
 import { recoverGaps, DEFAULT_RECOVER_STALE_DAYS } from "../archive/recover.js";
 import { activityArchiveDir, importDir, archiveSummary } from "../archive/activityArchive.js";
@@ -378,6 +378,11 @@ async function printArchiveStatus(store: ArchiveStore): Promise<void> {
   }
   console.log(`  Garmin activities: ${s.garminActivities} (${s.garActRange})`);
   console.log(`  Garmin daily:      ${s.garminDays} days (${s.garRange})`);
+  const extras = await store.loadGarminExtras();
+  const withTol = extras.filter((d) => d.runToleranceKm != null);
+  const withAccl = extras.filter((d) => d.heatAcclimationPct != null);
+  const range = (xs: typeof extras) => (xs.length ? `${xs[0].date} → ${xs[xs.length - 1].date}` : "none — run `npm run archive:extras`");
+  console.log(`  Garmin extras:     running tolerance ${withTol.length} days (${range(withTol)}), heat acclimation ${withAccl.length} days (${range(withAccl)})`);
 }
 
 /** `archive-status` — show what's archived (used by `npm run backfill:status`). */
@@ -509,5 +514,36 @@ export async function cmdGarminAuth(): Promise<void> {
   }
   process.exitCode = r.status ?? 1;
   if (r.status === 0) console.log("\nDone. Tokens saved to ~/.garminconnect. Set GARMIN_ENABLED=true, then check with `npm run doctor`.");
+}
+
+/**
+ * `archive-extras [--days N]` — backfill the daily Garmin signals the a2ca5fc connector added (running
+ * tolerance, heat/altitude acclimation) for the last N days (default 365) into data/archive/garmin-extras.jsonl.
+ * Resumable and incremental: re-running only asks for days not yet fetched, plus the last 3 days (Garmin
+ * updates them). Running tolerance costs ~1 call per 90 days; acclimation 1 throttled call per day.
+ */
+export async function cmdArchiveExtras(): Promise<void> {
+  if (!config.garmin.enabled) {
+    console.error("\nGarmin is disabled. Set GARMIN_ENABLED=true (and run `npm run garmin:auth`) to backfill.\n");
+    process.exit(1);
+  }
+  const args = process.argv.slice(3);
+  const di = args.indexOf("--days");
+  const days = di >= 0 && Number(args[di + 1]) > 0 ? Math.floor(Number(args[di + 1])) : 365;
+  const to = todayIso();
+  const from = new Date(Date.parse(`${to}T00:00:00Z`) - (days - 1) * 86400000).toISOString().slice(0, 10);
+  const g = new GarminClient();
+  if (!(await g.connect())) {
+    console.error("\nGarmin unavailable — run `npm run garmin:auth` and retry.\n");
+    process.exit(1);
+  }
+  try {
+    console.log(`\nGarmin extras backfill ${from} → ${to} (${days} days)…\n`);
+    const r = await backfillGarminExtras(g, new ArchiveStore(), from, to, (m) => console.log(m));
+    console.log(`\nDone: running tolerance ${r.toleranceDays} day(s) with data, heat acclimation ${r.acclimationDays} day(s) with data.`);
+    if (!r.toleranceDays && !r.acclimationDays) console.log("Nothing came back: check `npm run doctor` shows garmin_mcp at a2ca5fc (these tools are new).");
+  } finally {
+    await g.close();
+  }
 }
 

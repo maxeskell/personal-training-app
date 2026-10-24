@@ -232,6 +232,13 @@ fire-only health check), `npm run backfill:install` (history grind).
   `d31de79` and `a2ca5fc`: only `get_activity_weather` changed (temperature → `temperature` + `temperature_unit`),
   handled by `weatherTempC` in `fitSync.ts`. Verify on the Mac with `npm run doctor` after the next pull; roll
   back by setting `GARMIN_MCP_ARGS` to the old d31de79 string. Drop the override once garmin_mcp pins ≥0.3.20.
+- **New Garmin signals collected (2026-10-24).** After the a2ca5fc bump: `get_acclimation`, `get_recovery_time_remaining`
+  and `get_running_tolerance` feed new state slots (`heatAcclimation`, `recoveryTime`, `runningTolerance`; read
+  with optional chaining because older snapshots lack them) and `trainingStatus.cyclingVo2max`. Running Tolerance
+  drives a finding in `garminHealth.ts`. History: `garmin-extras.jsonl` via `npm run archive:extras`, kept current
+  by `recoverGaps`. Audit result: no data the app reads was lost to the upstream bugs (the HRV fix was in the
+  range tool, not the single-day one the app uses; sleep/stress/respiration/body-comp are raw pass-throughs,
+  unchanged), and AIE durability is fetched live, so verdicts apply to past sessions with no backfill.
 - **Garmin SDK pin (`--with mcp<2`).** `garmin_mcp@d31de79` imports `mcp.server.fastmcp`, which the Python
   `mcp` SDK 2.0 removed. The dep was unpinned, so uvx silently resolved mcp 2.0 and the subprocess crashed
   on import — Garmin ingest was dead for ~4 weeks (2026-07-17 → 2026-08-13) with no visible signal, because
