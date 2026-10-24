@@ -11,19 +11,23 @@ import { escapeHtml } from "./dashboardHelpers.js";
  *   Plan         — the plan at every horizon: this week (weather/fuel/load) → this phase → season arc.
  *   Decide       — the unified "your call" inbox (insights, data changes, coach recs, setup) — one UX.
  *   Performance  — your numbers: load/zones/scores → race readiness → career history & PBs.
+ *   Efficiency   — its own page (/efficiency): output at a fixed HR, critical power, durability, aerobic
+ *                  threshold. A real link, not an in-page tab, so the dashboard's tab JS lets it navigate.
  *
  * On the dashboard the nav switches in-page tab panels (hash-driven, no round-trip); on a standalone
  * page the same links carry an absolute `/#section` href so they navigate home and open that tab.
  * PURE; everything interpolated is escaped (dashboard escaping convention).
  */
 
-export type NavId = "today" | "plan" | "decide" | "performance";
+export type NavId = "today" | "plan" | "decide" | "performance" | "efficiency";
 
-const NAV: Array<{ id: NavId; label: string }> = [
+/** `href` marks a section that is its own page rather than an in-page tab on the dashboard. */
+const NAV: Array<{ id: NavId; label: string; href?: string }> = [
   { id: "today", label: "Today" },
   { id: "plan", label: "Plan" },
   { id: "decide", label: "Decide" },
   { id: "performance", label: "Performance" },
+  { id: "efficiency", label: "Efficiency", href: "/efficiency" },
 ];
 
 /**
@@ -189,7 +193,8 @@ export function renderNav(active: NavId | null, opts: { home?: string; share?: b
     const on = n.id === active ? " on" : "";
     const c = opts.counts?.[n.id];
     const badge = c && c > 0 ? `<span class="count">${c}</span>` : "";
-    return `<a class="nav-link${on}" href="${home}${q}#${n.id}" data-tab="${n.id}">${escapeHtml(n.label)}${badge}</a>`;
+    const href = n.href ? `${n.href}${q}` : `${home}${q}#${n.id}`;
+    return `<a class="nav-link${on}" href="${href}" data-tab="${n.id}">${escapeHtml(n.label)}${badge}</a>`;
   }).join("");
   return `<nav class="nav">${links}</nav>`;
 }

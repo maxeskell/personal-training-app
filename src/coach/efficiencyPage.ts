@@ -152,7 +152,7 @@ ${report.aet.map(aetCard).join("")}
 </div>`;
 }
 
-/** Standalone /efficiency page in the shared site shell (nav highlights Performance). */
+/** Standalone /efficiency page in the shared site shell, under its own Efficiency nav tab. */
 export function renderEfficiencyPage(report: PerformanceReport | null, share = false): string {
-  return pageShell({ title: "Efficiency & performance", active: "performance", share }, renderEfficiencyInner(report));
+  return pageShell({ title: "Efficiency & performance", active: "efficiency", share }, renderEfficiencyInner(report));
 }
