@@ -436,6 +436,16 @@ vertical ratio, step length and GCT (stance-time) L/R balance — and, on the bi
 (with its variability index vs average) and **L/R power balance** from the pedals. These were decoded but
 previously dropped before the readout; each is omitted (never faked) when the device didn't record it.
 
+**Pedalling mechanics** (dual-sided power pedals such as Rally or Assioma Duo): a ride's readout also carries
+per-leg **torque effectiveness** and **pedal smoothness**, **platform centre offset** (where on the pedal body
+each foot pushes, the most direct cleat-position signal) and **power phase** (where in the stroke each leg
+makes torque, and its peak). L/R balance is broken down by the ride's own **low / mid / high power** and by
+**quarter of the ride**, because that is what separates a fixed structural offset (leg length, strength: the
+shim question) from one that grows with load or fatigue. Everything is computed over pedalling seconds only
+(freewheeling excluded, which matters on a group ride). Each channel is omitted when the pedals didn't record
+it; a single-sided meter or a trainer shows none of it. The field numbers follow the published FIT profile and
+are pinned by tests, but haven't yet been checked against one of your own ride files.
+
 **A missing `.FIT` is now loud, not silent.** `sync` / `get_state` / `npm run state` print a
 **data-completeness** line: when a recent session's raw `.FIT` isn't present (so its per-interval splits
 and biomechanics are unreachable), it's named explicitly with the reason — Garmin disabled, not reachable

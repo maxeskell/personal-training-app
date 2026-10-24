@@ -11,6 +11,8 @@
  * It handles the FIT essentials: 12/14-byte header, definition/data/compressed-timestamp records,
  * per-message architecture (endianness), developer fields (skipped), arrays (first element), and the
  * per-base-type "invalid" sentinels (→ null). Manufacturer-proprietary messages/fields are ignored.
+ * Cycling dynamics (torque effectiveness 43/44, pedal smoothness 45–47, platform centre offset 67/68,
+ * power phase + peak 69–72) follow the published FIT profile; not yet verified on the athlete's own file.
  */
 
 const BASE: Record<number, { size: number; invalid: number | bigint }> = {
@@ -81,6 +83,18 @@ export interface FitSample {
   stepLength?: number; // mm
   gctBalance?: number; // stance-time L/R balance, %
   lrBalance?: number; // raw bike left/right power balance field (FIT-encoded; decode with decodeLrBalanceLeftPct)
+  // Cycling dynamics (dual-sided power pedals, e.g. Rally / Assioma Duo). Absent on single-sided meters.
+  leftTe?: number; // left torque effectiveness, %
+  rightTe?: number;
+  leftPs?: number; // left pedal smoothness, %
+  rightPs?: number;
+  combinedPs?: number; // single-sided meters report only this
+  leftPco?: number; // left platform centre offset, mm (+ = outboard, − = inboard)
+  rightPco?: number;
+  leftPhase?: [number, number]; // left power phase start/end, degrees (0 = top dead centre)
+  rightPhase?: [number, number];
+  leftPeakPhase?: [number, number]; // left power-phase PEAK start/end, degrees
+  rightPeakPhase?: [number, number];
 }
 
 /** One `lap` message (global 19) — a rep/segment the device or athlete marked (run/bike reps, swim sets). */
@@ -170,8 +184,15 @@ export function decodeLrBalanceLeftPct(raw: number): number {
   return raw & 0x80 ? 100 - pct : pct; // flag set ⇒ pct is the RIGHT share ⇒ left = 100 − right
 }
 
-/** Map a record's raw field map into a typed sample, applying FIT scales/offsets. */
-function toSample(f: Record<number, number | null>): FitSample {
+/** FIT power-phase angles are stored as uint8 with scale 0.7111111 (256 steps per 360°). */
+const PHASE_SCALE = 256 / 360;
+function phase(a: Array<number | null> | undefined): [number, number] | undefined {
+  if (!a || a.length < 2 || a[0] == null || a[1] == null) return undefined;
+  return [+(a[0] / PHASE_SCALE).toFixed(1), +(a[1] / PHASE_SCALE).toFixed(1)];
+}
+
+/** Map a record's raw field map into a typed sample, applying FIT scales/offsets. `arr` holds array fields whole. */
+function toSample(f: Record<number, number | null>, arr: Record<number, Array<number | null>> = {}): FitSample {
   const g = (k: number) => (f[k] == null ? undefined : (f[k] as number));
   const s: FitSample = {
     t: f[253] != null ? (f[253] as number) + FIT_EPOCH_OFFSET : undefined,
@@ -189,6 +210,22 @@ function toSample(f: Record<number, number | null>): FitSample {
     gctBalance: g(84) != null ? g(84)! / 100 : undefined, // stance_time_balance, %
     lrBalance: g(30), // bike left/right power balance (raw, FIT-encoded — decoded in analyseSession)
   };
+  // Cycling dynamics, FIT profile record fields 43–47 (scale 2, %), 67/68 (sint8 mm), 69–72 (angle arrays).
+  // Set only when present, so runs and single-sided meters don't carry a dozen empty keys per second.
+  const dyn: Partial<FitSample> = {
+    leftTe: g(43) != null ? g(43)! / 2 : undefined,
+    rightTe: g(44) != null ? g(44)! / 2 : undefined,
+    leftPs: g(45) != null ? g(45)! / 2 : undefined,
+    rightPs: g(46) != null ? g(46)! / 2 : undefined,
+    combinedPs: g(47) != null ? g(47)! / 2 : undefined,
+    leftPco: g(67),
+    rightPco: g(68),
+    leftPhase: phase(arr[69]),
+    leftPeakPhase: phase(arr[70]),
+    rightPhase: phase(arr[71]),
+    rightPeakPhase: phase(arr[72]),
+  };
+  for (const [k, v] of Object.entries(dyn)) if (v !== undefined) (s as Record<string, unknown>)[k] = v;
   return s;
 }
 
@@ -268,7 +305,7 @@ export function parseFit(buf: Buffer): FitActivity | null {
         if (!def) break;
         const rec = readData(buf, pos, def);
         pos = rec.pos;
-        if (def.global === 20) samples.push(toSample(rec.fields));
+        if (def.global === 20) samples.push(toSample(rec.fields, rec.arrays));
         continue;
       }
       const local = h & 0x0f;
@@ -303,7 +340,7 @@ export function parseFit(buf: Buffer): FitActivity | null {
         if (!def) break;
         const rec = readData(buf, pos, def);
         pos = rec.pos;
-        if (def.global === 20) samples.push(toSample(rec.fields));
+        if (def.global === 20) samples.push(toSample(rec.fields, rec.arrays));
         else if (def.global === 18) sessionMsgs.push(rec.fields);
         else if (def.global === 19) laps.push(toLap(rec.fields));
         else if (def.global === 101) lengths.push(toLength(rec.fields));
@@ -344,15 +381,26 @@ export function parseFit(buf: Buffer): FitActivity | null {
   };
 }
 
-function readData(buf: Buffer, pos: number, def: MsgDef): { pos: number; fields: Record<number, number | null> } {
+/** Array fields read whole (the rest keep only element 0): record power-phase angles 69–72. */
+const ARRAY_FIELDS = new Set([69, 70, 71, 72]);
+
+function readData(
+  buf: Buffer,
+  pos: number,
+  def: MsgDef,
+): { pos: number; fields: Record<number, number | null>; arrays: Record<number, Array<number | null>> } {
   const fields: Record<number, number | null> = {};
+  const arrays: Record<number, Array<number | null>> = {};
   for (const fd of def.fields) {
     const baseSize = (BASE[fd.base & 0x1f] ?? BASE[2]).size;
     if (!fd.dev && fd.size >= baseSize && pos + baseSize <= buf.length) {
       // Arrays (size > one element) → take the first element; the rest is skipped.
       fields[fd.num] = readScalar(buf, pos, fd.base, def.le);
+      if (def.global === 20 && ARRAY_FIELDS.has(fd.num) && pos + fd.size <= buf.length) {
+        arrays[fd.num] = Array.from({ length: Math.floor(fd.size / baseSize) }, (_, i) => readScalar(buf, pos + i * baseSize, fd.base, def.le));
+      }
     }
     pos += fd.size;
   }
-  return { pos, fields };
+  return { pos, fields, arrays };
 }
