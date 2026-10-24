@@ -315,6 +315,11 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
         `- Aerobic decoupling ${fmt(dy.decouplingPct, 1)}% is speed÷HR on hilly terrain — it follows the gradient profile, not fitness; do not read it as aerobic fade`,
       );
     } else {
+      // The athlete's runs often end with a walk (dog, getting to the door): the metrics already exclude
+      // the tail, so tell the model, or it reads the shorter analysed window as a data gap.
+      if (dy.tailTrimmedMin) {
+        lines.push(`- Last ${dy.tailTrimmedMin} min EXCLUDED from every metric below (the run usually ends in a walk: dog / getting to the door). Don't analyse or comment on the final ${dy.tailTrimmedMin} min.`);
+      }
       lines.push(
         `- Aerobic decoupling ${fmt(dy.decouplingPct, 1)}% (>5% = aerobic fade in the second half)`,
         `- Cadence drop ${fmt(dy.cadenceDropPct, 1)}%, GCT rise ${fmt(dy.gctRisePct, 1)}%, vertical-osc rise ${fmt(dy.voRisePct, 1)}%, HR drift ${fmt(dy.hrDriftPct, 1)}% (late vs early quartile)`,

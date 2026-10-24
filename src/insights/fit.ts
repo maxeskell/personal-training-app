@@ -48,6 +48,8 @@ interface StreamFile {
   subSport?: number | null; // FIT sub_sport (e.g. 18 = open_water) — lets a swim be analysed correctly
   date?: string;
   samples?: Sample[];
+  /** A leg cut from a multisport (race) file: never tail-trimmed, a race run's last 10 min is the finish. */
+  multisportLeg?: boolean;
 }
 
 export interface SessionDecay {
@@ -57,6 +59,8 @@ export interface SessionDecay {
   /** Session start, unix seconds (UTC) — the first sample's timestamp. Null when the stream carried none. */
   startTimeS: number | null;
   durationMin: number;
+  /** Minutes cut from the END of a run before any analysis (dog sniffing / walking to the door). 0 = none. */
+  tailTrimmedMin?: number;
   cadenceDropPct: number | null; // last quartile vs first quartile (drop = fatigue)
   gctRisePct: number | null; // GCT climbing late = fatigue
   voRisePct: number | null; // vertical oscillation climbing late = form decay
@@ -159,8 +163,29 @@ function analyseSwim(s: Sample[], subSport: number | null | undefined): SwimAnal
   };
 }
 
-export function analyseSession(f: StreamFile): SessionDecay | null {
-  const s = f.samples ?? [];
+/**
+ * Drop the last `trimMin` minutes of a run's samples. The athlete's runs often end with a walk (the dog
+ * sniffing, getting to the accommodation), so the tail is not running and would read as fake cadence
+ * drop, pace fade and decoupling. Cut by timestamp (smart recording makes sample count ≠ seconds); with
+ * no timestamps, by sample count at ~1 Hz. Pure — exported for tests.
+ */
+export function trimRunTail(s: Sample[], trimMin: number): Sample[] {
+  if (!(trimMin > 0) || !s.length) return s;
+  const cutS = trimMin * 60;
+  const lastT = [...s].reverse().find((x) => typeof x.t === "number")?.t;
+  if (lastT == null) return s.slice(0, Math.max(0, s.length - cutS));
+  return s.filter((x) => typeof x.t !== "number" || x.t <= lastT - cutS);
+}
+
+export function analyseSession(f: StreamFile, runTailTrimMin = config.runTailTrimMin): SessionDecay | null {
+  const raw = f.samples ?? [];
+  if (raw.length < 60) return null;
+  const isRun = /run/i.test(String(f.sport ?? ""));
+  const trimMin = isRun && !f.multisportLeg ? runTailTrimMin : 0;
+  // Duration stays the whole session (it really was that long); every metric below uses the trimmed run.
+  const rawTs = raw.map((x) => x.t).filter((t): t is number => typeof t === "number");
+  const s = trimMin > 0 ? trimRunTail(raw, trimMin) : raw;
+  // Too little left after the cut to say anything honest: no readout rather than one built from minutes.
   if (s.length < 60) return null;
   const isSwim = /swim/i.test(String(f.sport ?? ""));
   // For a swim, the cadence/HR/decoupling drifts must ignore rests/floats between reps (otherwise a long
@@ -171,14 +196,15 @@ export function analyseSession(f: StreamFile): SessionDecay | null {
   const vo = quartileMeans(s.map((x) => x.vo ?? null));
   const hr = quartileMeans(drift.map((x) => x.hr ?? null));
   const temps = s.map((x) => x.temperature).filter((t): t is number => typeof t === "number");
-  const ts = s.map((x) => x.t).filter((t): t is number => typeof t === "number");
-  const durationMin = ts.length >= 2 ? +(((ts[ts.length - 1] - ts[0]) / 60) || s.length / 60).toFixed(0) : +(s.length / 60).toFixed(0);
+  const ts = rawTs;
+  const durationMin = ts.length >= 2 ? +(((ts[ts.length - 1] - ts[0]) / 60) || raw.length / 60).toFixed(0) : +(raw.length / 60).toFixed(0);
   return {
     activityId: String(f.activityId ?? "—"),
     date: String(f.date ?? "").slice(0, 10),
     sport: String(f.sport ?? "—"),
     startTimeS: ts.length ? ts[0] : null, // first record timestamp = session start (UTC); formatted to local at display
     durationMin,
+    tailTrimmedMin: trimMin,
     cadenceDropPct: deltaPct(cad.first, cad.last),
     gctRisePct: deltaPct(gct.first, gct.last),
     voRisePct: deltaPct(vo.first, vo.last),
@@ -402,7 +428,8 @@ export function loadSessionDecays(dir = fitStreamsDir()): SessionDecay[] {
         if (act) {
           const legs = expandMultisportFit(act);
           for (const [i, leg] of legs.entries()) {
-            files.push(fitToStreamFile(leg, legs.length > 1 ? name.replace(/\.(fit|FIT)$/, `-leg${i + 1}.fit`) : name));
+            const sf = fitToStreamFile(leg, legs.length > 1 ? name.replace(/\.(fit|FIT)$/, `-leg${i + 1}.fit`) : name);
+            files.push(legs.length > 1 ? { ...sf, multisportLeg: true } : sf);
           }
         }
       } else if (name.endsWith(".json")) {
