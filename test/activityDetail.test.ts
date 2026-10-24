@@ -110,3 +110,47 @@ test("durabilityCardLine: compact one-liner from whatever is present", () => {
   );
   assert.equal(durabilityCardLine(mapActivityDurability(RUN_DETAIL)!), "pace fade 8.7% (5min) · power fade 25.8% (5min)");
 });
+
+// AIE MCP v1.3.0 (2026-08-26): each drift metric carries a verdict and the object an overall verdict + counts.
+const V13_DETAIL = {
+  within_session_durability: { axis: "kj", fade_series: { "5min": { fade_percent_total: 10, fresh: 250 } } },
+  durability_drift: {
+    axis: "kj",
+    overall: "more_durable",
+    more_durable: 2,
+    less_durable: 0,
+    counted: 2,
+    metrics: {
+      hr: { n_points: 20, mean_residual_vs_trend: -2, verdict: "more_durable", trend_ride_count: 12 },
+      a1: { n_points: 20, mean_residual_vs_trend: 0.05, verdict: "more_durable", trend_ride_count: 12 },
+      rf: { n_points: 3, mean_residual_vs_trend: 1, verdict: null, trend_ride_count: 12 },
+    },
+  },
+};
+
+test("v1.3 verdicts: per-metric + overall mapped; null verdict is 'no read'; card leads with the overall", () => {
+  const d = mapActivityDurability(V13_DETAIL)!;
+  assert.deepEqual(d.drift!.overall, { verdict: "more_durable", moreDurable: 2, lessDurable: 0, counted: 2 });
+  assert.equal(d.drift!.metrics.find((m) => m.metric === "rf")!.verdict, null);
+  const text = durabilityContextLines(d).join("\n");
+  assert.match(text, /OVERALL durability verdict vs your own trend: more durable \(2 more durable \/ 0 less durable of 2 metrics/);
+  assert.match(text, /a1: verdict more durable; residual 0\.1/);
+  assert.match(text, /rf: verdict: no read \(too few efforts\)/);
+  assert.match(text, /trust the verdict, not the sign/);
+  assert.equal(durabilityCardLine(d), "power fade 10% (5min) · durability vs your trend: more durable");
+});
+
+test("v1.3 verdicts: overall as an object is accepted too; unknown strings are ignored", () => {
+  const d = mapActivityDurability({
+    ...V13_DETAIL,
+    durability_drift: { ...V13_DETAIL.durability_drift, overall: { verdict: "less_durable", more_durable: 0, less_durable: 1, counted: 1 } },
+  })!;
+  assert.deepEqual(d.drift!.overall, { verdict: "less_durable", moreDurable: 0, lessDurable: 1, counted: 1 });
+  const odd = mapActivityDurability({ ...V13_DETAIL, durability_drift: { ...V13_DETAIL.durability_drift, overall: "great" } })!;
+  assert.equal(odd.drift!.overall, null);
+});
+
+test("pre-v1.3 payloads (no verdict field) say nothing about verdicts", () => {
+  const text = durabilityContextLines(mapActivityDurability(RIDE_DETAIL)!).join("\n");
+  assert.doesNotMatch(text, /verdict/i);
+});

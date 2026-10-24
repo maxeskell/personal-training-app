@@ -345,7 +345,9 @@ planned workout (title, planned vs done time), or an explicit note when nothing 
 joins your **AI Endurance metrics** (power/HR/ESS, DFA-α1 thresholds — restored 2026-08 behind an opt-in
 connector flag the app passes), **AIE's per-session durability detail** (live 2026-08-25, fetched once per
 analysed session: the mechanical within-session fade on nearly every ride/run, plus internal drift vs your
-own trend when R-R allows — both MODEL-labelled, see spec 10) with the
+own trend when R-R allows — both MODEL-labelled, see spec 10; the drift is read through **AIE's own verdict**
+(more durable / less durable / typical / mixed, per metric and overall) rather than re-derived from the
+residual, whose sign is inverted for DFA-α1) with the
 **.FIT biomechanics** (in-session cadence/GCT/vertical-osc drift, aerobic decoupling, temperature) and the
 **archive thermal summary**, then reads it against your **prior comparable sessions** and that day's **TSB**
 — so a dip in deep fatigue or heat isn't mistaken for lost fitness. **Swims are read on their own terms:**
