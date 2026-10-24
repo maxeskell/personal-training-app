@@ -17,6 +17,8 @@ import { loadArchiveVolume } from "./coach/archiveVolume.js";
 import { recordAndReviewRaces } from "./state/raceModelLog.js";
 import { buildSeasonArc } from "./coach/seasonArc.js";
 import { renderSeasonPage, type SeasonProse } from "./coach/seasonPage.js";
+import { renderEfficiencyPage } from "./coach/efficiencyPage.js";
+import { buildPerformanceHistory, summarisePerformance } from "./insights/performanceHistory.js";
 import { latestAdviceFindings, clusterAdvice, clustersToDisplay } from "./coach/adviceRecs.js";
 import { loadAdviceEmbeddingIndex } from "./state/adviceEmbeddings.js";
 import { updateLocalProfile } from "./profile/update.js";
@@ -689,6 +691,25 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     // Read-only career page: race history (+ per-race splits) + lifetime bests vs current + power curve.
     // Best-effort load of the gitignored data file (built by scripts/build-career-history.ts); absent/garbled
     // → empty state.
+    // Read-only Efficiency & performance page. Reads the cached history and parses at most a few NEW files
+    // per request, so a page load never blocks on a whole-archive parse (that's `npm run efficiency`). Any
+    // failure renders the empty state rather than an error page (degrade-don't-crash). No LLM call.
+    if (url.pathname === "/efficiency") {
+      let report = null;
+      try {
+        const build = buildPerformanceHistory({ maxParse: 10 });
+        report = summarisePerformance(build.sessions, {
+          today: todayIso(),
+          refHrBike: config.efficiency.refHrBike,
+          refHrRun: config.efficiency.refHrRun,
+          build,
+        });
+      } catch {
+        /* empty state */
+      }
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(renderEfficiencyPage(report, url.searchParams.get("share") === "1"));
+      return;
+    }
     if (url.pathname === "/career") {
       const html = renderCareerPage(loadCareerHistory(), url.searchParams.get("share") === "1");
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);

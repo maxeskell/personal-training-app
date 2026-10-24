@@ -43,6 +43,8 @@ import { runSessionFeedback } from "./coach/session.js";
 import { aieDurabilityFetcher } from "./coach/sessionDurability.js";
 import { loadSessionDecays } from "./insights/fit.js";
 import { buildPedallingHistory, summarisePedallingHistory, formatPedallingHistory } from "./insights/pedallingHistory.js";
+import { buildPerformanceHistory, summarisePerformance, formatPerformanceReport } from "./insights/performanceHistory.js";
+import { config } from "./config.js";
 import { buildWeekFuelPlans, loadFuelPrefs, formatWeekFuelText } from "./coach/fuelPlan.js";
 import { loadInventory } from "./coach/fuelInventory.js";
 import { loadFuelLog, saveFuelLog, isFuelOutcome } from "./coach/fuelLogStore.js";
@@ -336,6 +338,17 @@ export function buildServer(opts: { includeWrites?: boolean; includeProfileWrite
         else lines.push("CSS: couldn't auto-detect a 400 m + 200 m maximal pair from the laps — pass t400 and t200 (your test times) to compute it.");
       }
       return ok(lines.join("\n"));
+    },
+  );
+
+  server.tool(
+    "efficiency",
+    "Efficiency & performance from the whole .FIT archive: bike power and run grade-adjusted pace at a fixed heart rate (trend, heat-corrected only when the athlete's own data shows a heat effect, indoor/outdoor kept apart), critical power + W' from the last 90 days' best efforts (with a maximal-effort check), durability (best 5/20-min after 1500/2500 kJ vs fresh), and the DFA-alpha1 aerobic-threshold HR from beat-to-beat HR. Every metric carries a confidence grade and why. MODEL estimates; deterministic, no LLM cost; the first call parses the archive (slow), then cached.",
+    {},
+    async () => {
+      const build = buildPerformanceHistory();
+      const report = summarisePerformance(build.sessions, { today: todayIso(), refHrBike: config.efficiency.refHrBike, refHrRun: config.efficiency.refHrRun, build });
+      return ok(formatPerformanceReport(report).join("\n"));
     },
   );
 

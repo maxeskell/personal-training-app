@@ -10,6 +10,7 @@ import { recoverGaps, DEFAULT_RECOVER_STALE_DAYS } from "../archive/recover.js";
 import { activityArchiveDir, importDir, archiveSummary } from "../archive/activityArchive.js";
 import { backfillGarminFits } from "../archive/activityArchiveBackfill.js";
 import { buildPedallingHistory, summarisePedallingHistory, formatPedallingHistory } from "../insights/pedallingHistory.js";
+import { buildPerformanceHistory, summarisePerformance, formatPerformanceReport } from "../insights/performanceHistory.js";
 
 /**
  * Data/archive CLI commands (backfill / probe / fit-sync / archive-status / archive-compact), extracted
@@ -464,5 +465,29 @@ export async function cmdPedalling(): Promise<void> {
     indoor: args.includes("--indoor") ? "indoor" : args.includes("--outdoor") ? "outdoor" : "all",
   });
   console.log("\n" + formatPedallingHistory(s, build).join("\n"));
+}
+
+/**
+ * `efficiency` — build/refresh the efficiency & performance history (every ride and run in the activity
+ * archive + fit-streams) and print the report the /efficiency page shows. The first run parses the whole
+ * archive (slow); later runs only parse new files.
+ */
+export async function cmdEfficiency(): Promise<void> {
+  let last = 0;
+  const build = buildPerformanceHistory({
+    onProgress: (done, total) => {
+      if (total > 50 && done - last >= 100) {
+        last = done;
+        process.stderr.write(`  scanning ${done}/${total} …\r`);
+      }
+    },
+  });
+  const report = summarisePerformance(build.sessions, {
+    today: todayIso(),
+    refHrBike: config.efficiency.refHrBike,
+    refHrRun: config.efficiency.refHrRun,
+    build,
+  });
+  console.log("\n" + formatPerformanceReport(report).join("\n"));
 }
 

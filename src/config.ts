@@ -261,6 +261,16 @@ export const config = {
   runTailTrimMin: Math.max(0, Number(process.env.COACH_RUN_TAIL_TRIM_MIN ?? 10) || 0),
 
   /**
+   * Efficiency & performance page (/efficiency, `npm run efficiency`). The reference heart rates that
+   * "power / pace at a fixed HR" are read at. Unset = your own typical steady HR, worked out from the data
+   * (recommended until you know which HR you hold on steady sessions). Set to the bpm you ride/run steady at.
+   */
+  efficiency: {
+    refHrBike: process.env.COACH_EFF_REF_HR_BIKE ? Number(process.env.COACH_EFF_REF_HR_BIKE) || undefined : undefined,
+    refHrRun: process.env.COACH_EFF_REF_HR_RUN ? Number(process.env.COACH_EFF_REF_HR_RUN) || undefined : undefined,
+  },
+
+  /**
    * Dashboard auto-sync: a page load whose snapshot is older than this kicks a background
    * /refresh and reloads when done (the page itself still renders instantly). 0 disables it.
    */
