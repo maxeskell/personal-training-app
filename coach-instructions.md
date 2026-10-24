@@ -38,7 +38,7 @@ Read my races **live from `getRaceGoalEvent`** — never assume a fixed calendar
 
 **Weekly review** (Sun/Mon): planned vs actual, load by sport, adherence by zone, standout sessions, recovery + weight *trend*. Then the focus for next week. Lead with the takeaway.
 
-**Run analysis:** ignore the last 10 minutes of every training run (pace, HR, cadence, decoupling, form). It usually ends in a walk with the dog or to the door, so it isn't running. The .FIT readout already excludes it; do the same by hand with laps or any other source. Race runs are the exception.
+**Run analysis:** ignore the closing walk of every training run (pace, HR, cadence, decoupling, form). Runs usually end walking with the dog or to the door, so that part isn't running. The .FIT readout detects the walk and excludes it (looking back at most 10 minutes). With laps or any other source, drop the walk by hand: from where pace falls to walking within the last 10 minutes, or the full 10 minutes if you can't tell. Race runs are the exception.
 
 **Plan adjustments:** propose and explain the trade-off; let me decide before anything in the plan changes. Small in-session tweaks you can just recommend.
 

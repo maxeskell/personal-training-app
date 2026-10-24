@@ -61,6 +61,8 @@ export interface SessionDecay {
   durationMin: number;
   /** Minutes cut from the END of a run before any analysis (dog sniffing / walking to the door). 0 = none. */
   tailTrimmedMin?: number;
+  /** How the cut was found: where the closing walk began, the whole cap (no speed/cadence), or no cut. */
+  tailTrimBasis?: RunTailCut["basis"];
   cadenceDropPct: number | null; // last quartile vs first quartile (drop = fatigue)
   gctRisePct: number | null; // GCT climbing late = fatigue
   voRisePct: number | null; // vertical oscillation climbing late = form decay
@@ -167,7 +169,8 @@ function analyseSwim(s: Sample[], subSport: number | null | undefined): SwimAnal
  * Drop the last `trimMin` minutes of a run's samples. The athlete's runs often end with a walk (the dog
  * sniffing, getting to the accommodation), so the tail is not running and would read as fake cadence
  * drop, pace fade and decoupling. Cut by timestamp (smart recording makes sample count ≠ seconds); with
- * no timestamps, by sample count at ~1 Hz. Pure — exported for tests.
+ * no timestamps, by sample count at ~1 Hz. Pure — exported for tests. The blunt fallback: see
+ * {@link detectRunTailCut} for the cut analyseSession actually uses.
  */
 export function trimRunTail(s: Sample[], trimMin: number): Sample[] {
   if (!(trimMin > 0) || !s.length) return s;
@@ -177,14 +180,73 @@ export function trimRunTail(s: Sample[], trimMin: number): Sample[] {
   return s.filter((x) => typeof x.t !== "number" || x.t <= lastT - cutS);
 }
 
+/** Below this speed a "run" sample is walking or stopped: 2.0 m/s = 7.2 km/h (8:20/km), under any easy jog. */
+export const RUN_WALK_MAX_SPEED_MS = 2.0;
+/** A walk must last this long to count: shorter stops (a junction, a gate) are part of the run. */
+export const RUN_WALK_MIN_S = 60;
+
+export interface RunTailCut {
+  samples: Sample[];
+  /** Minutes cut from the end (0 = the run was run to the finish). */
+  trimmedMin: number;
+  /** "walk-detected": cut where the walk began. "fixed": no speed/cadence to detect from, so the whole cap was cut. */
+  basis: "walk-detected" | "fixed" | "none";
+}
+
+/**
+ * Find where the run's closing walk starts and cut from there, looking only inside the last `capMin`
+ * minutes. A sample is running when speed ≥ {@link RUN_WALK_MAX_SPEED_MS}; with no speed, when cadence is
+ * at running rate (the FIT records strides/min, ~85+ running vs ~55–60 walking; an export in steps/min
+ * reads double, so the unit is inferred from the session median). The cut is the first moment in the
+ * window followed by {@link RUN_WALK_MIN_S}s that are ≥80% non-running: everything after it goes, so a
+ * stop-start dog walk is cut from its first stop. No such moment = no cut (the run went to the end).
+ * No speed or cadence in the window = can't tell, so fall back to cutting the whole cap. Pure.
+ */
+export function detectRunTailCut(s: Sample[], capMin: number): RunTailCut {
+  if (!(capMin > 0) || !s.length) return { samples: s, trimmedMin: 0, basis: "none" };
+  const tOf = (i: number) => (typeof s[i].t === "number" ? s[i].t! : i);
+  const lastT = tOf(s.length - 1);
+  const windowStartT = lastT - capMin * 60;
+  const cads = s.map((x) => x.cadence).filter((c): c is number => typeof c === "number" && c > 0).sort((a, b) => a - b);
+  const medCad = cads.length ? cads[Math.floor(cads.length / 2)] : null;
+  const cadRunMin = medCad != null && medCad > 120 ? 130 : 65; // steps/min vs strides/min
+  // true = running, false = walking/stopped, null = no signal on this sample.
+  const running = (x: Sample): boolean | null =>
+    typeof x.speed === "number" ? x.speed >= RUN_WALK_MAX_SPEED_MS : typeof x.cadence === "number" ? x.cadence >= cadRunMin : null;
+  const first = s.findIndex((_, i) => tOf(i) >= windowStartT);
+  if (first < 0 || !s.slice(first).some((x) => running(x) != null)) {
+    const kept = trimRunTail(s, capMin);
+    return { samples: kept, trimmedMin: capMin, basis: "fixed" };
+  }
+  for (let i = first; i < s.length; i++) {
+    if (running(s[i]) !== false) continue;
+    let walk = 0;
+    let known = 0;
+    let j = i;
+    for (; j < s.length && tOf(j) < tOf(i) + RUN_WALK_MIN_S; j++) {
+      const r = running(s[j]);
+      if (r == null) continue;
+      known++;
+      if (!r) walk++;
+    }
+    // Needs a full minute of evidence, unless the file ends inside it (walked to the very end).
+    const lastsMinute = j < s.length || tOf(s.length - 1) - tOf(i) >= RUN_WALK_MIN_S - 1;
+    if (lastsMinute && known > 0 && walk / known >= 0.8) {
+      return { samples: s.slice(0, i), trimmedMin: +((lastT - tOf(i)) / 60).toFixed(1), basis: "walk-detected" };
+    }
+  }
+  return { samples: s, trimmedMin: 0, basis: "none" };
+}
+
 export function analyseSession(f: StreamFile, runTailTrimMin = config.runTailTrimMin): SessionDecay | null {
   const raw = f.samples ?? [];
   if (raw.length < 60) return null;
   const isRun = /run/i.test(String(f.sport ?? ""));
-  const trimMin = isRun && !f.multisportLeg ? runTailTrimMin : 0;
+  const capMin = isRun && !f.multisportLeg ? runTailTrimMin : 0;
   // Duration stays the whole session (it really was that long); every metric below uses the trimmed run.
   const rawTs = raw.map((x) => x.t).filter((t): t is number => typeof t === "number");
-  const s = trimMin > 0 ? trimRunTail(raw, trimMin) : raw;
+  const cut = detectRunTailCut(raw, capMin);
+  const s = cut.samples;
   // Too little left after the cut to say anything honest: no readout rather than one built from minutes.
   if (s.length < 60) return null;
   const isSwim = /swim/i.test(String(f.sport ?? ""));
@@ -204,7 +266,8 @@ export function analyseSession(f: StreamFile, runTailTrimMin = config.runTailTri
     sport: String(f.sport ?? "—"),
     startTimeS: ts.length ? ts[0] : null, // first record timestamp = session start (UTC); formatted to local at display
     durationMin,
-    tailTrimmedMin: trimMin,
+    tailTrimmedMin: cut.trimmedMin,
+    tailTrimBasis: cut.basis,
     cadenceDropPct: deltaPct(cad.first, cad.last),
     gctRisePct: deltaPct(gct.first, gct.last),
     voRisePct: deltaPct(vo.first, vo.last),

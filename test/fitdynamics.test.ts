@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { analyseSession, trimRunTail } from "../src/insights/fit.js";
+import { analyseSession, trimRunTail, detectRunTailCut } from "../src/insights/fit.js";
 import { decodeLrBalanceLeftPct } from "../src/insights/fitParser.js";
 
 /**
@@ -126,36 +126,77 @@ test("analyseSession: a run carries no swim block", () => {
   assert.equal(d.swim, null);
 });
 
-// Runs often end walking (dog sniffing, getting to the door): the last N min must not feed the metrics.
-function runWithWalkTail(): Array<Record<string, number>> {
-  // 40 min running at cadence 180, then 10 min walking at cadence 100 (1 Hz, t from 1000).
-  return Array.from({ length: 3000 }, (_, i) => ({ t: 1000 + i, hr: 150, speed: i < 2400 ? 3.3 : 1.4, cadence: i < 2400 ? 180 : 100 }));
+// Runs often end walking (dog sniffing, getting to the door): the closing walk must not feed the metrics.
+function run(runS: number, tail: Array<Record<string, number>> = []): Array<Record<string, number>> {
+  // 1 Hz from t=1000: `runS` seconds of running (3.3 m/s, 90 strides/min), then the given tail samples.
+  const r = Array.from({ length: runS }, (_, i) => ({ t: 1000 + i, hr: 150, speed: 3.3, cadence: 90 }));
+  return [...r, ...tail.map((x, i) => ({ t: 1000 + runS + i, hr: 150, ...x }))];
 }
+const walking = (n: number) => Array.from({ length: n }, () => ({ speed: 1.4, cadence: 58 }));
+const running = (n: number) => Array.from({ length: n }, () => ({ speed: 3.3, cadence: 90 }));
 
-test("analyseSession: a run's last 10 min (the walk) is excluded from every metric", () => {
-  const d = analyseSession({ sport: "Run", date: "2026-10-24", samples: runWithWalkTail() }, 10)!;
-  assert.equal(d.tailTrimmedMin, 10);
-  assert.equal(d.cadenceDropPct, 0, "walk tail cut → no fake cadence drop");
-  assert.equal(d.decouplingPct, 0, "walk tail cut → no fake decoupling");
+test("analyseSession: a closing walk is detected and excluded from every metric", () => {
+  const d = analyseSession({ sport: "Run", date: "2026-10-24", samples: run(2700, walking(300)) }, 10)!;
+  assert.equal(d.tailTrimBasis, "walk-detected");
+  assert.equal(d.tailTrimmedMin, 5, "cut where the 5-min walk began, not a blanket 10");
+  assert.equal(d.cadenceDropPct, 0, "walk cut → no fake cadence drop");
+  assert.equal(d.decouplingPct, 0, "walk cut → no fake decoupling");
   assert.equal(d.durationMin, 50, "duration still counts the whole run");
 });
 
-test("analyseSession: with the trim off, the walk tail reads as fake fade (why the trim exists)", () => {
-  const d = analyseSession({ sport: "Run", date: "2026-10-24", samples: runWithWalkTail() }, 0)!;
+test("analyseSession: a run run to the finish keeps all its data", () => {
+  const d = analyseSession({ sport: "Run", date: "2026-10-24", samples: run(3000) }, 10)!;
+  assert.equal(d.tailTrimmedMin, 0);
+  assert.equal(d.tailTrimBasis, "none");
+});
+
+test("detectRunTailCut: a stop-start dog walk is cut from its first stop", () => {
+  const s = run(2400, [...walking(90), ...running(120), ...walking(70), ...running(40), ...walking(80)]);
+  const c = detectRunTailCut(s, 10);
+  assert.equal(c.basis, "walk-detected");
+  assert.equal(c.samples.length, 2400);
+});
+
+test("detectRunTailCut: a stop shorter than a minute (a junction) is not a walk", () => {
+  const s = run(2400, [...walking(40), ...running(300)]);
+  assert.equal(detectRunTailCut(s, 10).trimmedMin, 0);
+});
+
+test("detectRunTailCut: never cuts more than the cap, even after a long walk", () => {
+  const c = detectRunTailCut(run(2400, walking(1200)), 10);
+  assert.equal(c.basis, "walk-detected");
+  assert.equal(c.trimmedMin, 10);
+});
+
+test("detectRunTailCut: cadence-only runs (no speed) detect the walk, in strides or steps per min", () => {
+  const strides = [...Array.from({ length: 2400 }, (_, i) => ({ t: i, cadence: 88 })), ...Array.from({ length: 300 }, (_, i) => ({ t: 2400 + i, cadence: 57 }))];
+  assert.equal(detectRunTailCut(strides, 10).samples.length, 2400);
+  const steps = strides.map((x) => ({ ...x, cadence: x.cadence * 2 }));
+  assert.equal(detectRunTailCut(steps, 10).samples.length, 2400);
+});
+
+test("detectRunTailCut: with no speed or cadence it can't tell, so it cuts the whole cap", () => {
+  const s = Array.from({ length: 3000 }, (_, i) => ({ t: i, hr: 150 }));
+  const c = detectRunTailCut(s, 10);
+  assert.equal(c.basis, "fixed");
+  assert.equal(c.trimmedMin, 10);
+});
+
+test("analyseSession: with the cap at 0, the walk reads as fake fade (why the cut exists)", () => {
+  const d = analyseSession({ sport: "Run", date: "2026-10-24", samples: run(2400, walking(600)) }, 0)!;
   assert.equal(d.tailTrimmedMin, 0);
   assert.ok(d.cadenceDropPct! < -20);
 });
 
 test("analyseSession: rides and multisport race legs are never tail-trimmed", () => {
-  const ride = analyseSession({ sport: "Ride", date: "2026-10-24", samples: runWithWalkTail() }, 10)!;
+  const ride = analyseSession({ sport: "Ride", date: "2026-10-24", samples: run(2400, walking(600)) }, 10)!;
   assert.equal(ride.tailTrimmedMin, 0);
-  const leg = analyseSession({ sport: "Run", date: "2026-10-24", multisportLeg: true, samples: runWithWalkTail() }, 10)!;
+  const leg = analyseSession({ sport: "Run", date: "2026-10-24", multisportLeg: true, samples: run(2400, walking(600)) }, 10)!;
   assert.equal(leg.tailTrimmedMin, 0);
 });
 
-test("analyseSession: a run too short to survive the cut gives no readout, not one built from scraps", () => {
-  const s = Array.from({ length: 620 }, (_, i) => ({ t: 1000 + i, hr: 150, cadence: 180 }));
-  assert.equal(analyseSession({ sport: "Run", date: "2026-10-24", samples: s }, 10), null);
+test("analyseSession: a run that's almost all walk gives no readout, not one built from scraps", () => {
+  assert.equal(analyseSession({ sport: "Run", date: "2026-10-24", samples: run(30, walking(600)) }, 10), null);
 });
 
 test("trimRunTail: cuts by timestamp, so gaps from smart recording don't shift the cut", () => {

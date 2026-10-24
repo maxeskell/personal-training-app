@@ -318,7 +318,8 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
       // The athlete's runs often end with a walk (dog, getting to the door): the metrics already exclude
       // the tail, so tell the model, or it reads the shorter analysed window as a data gap.
       if (dy.tailTrimmedMin) {
-        lines.push(`- Last ${dy.tailTrimmedMin} min EXCLUDED from every metric below (the run usually ends in a walk: dog / getting to the door). Don't analyse or comment on the final ${dy.tailTrimmedMin} min.`);
+        const why = dy.tailTrimBasis === "fixed" ? "no speed/cadence to find the walk, so the whole window was cut" : "closing walk detected from speed/cadence";
+        lines.push(`- Last ${dy.tailTrimmedMin} min EXCLUDED from every metric below (${why}: the run usually ends in a walk, dog / getting to the door). Don't analyse or comment on the final ${dy.tailTrimmedMin} min.`);
       }
       lines.push(
         `- Aerobic decoupling ${fmt(dy.decouplingPct, 1)}% (>5% = aerobic fade in the second half)`,
