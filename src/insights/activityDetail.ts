@@ -42,11 +42,25 @@ export interface DriftMetricRead {
   /** How many sessions the fitted trend rests on — the weight to give this read. */
   trendN: number | null;
   pctLossAtAnchors: Array<{ anchor: string; pct: number }>;
+  /** AIE's own conclusion for this metric (MCP v1.3.0+). null = too few efforts to judge: "no read", NOT
+   *  "typical". Absent (undefined) = an older payload that predates verdicts. Read this, not `meanResidual`'s
+   *  sign: the residual's sign is inverted for DFA-α1. */
+  verdict?: DurabilityVerdict | null;
+}
+
+export type DurabilityVerdict = "more_durable" | "less_durable" | "typical" | "mixed";
+
+/** AIE's overall verdict across the metrics that have one, plus the counts behind it. */
+export interface OverallVerdict {
+  verdict: DurabilityVerdict;
+  moreDurable: number | null;
+  lessDurable: number | null;
+  counted: number | null;
 }
 
 export interface ActivityDurability {
   within: WithinFamilyRead[];
-  drift: { axis: string | null; metrics: DriftMetricRead[] } | null;
+  drift: { axis: string | null; metrics: DriftMetricRead[]; overall: OverallVerdict | null } | null;
   /** % of recent best at the headline curve anchors (from the same Detail payload). */
   recentBest: Array<{ anchor: string; pct: number }>;
   referenceDays: number | null;
@@ -65,6 +79,24 @@ function str(x: unknown): string | null {
 }
 function obj(x: unknown): Record<string, unknown> | null {
   return x !== null && typeof x === "object" && !Array.isArray(x) ? (x as Record<string, unknown>) : null;
+}
+
+const VERDICTS = new Set<DurabilityVerdict>(["more_durable", "less_durable", "typical", "mixed"]);
+function verdictOf(x: unknown): DurabilityVerdict | null {
+  return typeof x === "string" && VERDICTS.has(x as DurabilityVerdict) ? (x as DurabilityVerdict) : null;
+}
+
+/**
+ * AIE's `overall` verdict. The docs say "an `overall` verdict plus the counts behind it (`more_durable`,
+ * `less_durable`, `counted`)" without an example, so accept both shapes: a string with the counts beside it
+ * (on the drift object or under `counts`), or an object carrying the verdict and counts. Absent → null.
+ */
+function mapOverall(dd: Record<string, unknown>): OverallVerdict | null {
+  const o = obj(dd.overall);
+  const verdict = verdictOf(dd.overall) ?? (o ? verdictOf(o.verdict) ?? verdictOf(o.label) ?? verdictOf(o.value) : null);
+  if (!verdict) return null;
+  const src = o ?? obj(dd.counts) ?? dd;
+  return { verdict, moreDurable: num(src.more_durable), lessDurable: num(src.less_durable), counted: num(src.counted) };
 }
 
 function mapFadeSeries(fs: Record<string, unknown>): FadeWindowRead[] {
@@ -107,6 +139,7 @@ function mapDriftMetric(metric: string, node: Record<string, unknown>): DriftMet
     below: band ? num(band.below) : null,
     trendN: num(node.trend_ride_count) ?? num(node.trend_run_count) ?? num(node.trend_activity_count) ?? num(node.trend_count),
     pctLossAtAnchors: anchors,
+    ...("verdict" in node ? { verdict: verdictOf(node.verdict) } : {}),
   };
 }
 
@@ -144,7 +177,7 @@ export function mapActivityDurability(raw: unknown): ActivityDurability | null {
     const metrics = Object.entries(obj(dd.metrics) ?? {})
       .map(([k, v]) => (obj(v) ? mapDriftMetric(k, obj(v)!) : null))
       .filter((m): m is DriftMetricRead => m != null);
-    if (metrics.length) drift = { axis: str(dd.axis), metrics };
+    if (metrics.length) drift = { axis: str(dd.axis), metrics, overall: mapOverall(dd) };
   }
 
   const recentBest: Array<{ anchor: string; pct: number }> = [];
@@ -164,6 +197,11 @@ export function mapActivityDurability(raw: unknown): ActivityDurability | null {
   };
 }
 
+/** "more_durable" → "more durable". */
+export function verdictText(v: DurabilityVerdict): string {
+  return v.replace(/_/g, " ");
+}
+
 const r1 = (n: number | null): string => (n == null ? "—" : (Math.round(n * 10) / 10).toString());
 
 /** Context lines for the session-readout LLM — labelled MODEL, both measurements kept distinct. */
@@ -177,12 +215,21 @@ export function durabilityContextLines(d: ActivityDurability): string[] {
     lines.push(`- Within-session fade (mechanical, vs THIS session's own fresh state): ${fams.join("; ")}`);
   }
   if (d.drift) {
+    const o = d.drift.overall;
+    if (o) {
+      const counts = o.counted != null ? ` (${o.moreDurable ?? 0} more durable / ${o.lessDurable ?? 0} less durable of ${o.counted} metrics with a read)` : "";
+      lines.push(`- AIE's OVERALL durability verdict vs your own trend: ${verdictText(o.verdict)}${counts}. Lead with this; don't re-derive a direction from the residuals.`);
+    }
     const ms = d.drift.metrics.map((m) => {
       const band = m.bandLabel ? `${m.bandLabel}${m.inBand != null ? ` (${m.inBand} in / ${m.above ?? 0} above / ${m.below ?? 0} below band)` : ""}` : "band —";
       const loss = m.pctLossAtAnchors.length ? `, trend loses ${m.pctLossAtAnchors.map((a) => `${r1(a.pct)}% by ${a.anchor}${d.drift!.axis ?? ""}`).join(" / ")}` : "";
-      return `${m.metric}: residual ${r1(m.meanResidual)} vs your ${m.trendN ?? "?"}-session trend, ${band}${loss}`;
+      const v = m.verdict ? `verdict ${verdictText(m.verdict)}; ` : m.verdict === null ? "verdict: no read (too few efforts); " : "";
+      return `${m.metric}: ${v}residual ${r1(m.meanResidual)} vs your ${m.trendN ?? "?"}-session trend, ${band}${loss}`;
     });
-    lines.push(`- Internal drift vs your own fitted trend (needs clean R-R — weight by trend size): ${ms.join("; ")}`);
+    const signNote = d.drift.metrics.some((m) => m.verdict !== undefined)
+      ? "; the residual's SIGN is inverted for a1, so trust the verdict, not the sign"
+      : "; the residual's SIGN is inverted for a1 (higher a1 = less fatigue)";
+    lines.push(`- Internal drift vs your own fitted trend (needs clean R-R — weight by trend size${signNote}): ${ms.join("; ")}`);
   } else {
     lines.push(`- Internal drift vs trend: not computed for this session (needs clean R-R + enough trend history) — normal, not a data gap.`);
   }
@@ -201,7 +248,10 @@ export function durabilityCardLine(d: ActivityDurability): string {
     const w = f.windows[0];
     if (w?.fadePctTotal != null) bits.push(`${f.metric} fade ${r1(w.fadePctTotal)}% (${w.window})`);
   }
-  if (d.drift) {
+  if (d.drift?.overall) {
+    bits.push(`durability vs your trend: ${verdictText(d.drift.overall.verdict)}`);
+  } else if (d.drift) {
+    // Older AIE payloads (pre-v1.3.0) carry no verdict: fall back to the band labels.
     const ms = d.drift.metrics.filter((m) => m.bandLabel).map((m) => `${m.metric} ${String(m.bandLabel).replace(/_/g, " ")}`);
     if (ms.length) bits.push(`drift vs trend: ${ms.join(", ")}`);
   }

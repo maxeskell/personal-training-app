@@ -180,3 +180,14 @@ Mac probe against it:
 Green gate; fixture-driven unit test on any new mapping; dashboard text stays honest (estimates labelled,
 missing data "—"); README + this spec updated with the measured post-update coverage; no write-path or
 gate changes anywhere in this work.
+
+## Update 2026-10-24 — AIE MCP v1.3.0 verdicts adopted
+
+AIE v1.3.0 (2026-08-26) added a per-metric `verdict` (`more_durable` / `less_durable` / `typical` / `mixed`;
+`null` = too few efforts, "no read") to each `durability_drift` metric, and an `overall` verdict with the counts
+behind it (`more_durable`, `less_durable`, `counted`). AIE's docs say to read those rather than derive a
+direction from `mean_residual_vs_trend`, whose sign is inverted for DFA-α1. `activityDetail.ts` now maps both
+(the `overall` shape is undocumented by example, so a string-with-sibling-counts and an object are both
+accepted), the session context leads with the overall verdict, the Last-session card shows it, and a payload
+that predates verdicts says nothing about them (absent ≠ null). Fixture-tested.
+
