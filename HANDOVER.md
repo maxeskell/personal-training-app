@@ -171,7 +171,7 @@ All in `.env` (see `.env.example` for the full, commented set). The ones you wil
 | `COACH_AUTOSYNC_MIN` | `30` | Stale-snapshot auto-sync threshold; `0` disables |
 | `COACH_EQUIPMENT` / `COACH_UNITS` | this athlete's kit / `metric, UK` | The only athlete identity AI Endurance doesn't expose |
 | `COACH_SECRETS_DIR` / `COACH_DATA_DIR` | `~/.endurance-coach` / `./data` | Where tokens / daily state live |
-| `COACH_PRICE_*` | published Opus rates | Cost-log pricing only (never sent anywhere) |
+| `COACH_PRICE_*` | published Opus 5.5 rates ($4/$20, cache $5/$0.20) | Cost-log pricing only (never sent anywhere); older-Opus fallbacks are priced at their own rates |
 
 ---
 
@@ -291,6 +291,13 @@ fire-only health check), `npm run backfill:install` (history grind).
   one back to `absent()`. The decision log holds its own lock for the confirm critical section.
 - **Demo / no-account mode shipped.** `npm run demo` renders the dashboard on bundled sample data with
   no account or API key, so a stranger can evaluate the app. The live flows still need real accounts.
+- **LLM core moved to `claude-opus-5-5` (2026-10-24).** $4/$20 per MTok vs Opus 5's $5/$25 (cache reads
+  $0.20). None of its breaking changes apply: thinking is never disabled, tool_choice is never forced, and
+  effort is set explicitly per flow (5.5's API default is `medium`). 5.5 thinks more per turn at the same
+  effort, so `max_tokens` went up (structured 4k→16k, research 8k→16k, prose 12k→32k; billed on use, not cap).
+  Calls go through `client.beta.messages` with the server-side refusal fallback (`fallbacks: "default"`), and
+  the cost log prices each call by the model that actually served it. The Haiku intent router stays on
+  `claude-haiku-4-5`: Haiku 5.5 has thinking on by default, which would break the router's 8-token replies.
 - **`npm audit` is clean** (0 vulnerabilities as of the 2026-08-24 upgrade pass). The 2026-08-13 pass took the LLM
   core to **`claude-opus-5`** (drop-in for Opus 4.8 at the same $5/$25 pricing — no pricing-table change; we
   already use adaptive thinking + effort, so neither Opus-5 breaking change applies), bumped

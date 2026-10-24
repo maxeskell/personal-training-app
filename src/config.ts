@@ -103,7 +103,7 @@ export const config = {
     },
   },
 
-  /** The coach's reasoning core (Anthropic / claude-opus-5 — see src/llm/client.ts). */
+  /** The coach's reasoning core (Anthropic / claude-opus-5-5 — see src/llm/client.ts). */
   coachLlm: {
     /** Wall-clock cap (ms) on an INTERACTIVE coach LLM call (readiness/ask/tune/…) so a hung request can't
      *  stall a flow (the Anthropic SDK already retries 429/5xx within this). Generous default. */
@@ -172,15 +172,26 @@ export const config = {
   },
 
   /**
-   * Anthropic pricing ($ per million tokens) for local cost accounting — claude-opus-5 ($5/$25, same as
-   * Opus 4.8). cacheWrite is the 5-minute-TTL rate (1.25× input); cacheRead is 0.1× input. Override via env
-   * if the published rates change. Used only for the cost log / `cost` report — never sent anywhere.
+   * Anthropic pricing ($ per million tokens) for local cost accounting — claude-opus-5-5 ($4/$20).
+   * cacheWrite is the 5-minute-TTL rate (1.25× input); cacheRead is $0.20 (5% of input on 5.5). Override via
+   * env if the published rates change. Used only for the cost log / `cost` report — never sent anywhere.
    */
   pricing: {
-    inputPerMTok: Number(process.env.COACH_PRICE_INPUT ?? 5),
-    outputPerMTok: Number(process.env.COACH_PRICE_OUTPUT ?? 25),
-    cacheWritePerMTok: Number(process.env.COACH_PRICE_CACHE_WRITE ?? 6.25),
-    cacheReadPerMTok: Number(process.env.COACH_PRICE_CACHE_READ ?? 0.5),
+    inputPerMTok: Number(process.env.COACH_PRICE_INPUT ?? 4),
+    outputPerMTok: Number(process.env.COACH_PRICE_OUTPUT ?? 20),
+    cacheWritePerMTok: Number(process.env.COACH_PRICE_CACHE_WRITE ?? 5),
+    cacheReadPerMTok: Number(process.env.COACH_PRICE_CACHE_READ ?? 0.2),
+  },
+
+  /**
+   * Prior-generation Opus rates (claude-opus-5 / 4.x: $5/$25, cache write $6.25, read $0.50). Used when a
+   * call was served by one of those models — a refusal fallback, or an older row being re-priced in tests.
+   */
+  pricingOpusLegacy: {
+    inputPerMTok: 5,
+    outputPerMTok: 25,
+    cacheWritePerMTok: 6.25,
+    cacheReadPerMTok: 0.5,
   },
 
   /**

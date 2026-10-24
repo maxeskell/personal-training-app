@@ -2,11 +2,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { costUsd, summarizeCost, isLocalModel, type CostRecord } from "../src/llm/costLog.js";
 
-test("costUsd: prices each token bucket at the configured rate (5/25/6.25/0.5 per MTok)", () => {
-  assert.equal(costUsd({ input: 200_000, output: 100_000, cacheWrite: 0, cacheRead: 0 }), 3.5); // 1.0 + 2.5
-  assert.equal(costUsd({ input: 0, output: 0, cacheWrite: 0, cacheRead: 1_000_000 }), 0.5);
-  assert.equal(costUsd({ input: 0, output: 0, cacheWrite: 1_000_000, cacheRead: 0 }), 6.25);
+test("costUsd: prices each token bucket at the configured Opus 5.5 rate (4/20/5/0.2 per MTok)", () => {
+  assert.equal(costUsd({ input: 200_000, output: 100_000, cacheWrite: 0, cacheRead: 0 }), 2.8); // 0.8 + 2.0
+  assert.equal(costUsd({ input: 0, output: 0, cacheWrite: 0, cacheRead: 1_000_000 }), 0.2);
+  assert.equal(costUsd({ input: 0, output: 0, cacheWrite: 1_000_000, cacheRead: 0 }), 5);
   assert.equal(costUsd({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }), 0);
+});
+
+test("costUsd: a call served by prior-generation Opus (e.g. a refusal fallback) is billed at its own rate", () => {
+  const u = { input: 1_000_000, output: 1_000_000, cacheWrite: 0, cacheRead: 1_000_000 };
+  assert.equal(costUsd(u, "claude-opus-5-5"), 24.2); // 4 + 20 + 0.2
+  assert.equal(costUsd(u, "claude-opus-5"), 30.5); // 5 + 25 + 0.5
+  assert.equal(costUsd(u, "claude-opus-4-8"), 30.5);
 });
 
 function rec(operation: string, ageDays: number, cost: number): CostRecord {
