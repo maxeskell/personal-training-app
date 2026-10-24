@@ -90,6 +90,7 @@
     "backfill:status": "tsx src/cli.ts archive-status",
     "pedalling": "tsx src/cli.ts pedalling",
     "efficiency": "tsx src/cli.ts efficiency",
+    "garmin:auth": "tsx src/cli.ts garmin-auth",
     "backfill:compact": "tsx src/cli.ts archive-compact",
     "backfill:install": "bash scripts/install-backfill.sh",
     "backfill:uninstall": "bash scripts/uninstall-backfill.sh",

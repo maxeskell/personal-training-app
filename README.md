@@ -126,7 +126,7 @@ and decisions that travels with the repo.
   backfill warns when the AI Endurance archive falls behind.
 
 Garmin is **optional** — leave `GARMIN_ENABLED=false` and the coach runs on AI Endurance alone.
-To enable it, run the one-time `garmin-mcp-auth` (see `.env.example`) then set `GARMIN_ENABLED=true`.
+To enable it, run the one-time `npm run garmin:auth` (Garmin's `garmin-mcp-auth`, on the app's pinned version) then set `GARMIN_ENABLED=true`.
 
 Layout: `src/mcp/` (AIE OAuth client + Garmin stdio client), `src/state/` (AthleteState, store,
 baselines, sync-gaps), `knowledge/sports-science.md` (priors for the M3 LLM layer).

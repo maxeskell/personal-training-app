@@ -82,6 +82,23 @@ export function isMultisportType(type: string): boolean {
 }
 // get_activity_weather reports temperature in °F mislabelled as °C (e.g. 63 ≈ 17°C) — correct values >45.
 const toC = (t: number | undefined): number | undefined => (t == null ? undefined : t > 45 ? +(((t - 32) * 5) / 9).toFixed(1) : t);
+const fToC = (t: number) => +(((t - 32) * 5) / 9).toFixed(1);
+
+/**
+ * Ambient °C from a get_activity_weather payload, across garmin_mcp versions. Up to d31de79 the field was
+ * `temperature_celsius` but actually held °F (corrected by the >45 heuristic). From 2026-10 builds it's
+ * `temperature` plus `temperature_unit` ("C" / "F" / null when the account unit couldn't be read): trust the
+ * unit when given, else fall back to the heuristic. Pure — exported for tests.
+ */
+export function weatherTempC(w: Record<string, unknown> | null | undefined): number | undefined {
+  if (!w) return undefined;
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+  const legacy = n(w.temperature_celsius);
+  if (legacy != null) return toC(legacy);
+  const t = n(w.temperature);
+  if (t == null) return undefined;
+  return w.temperature_unit === "C" ? t : w.temperature_unit === "F" ? fToC(t) : toC(t);
+}
 
 export interface FitSyncResult {
   total: number; // candidate activities seen
@@ -171,7 +188,7 @@ export async function syncFitSummaries(g: GarminClient, store: ArchiveStore, lim
       hrCoolThirdBpm: num(ts.avg_hr_coolest_third_bpm),
       hrHotThirdBpm: num(ts.avg_hr_hottest_third_bpm),
       trainingEffect: num(sess.total_training_effect),
-      weatherTempC: toC(num(weather?.temperature_celsius)),
+      weatherTempC: weatherTempC(weather),
       humidityPct: num(weather?.humidity_percent),
     };
     buffer.push(sum);

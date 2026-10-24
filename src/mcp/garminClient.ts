@@ -101,7 +101,7 @@ export class GarminClient {
     // The ~6-month token expiry / MFA re-auth is the predictable failure — make it actionable.
     const looksLikeAuth = /401|403|unauthor|forbidden|login|token|expired|mfa|authenticate/i.test(raw);
     const hint = looksLikeAuth
-      ? " — token likely expired; re-run: uvx --python 3.12 --from git+https://github.com/Taxuspt/garmin_mcp garmin-mcp-auth"
+      ? " — token likely expired; re-run: npm run garmin:auth"
       : "";
     console.warn(`[garmin] ${op} failed — degrading to AI Endurance only: ${msg}${hint}`);
   }

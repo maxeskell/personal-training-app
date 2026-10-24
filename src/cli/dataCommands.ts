@@ -133,7 +133,7 @@ export async function cmdProbe(): Promise<void> {
       out.garminSamples = samples;
       await g.close();
     } else {
-      console.log("Garmin enabled but unavailable — run garmin-mcp-auth and retry.");
+      console.log("Garmin enabled but unavailable — run `npm run garmin:auth` and retry.");
     }
   }
 
@@ -219,14 +219,14 @@ export async function cmdProbe(): Promise<void> {
  */
 export async function cmdFitSync(): Promise<void> {
   if (!config.garmin.enabled) {
-    console.error("\nGarmin is disabled. Set GARMIN_ENABLED=true (and run garmin-mcp-auth) to sync.\n");
+    console.error("\nGarmin is disabled. Set GARMIN_ENABLED=true (and run `npm run garmin:auth`) to sync.\n");
     process.exit(1);
   }
   const limit = Number(process.argv[3]) || 25;
   const store = new ArchiveStore();
   const g = new GarminClient();
   if (!(await g.connect())) {
-    console.error("\nGarmin unavailable — run garmin-mcp-auth and retry.\n");
+    console.error("\nGarmin unavailable — run `npm run garmin:auth` and retry.\n");
     process.exit(1);
   }
   try {
@@ -275,7 +275,7 @@ export async function cmdActivityArchiveImport(): Promise<void> {
  */
 export async function cmdActivityArchiveBackfill(): Promise<void> {
   if (!config.garmin.enabled) {
-    console.error("\nGarmin is disabled. Set GARMIN_ENABLED=true (and run garmin-mcp-auth) to backfill.\n");
+    console.error("\nGarmin is disabled. Set GARMIN_ENABLED=true (and run `npm run garmin:auth`) to backfill.\n");
     process.exit(1);
   }
   const args = process.argv.slice(3);
@@ -285,7 +285,7 @@ export async function cmdActivityArchiveBackfill(): Promise<void> {
   const store = new ArchiveStore();
   const g = new GarminClient();
   if (!(await g.connect())) {
-    console.error("\nGarmin unavailable — run garmin-mcp-auth and retry.\n");
+    console.error("\nGarmin unavailable — run `npm run garmin:auth` and retry.\n");
     process.exit(1);
   }
   try {
@@ -314,7 +314,7 @@ export async function cmdActivityArchiveBackfill(): Promise<void> {
  */
 export async function cmdActivityArchiveHeal(): Promise<void> {
   if (!config.garmin.enabled) {
-    console.error("\nGarmin is disabled. Set GARMIN_ENABLED=true (and run garmin-mcp-auth) to auto-heal the archive.\n");
+    console.error("\nGarmin is disabled. Set GARMIN_ENABLED=true (and run `npm run garmin:auth`) to auto-heal the archive.\n");
     process.exit(1);
   }
   const args = process.argv.slice(3);
@@ -324,7 +324,7 @@ export async function cmdActivityArchiveHeal(): Promise<void> {
   const store = new ArchiveStore();
   const g = new GarminClient();
   if (!(await g.connect())) {
-    console.error("\nGarmin unavailable — run garmin-mcp-auth and retry.\n");
+    console.error("\nGarmin unavailable — run `npm run garmin:auth` and retry.\n");
     process.exit(1);
   }
   try {
@@ -489,5 +489,25 @@ export async function cmdEfficiency(): Promise<void> {
     build,
   });
   console.log("\n" + formatPerformanceReport(report).join("\n"));
+}
+
+/**
+ * `garmin-auth` — the one-time (and ~6-monthly) Garmin login, run with exactly the uvx args the app uses
+ * for the server (same garmin_mcp pin, mcp<2, and the garminconnect override that fixes the 429 login),
+ * so login and server can't drift onto different versions. Interactive: email, password, MFA code.
+ */
+export async function cmdGarminAuth(): Promise<void> {
+  const { spawnSync } = await import("node:child_process");
+  const { garminAuthArgs } = await import("../config.js");
+  const args = garminAuthArgs(config.garmin.args);
+  console.log(`\nGarmin login via: ${config.garmin.command} ${args.join(" ")}\n`);
+  const r = spawnSync(config.garmin.command, args, { stdio: "inherit" });
+  if (r.error) {
+    console.error(`\nCouldn't start ${config.garmin.command}: ${r.error.message}. Install uv (https://docs.astral.sh/uv/) and retry.`);
+    process.exitCode = 1;
+    return;
+  }
+  process.exitCode = r.status ?? 1;
+  if (r.status === 0) console.log("\nDone. Tokens saved to ~/.garminconnect. Set GARMIN_ENABLED=true, then check with `npm run doctor`.");
 }
 
