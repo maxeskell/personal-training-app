@@ -27,6 +27,12 @@
       ~10 Laverack rides have built up); (4) controlled test if dates coincide with the pedal change (20 min
       each at 3 steady powers). Standing signal for the fitter: left PCO −5 to −12 mm inboard every month since
       2022 vs right ≈0 to +5 mm.
+      **24 Oct update (Laverack-only, `--bike laverack`):** only 29 of 893 rides carry a Garmin Connect bike
+      (Laverack Disc Road 16, Wattbike 12, Felt 1), all from Jun 2026, so the shim before/after can't run yet:
+      tag Feb–May 2026 Laverack rides in Garmin Connect, then `npm run archive:gear -- --recheck --from
+      2026-01-01`. Laverack Jun–Oct (15 rides): balance 55→51.5% left, PCO L −5.8 / R +0.9 mm, TE 71.6/67.3.
+      Washer watch: the 2 October rides after it read left PCO −8.3 mm vs −5.2/−5.9 Jul–Sep (further inboard);
+      recheck after 5–10 more Laverack rides. Ask: is the Felt the TT bike?
 - [x] **Creatine flipped to `active` — DONE 9 Sep 2026 (started 3 days later than the 7 Sep plan;
       no loading phase, 3–5 g/day). Profile entry carries `started: 2026-09-09`.**
 - [ ] **Run form — standing cues for every run + brick (from Birmingham race photos, 13 Jul 2026).**

@@ -366,18 +366,21 @@ export function isRideType(type: string | undefined): boolean {
 /**
  * Which bike each ride used, from Garmin Connect gear (get_activity_gear, one call per ride, throttled), into
  * data/archive/activity-gear.jsonl. Resumable: rides already asked are skipped; a failed call is retried next
- * run (never stored as "no gear"). `limit` bounds one run. Newest rides first, so a capped run covers the
+ * run (never stored as "no gear"). `limit` bounds one run; `recheckUntagged` re-asks rides stored as "no gear". Newest rides first, so a capped run covers the
  * recent history the shim/cleat questions care about.
  */
 export async function backfillActivityGear(
   garmin: GarminClient,
   store: ArchiveStore,
   log: (m: string) => void,
-  opts: { limit?: number; throttleMs?: number } = {},
+  opts: { limit?: number; throttleMs?: number; recheckUntagged?: boolean; from?: string; to?: string } = {},
 ): Promise<{ asked: number; withGear: number; pending: number }> {
   const known = await store.loadActivityGear();
+  // `recheckUntagged`: also re-ask rides stored as "no bike" — for when bikes were assigned in Garmin Connect
+  // after the first pass. `from`/`to` bound the rides considered (YYYY-MM-DD).
   const rides = (await store.loadGarminActivities())
-    .filter((a) => isRideType(a.type) && !known.has(a.id))
+    .filter((a) => isRideType(a.type) && (!known.has(a.id) || (opts.recheckUntagged && known.get(a.id) == null)))
+    .filter((a) => (!opts.from || a.date >= opts.from) && (!opts.to || a.date <= opts.to))
     .sort((a, b) => b.date.localeCompare(a.date));
   const todo = opts.limit != null ? rides.slice(0, opts.limit) : rides;
   let asked = 0;
