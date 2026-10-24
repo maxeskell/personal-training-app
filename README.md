@@ -473,7 +473,7 @@ moved between bikes) are ignored. The report says how many rides were tagged, in
 lists sensor groups no tagged bike shares, so tagging ONE such ride and re-running `archive:gear -- --recheck`
 labels them all.
 
-**Efficiency & performance page** (`/efficiency`, linked from the Performance tab; also `npm run efficiency`
+**Efficiency & performance page** (`/efficiency`, its own **Efficiency** tab in the top nav; also `npm run efficiency`
 and the `efficiency` MCP tool). Built from every ride and run in the activity archive + fit-streams:
 
 - **Power / pace at a fixed heart rate**: each session's steady minutes give an output-vs-HR line, read at a

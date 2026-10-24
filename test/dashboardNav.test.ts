@@ -124,3 +124,11 @@ test("standalone /career + /season pages now carry the shared nav, highlighting 
   assert.match(season, /<nav class="nav">/);
   assert.match(season, /class="nav-link on" href="\/#plan" data-tab="plan"/);
 });
+
+test("Efficiency is its own nav tab: a real link to /efficiency (not an in-page hash), highlighted on that page", async () => {
+  const { renderNav } = await import("../src/coach/shell.js");
+  const { renderEfficiencyPage } = await import("../src/coach/efficiencyPage.js");
+  assert.match(renderNav(null, { home: "" }), /class="nav-link" href="\/efficiency" data-tab="efficiency">Efficiency</);
+  assert.match(renderNav(null, { home: "", share: true }), /href="\/efficiency\?share=1"/, "share view carries through");
+  assert.match(renderEfficiencyPage(null), /class="nav-link on" href="\/efficiency" data-tab="efficiency"/);
+});

@@ -1797,12 +1797,10 @@ async function confirmWaterTemp(btn){var box=btn.closest('.watertemp');var s=box
 </section>
 
 <section id="tab-performance" class="tab">
-<p class="tab-intro">Your numbers — form &amp; load, your zones &amp; capacity, race readiness, then career history &amp; PBs.</p>
+<p class="tab-intro">Your numbers — form &amp; load, your zones &amp; capacity, race readiness, then career history &amp; PBs. Efficiency &amp; performance trends have their own tab.</p>
 ${perfFormLoad ? `<div class="section-rule-label">Form &amp; load</div>${perfFormLoad}` : ""}
 ${perfZones ? `<hr class="section-rule"><div class="section-rule-label">Zones &amp; capacity</div>${perfZones}` : ""}
 ${perfRace ? `<hr class="section-rule"><div class="section-rule-label">Race readiness</div>${perfRace}` : ""}
-<hr class="section-rule"><div class="section-rule-label">Efficiency &amp; performance</div>
-<div class="card"><a href="/efficiency${share ? "?share=1" : ""}"><b>Efficiency &amp; performance →</b></a><div class="sub" style="margin:4px 0 0">Power and pace at a fixed heart rate, critical power, durability and your aerobic threshold from beat-to-beat HR, each with its confidence and how to raise it.</div></div>
 ${career ? `<hr class="section-rule"><div class="section-rule-label">Career &amp; PBs</div>${renderCareerInner(career, share)}` : ""}
 </section>
 <footer style="margin:24px 0 8px;padding:0;color:#aaa;font-size:12px;line-height:1.5">
