@@ -25,6 +25,8 @@ import { activityArchiveDir, loadManifest } from "../archive/activityArchive.js"
 export interface PedallingRide {
   /** Garmin activity id when the file name carries one (joins to Garmin Connect gear = which bike). */
   activityId?: string;
+  /** Bike-identifying sensors paired on this ride ("<ANT+ type>:<id>"), for inferring untagged rides' bike. */
+  sensors?: string[];
   date: string; // YYYY-MM-DD
   startTimeS: number | null; // dedups the same ride found in both the archive and fit-streams
   source: "archive" | "streams";
@@ -50,7 +52,7 @@ export interface PedallingRide {
 }
 
 /** Bump when the per-ride rows change so cached rows are re-parsed (2: single-sided 0s are "no data"). */
-export const PEDALLING_ENGINE_VERSION = 3; // 3: rows carry activityId (per-bike filtering)
+export const PEDALLING_ENGINE_VERSION = 4; // 3: rows carry activityId; 4: + bike-identifying sensors
 
 interface CacheFile {
   version: number;
@@ -66,7 +68,7 @@ const diff = (a: number | null | undefined, b: number | null | undefined) => (a 
 /** Flatten one ride's analysis into a history row. Pure. */
 export function toPedallingRide(
   p: PedallingAnalysis,
-  meta: { activityId?: string; date: string; startTimeS: number | null; source: PedallingRide["source"]; indoor: boolean; avgPowerW: number | null },
+  meta: { activityId?: string; sensors?: string[]; date: string; startTimeS: number | null; source: PedallingRide["source"]; indoor: boolean; avgPowerW: number | null },
 ): PedallingRide {
   const q = p.balanceByQuarter;
   return {
@@ -89,8 +91,26 @@ export function toPedallingRide(
 }
 
 /** Ride legs of a parsed file (a multisport race file yields its bike leg) → history rows. */
+/**
+ * ANT+ device types that belong to a BIKE rather than the rider: power (11), fitness equipment / smart
+ * trainer (17), e-bike (20), electronic shifting (34), lights (35/36), radar (40), aero sensor (46) and
+ * speed/cadence (121–123). Heart-rate straps, footpods and the like travel with the rider, so they're left out.
+ */
+const BIKE_SENSOR_TYPES = new Set([11, 17, 20, 34, 35, 36, 40, 46, 121, 122, 123]);
+
+/** A ride file's bike-identifying sensors as sorted "<type>:<id>" keys. Pure — exported for tests. */
+export function bikeSensors(act: Pick<FitActivity, "devices">): string[] {
+  const keys = new Set<string>();
+  for (const d of act.devices ?? []) {
+    const id = d.antId ?? d.serial;
+    if (d.deviceType != null && BIKE_SENSOR_TYPES.has(d.deviceType) && id != null && id !== 0) keys.add(`${d.deviceType}:${id}`);
+  }
+  return [...keys].sort();
+}
+
 export function ridesFromFit(act: FitActivity, source: PedallingRide["source"], activityId?: string): PedallingRide[] {
   const out: PedallingRide[] = [];
+  const sensors = bikeSensors(act);
   for (const leg of expandMultisportFit(act)) {
     if (!/ride/i.test(leg.sportName)) continue;
     const p = analysePedalling(leg.samples);
@@ -100,6 +120,7 @@ export function ridesFromFit(act: FitActivity, source: PedallingRide["source"], 
     out.push(
       toPedallingRide(p, {
         ...(activityId ? { activityId } : {}),
+        ...(sensors.length ? { sensors } : {}),
         date: startTimeS != null ? new Date(startTimeS * 1000).toISOString().slice(0, 10) : "",
         startTimeS,
         source,
@@ -253,6 +274,88 @@ function period(label: string, rs: PedallingRide[]): PedallingPeriod {
 /** Rides shorter than this are too noisy to read mechanics from (a spin-up, a commute). */
 export const MIN_RIDE_MIN = 20;
 
+export interface BikeInference {
+  /** activityId (or row index, for rows without one) → bike, with how it was decided. */
+  bikeOf: (r: PedallingRide) => { bike: string; how: "tagged" | "inferred" | "unknown" };
+  /** Sensor groups seen on untagged rides that no tagged ride shares: a bike nobody has named yet. */
+  unlabelled: Array<{ sensors: string; rides: number; from: string; to: string }>;
+}
+
+/** Purity a sensor needs to vote (share of its tagged rides on one bike), and the vote share to call a ride. */
+const INFER_MIN_SHARE = 0.8;
+const INFER_MIN_PURITY = 0.9;
+
+/**
+ * Infer untagged rides' bike from the sensors they paired, learning each sensor's bike from the rides that
+ * ARE tagged in Garmin Connect. Only decisive sensors vote: ones ≥90% tied to one bike (a speed sensor, a
+ * groupset, a radar). Sensors shared across bikes (power pedals swapped between bikes) are ignored. A ride is
+ * called when ≥80% of its decisive sensors agree; otherwise it stays unknown. Tagged rides always keep their
+ * tag. Pure — exported for tests.
+ */
+export function inferBikes(rides: PedallingRide[], gearById?: Map<string, string | null>): BikeInference {
+  const tagOf = (r: PedallingRide) => (r.activityId ? gearById?.get(r.activityId) ?? null : null);
+  const counts = new Map<string, Map<string, number>>(); // sensor → bike → rides
+  for (const r of rides) {
+    const bike = tagOf(r);
+    if (!bike) continue;
+    for (const s of r.sensors ?? []) {
+      const m = counts.get(s) ?? new Map<string, number>();
+      m.set(bike, (m.get(bike) ?? 0) + 1);
+      counts.set(s, m);
+    }
+  }
+  const cache = new Map<PedallingRide, { bike: string; how: "tagged" | "inferred" | "unknown" }>();
+  const decide = (r: PedallingRide): { bike: string; how: "tagged" | "inferred" | "unknown" } => {
+    const tag = tagOf(r);
+    if (tag) return { bike: tag, how: "tagged" };
+    // Only DECISIVE sensors vote: ones ≥90% tied to a single bike in the tagged rides. Shared sensors (power
+    // pedals moved between bikes) carry no information about which bike this was, so they're ignored.
+    const votes = new Map<string, number>();
+    for (const s of r.sensors ?? []) {
+      const m = counts.get(s);
+      if (!m) continue;
+      const total = [...m.values()].reduce((a, b) => a + b, 0);
+      const [bike, n] = [...m.entries()].sort((a, b) => b[1] - a[1])[0];
+      if (n / total >= INFER_MIN_PURITY) votes.set(bike, (votes.get(bike) ?? 0) + 1);
+    }
+    const sum = [...votes.values()].reduce((a, b) => a + b, 0);
+    const best = [...votes.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (best && best[1] / sum >= INFER_MIN_SHARE) return { bike: best[0], how: "inferred" };
+    return { bike: "unassigned", how: "unknown" };
+  };
+  const bikeOf = (r: PedallingRide) => {
+    let v = cache.get(r);
+    if (!v) cache.set(r, (v = decide(r)));
+    return v;
+  };
+  const groups = new Map<string, { rides: number; from: string; to: string }>();
+  for (const r of rides) {
+    if (bikeOf(r).how !== "unknown") continue;
+    const unseen = (r.sensors ?? []).filter((s) => !counts.has(s));
+    if (!unseen.length) continue;
+    const key = unseen.join(" + ");
+    const g = groups.get(key) ?? { rides: 0, from: r.date, to: r.date };
+    g.rides++;
+    if (r.date < g.from) g.from = r.date;
+    if (r.date > g.to) g.to = r.date;
+    groups.set(key, g);
+  }
+  const unlabelled = [...groups.entries()].map(([sensors, g]) => ({ sensors, ...g })).sort((a, b) => b.rides - a.rides);
+  return { bikeOf, unlabelled };
+}
+
+/** ANT+ device-type names for the unlabelled-sensor hint. */
+const SENSOR_NAMES: Record<string, string> = { "11": "power", "17": "trainer", "20": "e-bike", "34": "shifting", "35": "light", "36": "light", "40": "radar", "46": "aero", "121": "speed/cad", "122": "cadence", "123": "speed" };
+export function describeSensors(keys: string): string {
+  return keys
+    .split(" + ")
+    .map((k) => {
+      const [t, id] = k.split(":");
+      return `${SENSOR_NAMES[t] ?? `type ${t}`} #${id}`;
+    })
+    .join(" + ");
+}
+
 /**
  * Month-by-month medians (median, not mean: one odd ride or a sensor glitch can't move a month), plus
  * indoor vs outdoor (different power sources can read differently) and an optional before/after split
@@ -280,8 +383,11 @@ export function summarisePedallingHistory(
   total: number;
   bikeFilter?: string;
   gearKnown: boolean;
+  bikeSources: { tagged: number; inferred: number; unknown: number };
+  unlabelled: BikeInference["unlabelled"];
 } {
-  const bikeOf = (r: PedallingRide) => (r.activityId ? opts.gearById?.get(r.activityId) : undefined) ?? "unassigned";
+  const inf = inferBikes(rides, opts.gearById);
+  const bikeOf = (r: PedallingRide) => inf.bikeOf(r).bike;
   const rs = rides.filter(
     (r) =>
       r.pedallingMin >= MIN_RIDE_MIN &&
@@ -302,6 +408,12 @@ export function summarisePedallingHistory(
     byBike: [...new Set(rs.map(bikeOf))].sort().map((b) => period(b.slice(0, 16), rs.filter((r) => bikeOf(r) === b))),
     bikeFilter: opts.bike,
     gearKnown: !!opts.gearById?.size,
+    bikeSources: {
+      tagged: rs.filter((r) => inf.bikeOf(r).how === "tagged").length,
+      inferred: rs.filter((r) => inf.bikeOf(r).how === "inferred").length,
+      unknown: rs.filter((r) => inf.bikeOf(r).how === "unknown").length,
+    },
+    unlabelled: inf.unlabelled,
     ...(opts.splitAt
       ? { before: period(`before ${opts.splitAt}`, rs.filter((r) => r.date < opts.splitAt!)), after: period(`from ${opts.splitAt}`, rs.filter((r) => r.date >= opts.splitAt!)) }
       : {}),
@@ -339,9 +451,16 @@ export function formatPedallingHistory(s: ReturnType<typeof summarisePedallingHi
     row(s.indoor),
     "",
     s.gearKnown
-      ? `  By bike (Garmin Connect gear)${s.bikeFilter ? ` — filtered to "${s.bikeFilter}"` : ""}:`
+      ? `  By bike${s.bikeFilter ? ` — filtered to "${s.bikeFilter}"` : ""}: ${s.bikeSources.tagged} tagged in Garmin Connect, ${s.bikeSources.inferred} inferred from paired sensors (MODEL), ${s.bikeSources.unknown} unknown`
       : "  By bike: unknown — run `npm run archive:gear` once to tag each ride with its Garmin Connect bike, then filter with --bike <name>.",
     ...(s.gearKnown ? s.byBike.map(row) : []),
+    ...(s.gearKnown && s.unlabelled.length
+      ? [
+          "  Sensors on untagged rides that match no tagged bike (tag ONE such ride in Garmin Connect, then",
+          "  `npm run archive:gear -- --recheck`, and every ride with these sensors is inferred):",
+          ...s.unlabelled.slice(0, 5).map((u) => `    ${describeSensors(u.sensors)} — ${u.rides} ride(s), ${u.from} → ${u.to}`),
+        ]
+      : []),
   );
   if (s.before && s.after) out.push("", row(s.before), row(s.after));
   out.push(

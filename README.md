@@ -466,7 +466,12 @@ later runs only parse new rides. Rides under 20 minutes are left out as too nois
 It also breaks the history down **by bike** (Garmin Connect gear) so a road bike, a TT bike and a trainer aren't
 mixed into one trend: tag rides once with `npm run archive:gear` (one call per ride, resumable, newest first;
 assign bikes to rides in Garmin Connect for this to work; after tagging older rides there, re-run with
-`-- --recheck --from YYYY-MM-DD`), then filter with `--bike <name>` (any part of the gear name). New rides are tagged automatically on sync once the tags exist.
+`-- --recheck --from YYYY-MM-DD`), then filter with `--bike <name>` (any part of the gear name). New rides are tagged automatically on sync once the tags exist. **Untagged rides are inferred**
+from the sensors they paired (each file's `device_info`): a speed sensor, groupset or radar that only ever
+appears with one tagged bike labels every other ride that used it, while sensors shared across bikes (pedals
+moved between bikes) are ignored. The report says how many rides were tagged, inferred (MODEL) and unknown, and
+lists sensor groups no tagged bike shares, so tagging ONE such ride and re-running `archive:gear -- --recheck`
+labels them all.
 
 **Efficiency & performance page** (`/efficiency`, linked from the Performance tab; also `npm run efficiency`
 and the `efficiency` MCP tool). Built from every ride and run in the activity archive + fit-streams:

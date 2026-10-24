@@ -8,6 +8,9 @@ import {
   summarisePedallingHistory,
   formatPedallingHistory,
   PEDALLING_ENGINE_VERSION,
+  bikeSensors,
+  inferBikes,
+  describeSensors,
   type PedallingRide,
 } from "../src/insights/pedallingHistory.js";
 
@@ -163,4 +166,39 @@ test("summarisePedallingHistory: per-bike breakdown from Garmin gear, and a --bi
   assert.equal(lav.total, 2);
   assert.match(formatPedallingHistory(lav).join("\n"), /bike: laverack/);
   assert.match(formatPedallingHistory(summarisePedallingHistory(rides)).join("\n"), /npm run archive:gear/);
+});
+
+test("bikeSensors: bike sensors only (power, speed, shifting…), not the HR strap", () => {
+  const s = bikeSensors({ devices: [{ deviceType: 120, antId: 1 }, { deviceType: 123, antId: 50 }, { deviceType: 11, antId: 9 }, { deviceType: 34, serial: 77 }] });
+  assert.deepEqual(s, ["11:9", "123:50", "34:77"]);
+});
+
+test("inferBikes: learns sensors from tagged rides; shared pedals can't decide alone; unseen sensors are reported", () => {
+  const r = (id: string, sensors: string[], date = "2026-03-01"): PedallingRide => ride(date, { activityId: id, sensors });
+  const rides = [
+    r("1", ["11:9", "123:50"]), // Laverack: Rally pedals + its speed sensor
+    r("2", ["11:9", "123:50"]),
+    r("3", ["11:9", "34:77"]), // Felt TT: same pedals + Di2
+    r("10", ["11:9", "123:50"]), // untagged, Laverack sensors
+    r("11", ["11:9", "34:77"]), // untagged, Felt sensors
+    r("12", ["11:9"]), // only the shared pedals → can't tell
+    r("13", ["123:999"], "2024-05-01"), // a sensor no tagged ride has
+  ];
+  const gear = new Map<string, string | null>([["1", "Laverack Disc Road"], ["2", "Laverack Disc Road"], ["3", "Felt"]]);
+  const inf = inferBikes(rides, gear);
+  const of = (id: string) => inf.bikeOf(rides.find((x) => x.activityId === id)!);
+  assert.deepEqual(of("1"), { bike: "Laverack Disc Road", how: "tagged" });
+  assert.deepEqual(of("10"), { bike: "Laverack Disc Road", how: "inferred" });
+  assert.deepEqual(of("11"), { bike: "Felt", how: "inferred" });
+  assert.equal(of("12").how, "unknown", "pedals shared by both bikes are not enough");
+  assert.equal(of("13").how, "unknown");
+  assert.deepEqual(inf.unlabelled, [{ sensors: "123:999", rides: 1, from: "2024-05-01", to: "2024-05-01" }]);
+  assert.equal(describeSensors("123:999 + 34:77"), "speed #999 + shifting #77");
+
+  const s = summarisePedallingHistory(rides, { gearById: gear, bike: "laverack" });
+  assert.equal(s.total, 3, "2 tagged + 1 inferred Laverack rides");
+  assert.deepEqual(s.bikeSources, { tagged: 2, inferred: 1, unknown: 0 });
+  const all = formatPedallingHistory(summarisePedallingHistory(rides, { gearById: gear })).join("\n");
+  assert.match(all, /3 tagged in Garmin Connect, 2 inferred from paired sensors \(MODEL\), 2 unknown/);
+  assert.match(all, /speed #999 — 1 ride\(s\)/);
 });

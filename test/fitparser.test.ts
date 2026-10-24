@@ -184,3 +184,25 @@ test("parseFit: a run sample carries no cycling-dynamics keys", () => {
   const s = parseFit(fitFile([recordDef, recordData(1000, 150, 250, 90, 20)]))!.samples[0];
   assert.equal("leftTe" in s || "leftPco" in s || "leftPhase" in s, false);
 });
+
+test("parseFit decodes paired sensors from device_info (skips the recorder, dedups repeats)", () => {
+  const diDef = def(2, 23, [
+    [0, 1, 0x02], // device_index
+    [1, 1, 0x02], // device_type (ANT+)
+    [2, 2, 0x84], // manufacturer
+    [21, 2, 0x8b], // ant_device_number (uint16z)
+  ]);
+  const di = (index: number, type: number, antId: number) => {
+    const v = Buffer.alloc(6);
+    v.writeUInt8(index, 0);
+    v.writeUInt8(type, 1);
+    v.writeUInt16LE(1, 2);
+    v.writeUInt16LE(antId, 4);
+    return data(2, v);
+  };
+  const act = parseFit(fitFile([diDef, di(0, 0, 1), di(1, 123, 4242), di(2, 11, 777), di(1, 123, 4242)]))!;
+  assert.deepEqual(
+    act.devices!.map((d) => [d.deviceType, d.antId]),
+    [[123, 4242], [11, 777]],
+  );
+});

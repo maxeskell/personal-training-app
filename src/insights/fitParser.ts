@@ -97,6 +97,20 @@ export interface FitSample {
   rightPeakPhase?: [number, number];
 }
 
+/**
+ * One paired sensor from a `device_info` message (global 23; FIT profile fields: 1 device_type (ANT+ device
+ * type), 2 manufacturer, 3 serial_number, 4 product, 21 ant_device_number, 25 source_type). The recording
+ * device itself (device_index 0, the "creator") is not included.
+ */
+export interface FitDevice {
+  deviceType?: number; // ANT+ device type: 11 power, 17 fitness equipment, 34 shifting, 40 radar, 121–123 speed/cadence…
+  manufacturer?: number;
+  serial?: number;
+  product?: number;
+  antId?: number;
+  sourceType?: number; // 0 ant, 1 antplus, 2 bluetooth, 3 bluetooth_low_energy, 4 wifi, 5 local
+}
+
 /** One `lap` message (global 19) — a rep/segment the device or athlete marked (run/bike reps, swim sets). */
 export interface FitLap {
   index?: number;
@@ -154,6 +168,8 @@ export interface FitActivity {
   sessions: FitSessionSummary[];
   /** Beat-to-beat RR intervals (ms) from `hrv` messages, when the strap + watch logged them. Absent otherwise. */
   rrMs?: number[];
+  /** Paired sensors from `device_info` messages (deduped). Lets a ride be matched to the bike whose sensors it used. */
+  devices?: FitDevice[];
   session: {
     durationSec?: number;
     distanceKm?: number;
@@ -298,6 +314,7 @@ export function parseFit(buf: Buffer): FitActivity | null {
   let subSportEnum: number | null = null;
   const sessionMsgs: Record<number, number | null>[] = [];
   const rrMs: number[] = []; // beat-to-beat intervals, ms, in recording order
+  const devices = new Map<string, FitDevice>();
 
   try {
     while (pos < end) {
@@ -347,7 +364,22 @@ export function parseFit(buf: Buffer): FitActivity | null {
         else if (def.global === 18) sessionMsgs.push(rec.fields);
         else if (def.global === 19) laps.push(toLap(rec.fields));
         else if (def.global === 101) lengths.push(toLength(rec.fields));
-        else if (def.global === 78) {
+        else if (def.global === 23) {
+          // device_info: one per paired sensor (repeated through the file); skip the recorder (index 0).
+          const f = rec.fields;
+          if (f[0] !== 0) {
+            const d: FitDevice = {
+              deviceType: f[1] ?? undefined,
+              manufacturer: f[2] ?? undefined,
+              serial: f[3] ?? undefined,
+              product: f[4] ?? undefined,
+              antId: f[21] ?? undefined,
+              sourceType: f[25] ?? undefined,
+            };
+            const id = d.antId ?? d.serial;
+            if (id != null) devices.set(`${d.deviceType ?? "?"}:${id}`, d);
+          }
+        } else if (def.global === 78) {
           // hrv message: field 0 = RR intervals, uint16 scale 1000 (s). Invalid (0xFFFF) slots are null.
           for (const v of rec.arrays[0] ?? [rec.fields[0] ?? null]) if (v != null) rrMs.push(v);
         }
@@ -377,6 +409,7 @@ export function parseFit(buf: Buffer): FitActivity | null {
     lengths,
     sessions: sessionMsgs.map(toSessionSummary),
     ...(rrMs.length ? { rrMs } : {}),
+    ...(devices.size ? { devices: [...devices.values()] } : {}),
     session: {
       durationSec: ts.length > 1 ? ts[ts.length - 1] - ts[0] : undefined,
       distanceKm: session[9] != null ? +(((session[9] as number) / 100) / 1000).toFixed(2) : undefined,
