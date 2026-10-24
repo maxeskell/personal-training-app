@@ -107,7 +107,7 @@ export async function runSetup(): Promise<void> {
 
     console.log("\nNext steps:");
     console.log("  1. Connect AI Endurance (one-time browser login):  npm run auth:aie");
-    if (garminYes) console.log("  2. One-time Garmin login:  uvx --python 3.12 --from git+https://github.com/Taxuspt/garmin_mcp garmin-mcp-auth");
+    if (garminYes) console.log("  2. One-time Garmin login:  npm run garmin:auth");
     console.log(`  ${garminYes ? "3" : "2"}. Start the coach:  npm start   (then open the printed http://localhost link)`);
     console.log("\nSee it on sample data right now with:  npm run demo\n");
   } finally {

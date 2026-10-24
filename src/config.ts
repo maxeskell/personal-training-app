@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, isAbsolute } from "node:path";
+import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
 import { parse as parseYaml } from "yaml";
 
@@ -32,6 +33,22 @@ export function resolveAthleteTimezone(): string {
     }
   }
   return "Europe/London";
+}
+
+/** The reviewed garmin_mcp commit (2026-10-20). Used by the default spawn args and the auth command in docs. */
+export const GARMIN_MCP_COMMIT = "a2ca5fcac34524b83814fe2fcf3d479f8a75983f";
+
+/**
+ * The one-time Garmin login command's args: the SAME uvx args the app spawns (pin, mcp<2, overrides),
+ * with the `garmin-mcp-auth` entry point instead of the server. Keeps login and server on one version, so
+ * a login never runs the unpatched garminconnect. Pure — exported for `npm run garmin:auth` and tests.
+ */
+export function garminAuthArgs(serverArgs: string[]): string[] {
+  const a = [...serverArgs];
+  const i = a.lastIndexOf("garmin-mcp");
+  if (i >= 0) a[i] = "garmin-mcp-auth";
+  else a.push("garmin-mcp-auth");
+  return a;
 }
 
 /** Parse GARMIN_MCP_ARGS as a JSON array (handles args with spaces) or fall back to whitespace split. */
@@ -124,9 +141,13 @@ export const config = {
   /** Garmin — OPTIONAL, degradable gap-filler. Disabled unless explicitly enabled. */
   garmin: {
     enabled: process.env.GARMIN_ENABLED === "true",
-    /** Spawn command for the Taxuspt/garmin_mcp stdio server. Pinned to the commit that added
-     *  download_activity_file (raw per-second .FIT download, 2026-06-10) — the pin also makes uvx
-     *  rebuild its cached env, so the tool appears without a manual `uvx --refresh`. Bump deliberately.
+    /** Spawn command for the Taxuspt/garmin_mcp stdio server, pinned to a reviewed commit (a2ca5fc,
+     *  2026-10-20; was d31de79). Every tool the app calls was checked to still exist with the same output
+     *  keys, except get_activity_weather (temperature renamed + unit field: handled in fitSync). The pin
+     *  also makes uvx rebuild its cached env. Bump deliberately.
+     *
+     *  `--overrides garmin-overrides.txt` forces garminconnect 0.3.20 over garmin_mcp's exact 0.3.2 pin:
+     *  0.3.2's mobile login fails with HTTP 429 (since April 2026), fixed in 0.3.20. See that file.
      *
      *  `--with mcp<2` pins the Python `mcp` SDK below 2.0. garmin_mcp@d31de79 does
      *  `from mcp.server.fastmcp import FastMCP`, but mcp 2.0 REMOVED that module — leaving it unpinned let
@@ -136,7 +157,11 @@ export const config = {
     command: process.env.GARMIN_MCP_COMMAND ?? "uvx",
     args: parseArgsList(
       process.env.GARMIN_MCP_ARGS ??
-        "--python 3.12 --with mcp<2 --from git+https://github.com/Taxuspt/garmin_mcp@d31de7980d652289e5368637261fcd17aa2c7d90 garmin-mcp",
+        JSON.stringify([
+          "--python", "3.12", "--with", "mcp<2",
+          "--overrides", fileURLToPath(new URL("../garmin-overrides.txt", import.meta.url)),
+          "--from", `git+https://github.com/Taxuspt/garmin_mcp@${GARMIN_MCP_COMMIT}`, "garmin-mcp",
+        ]),
     ),
     /** Hard timeout (ms) for any Garmin call — never let it block the coach. Some endpoints
      *  (power-duration curve, race predictions) parse many activities server-side and are slow. */

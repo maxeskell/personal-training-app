@@ -77,3 +77,12 @@ So the full arc for a future outage: the live `doctor` probe + freshness check m
 - Consider a broader dependency-freshness audit cadence — this class of break (pinned app, unpinned transitive dep) is
   invisible until it fires. (A first pass on 2026-08-13 took the npm deps to latest: Opus 5, `@anthropic-ai/sdk` 0.116,
   TypeScript 7, MCP SDK 1.30, and `npm audit fix` for the transitive `hono`/`ip-address` advisories.)
+- **Bumped 2026-10-24: `d31de79` → `a2ca5fc` (2026-10-20), `--with mcp<2` kept.** Upstream still imports
+  `mcp.server.fastmcp` and self-constrains `mcp>=1.28.1,<2`, so the SDK cap stays. Reason for bumping now:
+  garminconnect 0.3.2 (pinned exactly by garmin_mcp) has a mobile login failing with HTTP 429 since April;
+  0.3.20 (2026-10-23) fixed it, so the default args add `--overrides garmin-overrides.txt` (repo root,
+  `garminconnect==0.3.20`) and `npm run garmin:auth` logs in on the same args. Output keys of the 21 tools the
+  app calls were diffed between the two commits: only `get_activity_weather` changed (now `temperature` +
+  `temperature_unit`), handled in `fitSync.ts` (`weatherTempC`, tested). Live verification is the Mac's
+  `npm run doctor` (the container can't run the third-party tool). Rollback: set `GARMIN_MCP_ARGS` to the old
+  d31de79 string.

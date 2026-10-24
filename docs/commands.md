@@ -23,6 +23,7 @@ commands are macOS launchd helpers that print a Linux cron/systemd equivalent an
 | `npm run auth:aie` | AI Endurance OAuth — opens a browser when an authenticated read (`getUser`) is refused, and reports success only once that read works; re-run it whenever `doctor` says re-auth needed. Tokens cached in `~/.endurance-coach`; a token the server rejects is retired to `aie-tokens.revoked-<time>.json`, never deleted |
 | `npm run verify:reads` | exercise every read tool and confirm the write-gate is closed |
 | `npm run state:today` | assemble + persist + summarise today's AthleteState |
+| `npm run garmin:auth` | the one-time (and ~6-monthly) Garmin login: runs `garmin-mcp-auth` on exactly the app's pinned garmin_mcp + `garmin-overrides.txt` (patched garminconnect login), so login and server stay on one version. Interactive (email, password, MFA) |
 | `npm run doctor` | health check: creds, API key, AI Endurance tool drift, and — when Garmin is enabled — a **live** Garmin probe (spawns the subprocess, lists tools, checks `download_activity_file`) plus an archived-daily **freshness** warning. The live probe catches a crashed/incompatible garmin_mcp that a token-age check alone would miss. |
 
 ## Daily coaching

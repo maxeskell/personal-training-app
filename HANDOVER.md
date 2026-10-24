@@ -161,7 +161,7 @@ All in `.env` (see `.env.example` for the full, commented set). The ones you wil
 | `AIE_MCP_URL` | `https://aiendurance.com/mcp` | The AI Endurance MCP endpoint (rarely changed) |
 | `ANTHROPIC_API_KEY` | _(unset)_ | Required for LLM flows |
 | `GARMIN_ENABLED` | `false` | Turn on the optional Garmin gap-filler |
-| `GARMIN_MCP_ARGS` | pinned `garmin_mcp` commit | Keep the pin ≥ `d31de79` or raw `.FIT` auto-download degrades to manual export |
+| `GARMIN_MCP_ARGS` | pinned `garmin_mcp` commit (`a2ca5fc`) + `--overrides garmin-overrides.txt` | Keep the pin ≥ `d31de79` (raw `.FIT` download) and the overrides arg (patched garminconnect login) |
 | `COACH_INTENT_ROUTER` | `regex` | `ask` intent routing: `regex` (default) · `haiku` (cheap API micro-call) · `local` (local-llm-server) |
 | `COACH_LOCAL_INTENT` | `false` | Legacy alias selecting the `local` router (equivalent to `COACH_INTENT_ROUTER=local`) |
 | `COACH_WEATHER_LAT` / `LON` | `51.5074` / `-0.1278` | Weather base (neutral default — set your own) |
@@ -225,6 +225,13 @@ fire-only health check), `npm run backfill:install` (history grind).
 - **Garmin is an unofficial client.** It scrapes Garmin Connect via a pinned community MCP, is
   rate-limited and occasionally fragile, and its tokens expire ~6-monthly. It is optional by design —
   treat any Garmin breakage as "degrade to AI Endurance," not an outage.
+- **Garmin pin bumped to `a2ca5fc` + garminconnect override (2026-10-24).** garminconnect 0.3.2 (what
+  garmin_mcp pins exactly) has a mobile login that fails with HTTP 429 since April 2026; 0.3.20 fixed it.
+  `garmin-overrides.txt` forces 0.3.20 via `uvx --overrides`, and `npm run garmin:auth` runs the login on the
+  same args so login and server can't drift. The 21 tools the app calls were diffed for output keys between
+  `d31de79` and `a2ca5fc`: only `get_activity_weather` changed (temperature → `temperature` + `temperature_unit`),
+  handled by `weatherTempC` in `fitSync.ts`. Verify on the Mac with `npm run doctor` after the next pull; roll
+  back by setting `GARMIN_MCP_ARGS` to the old d31de79 string. Drop the override once garmin_mcp pins ≥0.3.20.
 - **Garmin SDK pin (`--with mcp<2`).** `garmin_mcp@d31de79` imports `mcp.server.fastmcp`, which the Python
   `mcp` SDK 2.0 removed. The dep was unpinned, so uvx silently resolved mcp 2.0 and the subprocess crashed
   on import — Garmin ingest was dead for ~4 weeks (2026-07-17 → 2026-08-13) with no visible signal, because

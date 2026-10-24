@@ -1,0 +1,6 @@
+# uv dependency overrides for the garmin_mcp subprocess (passed as `uvx --overrides`, see config.ts).
+#
+# garmin_mcp pins garminconnect==0.3.2 exactly. That version's mobile login has failed with HTTP 429 since
+# April 2026; garminconnect 0.3.20 (2026-10-23) fixed it. Without this override a fresh `garmin-mcp-auth`
+# (needed when the ~6-month Garmin token expires) can fail. Remove the line once garmin_mcp pins >=0.3.20.
+garminconnect==0.3.20

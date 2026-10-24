@@ -257,17 +257,17 @@ Everything below is optional polish.
 
 ```bash
 ▶ RUN   # one-time Garmin login; saves tokens to ~/.garminconnect (~6-month lifetime)
-uvx --python 3.12 --from git+https://github.com/Taxuspt/garmin_mcp garmin-mcp-auth
+npm run garmin:auth   # = garmin-mcp-auth, on the app's pinned garmin_mcp + patched garminconnect
 ```
 Then set `GARMIN_ENABLED=true` in `.env` and re-run `npm run state:today`. Garmin is an *unofficial*
 client — treat any flakiness as "degrade to AI Endurance," not an outage. Keep the pinned
-`GARMIN_MCP_ARGS` commit from `.env.example` so raw `.FIT` auto-download keeps working.
+`GARMIN_MCP_ARGS` commit and `--overrides garmin-overrides.txt` from `.env.example` so raw `.FIT` auto-download and the login keep working.
 
 > **Trust note (read before running).** `garmin-mcp-auth` runs a **third-party community tool**
 > (`Taxuspt/garmin_mcp`) that logs into Garmin Connect on your behalf and stores your Garmin **session
 > tokens** in `~/.garminconnect` (your credentials pass through it). Review the tool before running it,
 > and keep the **commit pin** in `GARMIN_MCP_ARGS` so you stay on a known version. Tokens last ~6 months;
-> when reads start failing, re-run this command. Garmin is entirely optional — skip it and the coach runs
+> when reads start failing, re-run `npm run garmin:auth`. Garmin is entirely optional — skip it and the coach runs
 > on AI Endurance alone.
 
 ## Step 6 — (optional) always-on dashboard + hands-free updates

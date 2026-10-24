@@ -103,7 +103,7 @@ Provenance.
 |---|---|---|---|
 | `GARMIN_ENABLED` | `false` | `config.ts:113` | Turn on the optional Garmin gap-filler. Requires `=== "true"`. |
 | `GARMIN_MCP_COMMAND` | `uvx` | `config.ts:117` | Spawn command for the `Taxuspt/garmin_mcp` stdio server. |
-| `GARMIN_MCP_ARGS` | pinned commit `d31de79…` | `config.ts:118` | uvx args. **Pinned to the commit that added `download_activity_file` (raw .FIT download).** Keep the pin ≥ `d31de79` or raw-.FIT auto-download degrades to manual export. Bump deliberately. |
+| `GARMIN_MCP_ARGS` | pinned commit `a2ca5fc…` (`GARMIN_MCP_COMMIT`) + `--overrides garmin-overrides.txt` | `config.ts` | uvx args. Keep the pin ≥ `d31de79` (raw .FIT download) and the overrides arg (forces garminconnect 0.3.20; 0.3.2's login fails with 429). `npm run garmin:auth` logs in on the same args. Bump deliberately. |
 | `GARMIN_TIMEOUT_MS` | `25000` | `config.ts:124` | Hard cap (ms) on any single Garmin call. |
 | `GARMIN_REFRESH_BUDGET_MS` | `90000` | `config.ts:127` | Overall wall-clock budget for the whole Garmin phase of one `/refresh`; past it, remaining Garmin reads are skipped (degrade to AIE-only) so one slow tool can't hang a sync. |
 

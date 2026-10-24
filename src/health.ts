@@ -73,12 +73,12 @@ export async function fileChecks(): Promise<Check[]> {
   } else {
     const gAge = await fileAgeDays(join(homedir(), ".garminconnect", "garmin_tokens.json"));
     if (gAge == null) {
-      checks.push({ name: "Garmin auth", status: "warn", detail: "enabled but no token — run garmin-mcp-auth (see .env.example)" });
+      checks.push({ name: "Garmin auth", status: "warn", detail: "enabled but no token — run `npm run garmin:auth`" });
     } else if (gAge > GARMIN_REAUTH_WARN_DAYS) {
       checks.push({
         name: "Garmin auth",
         status: "warn",
-        detail: `token is ${gAge.toFixed(0)}d old (~6mo lifetime) — re-run garmin-mcp-auth soon to avoid a silent break`,
+        detail: `token is ${gAge.toFixed(0)}d old (~6mo lifetime) — re-run "npm run garmin:auth" soon to avoid a silent break`,
       });
     } else {
       checks.push({ name: "Garmin auth", status: "ok", detail: `token ${gAge.toFixed(0)}d old (re-auth by ~180d)` });
@@ -88,7 +88,7 @@ export async function fileChecks(): Promise<Check[]> {
   return checks;
 }
 
-/** The Garmin tool that pulls a raw per-second .FIT (garmin_mcp ≥ d31de79). Absent on older builds. */
+/** The Garmin tool that pulls a raw per-second .FIT (garmin_mcp ≥ d31de79; pinned now to a2ca5fc). Absent on older builds. */
 const GARMIN_STREAM_TOOL = "download_activity_file";
 /** Warn once Garmin daily data is this stale — wellness (RHR/HRV) uploads every worn day, so a >3-day
  *  gap means the sync pipeline is broken (a crashed subprocess, an expired token), not just a rest week. */

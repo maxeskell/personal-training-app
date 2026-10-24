@@ -105,7 +105,7 @@ export function assessCompleteness(input: CompletenessInput): DataCompletenessRe
   if (!input.garminEnabled) {
     notes.push("Garmin is disabled — raw .FIT auto-download is off; export originals into the streams dir to unlock deep analysis.");
   } else if (input.garminConnected === false) {
-    notes.push("Garmin is enabled but was NOT reachable this sync (token/MFA?) — re-run garmin-mcp-auth; biomechanics & per-interval splits stay missing until it connects.");
+    notes.push("Garmin is enabled but was NOT reachable this sync (token/MFA?) — re-run `npm run garmin:auth` (garmin-mcp-auth); biomechanics & per-interval splits stay missing until it connects.");
   } else if (input.garminConnected === undefined) {
     notes.push("Capability is from the last snapshot — run `sync` to re-check Garmin and auto-fetch any recent .FIT streams.");
   } else if (input.fitSync && !input.fitSync.streamsSupported) {

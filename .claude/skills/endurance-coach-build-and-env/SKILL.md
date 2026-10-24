@@ -8,7 +8,7 @@ description: >-
   clean checkout", "npm audit" / esbuild advisory, connecting AI Endurance
   (`npm run auth:aie`, OAuth, `localhost:8765/callback`, "token cache", "aie-tokens.json",
   "can't do OAuth headless / on a cloud box / in a sandbox / no browser"), enabling
-  Garmin (`garmin-mcp-auth`, uvx, Python 3.12, the pinned `Taxuspt/garmin_mcp@d31de79`
+  Garmin (`garmin-mcp-auth`, uvx, Python 3.12, the pinned `Taxuspt/garmin_mcp@a2ca5fc` + `garmin-overrides.txt`
   commit, "6-month token expired", "download_activity_file missing"), the Claude
   desktop-app MCP breaking after a Homebrew node upgrade (`No such file or directory`,
   pinned Cellar path), ANTHROPIC_API_KEY setup, and "just show me the app" (`npm run demo`,
@@ -52,7 +52,7 @@ Jargon, defined once:
 | **Node.js ≥ 20** | Yes | a local install | — | Yes |
 | **AI Endurance (AIE)** | **Yes — the spine** | a paid AIE subscription + a browser login (`npm run auth:aie`) | `~/.endurance-coach/aie-tokens.json` (0600, dir 0700) | **No** — OAuth needs a browser + `localhost:8765` callback |
 | **Anthropic API key** | Yes for AI write-ups; **no** for the dashboard/zones/health/demo | a key from `console.anthropic.com` | `.env` (`ANTHROPIC_API_KEY=`) or shell env | Yes |
-| **Garmin** | Optional, degradable | `uv`/`uvx` + Python 3.12, then `garmin-mcp-auth` | `~/.garminconnect/garmin_tokens.json` (~6-month life) | Login needs a terminal + your Garmin creds; not truly headless |
+| **Garmin** | Optional, degradable | `uv`/`uvx` + Python 3.12, then `npm run garmin:auth` | `~/.garminconnect/garmin_tokens.json` (~6-month life) | Login needs a terminal + your Garmin creds; not truly headless |
 | **`npm run demo`** | — | nothing (no account, no key, no network) | — | Yes |
 
 > **Host-only setup is a hard limit.** The AIE OAuth flow opens a browser and waits for the redirect on
@@ -145,14 +145,14 @@ cleanly: with it off or broken, the coach runs on AIE alone.
 
 ```bash
 # Prereq: uv/uvx + Python 3.12 (https://docs.astral.sh/uv/). Then one-time login:
-uvx --python 3.12 --from git+https://github.com/Taxuspt/garmin_mcp garmin-mcp-auth
+npm run garmin:auth   # garmin-mcp-auth on the app's pinned garmin_mcp + patched garminconnect
 # Then flip the flag and re-assemble:
 #   set GARMIN_ENABLED=true in /Users/maxeskell/dev/personal-training-app/.env
 cd /Users/maxeskell/dev/personal-training-app && npm run state:today
 ```
 
 **The commit pin matters.** The app spawns the connector via `uvx` pinned to
-`Taxuspt/garmin_mcp@d31de7980d652289e5368637261fcd17aa2c7d90` (confirmed `src/config.ts:117-120`, env var
+`Taxuspt/garmin_mcp@a2ca5fcac34524b83814fe2fcf3d479f8a75983f` with `--overrides garmin-overrides.txt` (`GARMIN_MCP_COMMIT` in `src/config.ts`, env var
 `GARMIN_MCP_ARGS`). That commit added `download_activity_file` (raw per-second `.FIT` download, 2026-06-10).
 Consequences:
 - On a **build older than `d31de79`**, the stream/biomechanics layer degrades to manual export (Garmin
@@ -162,7 +162,7 @@ Consequences:
 
 **The ~6-month token.** Garmin tokens live at `~/.garminconnect/garmin_tokens.json` and last ~6 months.
 `npm run doctor` warns once the token passes **150 days** old (`GARMIN_REAUTH_WARN_DAYS`, `src/health.ts:29`)
-so a silent break is caught early. Re-auth with the same `garmin-mcp-auth` command. If a coach flow returns
+so a silent break is caught early. Re-auth with `npm run garmin:auth`. If a coach flow returns
 Garmin-null, first suspect an expired token — this is triage, covered in `endurance-coach-debugging-playbook`.
 
 ---
