@@ -168,3 +168,29 @@ test("backfillActivityGear: rides only, newest first, resumable, failures retrie
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("backfillActivityGear --recheck: re-asks rides stored as 'no bike' (tagged later in Garmin Connect), within a date range", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "gear2-"));
+  const prev = config.dataDir;
+  (config as { dataDir: string }).dataDir = dir;
+  try {
+    const store = new ArchiveStore();
+    await store.appendGarminActivities([
+      { id: "10", date: "2026-03-01", type: "road_biking", raw: {} },
+      { id: "11", date: "2025-03-01", type: "road_biking", raw: {} },
+      { id: "12", date: "2026-07-01", type: "road_biking", raw: {} },
+    ]);
+    await store.appendActivityGear([{ activityId: "10", gear: null }, { activityId: "11", gear: null }, { activityId: "12", gear: "Laverack Disc Road" }]);
+    const g = fakeGarmin(() => text(JSON.stringify([{ gearTypeName: "Bike", displayName: "Laverack Disc Road" }])));
+    const plain = await backfillActivityGear(g, store, () => {}, { throttleMs: 0 });
+    assert.equal(plain.asked, 0, "without --recheck, known rides are not re-asked");
+    const r = await backfillActivityGear(g, store, () => {}, { throttleMs: 0, recheckUntagged: true, from: "2026-01-01" });
+    assert.equal(r.asked, 1, "only the untagged ride inside the range");
+    const gear = await store.loadActivityGear();
+    assert.equal(gear.get("10"), "Laverack Disc Road");
+    assert.equal(gear.get("11"), null, "outside --from, untouched");
+  } finally {
+    (config as { dataDir: string }).dataDir = prev;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

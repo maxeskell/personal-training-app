@@ -478,9 +478,10 @@ export async function cmdPedalling(): Promise<void> {
 }
 
 /**
- * `archive-gear [--limit N]` — tag each ride with the bike it was ridden on (Garmin Connect gear, one
+ * `archive-gear [--limit N] [--recheck] [--from/--to YYYY-MM-DD]` — tag each ride with the bike it was ridden on (Garmin Connect gear, one
  * get_activity_gear call per ride, throttled) into data/archive/activity-gear.jsonl. Resumable, newest
- * first; feeds `npm run pedalling -- --bike <name>`. Assign bikes to rides in Garmin Connect for this to work.
+ * first; feeds `npm run pedalling -- --bike <name>`. Assign bikes to rides in Garmin Connect for this to work;
+ * after assigning more, `--recheck` (optionally with --from/--to) re-asks rides previously stored as "no bike".
  */
 export async function cmdArchiveGear(): Promise<void> {
   if (!config.garmin.enabled) {
@@ -490,13 +491,18 @@ export async function cmdArchiveGear(): Promise<void> {
   const args = process.argv.slice(3);
   const li = args.indexOf("--limit");
   const limit = li >= 0 && Number(args[li + 1]) > 0 ? Math.floor(Number(args[li + 1])) : undefined;
+  const date = (flag: string) => {
+    const i = args.indexOf(flag);
+    return i >= 0 && /^\d{4}-\d{2}-\d{2}$/.test(args[i + 1] ?? "") ? args[i + 1] : undefined;
+  };
+  const recheckUntagged = args.includes("--recheck");
   const g = new GarminClient();
   if (!(await g.connect())) {
     console.error("\nGarmin unavailable — run `npm run garmin:auth` and retry.\n");
     process.exit(1);
   }
   try {
-    const r = await backfillActivityGear(g, new ArchiveStore(), (m) => console.log(m), { limit });
+    const r = await backfillActivityGear(g, new ArchiveStore(), (m) => console.log(m), { limit, recheckUntagged, from: date("--from"), to: date("--to") });
     const gear = await new ArchiveStore().loadActivityGear();
     const counts = new Map<string, number>();
     for (const v of gear.values()) counts.set(v ?? "(no bike assigned)", (counts.get(v ?? "(no bike assigned)") ?? 0) + 1);
