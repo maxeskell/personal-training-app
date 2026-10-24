@@ -23,6 +23,8 @@ import { activityArchiveDir, loadManifest } from "../archive/activityArchive.js"
 
 /** One ride's pedalling summary, small enough to keep for the whole history. */
 export interface PedallingRide {
+  /** Garmin activity id when the file name carries one (joins to Garmin Connect gear = which bike). */
+  activityId?: string;
   date: string; // YYYY-MM-DD
   startTimeS: number | null; // dedups the same ride found in both the archive and fit-streams
   source: "archive" | "streams";
@@ -47,8 +49,8 @@ export interface PedallingRide {
   phaseArcRightDeg: number | null;
 }
 
-/** Bump when the per-ride maths changes so cached rows are re-parsed (2: single-sided 0s are "no data"). */
-export const PEDALLING_ENGINE_VERSION = 2;
+/** Bump when the per-ride rows change so cached rows are re-parsed (2: single-sided 0s are "no data"). */
+export const PEDALLING_ENGINE_VERSION = 3; // 3: rows carry activityId (per-bike filtering)
 
 interface CacheFile {
   version: number;
@@ -64,7 +66,7 @@ const diff = (a: number | null | undefined, b: number | null | undefined) => (a 
 /** Flatten one ride's analysis into a history row. Pure. */
 export function toPedallingRide(
   p: PedallingAnalysis,
-  meta: { date: string; startTimeS: number | null; source: PedallingRide["source"]; indoor: boolean; avgPowerW: number | null },
+  meta: { activityId?: string; date: string; startTimeS: number | null; source: PedallingRide["source"]; indoor: boolean; avgPowerW: number | null },
 ): PedallingRide {
   const q = p.balanceByQuarter;
   return {
@@ -87,7 +89,7 @@ export function toPedallingRide(
 }
 
 /** Ride legs of a parsed file (a multisport race file yields its bike leg) → history rows. */
-export function ridesFromFit(act: FitActivity, source: PedallingRide["source"]): PedallingRide[] {
+export function ridesFromFit(act: FitActivity, source: PedallingRide["source"], activityId?: string): PedallingRide[] {
   const out: PedallingRide[] = [];
   for (const leg of expandMultisportFit(act)) {
     if (!/ride/i.test(leg.sportName)) continue;
@@ -97,6 +99,7 @@ export function ridesFromFit(act: FitActivity, source: PedallingRide["source"]):
     const watts = leg.samples.map((s) => s.power).filter((w): w is number => typeof w === "number" && w > 0);
     out.push(
       toPedallingRide(p, {
+        ...(activityId ? { activityId } : {}),
         date: startTimeS != null ? new Date(startTimeS * 1000).toISOString().slice(0, 10) : "",
         startTimeS,
         source,
@@ -149,11 +152,11 @@ export function buildPedallingHistory(
   const cachePath = opts.cachePath ?? pedallingCachePath();
   const cache = loadCache(cachePath);
 
-  const jobs: Array<{ key: string; path: string; source: PedallingRide["source"] }> = [];
+  const jobs: Array<{ key: string; path: string; source: PedallingRide["source"]; activityId?: string }> = [];
   // Archive: ride (or undated/multisport "unknown") .FIT entries only; TCX/PWX carry no pedal dynamics.
   for (const e of loadManifest(archiveDir)) {
     if (e.format !== "fit" || !/ride|unknown|multi/i.test(e.sport)) continue;
-    jobs.push({ key: `a:${e.contentHash}`, path: join(archiveDir, e.path), source: "archive" });
+    jobs.push({ key: `a:${e.contentHash}`, path: join(archiveDir, e.path), source: "archive", activityId: /^\d+$/.test(e.id) ? e.id : undefined });
   }
   if (existsSync(streamsDir)) {
     for (const name of readdirSync(streamsDir)) {
@@ -161,7 +164,8 @@ export function buildPedallingHistory(
       const path = join(streamsDir, name);
       try {
         const st = statSync(path);
-        jobs.push({ key: `s:${name}:${st.size}:${Math.round(st.mtimeMs)}`, path, source: "streams" });
+        const id = /^(\d+)/.exec(name)?.[1];
+        jobs.push({ key: `s:${name}:${st.size}:${Math.round(st.mtimeMs)}`, path, source: "streams", activityId: id });
       } catch {
         /* vanished mid-scan */
       }
@@ -176,7 +180,7 @@ export function buildPedallingHistory(
     let rows: PedallingRide[] = [];
     try {
       const act = parseFile(j.path);
-      rows = act ? ridesFromFit(act, j.source) : [];
+      rows = act ? ridesFromFit(act, j.source, j.activityId) : [];
     } catch {
       rows = []; // unreadable → cached as "nothing here" so it isn't retried every run
     }
@@ -256,11 +260,32 @@ export const MIN_RIDE_MIN = 20;
  */
 export function summarisePedallingHistory(
   rides: PedallingRide[],
-  opts: { from?: string; to?: string; splitAt?: string; indoor?: "all" | "indoor" | "outdoor" } = {},
-): { months: PedallingPeriod[]; indoor: PedallingPeriod; outdoor: PedallingPeriod; before?: PedallingPeriod; after?: PedallingPeriod; total: number } {
+  opts: {
+    from?: string;
+    to?: string;
+    splitAt?: string;
+    indoor?: "all" | "indoor" | "outdoor";
+    /** Only rides on this bike (case-insensitive substring of the Garmin Connect gear name). */
+    bike?: string;
+    /** activityId → Garmin Connect gear name (null = none assigned), from the activity-gear archive. */
+    gearById?: Map<string, string | null>;
+  } = {},
+): {
+  months: PedallingPeriod[];
+  indoor: PedallingPeriod;
+  outdoor: PedallingPeriod;
+  byBike: PedallingPeriod[];
+  before?: PedallingPeriod;
+  after?: PedallingPeriod;
+  total: number;
+  bikeFilter?: string;
+  gearKnown: boolean;
+} {
+  const bikeOf = (r: PedallingRide) => (r.activityId ? opts.gearById?.get(r.activityId) : undefined) ?? "unassigned";
   const rs = rides.filter(
     (r) =>
       r.pedallingMin >= MIN_RIDE_MIN &&
+      (!opts.bike || bikeOf(r).toLowerCase().includes(opts.bike.toLowerCase())) &&
       (!opts.from || r.date >= opts.from) &&
       (!opts.to || r.date <= opts.to) &&
       (!opts.indoor || opts.indoor === "all" || (opts.indoor === "indoor") === r.indoor),
@@ -274,6 +299,9 @@ export function summarisePedallingHistory(
     months: [...byMonth.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([m, x]) => period(m, x)),
     indoor: period("indoor", rs.filter((r) => r.indoor)),
     outdoor: period("outdoor", rs.filter((r) => !r.indoor)),
+    byBike: [...new Set(rs.map(bikeOf))].sort().map((b) => period(b.slice(0, 16), rs.filter((r) => bikeOf(r) === b))),
+    bikeFilter: opts.bike,
+    gearKnown: !!opts.gearById?.size,
     ...(opts.splitAt
       ? { before: period(`before ${opts.splitAt}`, rs.filter((r) => r.date < opts.splitAt!)), after: period(`from ${opts.splitAt}`, rs.filter((r) => r.date >= opts.splitAt!)) }
       : {}),
@@ -291,7 +319,7 @@ function row(p: PedallingPeriod): string {
 /** Human/LLM-readable report of the history summary. */
 export function formatPedallingHistory(s: ReturnType<typeof summarisePedallingHistory>, build?: Pick<HistoryBuild, "parsed" | "scanned">): string[] {
   const out = [
-    `PEDALLING HISTORY [.FIT archive + fit-streams; rides ≥${MIN_RIDE_MIN} min with dual-sided pedal data; monthly MEDIANS]`,
+    `PEDALLING HISTORY [.FIT archive + fit-streams; rides ≥${MIN_RIDE_MIN} min with dual-sided pedal data; monthly MEDIANS]${s.bikeFilter ? ` — bike: ${s.bikeFilter}` : ""}`,
     ...(build ? [`  ${build.scanned} ride files scanned, ${build.parsed} parsed this run (the rest cached)`] : []),
   ];
   if (!s.total) {
@@ -309,6 +337,11 @@ export function formatPedallingHistory(s: ReturnType<typeof summarisePedallingHi
     "",
     row(s.outdoor),
     row(s.indoor),
+    "",
+    s.gearKnown
+      ? `  By bike (Garmin Connect gear)${s.bikeFilter ? ` — filtered to "${s.bikeFilter}"` : ""}:`
+      : "  By bike: unknown — run `npm run archive:gear` once to tag each ride with its Garmin Connect bike, then filter with --bike <name>.",
+    ...(s.gearKnown ? s.byBike.map(row) : []),
   );
   if (s.before && s.after) out.push("", row(s.before), row(s.after));
   out.push(

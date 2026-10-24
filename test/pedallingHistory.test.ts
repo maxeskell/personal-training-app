@@ -148,3 +148,19 @@ test("formatPedallingHistory: missing channels read —, an empty history says h
   const empty = formatPedallingHistory(summarisePedallingHistory([])).join("\n");
   assert.match(empty, /archive:backfill/);
 });
+
+test("summarisePedallingHistory: per-bike breakdown from Garmin gear, and a --bike filter", () => {
+  const rides = [
+    ride("2026-09-01", { activityId: "1", pcoLeftMm: -6 }),
+    ride("2026-09-02", { activityId: "2", pcoLeftMm: -6 }),
+    ride("2026-09-03", { activityId: "3", pcoLeftMm: -12 }),
+    ride("2026-09-04", { pcoLeftMm: -1 }), // no id → unassigned
+  ];
+  const gearById = new Map<string, string | null>([["1", "Laverack"], ["2", "Laverack"], ["3", "TT Speedmax"]]);
+  const all = summarisePedallingHistory(rides, { gearById });
+  assert.deepEqual(all.byBike.map((b) => [b.label, b.rides, b.pcoLeftMm]), [["Laverack", 2, -6], ["TT Speedmax", 1, -12], ["unassigned", 1, -1]]);
+  const lav = summarisePedallingHistory(rides, { gearById, bike: "laverack" });
+  assert.equal(lav.total, 2);
+  assert.match(formatPedallingHistory(lav).join("\n"), /bike: laverack/);
+  assert.match(formatPedallingHistory(summarisePedallingHistory(rides)).join("\n"), /npm run archive:gear/);
+});

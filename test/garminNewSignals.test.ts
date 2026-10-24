@@ -8,7 +8,7 @@ import { emptyState } from "../src/state/types.js";
 import { mapHeatAcclimation, mapRecoveryTime, mapRunningTolerance } from "../src/state/assemble.js";
 import { runningToleranceFinding } from "../src/insights/garminHealth.js";
 import { ArchiveStore, mergeExtrasByDate } from "../src/archive/store.js";
-import { backfillGarminExtras, dateChunks, toleranceRows, isToolFailure } from "../src/archive/backfill.js";
+import { backfillGarminExtras, dateChunks, toleranceRows, isToolFailure, bikeFromGear, backfillActivityGear } from "../src/archive/backfill.js";
 import type { GarminClient } from "../src/mcp/garminClient.js";
 
 /**
@@ -119,6 +119,50 @@ test("backfillGarminExtras: stores both signals, is resumable, and retries days 
     g.calls.length = 0;
     await backfillGarminExtras(g, store, "2026-10-01", "2026-10-05", () => {}, { throttleMs: 0, refreshDays: 2 });
     assert.deepEqual(g.calls, ["get_running_tolerance_trend:2026-10-01", "get_acclimation:2026-10-04", "get_acclimation:2026-10-05"], "refresh re-asks the last 2 days only");
+  } finally {
+    (config as { dataDir: string }).dataDir = prev;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("bikeFromGear: prefers the bike item, the athlete's own name, then make/model; none → null", () => {
+  assert.equal(bikeFromGear([{ gearTypeName: "Shoes", displayName: "Pegasus" }, { gearTypeName: "Bike", displayName: "Laverack" }]), "Laverack");
+  assert.equal(bikeFromGear([{ gearTypeName: "Bike", customMakeModel: "Canyon Speedmax" }]), "Canyon Speedmax");
+  assert.equal(bikeFromGear([{ gearTypeName: "Bike", gearMakeName: "Wattbike", gearModelName: "Atom" }]), "Wattbike Atom");
+  assert.equal(bikeFromGear([]), null);
+  assert.equal(bikeFromGear(null), null);
+});
+
+test("backfillActivityGear: rides only, newest first, resumable, failures retried", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "gear-"));
+  const prev = config.dataDir;
+  (config as { dataDir: string }).dataDir = dir;
+  try {
+    const store = new ArchiveStore();
+    await store.appendGarminActivities([
+      { id: "1", date: "2026-10-01", type: "road_biking", raw: {} },
+      { id: "2", date: "2026-10-02", type: "running", raw: {} },
+      { id: "3", date: "2026-10-03", type: "virtual_ride", raw: {} },
+      { id: "4", date: "2026-10-04", type: "cycling", raw: {} },
+    ]);
+    let fail4 = true;
+    const g = fakeGarmin((_tool, args) => {
+      if (args.activity_id === "4" && fail4) return text("Error retrieving activity gear data: 500");
+      if (args.activity_id === "1") return text(JSON.stringify([{ gearTypeName: "Bike", displayName: "Laverack" }]));
+      return text("No gear data found for activity with ID 3");
+    });
+    const r = await backfillActivityGear(g, store, () => {}, { throttleMs: 0 });
+    assert.equal(g.calls.length, 3, "three rides asked, the run skipped");
+    assert.equal(r.asked, 2);
+    assert.equal(r.withGear, 1);
+    const gear = await store.loadActivityGear();
+    assert.equal(gear.get("1"), "Laverack");
+    assert.equal(gear.get("3"), null, "'no gear' is an answer");
+    assert.equal(gear.has("4"), false, "failure left unasked");
+    assert.equal(gear.has("2"), false, "runs are skipped");
+    fail4 = false;
+    const r2 = await backfillActivityGear(g, store, () => {}, { throttleMs: 0 });
+    assert.equal(r2.asked, 1, "second run only asks the failed ride");
   } finally {
     (config as { dataDir: string }).dataDir = prev;
     rmSync(dir, { recursive: true, force: true });

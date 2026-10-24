@@ -5,6 +5,7 @@ import { garminInner } from "../state/assemble.js";
 import { fitStreamsDir } from "../insights/fit.js";
 import { ArchiveStore, type FitSummary } from "./store.js";
 import { archiveBuffer, manifestHashes } from "./activityArchive.js";
+import { bikeFromGear, isRideType, isToolFailure } from "./backfill.js";
 
 /**
  * Pull recent Garmin activity .FIT data into the archive — BOTH layers:
@@ -196,5 +197,31 @@ export async function syncFitSummaries(g: GarminClient, store: ArchiveStore, lim
     log?.(`  + ${id} (${sum.sport}, ${sum.date}, ${sum.avgTempC ?? "?"}°C${sum.avgPowerW != null ? `, ${sum.avgPowerW}W` : ""})`);
   }
   await store.appendFitSummaries(buffer);
+  await tagNewRideGear(g, store, list);
   return { total: list.length, added, skipped, failed, summaries: buffer, streamsDownloaded, streamsSupported, streamsFailed, streamFailures };
 }
+
+/**
+ * Keep ride → bike (Garmin Connect gear) current for the rides this sync saw. Only once the gear archive has
+ * a baseline (`npm run archive:gear` seeds it), so a fresh install isn't surprised by extra calls. Best-effort:
+ * a failure never breaks the sync, and a failed call is simply retried on a later sync.
+ */
+async function tagNewRideGear(g: GarminClient, store: ArchiveStore, list: Array<Record<string, unknown>>): Promise<void> {
+  try {
+    const known = await store.loadActivityGear();
+    if (!known.size) return;
+    const rows: Array<{ activityId: string; gear: string | null }> = [];
+    for (const a of list) {
+      const id = String(a.activityId ?? a.id ?? a.activity_id ?? "");
+      const type = String(a.type ?? (a.activityType as { typeKey?: string } | undefined)?.typeKey ?? "");
+      if (!id || known.has(id) || !isRideType(type)) continue;
+      const raw = await g.tryCall("get_activity_gear", { activity_id: id });
+      if (isToolFailure(raw)) continue;
+      rows.push({ activityId: id, gear: bikeFromGear(garminInner(raw)) });
+    }
+    await store.appendActivityGear(rows);
+  } catch {
+    /* best-effort */
+  }
+}
+
