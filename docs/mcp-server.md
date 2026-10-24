@@ -233,6 +233,11 @@ in `.env`; if it's absent they return a clean message instead of failing. Writes
   **Gating:** always on for **local** Claude Desktop/Code (stdio); on the **HTTP/Cowork** surface it's
   **off unless `COACH_MCP_FILE_ACCESS=true`** (it reads/writes files on your Mac from a remote session).
   For the athlete profile prefer `update_profile` — it deep-merges and validates instead of overwriting.
+- **`pedalling_history`** `{ from?, to?, splitAt?, indoor? }` — pedalling-mechanics history across every
+  archived ride with dual-sided pedal data (activity archive + fit-streams): monthly medians of L/R balance
+  (plus its load shift and late drift), torque effectiveness, platform centre offset and power-phase arc;
+  indoor vs outdoor; `splitAt` compares before/after a date (cleat change, shim, fit). Deterministic, no LLM
+  cost; the first call parses the archive (slow), later calls use the `data/pedalling-history.json` cache.
 - **`insights`** — run the insight engine over your history (CTL/ATL/TSB & ramp, EF, durability,
   run-load, autocorr-aware correlations, change-points, taper target, validated monitoring rules)
   and return the computed metrics + top surfaced findings. Each top finding is annotated with its

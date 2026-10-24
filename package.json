@@ -88,6 +88,7 @@
     "archive:heal:install": "bash scripts/install-archive-heal.sh",
     "archive:heal:uninstall": "bash scripts/uninstall-archive-heal.sh",
     "backfill:status": "tsx src/cli.ts archive-status",
+    "pedalling": "tsx src/cli.ts pedalling",
     "backfill:compact": "tsx src/cli.ts archive-compact",
     "backfill:install": "bash scripts/install-backfill.sh",
     "backfill:uninstall": "bash scripts/uninstall-backfill.sh",
