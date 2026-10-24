@@ -41,6 +41,17 @@ interface Sample {
   stepLength?: number; // mm
   gctBalance?: number; // stance-time L/R balance, %
   lrBalance?: number; // bike left/right power balance, %
+  leftTe?: number;
+  rightTe?: number;
+  leftPs?: number;
+  rightPs?: number;
+  combinedPs?: number;
+  leftPco?: number;
+  rightPco?: number;
+  leftPhase?: [number, number];
+  rightPhase?: [number, number];
+  leftPeakPhase?: [number, number];
+  rightPeakPhase?: [number, number];
 }
 interface StreamFile {
   activityId?: string;
@@ -83,8 +94,42 @@ export interface SessionDecay {
   // ACTIVE swimming samples only — rests/floats between reps are excluded, so they reflect the swim, not
   // the pauses (the old whole-stream basis read a long rest as a huge "cadence drop"/decoupling).
   swim: SwimAnalysis | null;
+  /** Ride-only pedalling detail from dual-sided power pedals. Null when the pedals didn't record it. */
+  pedalling?: PedallingAnalysis | null;
 }
 
+/** A left/right pair of per-leg averages (either side null when that pedal didn't report it). */
+export interface LeftRight {
+  left: number | null;
+  right: number | null;
+}
+
+/** Power phase: where in the stroke each leg makes positive torque (degrees, 0 = top dead centre). */
+export interface PhaseRead {
+  startDeg: number;
+  endDeg: number;
+  arcDeg: number;
+}
+
+/**
+ * Pedalling mechanics over PEDALLING samples only (power > 0 and cadence > 0): freewheeling and soft-
+ * pedalling make the per-leg channels meaningless, and a group ride is full of both.
+ */
+export interface PedallingAnalysis {
+  pedallingMin: number;
+  balanceLeftPct: number | null; // left share of power, 50 = even
+  /** Balance at the ride's own low / mid / high power terciles: a gap that shifts with load ≠ a fixed offset. */
+  balanceByPower: Array<{ band: "low" | "mid" | "high"; fromW: number; toW: number; leftPct: number | null }>;
+  /** Balance in each quarter of the ride: a drift late on points to fatigue rather than set-up. */
+  balanceByQuarter: Array<number | null>;
+  torqueEffectivenessPct: LeftRight;
+  pedalSmoothnessPct: LeftRight;
+  combinedSmoothnessPct: number | null;
+  /** Platform centre offset, mm: where on the pedal body force lands (+ outboard, − inboard). */
+  platformCentreOffsetMm: LeftRight;
+  powerPhase: { left: PhaseRead | null; right: PhaseRead | null };
+  peakPowerPhase: { left: PhaseRead | null; right: PhaseRead | null };
+}
 /** Swim pace + stroke-efficiency derived from the GPS/cadence stream (open-water swims; pool has no GPS). */
 export interface SwimAnalysis {
   openWater: boolean | null; // device sub_sport tag: true=open water, false=pool, null=untagged
@@ -282,6 +327,61 @@ export function analyseSession(f: StreamFile, runTailTrimMin = config.runTailTri
     avgLrBalancePct: avgOf(s.map((x) => (x.lrBalance == null ? undefined : decodeLrBalanceLeftPct(x.lrBalance)))),
     normalizedPowerW: normalizedPower(s.map((x) => x.power)),
     swim: isSwim ? analyseSwim(s, f.subSport) : null,
+    pedalling: /ride|bik|cycl/i.test(String(f.sport ?? "")) ? analysePedalling(s) : null,
+  };
+}
+
+/** Mean of a set of angles in degrees, done on the circle so 350° and 10° average to 0°, not 180°. */
+function circularMeanDeg(degs: number[]): number | null {
+  if (!degs.length) return null;
+  const r = Math.PI / 180;
+  const x = degs.reduce((a, d) => a + Math.cos(d * r), 0);
+  const y = degs.reduce((a, d) => a + Math.sin(d * r), 0);
+  return +(((Math.atan2(y, x) / r) + 360) % 360).toFixed(0);
+}
+
+function phaseRead(ps: Array<[number, number] | undefined>): PhaseRead | null {
+  const v = ps.filter((p): p is [number, number] => p != null);
+  if (v.length < 30) return null;
+  const startDeg = circularMeanDeg(v.map((p) => p[0]))!;
+  const endDeg = circularMeanDeg(v.map((p) => p[1]))!;
+  return { startDeg, endDeg, arcDeg: (endDeg - startDeg + 360) % 360 };
+}
+
+/** Plain mean that keeps signed values and zeros (PCO is signed; 0 mm is a real reading). */
+function meanOrNull(xs: Array<number | undefined>): number | null {
+  const v = xs.filter((x): x is number => typeof x === "number");
+  return v.length >= 30 ? +mean(v)!.toFixed(1) : null;
+}
+
+/** Pedalling mechanics for a ride (see {@link PedallingAnalysis}). Null when the pedals logged none of it. Pure. */
+export function analysePedalling(s: Sample[]): PedallingAnalysis | null {
+  const p = s.filter((x) => (x.power ?? 0) > 0 && (x.cadence ?? 0) > 0);
+  const bal = (xs: Sample[]) => meanOrNull(xs.map((x) => (x.lrBalance == null ? undefined : decodeLrBalanceLeftPct(x.lrBalance))));
+  const hasAny = p.some(
+    (x) => x.lrBalance != null || x.leftTe != null || x.rightTe != null || x.leftPs != null || x.combinedPs != null || x.leftPco != null || x.leftPhase != null,
+  );
+  if (p.length < 60 || !hasAny) return null;
+  const watts = p.map((x) => x.power!).sort((a, b) => a - b);
+  const q1 = watts[Math.floor(watts.length / 3)];
+  const q2 = watts[Math.floor((watts.length * 2) / 3)];
+  const bands: PedallingAnalysis["balanceByPower"] = [
+    { band: "low", fromW: watts[0], toW: q1, leftPct: bal(p.filter((x) => x.power! < q1)) },
+    { band: "mid", fromW: q1, toW: q2, leftPct: bal(p.filter((x) => x.power! >= q1 && x.power! < q2)) },
+    { band: "high", fromW: q2, toW: watts[watts.length - 1], leftPct: bal(p.filter((x) => x.power! >= q2)) },
+  ];
+  const qn = Math.floor(p.length / 4);
+  return {
+    pedallingMin: Math.round(p.length / 60),
+    balanceLeftPct: bal(p),
+    balanceByPower: bands,
+    balanceByQuarter: [0, 1, 2, 3].map((i) => bal(p.slice(i * qn, i === 3 ? p.length : (i + 1) * qn))),
+    torqueEffectivenessPct: { left: meanOrNull(p.map((x) => x.leftTe)), right: meanOrNull(p.map((x) => x.rightTe)) },
+    pedalSmoothnessPct: { left: meanOrNull(p.map((x) => x.leftPs)), right: meanOrNull(p.map((x) => x.rightPs)) },
+    combinedSmoothnessPct: meanOrNull(p.map((x) => x.combinedPs)),
+    platformCentreOffsetMm: { left: meanOrNull(p.map((x) => x.leftPco)), right: meanOrNull(p.map((x) => x.rightPco)) },
+    powerPhase: { left: phaseRead(p.map((x) => x.leftPhase)), right: phaseRead(p.map((x) => x.rightPhase)) },
+    peakPowerPhase: { left: phaseRead(p.map((x) => x.leftPeakPhase)), right: phaseRead(p.map((x) => x.rightPeakPhase)) },
   };
 }
 
@@ -334,6 +434,17 @@ function fitToStreamFile(act: FitActivity, name: string): StreamFile {
       stepLength: s.stepLength,
       gctBalance: s.gctBalance,
       lrBalance: s.lrBalance,
+      leftTe: s.leftTe,
+      rightTe: s.rightTe,
+      leftPs: s.leftPs,
+      rightPs: s.rightPs,
+      combinedPs: s.combinedPs,
+      leftPco: s.leftPco,
+      rightPco: s.rightPco,
+      leftPhase: s.leftPhase,
+      rightPhase: s.rightPhase,
+      leftPeakPhase: s.leftPeakPhase,
+      rightPeakPhase: s.rightPeakPhase,
     })),
   };
 }

@@ -14,7 +14,7 @@
 import type { CoachLLM } from "../llm/client.js";
 import type { AthleteState } from "../state/types.js";
 import type { InsightReport } from "../insights/engine.js";
-import { fitStreamsDir, type SessionDecay } from "../insights/fit.js";
+import { fitStreamsDir, type SessionDecay, type PedallingAnalysis, type PhaseRead } from "../insights/fit.js";
 import type { FitSummary } from "../archive/store.js";
 import { richActivities, type RichActivity } from "../insights/metrics.js";
 import { durabilityContextLines, type ActivityDurability, type DurabilityFetcher } from "../insights/activityDetail.js";
@@ -352,6 +352,7 @@ export function buildSessionContext(d: SessionDetail, state: AthleteState, insig
       const lrNote = lr == null ? "" : lr < 0 || lr > 100 ? `, L/R balance ${fmt(lr, 1)}% — outside 0–100, a sensor/encoding artifact, not assessable` : `, L/R balance ${fmt(lr, 1)}% (50% = even)`;
       lines.push(`- ${powerLabel}: normalized power ${fmt(dy.normalizedPowerW)}W${npNote}${lrNote}`);
     }
+    if (dy.pedalling) lines.push(...pedallingLines(dy.pedalling));
   } else {
     lines.push("", `IN-SESSION BIOMECHANICS: no raw .FIT stream for this session — cadence/GCT/decoupling unavailable. Sync/fit-sync auto-downloads these when the Garmin download tool is available; the fallback is a per-second .FIT exported from Garmin Connect into data/fit-streams/.`);
   }
@@ -457,3 +458,28 @@ export async function runSessionFeedback(
   const { text, cacheRead, costUsd } = await llm.text(prompt);
   return { detail, markdown: `# Session feedback — ${detail.date} ${detail.sport}\n\n${text}`, cacheRead, costUsd };
 }
+
+/**
+ * The ride's pedalling mechanics as context lines. Pedalling samples only (coasting excluded). Each channel
+ * is skipped when the pedals didn't record it. The interpretation notes are there so the model doesn't
+ * read a fixed balance offset as fatigue or a cleat problem from balance alone.
+ */
+export function pedallingLines(p: PedallingAnalysis): string[] {
+  const lr = (v: { left: number | null; right: number | null }, unit: string, dp = 1) =>
+    `L ${fmt(v.left, dp)}${unit} / R ${fmt(v.right, dp)}${unit}`;
+  const ph = (x: PhaseRead | null) => (x ? `${x.startDeg}°→${x.endDeg}° (arc ${x.arcDeg}°)` : "—");
+  const out = [`PEDALLING MECHANICS [.FIT, dual-sided pedals; ${p.pedallingMin} min of pedalling, coasting excluded]:`];
+  if (p.balanceLeftPct != null) {
+    out.push(
+      `- L/R balance ${fmt(p.balanceLeftPct, 1)}% left (50 = even). By power: ${p.balanceByPower.map((b) => `${b.band} ${b.fromW}–${b.toW}W ${fmt(b.leftPct, 1)}%`).join(", ")}. By quarter of the ride: ${p.balanceByQuarter.map((q) => fmt(q, 1)).join(" → ")}.`,
+      `- Reading balance: within ~48–52% is normal. An offset that holds at every power and every quarter points to a structural difference (leg length, strength); one that grows with power or late in the ride points to fatigue or one leg doing the work under load. Balance alone can't prove a cleat or shim problem.`,
+    );
+  }
+  if (p.torqueEffectivenessPct.left != null || p.torqueEffectivenessPct.right != null) out.push(`- Torque effectiveness ${lr(p.torqueEffectivenessPct, "%")} (share of each stroke not wasted pushing against the other leg; higher is better, compare the sides)`);
+  if (p.pedalSmoothnessPct.left != null || p.pedalSmoothnessPct.right != null) out.push(`- Pedal smoothness ${lr(p.pedalSmoothnessPct, "%")} (avg ÷ peak torque per stroke)`);
+  else if (p.combinedSmoothnessPct != null) out.push(`- Pedal smoothness ${fmt(p.combinedSmoothnessPct, 1)}% (combined only)`);
+  if (p.platformCentreOffsetMm.left != null || p.platformCentreOffsetMm.right != null) out.push(`- Platform centre offset ${lr(p.platformCentreOffsetMm, "mm")} (+ outboard, − inboard; the most direct cleat-position signal. A side far from the other, or beyond about ±5 mm, is worth checking cleat lateral position / stance width)`);
+  if (p.powerPhase.left || p.powerPhase.right) out.push(`- Power phase L ${ph(p.powerPhase.left)} / R ${ph(p.powerPhase.right)}; peak L ${ph(p.peakPowerPhase.left)} / R ${ph(p.peakPowerPhase.right)} (0° = top of the stroke)`);
+  return out;
+}
+

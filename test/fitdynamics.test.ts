@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { analyseSession, trimRunTail, detectRunTailCut } from "../src/insights/fit.js";
+import { analyseSession, trimRunTail, detectRunTailCut, analysePedalling } from "../src/insights/fit.js";
+import { pedallingLines } from "../src/coach/session.js";
 import { decodeLrBalanceLeftPct } from "../src/insights/fitParser.js";
 
 /**
@@ -203,4 +204,54 @@ test("trimRunTail: cuts by timestamp, so gaps from smart recording don't shift t
   const s = [{ t: 0 }, { t: 100 }, { t: 1000 }, { t: 1500 }, { t: 1600 }];
   assert.deepEqual(trimRunTail(s, 10).map((x) => x.t), [0, 100, 1000]);
   assert.deepEqual(trimRunTail(s, 0), s);
+});
+
+// Pedalling mechanics from dual-sided pedals: the shims / cleat question needs per-leg channels, not just balance.
+test("analysePedalling: per-leg averages over pedalling only, balance by power band and by quarter", () => {
+  const s = Array.from({ length: 1200 }, (_, i) => {
+    const coasting = i % 10 === 0; // freewheeling every 10th second: must not count
+    const power = coasting ? 0 : 150 + (i % 3) * 50; // 150 / 200 / 250 W
+    // Left share rises with power (51 / 52 / 53): a load-dependent imbalance, not a fixed offset.
+    const left = 51 + (i % 3);
+    return {
+      t: i, power, cadence: coasting ? 0 : 88, hr: 140,
+      lrBalance: coasting ? 0x80 | 10 : 0x80 | (100 - left), // coasting junk would drag the mean to 90%
+      leftTe: 78, rightTe: 72, leftPs: 24, rightPs: 21, leftPco: -6, rightPco: 1,
+      leftPhase: [350, 230] as [number, number], rightPhase: [10, 250] as [number, number],
+    };
+  });
+  const p = analysePedalling(s)!;
+  assert.equal(p.balanceLeftPct, 52);
+  assert.deepEqual(p.balanceByPower.map((b) => b.leftPct), [51, 52, 53]);
+  assert.equal(p.balanceByQuarter.length, 4);
+  assert.deepEqual(p.torqueEffectivenessPct, { left: 78, right: 72 });
+  assert.deepEqual(p.platformCentreOffsetMm, { left: -6, right: 1 });
+  assert.equal(p.powerPhase.left!.startDeg, 350);
+  assert.equal(p.powerPhase.left!.arcDeg, 240, "arc wraps through top dead centre: 350° → 230° = 240°");
+  assert.equal(p.pedallingMin, 18, "coasting seconds excluded");
+});
+
+test("analysePedalling: circular mean, so phase starts either side of top dead centre don't average to 180°", () => {
+  const s = Array.from({ length: 200 }, (_, i) => ({ t: i, power: 200, cadence: 90, leftPhase: [i % 2 ? 350 : 10, 230] as [number, number] }));
+  assert.equal(analysePedalling(s)!.powerPhase.left!.startDeg, 0);
+});
+
+test("analysePedalling: null when the pedals recorded no dynamics (single-sided meter, trainer)", () => {
+  const s = Array.from({ length: 600 }, (_, i) => ({ t: i, power: 200, cadence: 90 }));
+  assert.equal(analysePedalling(s), null);
+});
+
+test("analyseSession: a ride carries the pedalling block, a run doesn't", () => {
+  const ride = analyseSession({ sport: "Ride", date: "2026-10-24", samples: samples(600, { power: 200, cadence: 90, leftTe: 75, rightTe: 74 }) })!;
+  assert.deepEqual(ride.pedalling!.torqueEffectivenessPct, { left: 75, right: 74 });
+  const runS = analyseSession({ sport: "Run", date: "2026-10-24", samples: samples(600, { power: 200, cadence: 90, leftTe: 75 }) }, 0)!;
+  assert.equal(runS.pedalling, null);
+});
+
+test("pedallingLines: names each channel and skips the ones the pedals didn't record", () => {
+  const p = analysePedalling(Array.from({ length: 600 }, (_, i) => ({ t: i, power: 200, cadence: 90, lrBalance: 0x80 | 47, leftPco: -6, rightPco: 1 })))!;
+  const text = pedallingLines(p).join("\n");
+  assert.match(text, /L\/R balance 53\.0% left/);
+  assert.match(text, /Platform centre offset L -6\.0mm \/ R 1\.0mm/);
+  assert.doesNotMatch(text, /Torque effectiveness/, "not recorded → no line, not a row of dashes");
 });

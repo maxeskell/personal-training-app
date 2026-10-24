@@ -142,3 +142,45 @@ test("parseFit decodes sub_sport so an open-water swim is classified (not analys
   uv.writeUInt8(5, 0);
   assert.equal(parseFit(fitFile([recordDef, recordData(1000, 130, 0, 30, 22), untaggedDef, data(1, uv)]))!.subSport, null);
 });
+
+test("parseFit decodes cycling dynamics: torque effectiveness, smoothness, PCO and power phase", () => {
+  const dynDef = def(1, 20, [
+    [253, 4, 0x86],
+    [7, 2, 0x84], // power
+    [43, 1, 0x02], // left_torque_effectiveness (scale 2)
+    [44, 1, 0x02], // right_torque_effectiveness
+    [45, 1, 0x02], // left_pedal_smoothness
+    [46, 1, 0x02], // right_pedal_smoothness
+    [67, 1, 0x01], // left_pco (sint8 mm)
+    [68, 1, 0x01], // right_pco
+    [69, 2, 0x02], // left_power_phase [start, end] (uint8, 256 per 360°)
+    [71, 2, 0x02], // right_power_phase
+  ]);
+  const v = Buffer.alloc(16);
+  v.writeUInt32LE(2000, 0);
+  v.writeUInt16LE(230, 4);
+  v.writeUInt8(150, 6); // 75.0 %
+  v.writeUInt8(146, 7); // 73.0 %
+  v.writeUInt8(44, 8); // 22.0 %
+  v.writeUInt8(0xff, 9); // invalid → absent
+  v.writeInt8(-3, 10); // left PCO −3 mm (inboard)
+  v.writeInt8(4, 11); // right PCO +4 mm
+  v.writeUInt8(Math.round((340 * 256) / 360), 12); // left phase starts 340°
+  v.writeUInt8(Math.round((220 * 256) / 360), 13); // ends 220°
+  v.writeUInt8(0xff, 14); // right phase invalid
+  v.writeUInt8(0xff, 15);
+  const s = parseFit(fitFile([dynDef, data(1, v)]))!.samples[0];
+  assert.equal(s.leftTe, 75);
+  assert.equal(s.rightTe, 73);
+  assert.equal(s.leftPs, 22);
+  assert.equal("rightPs" in s, false, "invalid sentinel → no key, not 0");
+  assert.equal(s.leftPco, -3);
+  assert.equal(s.rightPco, 4);
+  assert.ok(Math.abs(s.leftPhase![0] - 340) < 1.5 && Math.abs(s.leftPhase![1] - 220) < 1.5, `left phase ${s.leftPhase}`);
+  assert.equal("rightPhase" in s, false);
+});
+
+test("parseFit: a run sample carries no cycling-dynamics keys", () => {
+  const s = parseFit(fitFile([recordDef, recordData(1000, 150, 250, 90, 20)]))!.samples[0];
+  assert.equal("leftTe" in s || "leftPco" in s || "leftPhase" in s, false);
+});
