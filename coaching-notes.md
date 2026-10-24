@@ -33,6 +33,14 @@
       2026-01-01`. Laverack Jun–Oct (15 rides): balance 55→51.5% left, PCO L −5.8 / R +0.9 mm, TE 71.6/67.3.
       Washer watch: the 2 October rides after it read left PCO −8.3 mm vs −5.2/−5.9 Jul–Sep (further inboard);
       recheck after 5–10 more Laverack rides. Ask: is the Felt the TT bike?
+      **Shim verdict (24 Oct, Laverack-only with sensor inference: 15 tagged + 101 inferred rides, Dec 2023 →):**
+      the left shim cut 6→2 mm (Apr 2026) did NOT change L/R balance (52.8% before vs 53.0% after; same-season
+      Apr–Oct 2025 vs 2026 ≈53% both). The summer leftward balance drift happens on the Laverack every year, so
+      it's riding pattern, not the TT bike or the shim. Left PCO improved ~3–4 mm (Apr–Oct 2025 ≈−12 → 2026
+      ≈−8 mm) but only from July, coinciding with the switch to dual-sided pedals, so not credited to the shim.
+      Decision: keep the shim at 2 mm (neutral, no case to revert); the open fit issue is the persistent left
+      PCO inboard offset → fitter. Washer: judge after 5–10 more Laverack rides (`--from 2026-07-01`); if left
+      PCO stays ≤ −8 mm, it's going the wrong way.
 - [x] **Creatine flipped to `active` — DONE 9 Sep 2026 (started 3 days later than the 7 Sep plan;
       no loading phase, 3–5 g/day). Profile entry carries `started: 2026-09-09`.**
 - [ ] **Run form — standing cues for every run + brick (from Birmingham race photos, 13 Jul 2026).**
