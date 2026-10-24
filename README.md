@@ -599,7 +599,9 @@ cost)` marker, so `npm run cost` shows the activity without inflating your dolla
 API-only and stays accurate. `npm run cost` reports spend by flow over today / 7d / 30d / all-time with a monthly
 projection (the dashboard stays decluttered — cost lives in `npm run cost` / the MCP `cost` tool, not a card). To keep it down, the cheap, frequent flows
 (`ask`, `readiness`, `session`) run at `effort: "medium"` while the deep flows (`weekly`, `race`,
-`deep-dive`, plan proposals) stay `"high"`. Rates are configurable in `src/config.ts` (`COACH_PRICE_*`).
+`deep-dive`, plan proposals) stay `"high"`. The coach runs on **Claude Opus 5.5** ($4 / $20 per million tokens),
+with a server-side fallback so a rare safety-classifier decline retries on another model instead of failing; each
+call is priced by the model that actually answered. Rates are configurable in `src/config.ts` (`COACH_PRICE_*`).
 
 ## Zones, thresholds & race splits
 

@@ -85,6 +85,6 @@ test("classifyIntent: a router's sourceLabel is surfaced (e.g. the Haiku router)
 test("costUsd prices Haiku from the Haiku table, not Opus (cheap intent calls aren't over-billed)", () => {
   const u = { input: 1_000_000, output: 0, cacheWrite: 0, cacheRead: 0 };
   assert.equal(costUsd(u, "claude-haiku-4-5-20251001"), 1); // 1M input × $1/MTok (Haiku default)
-  assert.equal(costUsd(u, "claude-opus-5"), 5); // 1M input × $5/MTok (Opus default)
-  assert.equal(costUsd(u), 5); // defaults to Opus when model omitted
+  assert.equal(costUsd(u, "claude-opus-5"), 5); // 1M input × $5/MTok (prior-generation Opus)
+  assert.equal(costUsd(u), 4); // defaults to Opus 5.5 ($4/MTok) when model omitted
 });

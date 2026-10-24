@@ -27,12 +27,16 @@ export interface CostRecord extends LlmUsage {
 }
 
 /**
- * Dollar cost of one call from the configured per-MTok price table. Model-aware: cheap side-task calls
- * on Haiku are priced from the Haiku table, everything else from the (Opus) default — so the cost log
- * doesn't bill a Haiku intent micro-call at Opus rates.
+ * Dollar cost of one call from the configured per-MTok price table. Model-aware: Haiku side-task calls use
+ * the Haiku table; prior-generation Opus (claude-opus-5, 4.x — e.g. a refusal fallback) the legacy Opus
+ * table; everything else the current default (claude-opus-5-5) — so no call is billed at another model's rate.
  */
-export function costUsd(u: LlmUsage, model = "claude-opus-5"): number {
-  const p = /haiku/i.test(model) ? config.pricingHaiku : config.pricing;
+export function costUsd(u: LlmUsage, model = "claude-opus-5-5"): number {
+  const p = /haiku/i.test(model)
+    ? config.pricingHaiku
+    : /opus-(?:5(?!-5)|4)/i.test(model)
+      ? config.pricingOpusLegacy
+      : config.pricing;
   const usd =
     (u.input * p.inputPerMTok +
       u.output * p.outputPerMTok +

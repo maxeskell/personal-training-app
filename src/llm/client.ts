@@ -5,19 +5,33 @@ import { appendCostRecord, costUsd, type LlmUsage } from "./costLog.js";
 /**
  * Thin wrapper over the Anthropic SDK for the coach's reasoning core.
  *
- * - Model: claude-opus-5 with adaptive thinking + high effort (intelligence-sensitive). Opus 5 is a
- *   drop-in for Opus 4.8 at the SAME price ($5/$25 per MTok) — the pricing table in config.ts is unchanged.
- *   Both breaking changes in the 4.8→5 move are moot here: we already set thinking explicitly (adaptive)
- *   and never disable it, so "thinking on by default" and "disabled-thinking capped at high effort" don't bite.
- * - The (stable) system prompt is marked ephemeral for prompt-caching. At ~3k tokens it is ABOVE Opus 5's
- *   512-token cache minimum (down from 1024 on Opus 4.8), so the system prompt caches across calls within
- *   the 5-minute TTL — cache-read tokens show up in the cost report.
+ * - Model: claude-opus-5-5 (2026-10; was claude-opus-5) with adaptive thinking and an explicit effort per
+ *   flow. Cheaper than Opus 5 ($4/$20 vs $5/$25 per MTok, cache reads $0.20). Its breaking changes don't
+ *   bite here: we never disable thinking (it's always on in 5.5), never force tool_choice, and always set
+ *   effort explicitly (5.5's API default dropped to "medium"). 5.5 thinks MORE per turn at a given effort,
+ *   so the max_tokens caps below were raised: you pay for tokens used, not the cap.
+ * - Server-side refusal fallback (`fallbacks: "default"`, beta server-side-fallback-2026-07-01): on the rare
+ *   safety-classifier decline the API re-runs the request on a fallback model inside the same call, so a
+ *   coaching flow doesn't fail. Cost is priced by the model that actually served (`res.model`).
+ * - The (stable) system prompt is marked ephemeral for prompt-caching. At ~3k tokens it is ABOVE the
+ *   512-token cache minimum, so the system prompt caches across calls within the 5-minute TTL — cache-read
+ *   tokens show up in the cost report.
  * - Structured output via output_config.format guarantees a parseable verdict.
  * - Every call records its token usage + dollar cost to the local cost log (see costLog.ts).
  */
+/**
+ * Server-side refusal fallback: `"default"` lets the API route a declined request by refusal category
+ * (no model list to maintain). Rejected on the Batches API and not offered on Bedrock/Vertex/Foundry; this
+ * app only calls the first-party Claude API.
+ */
+const FALLBACK: { betas: Anthropic.Beta.AnthropicBeta[]; fallbacks: Anthropic.Beta.BetaFallbacksParam } = {
+  betas: ["server-side-fallback-2026-07-01"],
+  fallbacks: "default",
+};
+
 export class CoachLLM {
   private readonly client: Anthropic;
-  readonly model = "claude-opus-5";
+  readonly model = "claude-opus-5-5";
 
   /**
    * `operation` labels the call in the cost log (e.g. "readiness", "ask", "session").
@@ -33,16 +47,21 @@ export class CoachLLM {
     this.client = new Anthropic();
   }
 
-  /** Pull the four billable buckets off a response, compute cost, and append to the cost log. */
-  private async meter(usageRaw: Anthropic.Usage): Promise<{ usage: LlmUsage; costUsd: number }> {
+  /**
+   * Pull the four billable buckets off a response, compute cost, and append to the cost log. `servedModel`
+   * is the response's `model`: after a refusal fallback it names the model that actually answered, which
+   * is what the call is billed at.
+   */
+  private async meter(usageRaw: Anthropic.Beta.BetaUsage, servedModel: string = this.model): Promise<{ usage: LlmUsage; costUsd: number }> {
     const usage: LlmUsage = {
       input: usageRaw.input_tokens ?? 0,
       output: usageRaw.output_tokens ?? 0,
       cacheWrite: usageRaw.cache_creation_input_tokens ?? 0,
       cacheRead: usageRaw.cache_read_input_tokens ?? 0,
     };
-    const cost = costUsd(usage, this.model);
-    await appendCostRecord({ ts: new Date().toISOString(), operation: this.operation, model: this.model, ...usage, costUsd: cost });
+    const model = servedModel || this.model;
+    const cost = costUsd(usage, model);
+    await appendCostRecord({ ts: new Date().toISOString(), operation: this.operation, model, ...usage, costUsd: cost });
     return { usage, costUsd: cost };
   }
 
@@ -113,10 +132,13 @@ export class CoachLLM {
             )
           : n;
     const safeSchema = stripArrayLimits(schema) as Record<string, unknown>;
-    const attempt = (ms: number) => this.withDeadline((signal) => this.client.messages.create(
+    const attempt = (ms: number) => this.withDeadline((signal) => this.client.beta.messages.create(
       {
         model: this.model,
-        max_tokens: 4000,
+        ...FALLBACK,
+        // 16k (was 4k on Opus 5): 5.5 thinks more at the same effort and thinking counts toward the cap; a
+        // truncated structured reply is thrown away below, so headroom matters more than a tight cap.
+        max_tokens: 16000,
         thinking: { type: "adaptive" },
         output_config: {
           effort: this.effort,
@@ -131,9 +153,9 @@ export class CoachLLM {
     ), ms);
     const res = await this.withBudgetRetry(attempt, config.coachLlm.structuredTimeoutMs(this.effort));
 
-    // Opus 5's safety classifiers can decline a request (HTTP 200, stop_reason "refusal", empty content).
-    // Extraordinarily unlikely for endurance coaching, but guard before parsing so it surfaces as a clear,
-    // degradable error rather than a confusing "did not return valid JSON".
+    // Safety classifiers can decline a request (HTTP 200, stop_reason "refusal"). The server-side fallback
+    // retries on another model first; "refusal" here means the whole chain declined. Extraordinarily
+    // unlikely for endurance coaching, but guard before parsing so it surfaces as a clear, degradable error.
     if (res.stop_reason === "refusal") {
       throw new Error("LLM declined the request (safety classifier) — no structured result produced.");
     }
@@ -142,7 +164,7 @@ export class CoachLLM {
     if (res.stop_reason === "max_tokens") {
       throw new Error("LLM response was truncated (max_tokens) — not using a partial structured result.");
     }
-    const text = res.content.find((b): b is Anthropic.TextBlock => b.type === "text")?.text ?? "";
+    const text = res.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")?.text ?? "";
     let value: T;
     try {
       value = JSON.parse(text) as T;
@@ -153,7 +175,7 @@ export class CoachLLM {
     for (const k of (schema.required as string[] | undefined) ?? []) {
       if (!(k in (value as Record<string, unknown>))) throw new Error(`LLM structured output missing required field: ${k}`);
     }
-    const { usage, costUsd } = await this.meter(res.usage);
+    const { usage, costUsd } = await this.meter(res.usage, res.model);
     return { value, cacheRead: usage.cacheRead, costUsd };
   }
 
@@ -166,15 +188,16 @@ export class CoachLLM {
   async research(userContent: string, maxSearches = 6): Promise<{ text: string; cacheRead: number; costUsd: number }> {
     // Streamed: a high-effort web-grounded run can take minutes (adaptive thinking + several searches),
     // and a non-streaming call risks the SDK's HTTP timeout. finalMessage() collects the full result.
-    const res = await this.withDeadline((signal) => this.client.messages
+    const res = await this.withDeadline((signal) => this.client.beta.messages
       .stream(
         {
           model: this.model,
-          max_tokens: 8000,
+          ...FALLBACK,
+          max_tokens: 16000,
           thinking: { type: "adaptive" },
           output_config: { effort: this.effort },
           system: [{ type: "text", text: this.systemPrompt, cache_control: { type: "ephemeral" } }],
-          // Server-side web search (current 2026-02 tool — dynamic result filtering, supported on Opus 5). Capped to bound cost.
+          // Server-side web search (current 2026-02 tool — dynamic result filtering, supported on Opus 5.5). Capped to bound cost.
           tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxSearches }],
           messages: [{ role: "user", content: userContent }],
         },
@@ -185,26 +208,27 @@ export class CoachLLM {
       throw new Error("LLM declined the research request (safety classifier) — no digest this run.");
     }
     const text = res.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
       .map((b) => b.text)
       .join("\n");
     if (!text && res.stop_reason === "max_tokens") {
       throw new Error("Model hit max_tokens before emitting the digest — raise max_tokens.");
     }
-    const { usage, costUsd } = await this.meter(res.usage);
+    const { usage, costUsd } = await this.meter(res.usage, res.model);
     return { text, cacheRead: usage.cacheRead, costUsd };
   }
 
   /** Plain-prose completion (for the weekly review and race-prep reports). Same cached system prompt. */
   async text(userContent: string): Promise<{ text: string; cacheRead: number; costUsd: number }> {
     // Headroom matters: adaptive thinking consumes part of max_tokens, so a low cap can leave no
-    // room for the prose. 12k comfortably covers thinking + a long report. Streamed so a long
+    // room for the prose. 32k (was 12k on Opus 5, which thought less per turn) covers thinking + a long report. Streamed so a long
     // high-effort generation can't trip the SDK's non-streaming HTTP timeout; finalMessage() collects it.
-    const res = await this.withDeadline((signal) => this.client.messages
+    const res = await this.withDeadline((signal) => this.client.beta.messages
       .stream(
         {
           model: this.model,
-          max_tokens: 12000,
+          ...FALLBACK,
+          max_tokens: 32000,
           thinking: { type: "adaptive" },
           output_config: { effort: this.effort },
           system: [
@@ -219,13 +243,13 @@ export class CoachLLM {
       throw new Error("LLM declined the request (safety classifier) — no prose produced.");
     }
     const text = res.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
       .map((b) => b.text)
       .join("\n");
     if (!text && res.stop_reason === "max_tokens") {
       throw new Error("Model hit max_tokens before emitting prose — raise max_tokens.");
     }
-    const { usage, costUsd } = await this.meter(res.usage);
+    const { usage, costUsd } = await this.meter(res.usage, res.model);
     return { text, cacheRead: usage.cacheRead, costUsd };
   }
 }
