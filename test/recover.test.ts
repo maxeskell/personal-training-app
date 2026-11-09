@@ -59,6 +59,7 @@ test("recoverGaps with an all-current archive recovers nothing and opens no conn
     loadActivities: async () => [{ date: recent }],
     loadGarminDays: async () => [{ date: recent }],
     loadGarminActivities: async () => [{ date: recent }],
+    loadGarminExtras: async () => [{ date: recent }],
   } as unknown as ArchiveStore;
 
   const rec = await recoverGaps({ now: today, store: fakeStore, staleDays: DEFAULT_RECOVER_STALE_DAYS });
