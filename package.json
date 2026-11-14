@@ -104,7 +104,7 @@
     "check:updates:uninstall": "bash scripts/uninstall-update-check.sh"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.120.0",
+    "@anthropic-ai/sdk": "^1.8.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "dotenv": "^17.4.2",
     "express": "^5.1.0",
