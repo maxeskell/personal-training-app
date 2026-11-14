@@ -315,6 +315,15 @@ fire-only health check), `npm run backfill:install` (history grind).
   `message_delta` accumulation) and `open` → 11.0.1, confirmed every other dependency already at latest, and
   re-checked the `garmin_mcp` pin against upstream (HEAD unchanged since 2026-08-04, still requires `mcp<2` —
   the pin stands; see spec 9). Keep it clear on dependency bumps.
+- **`@anthropic-ai/sdk` 1.x / API version `2026-10-21` (2026-11-14).** SDK 0.120 → 1.8, which sends
+  `anthropic-version: 2026-10-21` and the key as `Authorization: Bearer` (was `X-Api-Key`). Nothing here
+  needed changing: no `temperature`/`top_p`/`top_k`, no `MessageParam` handling, no Text Completions, no
+  documents/citations in replayed turns, both clients are a bare `new Anthropic()` reading only
+  `ANTHROPIC_API_KEY`, and there's no proxy (if one is ever added, it must read `Authorization`). Verified
+  with typecheck, the suite and one live structured Opus call + one Haiku-router call. The 1.x SDK is
+  Apache-2.0 (was MIT). Same pass: the 2026-11-10 `npm audit fix` cleared 24 Dependabot alerts (MCP SDK
+  → 1.32.2, zod → 4.6.7); in-range bumps to express/yaml/tsx etc. `dotenv` 18 skipped (no benefit here).
+  Migration guide: https://platform.claude.com/docs/en/api/migration-2026-10-21
 - **Deeper technical debt** remains: test inversion on the parser/server/write-gate, a few statistical
   edge cases, duplicated small utilities, and the perf of re-parsing the archive per request. The
   earlier security/integrity initiatives (server auth + localhost default, write-path arg validation,
