@@ -4,12 +4,12 @@ import { appendCostRecord, costUsd } from "./costLog.js";
 import type { ChatCompleter, LocalChatOpts } from "./localClient.js";
 
 /** Cheap side-task model for `ask` intent routing (alias — avoids pinning a dated snapshot). */
-const HAIKU_MODEL = "claude-haiku-4-5";
+const HAIKU_MODEL = "claude-haiku-5-5";
 
 /**
  * Haiku-backed intent router (a `ChatCompleter`, so it drops into the same hybrid router LocalLLM uses).
  *
- * A single cheap `claude-haiku-4-5` micro-call using the **ANTHROPIC_API_KEY the coach already needs** —
+ * A single cheap `claude-haiku-5-5` micro-call using the **ANTHROPIC_API_KEY the coach already needs** —
  * no separate server to stand up (unlike the Ollama-backed LocalLLM). Used ONLY for low-stakes intent
  * classification; coaching output always stays on Opus. The call is cost-logged like any other (operation
  * "intent", priced from the Haiku table). Hard timeout + `maxRetries: 0` so a slow/failed call throws fast
@@ -33,7 +33,17 @@ export class HaikuRouter implements ChatCompleter {
     const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 4000);
     try {
       const res = await this.client.messages.create(
-        { model: HAIKU_MODEL, max_tokens: opts.maxTokens ?? 8, system, messages },
+        {
+          model: HAIKU_MODEL,
+          // 16, not 8: Haiku 5.5's newer tokenizer spends exactly 8 tokens on "LAST_SESSION", so an 8 cap sat
+          // on the edge of truncating the label. Haiku 5.5 also thinks by default and thinking counts toward
+          // max_tokens, so it's switched off (accepted at effort ≤ high); `low` keeps it a micro-call.
+          max_tokens: opts.maxTokens ?? 16,
+          thinking: { type: "disabled" },
+          output_config: { effort: "low" },
+          system,
+          messages,
+        },
         { signal: ctrl.signal, maxRetries: 0 },
       );
       const text = res.content

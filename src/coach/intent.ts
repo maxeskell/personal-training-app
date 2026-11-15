@@ -14,7 +14,7 @@ export type IntentSource = "regex" | "local-model" | "haiku-model" | "fallback";
 
 /**
  * The configured model router for a regex miss, or null for regex-only. `haiku` is the recommended
- * upgrade (a cheap claude-haiku-4-5 call on the existing API key, no server); `local` is the advanced
+ * upgrade (a cheap claude-haiku-5-5 call on the existing API key, no server); `local` is the advanced
  * Ollama path; `regex` (default) returns null. Each returns null when unavailable, so we degrade safely.
  */
 export function defaultIntentRouter(): ChatCompleter | null {
