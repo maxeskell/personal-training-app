@@ -322,8 +322,14 @@ fire-only health check), `npm run backfill:install` (history grind).
   `ANTHROPIC_API_KEY`, and there's no proxy (if one is ever added, it must read `Authorization`). Verified
   with typecheck, the suite and one live structured Opus call + one Haiku-router call. The 1.x SDK is
   Apache-2.0 (was MIT). Same pass: the 2026-11-10 `npm audit fix` cleared 24 Dependabot alerts (MCP SDK
-  → 1.32.2, zod → 4.6.7); in-range bumps to express/yaml/tsx etc. `dotenv` 18 skipped (no benefit here).
+  → 1.32.2, zod → 4.6.7); in-range bumps to express/yaml/tsx etc.
   Migration guide: https://platform.claude.com/docs/en/api/migration-2026-10-21
+- **Haiku router → `claude-haiku-5-5`, `dotenv` 18 (2026-11-15).** The optional intent router
+  (`COACH_INTENT_ROUTER=haiku`, off by default) moved from Haiku 4.5. Haiku 5.5 thinks by default and thinking
+  counts toward `max_tokens`, so the call sends `thinking: {type: "disabled"}` + `effort: "low"`; its newer
+  tokenizer spends ~10 tokens on `LAST_SESSION` (the old 8 cap truncated it), so the cap is now 16. Price table
+  $0.10/$0.50 per MTok (was $1/$5). Live-checked on four questions: right labels, ~$0.00002 a call. `dotenv`
+  17 → 18: it dropped preload (`-r dotenv/config`) and `.env.vault`, neither used here; `quiet: true` stays.
 - **Deeper technical debt** remains: test inversion on the parser/server/write-gate, a few statistical
   edge cases, duplicated small utilities, and the perf of re-parsing the archive per request. The
   earlier security/integrity initiatives (server auth + localhost default, write-path arg validation,

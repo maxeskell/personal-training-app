@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { config as loadEnv } from "dotenv";
 import { parse as parseYaml } from "yaml";
 
-// `quiet: true` suppresses dotenv 17's load-time banner — it would otherwise print to stdout at import
-// time and corrupt the MCP server's JSON-RPC stdio stream (config.ts is imported by mcpServer.ts).
+// `quiet: true` suppresses dotenv's load-time banner. dotenv 18 prints it to stderr (17 used stdout, which
+// corrupted the MCP server's JSON-RPC stdio stream — config.ts is imported by mcpServer.ts); keep it quiet.
 loadEnv({ quiet: true });
 
 /**
@@ -195,20 +195,21 @@ export const config = {
   },
 
   /**
-   * Pricing for the cheap side-task model (claude-haiku-4-5) used by the optional Haiku intent router.
-   * Published Haiku 4.5 rates ($/MTok) as of the knowledge cutoff; override via env if they change.
+   * Pricing for the cheap side-task model (claude-haiku-5-5) used by the optional Haiku intent router.
+   * Published Haiku 5.5 rates ($/MTok, the ≤100K-token-prompt card — an intent call is tiny): input 0.10,
+   * output 0.50, 5-min cache write 1.25×, cache read 0.1×. Override via env if they change.
    * The cost log picks this table for any model id containing "haiku" (see costLog.ts).
    */
   pricingHaiku: {
-    inputPerMTok: Number(process.env.COACH_PRICE_HAIKU_INPUT ?? 1),
-    outputPerMTok: Number(process.env.COACH_PRICE_HAIKU_OUTPUT ?? 5),
-    cacheWritePerMTok: Number(process.env.COACH_PRICE_HAIKU_CACHE_WRITE ?? 1.25),
-    cacheReadPerMTok: Number(process.env.COACH_PRICE_HAIKU_CACHE_READ ?? 0.1),
+    inputPerMTok: Number(process.env.COACH_PRICE_HAIKU_INPUT ?? 0.1),
+    outputPerMTok: Number(process.env.COACH_PRICE_HAIKU_OUTPUT ?? 0.5),
+    cacheWritePerMTok: Number(process.env.COACH_PRICE_HAIKU_CACHE_WRITE ?? 0.125),
+    cacheReadPerMTok: Number(process.env.COACH_PRICE_HAIKU_CACHE_READ ?? 0.01),
   },
 
   /**
    * `ask` intent routing strategy: `regex` (default, zero-cost, no model), `haiku` (a cheap
-   * claude-haiku-4-5 micro-call using your existing ANTHROPIC_API_KEY — no extra server), or `local`
+   * claude-haiku-5-5 micro-call using your existing ANTHROPIC_API_KEY — no extra server), or `local`
    * (the separate local-llm-server / Ollama, advanced). Back-compat: COACH_LOCAL_INTENT=true ⇒ `local`.
    * Any strategy degrades to the regex verdict on error, so routing never blocks the Q&A.
    */

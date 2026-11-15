@@ -390,7 +390,7 @@ This closes the loop from how a session *actually executed* into a gated plan ch
 Humango don't do (their daily adaptation keys off readiness scores, not session execution). A question like "What
 happened in my last run?" routes here automatically. Routing has three strategies via `COACH_INTENT_ROUTER` (all degrade to the regex on
 any error): **`regex`** (default, zero-cost, no model); **`haiku`** — the recommended upgrade — a cheap
-`claude-haiku-4-5` micro-call on your existing `ANTHROPIC_API_KEY` (no extra server) that catches
+`claude-haiku-5-5` micro-call on your existing `ANTHROPIC_API_KEY` (no extra server) that catches
 paraphrases the regex misses ("break down Tuesday's ride") for a fraction of a cent, cost-logged like any
 call; and **`local`** (advanced) — the separate `local-llm-server` (Ollama) wrapper for zero API cost.
 It is used only for this low-stakes routing — coaching output always stays on Opus, and any failure falls
